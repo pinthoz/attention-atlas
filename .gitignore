@@ -1,0 +1,8 @@
+inspetus-env/
+notebook/
+tests.ipynb
+
+
+__pycache__/
+*.pyc
+*.pyo
