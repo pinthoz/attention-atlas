@@ -332,6 +332,33 @@ app_ui = ui.page_fluid(
             padding: 0 !important;
         }
 
+        /* Token Visualization (Inspectus style) */
+        .token-viz-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            padding: 2px 0;
+        }
+
+        .token-viz {
+            padding: 2px 5px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            cursor: help;
+            border: 1px solid transparent;
+            display: inline-block;
+        }
+
+        .token-viz:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            border-color: rgba(59, 130, 246, 0.8);
+            z-index: 10;
+        }
+
         .js-plotly-plot .plotly .scatterlayer .trace .points path {
             cursor: pointer !important;
         }
@@ -804,7 +831,8 @@ app_ui = ui.page_fluid(
 
         ui.card(
             ui.h4("Sentence Preview"),
-            ui.output_text_verbatim("preview_text"),
+            ui.div({"class": "sub-label"}, "Token-level attention visualization (hover for details)"),
+            ui.output_ui("preview_text"),
         ),
 
         ui.div(

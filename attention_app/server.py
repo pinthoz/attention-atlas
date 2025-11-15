@@ -75,10 +75,66 @@ def server(input, output, session):
 
     # === Sentence preview ===
     @output
-    @render.text
+    @render.ui
     def preview_text():
-        t = input.text_input().strip()
-        return f'"{t}"' if t else "Type a sentence above."
+        res = cached_result.get()
+        if not res:
+            t = input.text_input().strip()
+            return ui.HTML(f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">Type a sentence above and click Generate All.</div>')
+
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+
+        if attentions is None or len(attentions) == 0:
+            return ui.HTML('<div style="color:#9ca3af;font-size:12px;">No attention data available.</div>')
+
+        # Calculate per-token attention metrics
+        # Average attention across all layers and heads
+        # Shape: (num_layers, num_heads, seq_len, seq_len)
+        att_layers = [layer[0].cpu().numpy() for layer in attentions]
+
+        # Average across layers and heads: (seq_len, seq_len)
+        att_avg = np.mean(att_layers, axis=(0, 1))
+
+        # Calculate attention received by each token (sum of incoming attention)
+        # att_avg[i, j] = attention from token i to token j
+        # Sum over rows (axis=0) to get how much attention each token receives
+        attention_received = att_avg.sum(axis=0)
+
+        # Normalize values for coloring (0-1 range)
+        att_received_norm = (attention_received - attention_received.min()) / (attention_received.max() - attention_received.min() + 1e-10)
+
+        # Build HTML with colored tokens
+        token_html = []
+        for i, (tok, att_recv, recv_norm) in enumerate(zip(tokens, attention_received, att_received_norm)):
+            # Use attention received for background color (darker blue gradient)
+            # Map normalized value from [0,1] to [0.2, 0.8] for better visibility
+            opacity = 0.2 + (recv_norm * 0.6)
+            bg_color = f"rgba(59, 130, 246, {opacity})"  # Blue-500 with variable opacity
+
+            # Remove \n from tooltip - use HTML entity for line break
+            tooltip = f"Token: {tok}&#10;Attention Received: {att_recv:.3f}"
+
+            token_html.append(
+                f'<span class="token-viz" style="background:{bg_color};" title="{tooltip}">{tok}</span>'
+            )
+
+        html = '<div class="token-viz-container">' + ''.join(token_html) + '</div>'
+
+        # Add legend with updated colors
+        legend_html = '''
+        <div style="display:flex;gap:12px;margin-top:8px;font-size:9px;color:#6b7280;">
+            <div style="display:flex;align-items:center;gap:4px;">
+                <div style="width:10px;height:10px;background:rgba(59,130,246,0.8);border-radius:2px;"></div>
+                <span>High Attention</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;">
+                <div style="width:10px;height:10px;background:rgba(59,130,246,0.2);border-radius:2px;"></div>
+                <span>Low Attention</span>
+            </div>
+        </div>
+        '''
+
+        return ui.HTML(html + legend_html)
 
     # === Metrics display ===
     @output
