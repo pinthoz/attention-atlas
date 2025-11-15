@@ -1,0 +1,19 @@
+# Core Web Framework
+shiny>=0.10.0
+shinywidgets>=0.3.0
+
+# Machine Learning & NLP
+transformers>=4.35.0
+torch>=2.0.0
+tokenizers>=0.15.0
+
+# Data Processing
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Visualization
+plotly>=5.18.0
+matplotlib>=3.7.0
+
+# Utilities
+Pillow>=10.0.0
