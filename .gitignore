@@ -1,7 +1,7 @@
 inspetus-env/
 notebook/
 tests.ipynb
-
+td.todo
 
 __pycache__/
 *.pyc
