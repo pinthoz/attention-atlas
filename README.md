@@ -63,7 +63,7 @@ Click on any metric to see the mathematical formula, interpretation, and referen
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd llm-attention-explained
+cd attention-atlas
 ```
 
 2. Create a virtual environment (recommended):
@@ -106,7 +106,7 @@ The application will automatically open in your browser at `http://localhost:800
 ## Project Structure
 
 ```
-llm-attention-explained/
+attention-atlas/
 ├── attention_app/
 │   ├── __init__.py
 │   ├── app.py              # Shiny application construction
