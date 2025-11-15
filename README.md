@@ -82,7 +82,11 @@ pip install -r requirements.txt
 ### Running the Application
 
 ```bash
-python test.py
+python app.py
+```
+or 
+```bash
+shiny run --reload app.py
 ```
 
 The application will automatically open in your browser at `http://localhost:8000`.
