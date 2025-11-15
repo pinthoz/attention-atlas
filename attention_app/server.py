@@ -1,3 +1,4 @@
+import re
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
@@ -18,11 +19,21 @@ def server(input, output, session):
     cached_result = reactive.value(None)
     focused_token = reactive.value(None)
 
+    def tokenize_with_segments(text: str):
+        pattern = re.search(r"([.!?])\s+([A-Za-z])", text)
+        if pattern:
+            split_idx = pattern.end(1)
+            sentence_a = text[:split_idx].strip()
+            sentence_b = text[split_idx:].strip()
+            if sentence_a and sentence_b:
+                return tokenizer(sentence_a, sentence_b, return_tensors="pt")
+        return tokenizer(text, return_tensors="pt")
+
     def heavy_compute(text):
         if not text:
             return None
 
-        inputs = tokenizer(text, return_tensors="pt")
+        inputs = tokenize_with_segments(text)
         with torch.no_grad():
             outputs = encoder_model(**inputs)
 
@@ -67,7 +78,7 @@ def server(input, output, session):
     @render.text
     def preview_text():
         t = input.text_input().strip()
-        return f'"{t}"' if t else "Type a sentence and click Generate All."
+        return f'"{t}"' if t else "Type a sentence above."
 
     # === Metrics display ===
     @output
@@ -78,22 +89,21 @@ def server(input, output, session):
             return ui.HTML("")
         
         tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
-        layer_idx = int(input.att_layer())
-        head_idx = int(input.att_head())
         
         if attentions is None or len(attentions) == 0:
             return ui.HTML("")
         
-        att = attentions[layer_idx][0, head_idx].cpu().numpy()
-        metrics_dict = compute_all_attention_metrics(att)
+        att_layers = [layer[0].cpu().numpy() for layer in attentions]
+        att_avg = np.mean(att_layers, axis=(0, 1))
+        metrics_dict = compute_all_attention_metrics(att_avg)
         
         metrics = [
-            ("Confidence (Max)", f"{metrics_dict['confidence_max']:.4f}", "", "Confidence Max", layer_idx, head_idx),
-            ("Confidence (Avg)", f"{metrics_dict['confidence_avg']:.4f}", "", "Confidence Avg", layer_idx, head_idx),
-            ("Focus (Entropy)", f"{metrics_dict['focus_entropy']:.2f}", "", "Focus", layer_idx, head_idx),
-            ("Sparsity", f"{metrics_dict['sparsity']:.2%}", "", "Sparsity", layer_idx, head_idx),
-            ("Distribution (Median)", f"{metrics_dict['distribution_median']:.4f}", "", "Distribution", layer_idx, head_idx),
-            ("Uniformity", f"{metrics_dict['uniformity']:.4f}", "", "Uniformity", layer_idx, head_idx),
+            ("Confidence (Max)", f"{metrics_dict['confidence_max']:.4f}", "", "Confidence Max", "'Global'", "'Avg'"),
+            ("Confidence (Avg)", f"{metrics_dict['confidence_avg']:.4f}", "", "Confidence Avg", "'Global'", "'Avg'"),
+            ("Focus (Entropy)", f"{metrics_dict['focus_entropy']:.2f}", "", "Focus", "'Global'", "'Avg'"),
+            ("Sparsity", f"{metrics_dict['sparsity']:.2%}", "", "Sparsity", "'Global'", "'Avg'"),
+            ("Distribution (Median)", f"{metrics_dict['distribution_median']:.4f}", "", "Distribution", "'Global'", "'Avg'"),
+            ("Uniformity", f"{metrics_dict['uniformity']:.4f}", "", "Uniformity", "'Global'", "'Avg'"),
         ]
         
         gradients = [
@@ -125,7 +135,7 @@ def server(input, output, session):
     def embedding_table():
         res = cached_result.get()
         if not res:
-            return ui.HTML("<p style='font-size:10px;color:#9ca3af;'>Click <b>Generate All</b> to start</p>")
+            return ui.HTML("<p style='font-size:10px;color:#9ca3af;'>No data yet</p>")
         tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
 
         rows = []
@@ -219,6 +229,82 @@ def server(input, output, session):
         )
         return ui.HTML(html)
 
+    # === Segment embeddings ===
+    @output
+    @render.ui
+    def segment_embedding_view():
+        res = cached_result.get()
+        if not res:
+            return ui.HTML("")
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        segment_ids = inputs.get("token_type_ids")
+        if segment_ids is None:
+            return ui.HTML("<p style='font-size:10px;color:#6b7280;'>No segment information available.</p>")
+        ids = segment_ids[0].cpu().numpy().tolist()
+        rows = []
+        counts = {}
+        colors = ["#6366f1", "#a855f7", "#ec4899", "#f97316"]
+        chips = []
+        for tok, seg in zip(tokens, ids):
+            counts[seg] = counts.get(seg, 0) + 1
+            color = colors[seg % len(colors)]
+            chips.append(f"<span class='segment-chip' style='background:{color};' title='Segment {seg}'>{tok}</span>")
+            rows.append(
+                f"<tr><td class='token-name'>{tok}</td><td style='font-size:10px;color:#111827;'>Segment {seg}</td></tr>"
+            )
+        summary = ", ".join(f"Segment {k}: {v}" for k, v in sorted(counts.items()))
+        html = (
+            f"<p style='font-size:10px;color:#6b7280;margin-bottom:6px;'>Segments detected → {summary}</p>"
+            "<div class='segment-chips'>" + "".join(chips) + "</div>"
+            "<div class='card-scroll'>"
+            "<table class='token-table'><tr><th>Token</th><th>Segment ID</th></tr>"
+            + "".join(rows)
+            + "</table></div>"
+        )
+        return ui.HTML(html)
+
+    # === Sum + LayerNorm ===
+    @output
+    @render.ui
+    def sum_layernorm_view():
+        res = cached_result.get()
+        if not res:
+            return ui.HTML("")
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        input_ids = inputs["input_ids"]
+        segment_ids = inputs.get("token_type_ids")
+        if segment_ids is None:
+            segment_ids = torch.zeros_like(input_ids)
+        seq_len = input_ids.shape[1]
+        device = input_ids.device
+        with torch.no_grad():
+            word_embed = encoder_model.embeddings.word_embeddings(input_ids)
+            position_ids = torch.arange(seq_len, device=device).unsqueeze(0)
+            pos_embed = encoder_model.embeddings.position_embeddings(position_ids)
+            seg_embed = encoder_model.embeddings.token_type_embeddings(segment_ids)
+            summed = word_embed + pos_embed + seg_embed
+            normalized = encoder_model.embeddings.LayerNorm(summed)
+        summed_np = summed[0].cpu().numpy()
+        norm_np = normalized[0].cpu().numpy()
+        rows = []
+        for i, tok in enumerate(tokens):
+            sum_strip = array_to_base64_img(summed_np[i][:96], "cividis", 0.15)
+            norm_strip = array_to_base64_img(norm_np[i][:96], "viridis", 0.15)
+            rows.append(
+                "<tr>"
+                f"<td class='token-name'>{tok}</td>"
+                f"<td><img class='heatmap' src='data:image/png;base64,{sum_strip}' title='Sum of embeddings'></td>"
+                f"<td><img class='heatmap' src='data:image/png;base64,{norm_strip}' title='LayerNorm output'></td>"
+                "</tr>"
+            )
+        html = (
+            "<div class='card-scroll'>"
+            "<table class='token-table'><tr><th>Token</th><th>Sum</th><th>LayerNorm</th></tr>"
+            + "".join(rows)
+            + "</table></div>"
+        )
+        return ui.HTML(html)
+
     # === Attention map (Plotly) ===
     @render_plotly
     def attention_map():
@@ -227,11 +313,11 @@ def server(input, output, session):
             return None
         tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
 
-        layer_idx = int(input.att_layer())
-        head_idx = int(input.att_head())
-
         if attentions is None or len(attentions) == 0:
             return None
+
+        layer_idx = int(input.att_layer())
+        head_idx = int(input.att_head())
 
         att = attentions[layer_idx][0, head_idx].cpu().numpy()
 
@@ -273,7 +359,7 @@ def server(input, output, session):
             y=tokens,
             color_continuous_scale="Blues",
             aspect="auto",
-            title=f"Layer {layer_idx} · Head {head_idx}",
+            title="Attention Map",
         )
         fig.update_traces(customdata=custom, hovertemplate=hover)
         fig.update_layout(
@@ -286,6 +372,75 @@ def server(input, output, session):
             font=dict(color="#111827"),
         )
         return fig
+
+    @output
+    @render.ui
+    def scaled_attention_selector():
+        res = cached_result.get()
+        if not res:
+            return ui.HTML("<p style='font-size:10px;color:#9ca3af;'>No data yet</p>")
+        tokens, *_ = res
+        options = {str(i): f"{i}: {tok}" for i, tok in enumerate(tokens)}
+        try:
+            selected = input.scaled_attention_token()
+        except Exception:
+            selected = "0"
+        if selected not in options:
+            selected = "0"
+        return ui.div(
+            ui.input_select(
+                "scaled_attention_token",
+                "Focus token",
+                choices=options,
+                selected=selected,
+            ),
+            class_="focus-select",
+        )
+
+    # === Scaled attention formula ===
+    @output
+    @render.ui
+    def scaled_attention_view():
+        res = cached_result.get()
+        if not res:
+            return ui.HTML("")
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        if attentions is None or len(attentions) == 0:
+            return ui.HTML("")
+        layer_idx = int(input.att_layer())
+        head_idx = int(input.att_head())
+        att = attentions[layer_idx][0, head_idx].cpu().numpy()
+        try:
+            focus_idx = int(input.scaled_attention_token())
+        except Exception:
+            focus_idx = 0
+        focus_idx = max(0, min(focus_idx, len(tokens) - 1))
+        layer = encoder_model.encoder.layer[layer_idx].attention.self
+        hs_in = hidden_states[layer_idx]
+        with torch.no_grad():
+            Q = layer.query(hs_in)[0].cpu().numpy()
+            K = layer.key(hs_in)[0].cpu().numpy()
+        d_k = Q.shape[-1] // layer.num_attention_heads if hasattr(layer, "num_attention_heads") else Q.shape[-1]
+        top_idx = np.argsort(att[focus_idx])[::-1][:3]
+        rows = ""
+        for j in top_idx:
+            dot = float(np.dot(Q[focus_idx], K[j]))
+            scaled = dot / np.sqrt(d_k)
+            prob = att[focus_idx, j]
+            rows += (
+                "<div class='scaled-attention-row'>"
+                f"<span>{tokens[focus_idx]} → {tokens[j]}</span>"
+                f"<span>dot={dot:.2f}, scaled={scaled:.2f}, softmax={prob:.3f}</span>"
+                "</div>"
+            )
+        html = (
+            "<div class='scaled-attention-box'>"
+            f"<div style='font-size:11px;margin-bottom:6px;'>Focus token: <b>{tokens[focus_idx]}</b></div>"
+            "<div style='font-size:10px;color:#6b7280;margin-bottom:6px;'>softmax(Q·K<sup>T</sup>/√d<sub>k</sub>) for top connections:</div>"
+            + rows
+            + "</div>"
+        )
+        return ui.HTML(html)
 
     # === Reset focus ===
     @reactive.effect
@@ -322,15 +477,20 @@ def server(input, output, session):
         for i, tok in enumerate(tokens):
             color = color_palette[i % len(color_palette)]
             x_pos = i / n_tokens + block_width / 2
-            is_focused = focus_idx is None or focus_idx == i
-            font_size = 12 if is_focused else 9
-            opacity = 1.0 if is_focused else 0.3
-            fig.add_trace(go.Scatter(x=[x_pos], y=[1.05], mode='text', text=tok,
-                                    textfont=dict(size=font_size, color=color, family='monospace', weight='bold'),
-                                    opacity=opacity, showlegend=False, hoverinfo='skip'))
-            fig.add_trace(go.Scatter(x=[x_pos], y=[-0.05], mode='text', text=tok,
-                                    textfont=dict(size=font_size, color=color, family='monospace', weight='bold'),
-                                    opacity=opacity, showlegend=False, hoverinfo='skip'))
+            show_focus = focus_idx is not None
+            is_selected = focus_idx == i if show_focus else True
+            font_size = 13 if is_selected else 10
+            text_color = color if (show_focus and is_selected) else "#111827"
+            fig.add_trace(go.Scatter(
+                x=[x_pos], y=[1.05], mode='text', text=tok,
+                textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'),
+                showlegend=False, hoverinfo='skip'
+            ))
+            fig.add_trace(go.Scatter(
+                x=[x_pos], y=[-0.05], mode='text', text=tok,
+                textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'),
+                showlegend=False, hoverinfo='skip'
+            ))
         
         threshold = 0.04
         for i in range(n_tokens):
@@ -358,9 +518,10 @@ def server(input, output, session):
                         hovertext=f"<b>{tokens[i]} to {tokens[j]}</b><br>Attention: {weight:.4f}",
                     ))
         
-        title_text = f"Layer {layer_idx} · Head {head_idx}"
+        title_text = "Attention Flow"
         if focus_idx is not None:
-            title_text += f" · <b style='color:#ff5ca9'>Focused: '{tokens[focus_idx]}'</b>"
+            focus_color = color_palette[focus_idx % len(color_palette)]
+            title_text += f" · <b style='color:{focus_color}'>Focused: '{tokens[focus_idx]}'</b>"
         
         fig.update_layout(
             title=title_text,
@@ -398,7 +559,7 @@ def server(input, output, session):
         buttons.append(
             ui.input_action_button("token_btn_reset", "Show All", class_="token-btn-reset")
         )
-        return ui.div({"style": "display:flex;flex-wrap:wrap;gap:4px;align-items:center;"}, *buttons)
+        return ui.div(*buttons)
 
     # === Handle token clicks ===
     @reactive.effect
@@ -462,18 +623,61 @@ def server(input, output, session):
         layer_idx = int(input.att_layer())
         if layer_idx + 1 >= len(hidden_states):
             return ui.HTML("")
-        hs = hidden_states[layer_idx + 1][0].cpu().numpy()
+        layer = encoder_model.encoder.layer[layer_idx]
+        hs_in = hidden_states[layer_idx][0]
+        with torch.no_grad():
+            inter = layer.intermediate.dense(hs_in)
+            inter_act = layer.intermediate.intermediate_act_fn(inter)
+            proj = layer.output.dense(inter_act)
+        inter_np = inter_act.cpu().numpy()
+        proj_np = proj.cpu().numpy()
         rows = []
         for i, tok in enumerate(tokens):
-            strip = array_to_base64_img(hs[i][:96], "plasma", 0.18)
+            inter_strip = array_to_base64_img(inter_np[i][:96], "plasma", 0.15)
+            proj_strip = array_to_base64_img(proj_np[i][:96], "magma", 0.15)
             rows.append(
-                f"<tr><td class='token-name'>{tok}</td>"
-                f"<td><img class='heatmap' src='data:image/png;base64,{strip}' "
-                f"title='Layer {layer_idx} output pattern'></td></tr>"
+                "<tr>"
+                f"<td class='token-name'>{tok}</td>"
+                f"<td><img class='heatmap' src='data:image/png;base64,{inter_strip}' title='Intermediate 3072 dims'></td>"
+                f"<td><img class='heatmap' src='data:image/png;base64,{proj_strip}' title='Projection back to 768 dims'></td>"
+                "</tr>"
             )
         html = (
             "<div class='card-scroll'>"
-            "<table class='token-table'><tr><th>Token</th><th>Activation Pattern</th></tr>"
+            "<table class='token-table'><tr><th>Token</th><th>GELU Activation</th><th>Projection</th></tr>"
+            + "".join(rows)
+            + "</table></div>"
+        )
+        return ui.HTML(html)
+
+    # === Add & Norm after FFN ===
+    @output
+    @render.ui
+    def add_norm_post_ffn_view():
+        res = cached_result.get()
+        if not res:
+            return ui.HTML("")
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        layer_idx = int(input.att_layer())
+        if layer_idx + 2 >= len(hidden_states):
+            return ui.HTML("<p style='font-size:10px;color:#6b7280;'>Select a lower layer to inspect residual output.</p>")
+        hs_mid = hidden_states[layer_idx + 1][0].cpu().numpy()
+        hs_out = hidden_states[layer_idx + 2][0].cpu().numpy()
+        rows = []
+        for i, tok in enumerate(tokens):
+            diff = np.linalg.norm(hs_out[i] - hs_mid[i])
+            norm = np.linalg.norm(hs_mid[i]) + 1e-6
+            ratio = diff / norm
+            width = max(4, min(100, int(ratio * 80)))
+            rows.append(
+                f"<tr><td class='token-name'>{tok}</td>"
+                f"<td><div style='background:#e5e7eb;border-radius:999px;height:10px;'>"
+                f"<div style='width:{width}%;height:10px;border-radius:999px;"
+                f"background:linear-gradient(90deg,#14b8a6,#0ea5e9);'></div></div></td></tr>"
+            )
+        html = (
+            "<div class='card-scroll'>"
+            "<table class='token-table'><tr><th>Token</th><th>Residual Change (FFN)</th></tr>"
             + "".join(rows)
             + "</table></div>"
         )
@@ -518,19 +722,27 @@ def server(input, output, session):
             return ui.HTML("")
         tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
         final_h = hidden_states[-1][0].cpu().numpy()
+
         rows = []
         for i, tok in enumerate(tokens):
-            strip = array_to_base64_img(final_h[i][:64], "magma", 0.18)
-            tip = "Final encoder hidden state (768 dims)"
+            hidden_strip = array_to_base64_img(final_h[i][:96], "magma", 0.16)
             rows.append(
-                f"<tr><td class='token-name'>{tok}</td>"
-                f"<td><img class='heatmap' src='data:image/png;base64,{strip}' title='{tip}'></td></tr>"
+                "<tr>"
+                f"<td class='token-name'>{tok}</td>"
+                f"<td><img class='heatmap' src='data:image/png;base64,{hidden_strip}' title='Hidden state (768 dims)'></td>"
+                "</tr>"
             )
+
         html = (
-            "<div class='card-scroll'>"
-            "<table class='token-table'><tr><th>Token</th><th>Hidden State</th></tr>"
+            f"<div class='projection-card'>"
+            f"<div class='sub-label'>Hidden representations for {len(tokens)} tokens</div>"
+            "<div class='card-scroll' style='max-height:360px;'>"
+            "<table class='token-table'><tr><th>Token</th><th>Hidden Pattern</th></tr>"
             + "".join(rows)
             + "</table></div>"
+            "<div style='font-size:10px;color:#6b7280;text-align:center;margin-top:10px;'>"
+            "These hidden states flow into the vocabulary projection before Softmax."
+            "</div></div>"
         )
         return ui.HTML(html)
 
@@ -540,19 +752,30 @@ def server(input, output, session):
     def output_probabilities():
         res = cached_result.get()
         if not res:
-            return ui.HTML("<p style='font-size:10px;color:#9ca3af;'>Run <b>Generate All</b> first</p>")
+            return ui.HTML("<div class='prediction-panel'><p style='font-size:11px;color:#9ca3af;'>No data yet</p></div>")
         tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
 
         if not input.use_mlm():
-            return ui.HTML("<p style='font-size:10px;color:#9ca3af;'>Enable <b>Use MLM head</b> to see token probabilities.</p>")
+            return ui.HTML(
+                "<div class='prediction-panel'>"
+                "<h5>Predictions</h5>"
+                "<p style='font-size:11px;color:#6b7280;'>Enable <b>Use MLM head for predictions</b> to render top-k token probabilities.</p>"
+                "</div>"
+            )
 
         text = input.text_input().strip()
         if not text:
-            return ui.HTML("")
-        mlm_inputs = tokenizer(text, return_tensors="pt")
+            return ui.HTML(
+                "<div class='prediction-panel'>"
+                "<p style='font-size:11px;color:#9ca3af;'>Type a sentence to see predictions.</p>"
+                "</div>"
+            )
+        mlm_inputs = tokenize_with_segments(text)
         with torch.no_grad():
             mlm_outputs = mlm_model(**mlm_inputs)
             probs = torch.softmax(mlm_outputs.logits, dim=-1)[0]
+        logits_tensor = mlm_outputs.logits[0]
+        logsumexp_vals = torch.logsumexp(logits_tensor, dim=-1)
 
         mlm_tokens = tokenizer.convert_ids_to_tokens(mlm_inputs["input_ids"][0])
         rows = []
@@ -561,27 +784,40 @@ def server(input, output, session):
             token_probs = probs[i]
             top_vals, top_idx = torch.topk(token_probs, top_k)
             inner = "<div style='font-size:10px;'>"
-            for p, idx in zip(top_vals, top_idx):
+            for rank, (p, idx) in enumerate(zip(top_vals, top_idx)):
                 ptok = tokenizer.decode([idx.item()]) or "[UNK]"
                 pval = float(p)
                 width = max(4, int(pval * 100))
+                logit_val = float(logits_tensor[i, idx])
+                lse_val = float(logsumexp_vals[i])
+                detail_id = f"prob_detail_{i}_{rank}"
+                detail_text = (
+                    f"<div id='{detail_id}' class='prob-detail-box'>"
+                    f"<div><b>Softmax</b> = exp({logit_val:.2f} - {lse_val:.2f}) = {pval:.4%}</div>"
+                    "<div style='color:#6b7280;'>exp(logit) / Σ exp(logits)</div>"
+                    "</div>"
+                )
                 inner += (
                     "<div style='margin:3px 0;'>"
-                    "<div style='display:flex;align-items:center;gap:6px;'>"
+                    "<div class='prob-line'>"
                     f"<span style='font-family:monospace;font-size:10px;min-width:70px;font-weight:600;'>{ptok}</span>"
                     f"<div style='flex:1;background:#e5e7eb;border-radius:999px;height:12px;'>"
                     f"<div style='width:{width}%;height:12px;border-radius:999px;"
                     f"background:linear-gradient(90deg,#3b82f6,#8b5cf6);'></div></div>"
-                    f"<span style='font-size:10px;color:#6b7280;width:50px;text-align:right;font-weight:500;'>{pval:.1%}</span>"
-                    "</div></div>"
+                    f"<button type='button' class='prob-detail-btn' onclick=\"toggleProbDetail('{detail_id}')\">{pval:.1%}</button>"
+                    "</div>"
+                    f"{detail_text}"
+                    "</div>"
                 )
             inner += "</div>"
             rows.append(f"<tr><td class='token-name'>{tok}</td><td>{inner}</td></tr>")
 
         html = (
-            "<div class='card-scroll' style='max-height:350px;'>"
-            "<table class='token-table'><tr><th>Position</th><th>Top-5 Predictions</th></tr>"
+            "<div class='prediction-panel'>"
+            "<h5>MLM Top-k Predictions</h5>"
+            "<div class='card-scroll' style='max-height:340px;'>"
+            "<table class='token-table'><tr><th>Token</th><th>Top-5 Probabilities</th></tr>"
             + "".join(rows)
-            + "</table></div>"
+            + "</table></div></div>"
         )
         return ui.HTML(html)

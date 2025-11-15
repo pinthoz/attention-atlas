@@ -1,3 +1,6 @@
+import base64
+from pathlib import Path
+
 from shiny import ui
 from shinywidgets import output_widget
 
@@ -14,7 +17,13 @@ def mini_select(id_, selected="0", options=None):
             selected=selected,
         ),
     )
-    
+
+_ICON_PATH = Path(__file__).resolve().parent.parent / "static" / "favicon.ico"
+try:
+    _ICON_DATA = base64.b64encode(_ICON_PATH.read_bytes()).decode()
+    ICON_DATA_URL = f"data:image/x-icon;base64,{_ICON_DATA}"
+except Exception:
+    ICON_DATA_URL = ""
 
 
 app_ui = ui.page_fluid(
@@ -35,10 +44,21 @@ app_ui = ui.page_fluid(
             overflow-y:auto;
             box-shadow:4px 0 24px rgba(0,0,0,0.3);
         }
+        .sidebar .app-title {
+            display:flex;
+            align-items:center;
+            gap:10px;
+            margin-bottom:12px;
+        }
+        .sidebar .app-title img {
+            width:28px;
+            height:28px;
+            border-radius:6px;
+        }
         .sidebar h3 {
             color:#ff5ca9;
             font-weight:700;
-            margin:0 0 8px;
+            margin:0;
             font-size:24px;
         }
         .sidebar small {
@@ -149,6 +169,11 @@ app_ui = ui.page_fluid(
         .grid-3 {
             display:grid;
             grid-template-columns:repeat(3,minmax(0,1fr));
+            gap:16px;
+        }
+        .grid-2 {
+            display:grid;
+            grid-template-columns:repeat(2,minmax(0,1fr));
             gap:16px;
         }
         .token-table, .token-table-compact {
@@ -293,6 +318,182 @@ app_ui = ui.page_fluid(
         .js-plotly-plot .plotly .scatterlayer .trace .points path {
             cursor: pointer !important;
         }
+        .attention-flow-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .token-instructions {
+            border-top: 1px solid #e5e7eb;
+            margin-top: 12px;
+            padding-top: 12px;
+            text-align: center;
+        }
+        .token-instructions .sub-label {
+            text-align: center;
+            margin-bottom: 6px;
+        }
+        #token_buttons {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .projection-layout {
+            display: grid;
+            grid-template-columns: 2fr 1.3fr;
+            gap: 24px;
+            align-items: stretch;
+        }
+        .architecture-flow {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+        .arch-step {
+            background: #f8fafc;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            padding: 10px;
+            text-align: center;
+            box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+        }
+        .arch-step-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 4px;
+        }
+        .arch-step-desc {
+            font-size: 10px;
+            color: #475569;
+            line-height: 1.4;
+        }
+        .projection-card {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid #e2e8f0;
+        }
+        .projection-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .projection-row-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            color: #475569;
+        }
+        .projection-arrow {
+            font-size: 18px;
+            color: #94a3b8;
+            font-weight: 700;
+        }
+        .projection-preview {
+            background: white;
+            border-radius: 10px;
+            padding: 10px;
+            box-shadow: inset 0 0 0 1px #e2e8f0;
+        }
+        .prediction-panel {
+            border: 1px dashed #cbd5f5;
+            border-radius: 12px;
+            padding: 16px;
+            background: #fdfcff;
+            min-height: 100%;
+        }
+        .prediction-panel h5 {
+            margin: 0 0 10px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: #5b21b6;
+        }
+        .focus-select select {
+            border-radius: 10px;
+            border: 1px solid #c7d2fe;
+            padding: 6px 12px;
+            font-size: 11px;
+            background: #f8fafc;
+        }
+        .scaled-attention-box {
+            background: #fefce8;
+            border: 1px solid #facc15;
+            border-radius: 12px;
+            padding: 14px;
+        }
+        .scaled-attention-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            margin-bottom: 4px;
+            font-family: monospace;
+        }
+        .repeat-flow {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+            gap: 8px;
+        }
+        .repeat-block {
+            padding: 8px;
+            border-radius: 8px;
+            background: #eef2ff;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 600;
+            color: #4338ca;
+        }
+        .repeat-block.current {
+            background: #c7d2fe;
+            border: 1px solid #4338ca;
+            box-shadow: 0 0 0 2px rgba(67,56,202,0.15);
+        }
+        .prob-line {
+            display:flex;
+            align-items:center;
+            gap:6px;
+        }
+        .prob-detail-btn {
+            border:none;
+            background:transparent;
+            color:#5b21b6;
+            font-size:10px;
+            font-weight:600;
+            cursor:pointer;
+            padding:0;
+        }
+        .prob-detail-btn:hover {
+            text-decoration:underline;
+        }
+        .prob-detail-box {
+            display:none;
+            margin-left:70px;
+            margin-top:4px;
+            font-size:10px;
+            background:#f5f3ff;
+            border-radius:8px;
+            padding:6px 10px;
+            color:#4c1d95;
+            text-align:left;
+        }
+        .segment-chips {
+            display:flex;
+            flex-wrap:wrap;
+            gap:4px;
+            margin-bottom:8px;
+        }
+        .segment-chip {
+            font-size:10px;
+            padding:2px 8px;
+            border-radius:999px;
+            color:white;
+            font-weight:600;
+        }
         .token-btn {
             display: inline-block;
             padding: 4px 10px;
@@ -363,13 +564,6 @@ app_ui = ui.page_fluid(
             color: #292524;
             font-weight: 700;
             font-family: 'Courier New', monospace;
-        }
-        .metric-icon {
-            position: absolute;
-            right: 10px;
-            top: 10px;
-            font-size: 20px;
-            opacity: 0.3;
         }
         .modal {
             display: none;
@@ -452,19 +646,53 @@ app_ui = ui.page_fluid(
         }
         """
     ),
+    ui.tags.head(
+        # Multiple favicon formats for maximum browser compatibility
+        ui.tags.link(
+            rel="icon",
+            type="image/x-icon",
+            href="/static/favicon.ico",
+        ),
+        ui.tags.link(
+            rel="shortcut icon",
+            href="/static/favicon.ico",
+        ),
+        # Also try with explicit sizes
+        ui.tags.link(
+            rel="icon",
+            type="image/x-icon",
+            sizes="16x16",
+            href="/static/favicon.ico",
+        ),
+        ui.tags.link(
+            rel="icon",
+            type="image/x-icon",
+            sizes="32x32",
+            href="/static/favicon.ico",
+        ),
+        # Apple touch icon for iOS devices
+        ui.tags.link(
+            rel="apple-touch-icon",
+            href="/static/favicon.ico",
+        ),
+    ),
 
     # Sidebar (fixed)
     ui.div(
         {"class": "sidebar"},
-        ui.h3("Attention Atlas"),
+        ui.div(
+            {"class": "app-title"},
+            ui.tags.img(src=ICON_DATA_URL or "/favicon.ico", alt="Attention Atlas logo"),
+            ui.h3("Attention Atlas"),
+        ),
         ui.tags.small("A full architectural map of BERT, centered on multi-head attention patterns, attention metrics, flow propagation, and head-level interpretability."),
         ui.tags.ul(
-            ui.tags.li("Token Embeddings + Positional Encoding"),
-            ui.tags.li("Q/K/V projections & Multi-Head Attention"),
-            ui.tags.li("6 Attention Metrics (Confidence, Focus, Sparsity, etc.)"),
-            ui.tags.li("Add & Norm + Feed Forward Network"),
-            ui.tags.li("Linear Projection + Softmax"),
-            ui.tags.li("Output Probabilities (Top-5)"),
+            ui.tags.li("Token & Positional Embeddings"),
+            ui.tags.li("Q/K/V Projections & Multi-Head Attention"),
+            ui.tags.li("Attention Metrics (Confidence, Focus, Sparsity, etc.)"),
+            ui.tags.li("Residual Connections & Layer Normalization"),
+            ui.tags.li("Feed Forward Network"),
+            ui.tags.li("Output Predictions (MLM Top-5)"),
         ),
         ui.input_text("text_input", "Input sentence:", "the cat sat on the mat"),
         ui.tags.div(
@@ -477,7 +705,7 @@ app_ui = ui.page_fluid(
             ),
         ),
         ui.hr(),
-        ui.input_switch("use_mlm", "Use MLM head for predictions", value=True),
+        ui.input_switch("use_mlm", "Use MLM head for predictions", value=False),
         ui.tags.small(
             "When enabled, shows real token probabilities from BertForMaskedLM.",
             style="display:block;color:#9ca3af;margin-top:4px;font-size:10px;",
@@ -547,7 +775,7 @@ app_ui = ui.page_fluid(
                 // Fallback: hide after 10 seconds no matter what
                 hideTimeout = setTimeout(function() {
                     hideSpinner();
-                }, 10000);
+                }, 12000);
             });
         """
         ),
@@ -562,7 +790,6 @@ app_ui = ui.page_fluid(
             ui.output_text_verbatim("preview_text"),
         ),
 
-        # Embeddings / Positional Encoding / QKV
         ui.div(
             {"class": "grid-3"},
             ui.card(
@@ -571,9 +798,23 @@ app_ui = ui.page_fluid(
                 ui.output_ui("embedding_table"),
             ),
             ui.card(
-                ui.h4("Positional Encodings"),
+                ui.h4("Segment Embeddings"),
+                ui.div({"class": "sub-label"}, "Token type IDs (A/B sequences)"),
+                ui.output_ui("segment_embedding_view"),
+            ),
+            ui.card(
+                ui.h4("Positional Embeddings"),
                 ui.div({"class": "sub-label"}, "Sinusoidal position encodings"),
                 ui.output_ui("posenc_table"),
+            ),
+        ),
+
+        ui.div(
+            {"class": "grid-3"},
+            ui.card(
+                ui.h4("Soma + LayerNorm"),
+                ui.div({"class": "sub-label"}, "Word + segment + positional embeddings"),
+                ui.output_ui("sum_layernorm_view"),
             ),
             ui.card(
                 ui.div(
@@ -586,6 +827,12 @@ app_ui = ui.page_fluid(
                     ),
                 ),
                 ui.output_ui("qkv_table"),
+            ),
+            ui.card(
+                ui.h4("Scaled Dot-Product Attention"),
+                ui.div({"class": "sub-label"}, "Formula walkthrough for selected token"),
+                ui.output_ui("scaled_attention_selector"),
+                ui.output_ui("scaled_attention_view"),
             ),
         ),
 
@@ -604,21 +851,18 @@ app_ui = ui.page_fluid(
             ),
             ui.div(
                 {"style": "display:grid;grid-template-columns:1fr 1fr;gap:16px;"},
+                ui.div(output_widget("attention_map")),
+                ui.div({"class": "attention-flow-panel"}, output_widget("attention_flow")),
+            ),
+            ui.div(
+                {"class": "token-instructions"},
                 ui.div(
-                    ui.h4("Attention Map", style="font-size:14px;margin-bottom:8px;"),
-                    output_widget("attention_map"),
+                    {"class": "sub-label"},
+                    "Click on a token below to focus its outgoing attention",
                 ),
                 ui.div(
-                    ui.h4("Attention Flow", style="font-size:14px;margin-bottom:8px;"),
-                    ui.div(
-                        {"class": "sub-label"},
-                        "Click on token buttons below to focus attention",
-                    ),
-                    ui.div(
-                        {"id": "token_buttons", "style": "margin-bottom: 12px;"},
-                        ui.output_ui("token_selector_buttons"),
-                    ),
-                    output_widget("attention_flow"),
+                    {"id": "token_buttons"},
+                    ui.output_ui("token_selector_buttons"),
                 ),
             ),
             ui.div(
@@ -627,45 +871,35 @@ app_ui = ui.page_fluid(
             ),
         ),
 
-        # Add&Norm / FFN / Layer output
         ui.div(
             {"class": "grid-3"},
             ui.card(
                 ui.h4("Add & Norm"),
-                ui.div({"class": "sub-label"}, "Residual connections + LayerNorm"),
+                ui.div({"class": "sub-label"}, "Residual connection after attention"),
                 ui.output_ui("add_norm_view"),
             ),
             ui.card(
-                ui.h4("Feed Forward"),
-                ui.div({"class": "sub-label"}, "FFN layer activation patterns"),
+                ui.h4("Feed Forward Network"),
+                ui.div({"class": "sub-label"}, "Intermediate 3072 dims + projection"),
                 ui.output_ui("ffn_view"),
             ),
             ui.card(
-                ui.h4("Layer Stats"),
-                ui.div({"class": "sub-label"}, "Summary statistics per token"),
-                ui.output_ui("layer_output_view"),
+                ui.h4("Add & Norm (Post-FFN)"),
+                ui.div({"class": "sub-label"}, "Residual connection after FFN"),
+                ui.output_ui("add_norm_post_ffn_view"),
             ),
         ),
 
-        # Final hidden & MLM Top-5
-        ui.card(
-            ui.h4("Output Layer: Linear Projection + Softmax"),
-            ui.div(
-                {"style": "display:grid;grid-template-columns:1fr 2fr;gap:20px;"},
-                ui.div(
-                    ui.div(
-                        {"class": "sub-label"},
-                        "Final hidden states (encoder output"),
-                    ),
-                    ui.output_ui("linear_projection_viz"),
-                ),
-                ui.div(
-                    ui.div(
-                        {"class": "sub-label"},
-                        "Top-5 Token Predictions with Probabilities",
-                    ),
-                    ui.output_ui("output_probabilities"),
-                ),
+
+        ui.div(
+            {"class": "grid-2"},
+            ui.card(
+                ui.h4("Hidden States"),
+                ui.output_ui("linear_projection_viz"),
+            ),
+            ui.card(
+                ui.h4("MLM / CLS / Token outputs"),
+                ui.output_ui("output_probabilities"),
             ),
         ),
 
@@ -770,4 +1004,12 @@ window.onclick = function(event) {
     }
 }
         """),
+        ui.tags.script("""
+function toggleProbDetail(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = (el.style.display === 'block') ? 'none' : 'block';
+}
+        """),
     )
+)
