@@ -244,22 +244,33 @@ def server(input, output, session):
         rows = []
         counts = {}
         colors = ["#6366f1", "#a855f7", "#ec4899", "#f97316"]
-        chips = []
+
         for tok, seg in zip(tokens, ids):
             counts[seg] = counts.get(seg, 0) + 1
             color = colors[seg % len(colors)]
-            chips.append(f"<span class='segment-chip' style='background:{color};' title='Segment {seg}'>{tok}</span>")
+            badge = f"<span style='display:inline-block;padding:2px 8px;border-radius:999px;background:{color};color:white;font-size:9px;font-weight:600;'>Seg {seg}</span>"
             rows.append(
-                f"<tr><td class='token-name'>{tok}</td><td style='font-size:10px;color:#111827;'>Segment {seg}</td></tr>"
+                f"<tr><td class='token-name'>{tok}</td><td>{badge}</td></tr>"
             )
-        summary = ", ".join(f"Segment {k}: {v}" for k, v in sorted(counts.items()))
+
+        summary_badges = []
+        for k, v in sorted(counts.items()):
+            color = colors[k % len(colors)]
+            summary_badges.append(
+                f"<span style='display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:{color}15;border:1px solid {color}40;font-size:10px;font-weight:600;color:{color};'>"
+                f"<span style='width:8px;height:8px;border-radius:50%;background:{color};'></span>"
+                f"Segment {k}: <strong>{v} tokens</strong></span>"
+            )
+
         html = (
-            f"<p style='font-size:10px;color:#6b7280;margin-bottom:6px;'>Segments detected → {summary}</p>"
-            "<div class='segment-chips'>" + "".join(chips) + "</div>"
             "<div class='card-scroll'>"
-            "<table class='token-table'><tr><th>Token</th><th>Segment ID</th></tr>"
+            "<table class='token-table-segment'>"
+            "<tr><th>Token</th><th>Segment</th></tr>"
             + "".join(rows)
             + "</table></div>"
+            "<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;'>"
+            + "".join(summary_badges)
+            + "</div>"
         )
         return ui.HTML(html)
 
@@ -396,6 +407,29 @@ def server(input, output, session):
             ),
             class_="focus-select",
         )
+
+    @output
+    @render.ui
+    def scaled_attention_selector_inline():
+        res = cached_result.get()
+        if not res:
+            return ui.HTML("")
+        tokens, *_ = res
+        options = {str(i): str(i) for i in range(len(tokens))}
+        try:
+            selected = input.scaled_attention_token()
+        except Exception:
+            selected = "0"
+        if selected not in options:
+            selected = "0"
+
+        return ui.HTML(f"""
+            <div class="select-mini">
+                <select id="scaled_attention_token_mini" onchange="Shiny.setInputValue('scaled_attention_token', this.value)">
+                    {''.join(f'<option value="{val}" {"selected" if val == selected else ""}>{label}</option>' for val, label in options.items())}
+                </select>
+            </div>
+        """)
 
     # === Scaled attention formula ===
     @output

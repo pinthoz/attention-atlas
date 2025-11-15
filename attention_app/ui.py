@@ -176,12 +176,12 @@ app_ui = ui.page_fluid(
             grid-template-columns:repeat(2,minmax(0,1fr));
             gap:16px;
         }
-        .token-table, .token-table-compact {
+        .token-table, .token-table-compact, .token-table-segment {
             width:100%;
             border-collapse:collapse;
             font-size:10px;
         }
-        .token-table th, .token-table-compact th {
+        .token-table th, .token-table-compact th, .token-table-segment th {
             text-align:left;
             padding:6px 4px;
             color:#6b7280;
@@ -190,10 +190,13 @@ app_ui = ui.page_fluid(
             font-weight:600;
             text-transform:uppercase;
         }
-        .token-table td, .token-table-compact td {
+        .token-table td, .token-table-compact td, .token-table-segment td {
             padding:6px 4px;
             vertical-align:middle;
             border-bottom:1px solid #f3f4f6;
+        }
+        .token-table-segment td:last-child {
+            text-align:right;
         }
         .token-name {
             font-weight:600;
@@ -216,13 +219,13 @@ app_ui = ui.page_fluid(
 
         /* ---------- HEADER CONTROLS & MINI SELECTS ---------- */
         .header-controls {
-            display: inline-flex !important;
+            display: flex !important;
             align-items: center !important;
-            gap: 8px !important;
-            width: auto !important;
-            max-width: fit-content !important;
+            justify-content: space-between !important;
+            width: 100% !important;
             margin-bottom: 8px !important;
             flex-wrap: nowrap !important;
+            gap: 16px !important;
         }
 
         .header-controls h4 {
@@ -235,11 +238,11 @@ app_ui = ui.page_fluid(
         .header-right {
             display: inline-flex !important;
             align-items: center !important;
-            gap: 6px !important;
-            background: #f3f4f6;
-            padding: 3px 6px;
+            gap: 8px !important;
+            background: linear-gradient(135deg, #f8f9fa 0%, #f1f3f5 100%);
+            padding: 5px 11px;
             border-radius: 999px;
-            box-shadow: inset 0 0 0 1px #e5e7eb;
+            box-shadow: inset 0 0 0 1px #e5e7eb, 0 1px 2px rgba(0,0,0,0.04);
             width: auto !important;
             max-width: fit-content !important;
             flex-shrink: 0 !important;
@@ -248,10 +251,10 @@ app_ui = ui.page_fluid(
 
         .selector-label {
             text-transform: uppercase;
-            letter-spacing: 0.3px;
-            font-size: 8px;
-            font-weight: 700;
-            color: #6b7280;
+            letter-spacing: 0.5px;
+            font-size: 8.5px;
+            font-weight: 600;
+            color: #64748b;
         }
 
         /* MINI SELECTS - FORÇA SOBRE BOOTSTRAP */
@@ -265,49 +268,63 @@ app_ui = ui.page_fluid(
             -webkit-appearance: none !important;
             -moz-appearance: none !important;
 
-            width: 36px !important;
-            min-width: 36px !important;
-            max-width: 36px !important;
-            height: 20px !important;
+            width: 44px !important;
+            min-width: 44px !important;
+            max-width: 44px !important;
+            height: 26px !important;
 
-            padding: 0 16px 0 6px !important;
+            padding: 0 22px 0 10px !important;
             margin: 0 !important;
 
-            font-size: 10px !important;
+            font-size: 12px !important;
             font-weight: 600 !important;
             font-variant-numeric: tabular-nums;
 
-            border: 1px solid #d1d5db !important;
-            border-radius: 6px !important;
+            border: 1.5px solid #d1d5db !important;
+            border-radius: 7px !important;
             background: white !important;
-            color: #111827 !important;
+            color: #0f172a !important;
 
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
-            transition: all 0.15s ease-in-out !important;
+            box-shadow: 0 1px 2px rgba(15,23,42,0.05), inset 0 1px 0 rgba(255,255,255,0.9) !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 
             flex: none !important;
             display: inline-block !important;
+            cursor: pointer !important;
+        }
+
+        .select-mini select:hover {
+            border-color: #94a3b8 !important;
+            box-shadow: 0 2px 5px rgba(15,23,42,0.1), inset 0 1px 0 rgba(255,255,255,0.9) !important;
+            transform: translateY(-0.5px) !important;
         }
 
         .select-mini select:focus {
             outline: none !important;
-            border-color: #a5b4fc !important;
-            box-shadow: 0 0 0 2px rgba(99,102,241,0.25) !important;
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.12), 0 2px 5px rgba(15,23,42,0.1) !important;
+            transform: translateY(0) !important;
         }
 
         .select-mini::after {
             content: "";
             position: absolute;
-            right: 6px;
+            right: 8px;
             top: 50%;
             transform: translateY(-50%);
             width: 0;
             height: 0;
-            border-left: 3px solid transparent;
-            border-right: 3px solid transparent;
-            border-top: 4px solid #9ca3af;
+            border-left: 3.5px solid transparent;
+            border-right: 3.5px solid transparent;
+            border-top: 4.5px solid #475569;
             pointer-events: none;
             z-index: 1;
+            transition: transform 0.2s ease;
+        }
+
+        .select-mini select:focus ~ .select-mini::after,
+        .select-mini:has(select:focus)::after {
+            border-top-color: #6366f1;
         }
 
         .header-right > .select-mini {
@@ -775,7 +792,7 @@ app_ui = ui.page_fluid(
                 // Fallback: hide after 10 seconds no matter what
                 hideTimeout = setTimeout(function() {
                     hideSpinner();
-                }, 12000);
+                }, 15000);
             });
         """
         ),
@@ -829,9 +846,15 @@ app_ui = ui.page_fluid(
                 ui.output_ui("qkv_table"),
             ),
             ui.card(
-                ui.h4("Scaled Dot-Product Attention"),
-                ui.div({"class": "sub-label"}, "Formula walkthrough for selected token"),
-                ui.output_ui("scaled_attention_selector"),
+                ui.div(
+                    {"class": "header-controls"},
+                    ui.h4("Scaled Dot-Product Attention"),
+                    ui.div(
+                        {"class": "header-right"},
+                        ui.span("Token", class_="selector-label"),
+                        ui.output_ui("scaled_attention_selector_inline"),
+                    ),
+                ),
                 ui.output_ui("scaled_attention_view"),
             ),
         ),
