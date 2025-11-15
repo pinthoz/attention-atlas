@@ -1,8 +1,6 @@
-inspetus-env/
-notebook/
-tests.ipynb
-td.todo
-
+inspectus-env/
+.claude/
 __pycache__/
 *.pyc
-*.pyo
+*.ipynb
+*.todo
