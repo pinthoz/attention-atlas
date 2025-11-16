@@ -691,33 +691,38 @@ app_ui = ui.page_fluid(
         """
     ),
     ui.tags.head(
-        # Multiple favicon formats for maximum browser compatibility
+        # Page title
+        ui.tags.title("Attention Atlas"),
+
+        # Favicon configuration for browser tab
         ui.tags.link(
             rel="icon",
             type="image/x-icon",
-            href="/static/favicon.ico",
+            href="static/favicon.ico?v=1",
         ),
         ui.tags.link(
             rel="shortcut icon",
-            href="/static/favicon.ico",
+            type="image/x-icon",
+            href="static/favicon.ico?v=1",
         ),
-        # Also try with explicit sizes
+        # Multiple sizes for better browser support
         ui.tags.link(
             rel="icon",
             type="image/x-icon",
             sizes="16x16",
-            href="/static/favicon.ico",
+            href="static/favicon.ico?v=1",
         ),
         ui.tags.link(
             rel="icon",
             type="image/x-icon",
             sizes="32x32",
-            href="/static/favicon.ico",
+            href="static/favicon.ico?v=1",
         ),
         # Apple touch icon for iOS devices
         ui.tags.link(
             rel="apple-touch-icon",
-            href="/static/favicon.ico",
+            sizes="180x180",
+            href="static/favicon.ico?v=1",
         ),
     ),
 
@@ -857,7 +862,7 @@ app_ui = ui.page_fluid(
         ui.div(
             {"class": "grid-3"},
             ui.card(
-                ui.h4("Soma + LayerNorm"),
+                ui.h4("Sum + LayerNorm"),
                 ui.div({"class": "sub-label"}, "Word + segment + positional embeddings"),
                 ui.output_ui("sum_layernorm_view"),
             ),
