@@ -1,11 +1,12 @@
-"""Model loading utilities kept in a single place."""
+"""Model loading utilities with caching and dynamic selection."""
 
 import logging
 import warnings
-
+import torch
 from transformers import BertTokenizer, BertModel, BertForMaskedLM
 from transformers.utils import logging as transformers_logging
 
+# Suppress warnings
 warnings.filterwarnings(
     "ignore",
     message="`resume_download` is deprecated",
@@ -15,22 +16,60 @@ warnings.filterwarnings(
 transformers_logging.set_verbosity_error()
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
-MODEL_NAME = "bert-base-uncased"
 
-tokenizer = BertTokenizer.from_pretrained(MODEL_NAME)
+class ModelManager:
+    """Manages loading and caching of BERT models."""
+    
+    _instances = {}
 
-encoder_model = BertModel.from_pretrained(
-    MODEL_NAME,
-    output_attentions=True,
-    output_hidden_states=True,
-)
-encoder_model.eval()
+    @classmethod
+    def get_model(cls, model_name: str):
+        """
+        Returns (tokenizer, encoder_model, mlm_model) for the specified model_name.
+        Loads from cache if available, otherwise loads from HuggingFace.
+        """
+        if model_name in cls._instances:
+            return cls._instances[model_name]
 
-mlm_model = BertForMaskedLM.from_pretrained(
-    MODEL_NAME,
-    output_attentions=False,
-    output_hidden_states=False,
-)
-mlm_model.eval()
+        print(f"Loading model: {model_name}...")
+        
+        try:
+            tokenizer = BertTokenizer.from_pretrained(model_name)
+            
+            encoder = BertModel.from_pretrained(
+                model_name,
+                output_attentions=True,
+                output_hidden_states=True,
+            )
+            encoder.eval()
+            
+            # Some models might not have a corresponding MaskedLM head easily available 
+            # or might need specific handling, but for standard BERTs this is fine.
+            try:
+                mlm = BertForMaskedLM.from_pretrained(
+                    model_name,
+                    output_attentions=False,
+                    output_hidden_states=False,
+                )
+                mlm.eval()
+            except Exception as e:
+                print(f"Warning: Could not load MLM head for {model_name}: {e}")
+                mlm = None
 
-__all__ = ["MODEL_NAME", "tokenizer", "encoder_model", "mlm_model"]
+            # Move to GPU if available
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            encoder.to(device)
+            if mlm:
+                mlm.to(device)
+
+            cls._instances[model_name] = (tokenizer, encoder, mlm)
+            return tokenizer, encoder, mlm
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to load model {model_name}: {str(e)}")
+
+    @staticmethod
+    def get_device():
+        return "cuda" if torch.cuda.is_available() else "cpu"
+
+__all__ = ["ModelManager"]

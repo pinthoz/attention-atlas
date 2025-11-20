@@ -1,5 +1,3 @@
-"""Construct the Shiny application instance."""
-
 from pathlib import Path
 
 from shiny import App
