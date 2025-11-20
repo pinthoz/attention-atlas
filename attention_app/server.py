@@ -11,7 +11,7 @@ from shinywidgets import render_plotly
 
 from .helpers import positional_encoding, array_to_base64_img
 from .metrics import compute_all_attention_metrics
-from .models import tokenizer, encoder_model, mlm_model
+from .models import ModelManager
 
 
 def server(input, output, session):
@@ -19,7 +19,7 @@ def server(input, output, session):
     cached_result = reactive.value(None)
     focused_token = reactive.value(None)
 
-    def tokenize_with_segments(text: str):
+    def tokenize_with_segments(text: str, tokenizer):
         pattern = re.search(r"([.!?])\s+([A-Za-z])", text)
         if pattern:
             split_idx = pattern.end(1)
@@ -29,26 +29,40 @@ def server(input, output, session):
                 return tokenizer(sentence_a, sentence_b, return_tensors="pt")
         return tokenizer(text, return_tensors="pt")
 
-    def heavy_compute(text):
+    def heavy_compute(text, model_name):
+        print(f"[heavy_compute] Called with text length: {len(text) if text else 0}, model: {model_name}")
         if not text:
+            print("[heavy_compute] No text provided, returning None")
             return None
 
-        inputs = tokenize_with_segments(text)
+        print(f"[heavy_compute] Loading model: {model_name}")
+        tokenizer, encoder_model, mlm_model = ModelManager.get_model(model_name)
+        device = ModelManager.get_device()
+        print(f"[heavy_compute] Using device: {device}")
+
+        print("[heavy_compute] Tokenizing input...")
+        inputs = tokenize_with_segments(text, tokenizer)
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        print("[heavy_compute] Running encoder model...")
         with torch.no_grad():
             outputs = encoder_model(**inputs)
 
+        print("[heavy_compute] Processing outputs...")
         tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
         embeddings = outputs.last_hidden_state[0].cpu().numpy()
         attentions = outputs.attentions
         hidden_states = outputs.hidden_states
         pos_enc = positional_encoding(len(tokens), embeddings.shape[1])
 
-        return (tokens, embeddings, pos_enc, attentions, hidden_states, inputs)
+        print(f"[heavy_compute] Returning result with {len(tokens)} tokens")
+        return (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model)
 
     # === COMPUTE ALL ===
     @reactive.effect
     @reactive.event(input.generate_all)
     async def compute_all():
+        print("=== compute_all started ===")
         running.set(True)
         try:
             await session.send_custom_message('start_loading', {})
@@ -57,14 +71,24 @@ def server(input, output, session):
 
         await asyncio.sleep(0.2)  # Give UI time to update
         text = input.text_input().strip()
+        model_name = input.model_name()
+        print(f"Text: {text[:50]}... | Model: {model_name}")
 
         try:
             loop = asyncio.get_running_loop()
+            print("Starting heavy_compute in thread pool...")
             with ThreadPoolExecutor() as pool:
-                result = await loop.run_in_executor(pool, heavy_compute, text)
+                result = await loop.run_in_executor(pool, heavy_compute, text, model_name)
+            print(f"heavy_compute completed. Result type: {type(result)}")
+            if result:
+                print(f"Result has {len(result)} items")
             cached_result.set(result)
+            print("cached_result.set() completed")
 
-        except Exception:
+        except Exception as e:
+            print(f"Error in compute_all: {e}")
+            import traceback
+            traceback.print_exc()
             cached_result.set(None)
         finally:
             try:
@@ -72,6 +96,8 @@ def server(input, output, session):
             except Exception:
                 pass
             running.set(False)
+            print("=== compute_all finished ===")
+
 
     # === Sentence preview ===
     @output
@@ -82,7 +108,7 @@ def server(input, output, session):
             t = input.text_input().strip()
             return ui.HTML(f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">Type a sentence above and click Generate All.</div>')
 
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
 
         if attentions is None or len(attentions) == 0:
             return ui.HTML('<div style="color:#9ca3af;font-size:12px;">No attention data available.</div>')
@@ -144,7 +170,7 @@ def server(input, output, session):
         if not res:
             return ui.HTML("")
         
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
         
         if attentions is None or len(attentions) == 0:
             return ui.HTML("")
@@ -192,7 +218,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("<p style='font-size:10px;color:#9ca3af;'>No data yet</p>")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
 
         rows = []
         for i, tok in enumerate(tokens):
@@ -220,7 +246,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
 
         rows = []
         for i, tok in enumerate(tokens):
@@ -241,6 +267,24 @@ def server(input, output, session):
         )
         return ui.HTML(html)
 
+    # === QKV Layer Selector ===
+    @output
+    @render.ui
+    def qkv_layer_selector():
+        res = cached_result.get()
+        if not res:
+            return ui.HTML("")
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
+        num_layers = len(encoder_model.encoder.layer)
+        options = {str(i): f"Layer {i}" for i in range(num_layers)}
+        try:
+            selected = input.qkv_layer()
+        except Exception:
+            selected = "0"
+        if selected not in options:
+            selected = "0"
+        return ui.input_select("qkv_layer", None, choices=options, selected=selected)
+
     # === Q/K/V table ===
     @output
     @render.ui
@@ -248,7 +292,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
 
         layer_idx = int(input.qkv_layer())
         layer = encoder_model.encoder.layer[layer_idx].attention.self
@@ -259,7 +303,7 @@ def server(input, output, session):
             K = layer.key(hs_in)[0].cpu().numpy()
             V = layer.value(hs_in)[0].cpu().numpy()
 
-        rows = []
+        cards = []
         for i, tok in enumerate(tokens):
             q_strip = array_to_base64_img(Q[i][:48], "Greens", 0.12)
             k_strip = array_to_base64_img(K[i][:48], "Oranges", 0.12)
@@ -267,21 +311,34 @@ def server(input, output, session):
             q_tip = "Query: " + ", ".join(f"{x:.3f}" for x in Q[i][:24])
             k_tip = "Key: " + ", ".join(f"{x:.3f}" for x in K[i][:24])
             v_tip = "Value: " + ", ".join(f"{x:.3f}" for x in V[i][:24])
-            cell = (
-                f"<div style='font-size:9px;color:#065f46;font-weight:600;'>Q</div>"
-                f"<img class='heatmap' src='data:image/png;base64,{q_strip}' title='{q_tip}'>"
-                f"<div style='font-size:9px;color:#92400e;margin-top:2px;font-weight:600;'>K</div>"
-                f"<img class='heatmap' src='data:image/png;base64,{k_strip}' title='{k_tip}'>"
-                f"<div style='font-size:9px;color:#4c1d95;margin-top:2px;font-weight:600;'>V</div>"
-                f"<img class='heatmap' src='data:image/png;base64,{v_strip}' title='{v_tip}'>"
-            )
-            rows.append(f"<tr><td class='token-name'>{tok}</td><td>{cell}</td></tr>")
+
+            # Card-based layout with token as background label
+            card = f"""
+            <div class='qkv-card'>
+                <div class='qkv-token-label'>{tok}</div>
+                <div class='qkv-vector-group'>
+                    <div class='qkv-vector-row'>
+                        <span class='qkv-label qkv-label-q'>Q</span>
+                        <img class='heatmap' src='data:image/png;base64,{q_strip}' title='{q_tip}'>
+                    </div>
+                    <div class='qkv-vector-row'>
+                        <span class='qkv-label qkv-label-k'>K</span>
+                        <img class='heatmap' src='data:image/png;base64,{k_strip}' title='{k_tip}'>
+                    </div>
+                    <div class='qkv-vector-row'>
+                        <span class='qkv-label qkv-label-v'>V</span>
+                        <img class='heatmap' src='data:image/png;base64,{v_strip}' title='{v_tip}'>
+                    </div>
+                </div>
+            </div>
+            """
+            cards.append(card)
 
         html = (
             "<div class='card-scroll'>"
-            "<table class='token-table-compact'><tr><th>Token</th><th>Vectors</th></tr>"
-            + "".join(rows)
-            + "</table></div>"
+            "<div class='qkv-grid'>"
+            + "".join(cards)
+            + "</div></div>"
         )
         return ui.HTML(html)
 
@@ -292,7 +349,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
         segment_ids = inputs.get("token_type_ids")
         if segment_ids is None:
             return ui.HTML("<p style='font-size:10px;color:#6b7280;'>No segment information available.</p>")
@@ -321,7 +378,6 @@ def server(input, output, session):
         html = (
             "<div class='card-scroll'>"
             "<table class='token-table-segment'>"
-            "<tr><th>Token</th><th>Segment</th></tr>"
             + "".join(rows)
             + "</table></div>"
             "<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;'>"
@@ -337,7 +393,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
         input_ids = inputs["input_ids"]
         segment_ids = inputs.get("token_type_ids")
         if segment_ids is None:
@@ -372,13 +428,49 @@ def server(input, output, session):
         )
         return ui.HTML(html)
 
+    # === Attention Layer Selector ===
+    @output
+    @render.ui
+    def att_layer_selector():
+        res = cached_result.get()
+        if not res:
+            return ui.HTML("")
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
+        num_layers = len(encoder_model.encoder.layer)
+        options = {str(i): f"Layer {i}" for i in range(num_layers)}
+        try:
+            selected = input.att_layer()
+        except Exception:
+            selected = "0"
+        if selected not in options:
+            selected = "0"
+        return ui.input_select("att_layer", None, choices=options, selected=selected)
+
+    # === Attention Head Selector ===
+    @output
+    @render.ui
+    def att_head_selector():
+        res = cached_result.get()
+        if not res:
+            return ui.HTML("")
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
+        num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
+        options = {str(i): f"Head {i}" for i in range(num_heads)}
+        try:
+            selected = input.att_head()
+        except Exception:
+            selected = "0"
+        if selected not in options:
+            selected = "0"
+        return ui.input_select("att_head", None, choices=options, selected=selected)
+
     # === Attention map (Plotly) ===
     @render_plotly
     def attention_map():
         res = cached_result.get()
         if not res:
             return None
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
 
         if attentions is None or len(attentions) == 0:
             return None
@@ -395,7 +487,8 @@ def server(input, output, session):
             K = layer.key(hs_in)[0].cpu().numpy()
 
         L = len(tokens)
-        d_k = Q.shape[-1] // 12
+        num_heads = layer.num_attention_heads if hasattr(layer, "num_attention_heads") else 12
+        d_k = Q.shape[-1] // num_heads
         custom = np.empty((L, L, 5), dtype=object)
         for i in range(L):
             for j in range(L):
@@ -426,7 +519,6 @@ def server(input, output, session):
             y=tokens,
             color_continuous_scale="Blues",
             aspect="auto",
-            title="Attention Map",
         )
         fig.update_traces(customdata=custom, hovertemplate=hover)
         fig.update_layout(
@@ -494,7 +586,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
         if attentions is None or len(attentions) == 0:
             return ui.HTML("")
         layer_idx = int(input.att_layer())
@@ -511,32 +603,74 @@ def server(input, output, session):
             Q = layer.query(hs_in)[0].cpu().numpy()
             K = layer.key(hs_in)[0].cpu().numpy()
         d_k = Q.shape[-1] // layer.num_attention_heads if hasattr(layer, "num_attention_heads") else Q.shape[-1]
+
+        # Get top 3 connections
         top_idx = np.argsort(att[focus_idx])[::-1][:3]
-        rows = ""
-        for j in top_idx:
+
+        # Build computation display
+        computations = ""
+        for rank, j in enumerate(top_idx, 1):
             dot = float(np.dot(Q[focus_idx], K[j]))
             scaled = dot / np.sqrt(d_k)
             prob = att[focus_idx, j]
-            rows += (
-                "<div class='scaled-attention-row'>"
-                f"<span>{tokens[focus_idx]} → {tokens[j]}</span>"
-                f"<span>dot={dot:.2f}, scaled={scaled:.2f}, softmax={prob:.3f}</span>"
-                "</div>"
-            )
-        html = (
-            "<div class='scaled-attention-box'>"
-            f"<div style='font-size:11px;margin-bottom:6px;'>Focus token: <b>{tokens[focus_idx]}</b></div>"
-            "<div style='font-size:10px;color:#6b7280;margin-bottom:6px;'>softmax(Q·K<sup>T</sup>/√d<sub>k</sub>) for top connections:</div>"
-            + rows
-            + "</div>"
-        )
+
+            computations += f"""
+            <div class='scaled-computation-row'>
+                <div class='scaled-rank'>#{rank}</div>
+                <div class='scaled-details'>
+                    <div class='scaled-connection'>
+                        <span class='token-name' style='color:#ff5ca9;'>{tokens[focus_idx]}</span>
+                        <span style='color:#94a3b8;margin:0 4px;'>→</span>
+                        <span class='token-name' style='color:#3b82f6;'>{tokens[j]}</span>
+                    </div>
+                    <div class='scaled-values'>
+                        <span class='scaled-step'>Q·K = <b>{dot:.2f}</b></span>
+                        <span class='scaled-step'>÷√d<sub>k</sub> = <b>{scaled:.2f}</b></span>
+                        <span class='scaled-step'>softmax = <b>{prob:.3f}</b></span>
+                    </div>
+                </div>
+            </div>
+            """
+
+        html = f"""
+        <div class='scaled-attention-box'>
+            <div class='scaled-header'>
+                <span class='scaled-label'>Focus Token</span>
+                <span class='token-name' style='font-size:12px;'>{tokens[focus_idx]}</span>
+            </div>
+            <div class='scaled-formula'>softmax(Q·K<sup>T</sup>/√d<sub>k</sub>)</div>
+            <div class='scaled-computations'>
+                {computations}
+            </div>
+        </div>
+        """
         return ui.HTML(html)
 
-    # === Reset focus ===
-    @reactive.effect
-    @reactive.event(input.generate_all)
-    def reset_focus():
-        focused_token.set(None)
+    # === Attention flow selector ===
+    @output
+    @render.ui
+    def attention_flow_selector():
+        res = cached_result.get()
+        if not res:
+            return ui.HTML("")
+        tokens, *_ = res
+        # Create dropdown with "All tokens" as first option
+        options = {"all": "All tokens"}
+        options.update({str(i): f"{i}: {tok}" for i, tok in enumerate(tokens)})
+
+        try:
+            selected = input.flow_token_select()
+        except Exception:
+            selected = "all"
+        if selected not in options:
+            selected = "all"
+
+        return ui.input_select(
+            "flow_token_select",
+            None,
+            choices=options,
+            selected=selected,
+        )
 
     # === Attention flow ===
     @render_plotly
@@ -544,11 +678,17 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return None
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
 
         layer_idx = int(input.att_layer())
         head_idx = int(input.att_head())
-        focus_idx = focused_token()
+
+        # Get focus index from selector
+        try:
+            selected = input.flow_token_select()
+            focus_idx = None if selected == "all" else int(selected)
+        except Exception:
+            focus_idx = None
 
         if attentions is None or len(attentions) == 0:
             return None
@@ -607,8 +747,7 @@ def server(input, output, session):
                         hoverinfo='text' if is_line_focused else 'skip',
                         hovertext=f"<b>{tokens[i]} to {tokens[j]}</b><br>Attention: {weight:.4f}",
                     ))
-        
-        title_text = "Attention Flow"
+        title_text = ""
         if focus_idx is not None:
             focus_color = color_palette[focus_idx % len(color_palette)]
             title_text += f" · <b style='color:{focus_color}'>Focused: '{tokens[focus_idx]}'</b>"
@@ -623,52 +762,6 @@ def server(input, output, session):
         )
         return fig
 
-    # === Token buttons ===
-    @output
-    @render.ui
-    def token_selector_buttons():
-        res = cached_result.get()
-        if not res:
-            return ui.HTML("")
-        tokens, _, _, _, _, _ = res
-        focus_idx = focused_token()
-        color_palette = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#ffa07a', '#98d8c8',
-                         '#f7dc6f', '#bb8fce', '#85c1e2', '#f8b739', '#52be80',
-                         '#ec7063', '#af7ac5', '#5dade2', '#f39c12', '#27ae60']
-        buttons = []
-        for i, tok in enumerate(tokens):
-            color = color_palette[i % len(color_palette)]
-            active_class = "active" if focus_idx == i else ""
-            buttons.append(
-                ui.input_action_button(
-                    f"token_btn_{i}", tok,
-                    class_=f"token-btn {active_class}",
-                    style=f"background:{color};color:white;"
-                )
-            )
-        buttons.append(
-            ui.input_action_button("token_btn_reset", "Show All", class_="token-btn-reset")
-        )
-        return ui.div(*buttons)
-
-    # === Handle token clicks ===
-    @reactive.effect
-    def handle_token_buttons():
-        res = cached_result.get()
-        if not res:
-            return
-        tokens, _, _, _, _, _ = res
-        for i in range(len(tokens)):
-            @reactive.effect
-            @reactive.event(input[f"token_btn_{i}"])
-            def _handle_click(idx=i):
-                current = focused_token()
-                focused_token.set(None if current == idx else idx)
-        @reactive.effect
-        @reactive.event(input.token_btn_reset)
-        def _handle_reset():
-            focused_token.set(None)
-
     # === Add & Norm ===
     @output
     @render.ui
@@ -676,7 +769,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
         layer_idx = int(input.att_layer())
         if layer_idx + 1 >= len(hidden_states):
             return ui.HTML("")
@@ -709,7 +802,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
         layer_idx = int(input.att_layer())
         if layer_idx + 1 >= len(hidden_states):
             return ui.HTML("")
@@ -747,7 +840,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
         layer_idx = int(input.att_layer())
         if layer_idx + 2 >= len(hidden_states):
             return ui.HTML("<p style='font-size:10px;color:#6b7280;'>Select a lower layer to inspect residual output.</p>")
@@ -780,24 +873,37 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
         layer_idx = int(input.att_layer())
         if layer_idx + 1 >= len(hidden_states):
             return ui.HTML("")
         hs = hidden_states[layer_idx + 1][0].cpu().numpy()
+
         rows = []
         for i, tok in enumerate(tokens):
+            # Vector visualization
+            vec_strip = array_to_base64_img(hs[i][:64], "viridis", 0.15)
+            vec_tip = "Hidden state (first 32 dims): " + ", ".join(f"{v:.3f}" for v in hs[i][:32])
+
+            # Statistics
             mean_val = float(hs[i].mean())
             std_val = float(hs[i].std())
             max_val = float(hs[i].max())
-            rows.append(
-                f"<tr><td class='token-name'>{tok}</td>"
-                f"<td style='font-size:9px;color:#374151;'>"
-                f"μ={mean_val:.3f}, σ={std_val:.3f}, max={max_val:.3f}</td></tr>"
-            )
+
+            rows.append(f"""
+                <tr>
+                    <td class='token-name'>{tok}</td>
+                    <td><img class='heatmap' src='data:image/png;base64,{vec_strip}' title='{vec_tip}'></td>
+                    <td style='font-size:9px;color:#374151;white-space:nowrap;'>
+                        μ={mean_val:.3f}, σ={std_val:.3f}, max={max_val:.3f}
+                    </td>
+                </tr>
+            """)
+
         html = (
             "<div class='card-scroll'>"
-            "<table class='token-table'><tr><th>Token</th><th>Statistics</th></tr>"
+            "<table class='token-table'>"
+            "<tr><th>Token</th><th>Vector (64 dims)</th><th>Statistics</th></tr>"
             + "".join(rows)
             + "</table></div>"
         )
@@ -810,7 +916,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
         final_h = hidden_states[-1][0].cpu().numpy()
 
         rows = []
@@ -836,6 +942,18 @@ def server(input, output, session):
         )
         return ui.HTML(html)
 
+    # === MLM View Container ===
+    @output
+    @render.ui
+    def mlm_view_container():
+        if not input.use_mlm():
+            return ui.HTML("")
+        return ui.div(
+            {"class": "card"},
+            ui.h4("Token Output Predictions (MLM)"),
+            ui.output_ui("output_probabilities")
+        )
+
     # === MLM Top-5 ===
     @output
     @render.ui
@@ -843,7 +961,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res:
             return ui.HTML("<div class='prediction-panel'><p style='font-size:11px;color:#9ca3af;'>No data yet</p></div>")
-        tokens, embeddings, pos_enc, attentions, hidden_states, inputs = res
+        tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model = res
 
         if not input.use_mlm():
             return ui.HTML(
@@ -860,7 +978,11 @@ def server(input, output, session):
                 "<p style='font-size:11px;color:#9ca3af;'>Type a sentence to see predictions.</p>"
                 "</div>"
             )
-        mlm_inputs = tokenize_with_segments(text)
+
+        device = ModelManager.get_device()
+        mlm_inputs = tokenize_with_segments(text, tokenizer)
+        mlm_inputs = {k: v.to(device) for k, v in mlm_inputs.items()}
+
         with torch.no_grad():
             mlm_outputs = mlm_model(**mlm_inputs)
             probs = torch.softmax(mlm_outputs.logits, dim=-1)[0]
@@ -879,24 +1001,30 @@ def server(input, output, session):
                 pval = float(p)
                 width = max(4, int(pval * 100))
                 logit_val = float(logits_tensor[i, idx])
-                lse_val = float(logsumexp_vals[i])
-                detail_id = f"prob_detail_{i}_{rank}"
-                detail_text = (
-                    f"<div id='{detail_id}' class='prob-detail-box'>"
-                    f"<div><b>Softmax</b> = exp({logit_val:.2f} - {lse_val:.2f}) = {pval:.4%}</div>"
-                    "<div style='color:#6b7280;'>exp(logit) / Σ exp(logits)</div>"
-                    "</div>"
-                )
+
+                # Calculate exponential and normalization factor for this specific token
+                exp_logit = float(torch.exp(logits_tensor[i, idx]))
+                sum_exp = float(torch.sum(torch.exp(logits_tensor[i])))
+
+                # Create clickable prediction span with data attributes
                 inner += (
                     "<div style='margin:3px 0;'>"
                     "<div class='prob-line'>"
-                    f"<span style='font-family:monospace;font-size:10px;min-width:70px;font-weight:600;'>{ptok}</span>"
+                    f"<span class='mlm-prediction-token' "
+                    f"data-token-idx='{i}' "
+                    f"data-pred-token='{ptok}' "
+                    f"data-orig-token='{tok}' "
+                    f"data-logit='{logit_val:.4f}' "
+                    f"data-exp-logit='{exp_logit:.4f}' "
+                    f"data-sum-exp='{sum_exp:.4f}' "
+                    f"data-prob='{pval:.4f}' "
+                    f"style='font-family:monospace;font-size:10px;min-width:70px;font-weight:600;cursor:pointer;'>"
+                    f"{ptok}</span>"
                     f"<div style='flex:1;background:#e5e7eb;border-radius:999px;height:12px;'>"
                     f"<div style='width:{width}%;height:12px;border-radius:999px;"
                     f"background:linear-gradient(90deg,#3b82f6,#8b5cf6);'></div></div>"
-                    f"<button type='button' class='prob-detail-btn' onclick=\"toggleProbDetail('{detail_id}')\">{pval:.1%}</button>"
+                    f"<span style='font-size:10px;font-weight:600;min-width:45px;text-align:right;'>{pval:.1%}</span>"
                     "</div>"
-                    f"{detail_text}"
                     "</div>"
                 )
             inner += "</div>"
@@ -904,7 +1032,6 @@ def server(input, output, session):
 
         html = (
             "<div class='prediction-panel'>"
-            "<h5>MLM Top-k Predictions</h5>"
             "<div class='card-scroll' style='max-height:340px;'>"
             "<table class='token-table'><tr><th>Token</th><th>Top-5 Probabilities</th></tr>"
             + "".join(rows)
