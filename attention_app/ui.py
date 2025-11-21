@@ -116,7 +116,8 @@ app_ui = ui.page_fluid(
         .content {
             margin-left: 320px;
             padding: 32px;
-            max-width: 1400px;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         /* Buttons & Inputs */
@@ -168,10 +169,12 @@ app_ui = ui.page_fluid(
             border-radius: 16px;
             padding: 24px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.1);
-            margin-bottom: 24px;
+            margin-bottom: 0; /* Remove bottom margin to avoid gaps */
             border: 1px solid var(--border-color);
             overflow: hidden;
             height: 100%;
+            display: flex;
+            flex-direction: column;
         }
 
         .card h4 {
@@ -182,14 +185,17 @@ app_ui = ui.page_fluid(
             display: flex;
             align-items: center;
             gap: 8px;
+            flex-shrink: 0;
         }
 
         /* Scrollable Containers */
         .card-scroll {
-            max-height: 400px;
+            flex: 1;
             overflow-y: auto;
             border: 1px solid #f1f5f9;
             border-radius: 8px;
+            min-height: 0;
+            max-height: 500px; /* Limit height for large sections */
         }
 
         /* Metrics Grid */
@@ -197,7 +203,7 @@ app_ui = ui.page_fluid(
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 16px;
-            margin-top: 20px;
+            margin-top: 0;
         }
 
         .metric-card {
@@ -314,59 +320,6 @@ app_ui = ui.page_fluid(
             font-size: 11px;
         }
 
-        /* Segment Embeddings Grid */
-        .segment-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 16px;
-            padding: 4px;
-        }
-        
-        .segment-column {
-            background: #f8fafc;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-            overflow: hidden;
-        }
-        
-        .segment-header {
-            padding: 8px 12px;
-            background: white;
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .segment-count {
-            font-size: 9px;
-            color: #94a3b8;
-            font-weight: 500;
-        }
-        
-        .segment-tokens-list {
-            padding: 8px;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        
-        .segment-token {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
-            color: #475569;
-            padding: 4px 8px;
-            border-radius: 4px;
-            margin-bottom: 2px;
-            transition: all 0.15s;
-        }
-        
-        .segment-token:hover {
-            background: #e2e8f0;
-            color: #1e293b;
-        }
-
         /* Compact Select - Unified styling for all dropdowns */
         .select-compact,
         .select-mini {
@@ -380,14 +333,14 @@ app_ui = ui.page_fluid(
             background-color: #fff;
             border: 1px solid #e2e8f0;
             border-radius: 6px;
-            padding: 2px 20px 2px 6px;
+            padding: 2px 18px 2px 6px; /* Reduced padding */
             font-size: 11px;
             font-weight: 500;
             color: #475569;
             cursor: pointer;
             transition: all 0.2s;
-            height: 24px;
-            line-height: 18px;
+            height: 22px; /* Reduced height */
+            line-height: 16px;
             min-width: fit-content;
             max-width: 120px;
             width: auto;
@@ -412,16 +365,16 @@ app_ui = ui.page_fluid(
         }
 
         /* --- NEW: Segment Embeddings Table --- */
-        .segment-table {
+        .segment-table-clean {
             width: 100%;
             border-collapse: collapse;
             font-family: 'JetBrains Mono', monospace;
             font-size: 12px;
         }
         
-        .segment-table th {
+        .segment-table-clean th {
             text-align: left;
-            padding: 8px;
+            padding: 8px 12px;
             font-size: 10px;
             font-weight: 600;
             color: #64748b;
@@ -432,19 +385,27 @@ app_ui = ui.page_fluid(
             top: 0;
         }
         
-        .segment-table td {
-            padding: 6px 8px;
+        .segment-table-clean td {
+            padding: 6px 12px;
             border-bottom: 1px solid #f1f5f9;
         }
         
-        .seg-0 {
-            background-color: #dbeafe;
-            color: #1e40af;
+        .seg-row-0 {
+            background-color: rgba(59, 130, 246, 0.05); /* Subtle blue */
         }
         
-        .seg-1 {
-            background-color: #ffe4e6;
-            color: #9f1239;
+        .seg-row-0 td.segment-cell {
+            color: #2563eb;
+            font-weight: 600;
+        }
+
+        .seg-row-1 {
+            background-color: rgba(239, 68, 68, 0.05); /* Subtle red */
+        }
+        
+        .seg-row-1 td.segment-cell {
+            color: #dc2626;
+            font-weight: 600;
         }
 
         /* Ensure full width for specific containers */
@@ -473,8 +434,9 @@ app_ui = ui.page_fluid(
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 16px;
+            margin-bottom: 12px; /* Reduced margin */
             flex-wrap: nowrap;
+            flex-shrink: 0;
         }
 
         .header-controls h4 {
@@ -484,52 +446,23 @@ app_ui = ui.page_fluid(
 
         .header-right {
             display: flex;
-            gap: 4px;
+            gap: 4px; /* Reduced gap */
             align-items: center;
             flex-shrink: 0;
         }
         
-        /* Removed - now unified with .select-compact above */
-        
-        /* Token Buttons */
-        .token-btn {
-            display: inline-block;
-            padding: 6px 12px;
-            margin: 3px;
-            border-radius: 999px;
-            font-family: monospace;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            border: 2px solid transparent;
-            transition: all 0.2s;
-        }
-        .token-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        }
-        .token-btn.active {
-            border-color: white;
-            box-shadow: 0 0 12px rgba(0,0,0,0.2);
-            transform: scale(1.05);
-        }
-        .token-btn-reset {
-            background: #6b7280 !important;
-            color: white;
-            border: none;
-            padding: 6px 14px;
-            margin: 3px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-        }
-        @keyframes fadeIn {
-            from {opacity: 0; transform: translateY(4px);}
-            to {opacity: 1; transform: translateY(0);}
-        }
-        .fade-in {
-            animation: fadeIn 0.4s ease-out forwards;
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
         }
         .modal-content {
             background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
@@ -598,7 +531,7 @@ app_ui = ui.page_fluid(
         .qkv-container {
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 12px; /* Reduced gap */
         }
 
         .qkv-item {
@@ -638,6 +571,10 @@ app_ui = ui.page_fluid(
             border-radius: 12px;
             padding: 16px;
             border: 1px solid #e2e8f0;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; /* Prevent double scroll */
         }
         .scaled-header {
             display: flex;
@@ -646,6 +583,7 @@ app_ui = ui.page_fluid(
             margin-bottom: 12px;
             padding-bottom: 12px;
             border-bottom: 1px solid #e2e8f0;
+            flex-shrink: 0;
         }
         .scaled-label {
             font-size: 10px;
@@ -664,11 +602,15 @@ app_ui = ui.page_fluid(
             background: white;
             border-radius: 8px;
             border: 1px solid #e2e8f0;
+            flex-shrink: 0;
         }
         .scaled-computations {
             display: flex;
             flex-direction: column;
             gap: 12px;
+            overflow-y: auto; /* Scroll only this part if needed */
+            flex: 1;
+            padding-right: 4px; /* Space for scrollbar */
         }
         .scaled-computation-row {
             display: flex;
@@ -679,6 +621,7 @@ app_ui = ui.page_fluid(
             border-radius: 8px;
             border: 1px solid #e2e8f0;
             transition: all 0.2s;
+            flex-shrink: 0; /* Prevent shrinking */
         }
         .scaled-computation-row:hover {
             border-color: var(--primary-color);
@@ -746,60 +689,6 @@ app_ui = ui.page_fluid(
             flex: 1;
             overflow-y: auto;
             min-height: 300px; /* Ensure minimum height */
-        }
-
-        /* --- NEW: Segment Embeddings Grid --- */
-        .segment-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-            gap: 12px;
-            padding: 8px;
-        }
-
-        .segment-card {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            transition: all 0.2s;
-        }
-        
-        .segment-card:hover {
-            border-color: var(--primary-color);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        }
-
-        .segment-id-badge {
-            font-size: 10px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #64748b;
-            background: white;
-            padding: 4px 8px;
-            border-radius: 6px;
-            border: 1px solid #f1f5f9;
-            align-self: flex-start;
-        }
-
-        .segment-tokens {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px;
-        }
-
-        .segment-token-item {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
-            color: #334155;
-            background: white;
-            padding: 2px 6px;
-            border-radius: 4px;
-            border: 1px solid #e2e8f0;
         }
 
         /* --- NEW: MLM Predictions Grid --- */
@@ -1035,150 +924,9 @@ app_ui = ui.page_fluid(
             ui.h4("Sentence Preview"),
             ui.output_ui("preview_text"),
         ),
-        
 
-
-        # Row 1: Token Embeddings, Segment Embeddings, Positional Embeddings (Side-by-side)
-        ui.layout_column_wrap(
-            ui.div(
-                {"class": "card"},
-                ui.h4("Token Embeddings"),
-                ui.output_ui("embedding_table")
-            ),
-            ui.div(
-                {"class": "card"},
-                ui.h4("Segment Embeddings"),
-                ui.output_ui("segment_embedding_view")
-            ),
-            ui.div(
-                {"class": "card"},
-                ui.h4("Positional Embeddings"),
-                ui.output_ui("posenc_table")
-            ),
-            width=1/3,
-        ),
-
-        # Row 2: SUM + LayerNorm, Q/K/V, Scaled Dot-Product Attention (Side-by-side)
-        ui.layout_column_wrap(
-            ui.div(
-                {"class": "card"},
-                ui.h4("Sum & Layer Normalization"),
-                ui.output_ui("sum_layernorm_view")
-            ),
-            ui.div(
-                {"class": "card"},
-                ui.div(
-                    {"class": "header-controls"},
-                    ui.h4("Q/K/V Projections", title="Query / Key / Value Projections"),
-                    ui.div(
-                        {"class": "select-mini"},
-                        ui.output_ui("qkv_layer_selector")
-                    )
-                ),
-                ui.output_ui("qkv_table")
-            ),
-            ui.div(
-                {"class": "card"},
-                ui.div(
-                    {"class": "header-controls"},
-                    ui.h4("Scaled Dot-Product Attention"),
-                    ui.div(
-                        {"class": "header-right"},
-                        ui.tags.span("Focus:", style="font-size:10px; font-weight:600; color:#64748b;"),
-                        ui.div(
-                            {"class": "select-compact"},
-                            ui.output_ui("scaled_attention_selector"),
-                        )
-                    )
-                ),
-                ui.output_ui("scaled_attention_view"),
-            ),
-            width=1/3,
-        ),
-
-        # Global Metrics (Full Width) - Moved here
-        ui.div(
-            {"class": "card"},
-            ui.h4("Global Attention Metrics"),
-            ui.output_ui("metrics_display"),
-        ),
-
-        # Row 3: Multi-Head Attention, Attention Flow (Side-by-side)
-        ui.layout_column_wrap(
-            ui.div(
-                {"class": "card"},
-                ui.div(
-                    {"class": "header-controls"},
-                    ui.h4("Multi-Head Attention"),
-                    ui.div(
-                        {"class": "header-right"},
-                        ui.div(
-                            {"class": "select-mini"},
-                            ui.output_ui("att_layer_selector")
-                        ),
-                        ui.div(
-                            {"class": "select-mini"},
-                            ui.output_ui("att_head_selector")
-                        ),
-                    )
-                ),
-                output_widget("attention_map"),
-            ),
-            ui.div(
-                {"class": "card"},
-                ui.div(
-                    {"class": "header-controls"},
-                    ui.h4("Attention Flow"),
-                    ui.div(
-                        {"class": "header-right"},
-                        ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b;"),
-                        ui.div(
-                            {"class": "select-mini"},
-                            ui.output_ui("attention_flow_selector"),
-                        )
-                    )
-                ),
-                output_widget("attention_flow"),
-            ),
-            width=1/2,
-        ),
-
-        # Row 4: Add & Norm, FFN, Add & Norm Post FFN (Side-by-side)
-        ui.layout_column_wrap(
-            ui.div(
-                {"class": "card"},
-                ui.h4("Add & Norm"),
-                ui.output_ui("add_norm_view")
-            ),
-            ui.div(
-                {"class": "card"},
-                ui.h4("Feed-Forward Network"),
-                ui.output_ui("ffn_view")
-            ),
-            ui.div(
-                {"class": "card"},
-                ui.h4("Add & Norm (post-FFN)"),
-                ui.output_ui("add_norm_post_ffn_view")
-            ),
-            width=1/3,
-        ),
-
-        # Row 5: Hidden States, Token Outputs (Side-by-side)
-        ui.div(
-            {"class": "equal-height-row"},
-            ui.div(
-                {"class": "equal-height-col"},
-                ui.div(
-                    {"class": "card full-height-card"},
-                    ui.h4("Hidden States"),
-                    ui.output_ui("layer_output_view")
-                )
-            ),
-            ui.div(
-                {"class": "equal-height-col"},
-                ui.output_ui("mlm_view_container")
-            ),
-        ),
+        # Dashboard Content (Synchronized Rendering)
+        ui.output_ui("dashboard_content")
     ),
 
     # Modal for metric explanations
@@ -1200,10 +948,10 @@ app_ui = ui.page_fluid(
         """
         // Handle spinner visibility
         $(document).on('shiny:busy', function() {
-            $('#loading_spinner').css('display', 'flex');
-        });
-        $(document).on('shiny:idle', function() {
-            $('#loading_spinner').css('display', 'none');
+            // Only show if we are not already showing the custom spinner
+            if ($('#loading_spinner').css('display') === 'none') {
+                 // Optional: show a global spinner if needed, but we use the sidebar one
+            }
         });
 
         // Custom message handlers
