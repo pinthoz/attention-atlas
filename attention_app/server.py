@@ -312,23 +312,20 @@ def server(input, output, session):
             k_tip = "Key: " + ", ".join(f"{x:.3f}" for x in K[i][:24])
             v_tip = "Value: " + ", ".join(f"{x:.3f}" for x in V[i][:24])
 
-            # Card-based layout with token as background label
             card = f"""
-            <div class='qkv-card'>
-                <div class='qkv-token-label'>{tok}</div>
-                <div class='qkv-vector-group'>
-                    <div class='qkv-vector-row'>
-                        <span class='qkv-label qkv-label-q'>Q</span>
-                        <img class='heatmap' src='data:image/png;base64,{q_strip}' title='{q_tip}'>
-                    </div>
-                    <div class='qkv-vector-row'>
-                        <span class='qkv-label qkv-label-k'>K</span>
-                        <img class='heatmap' src='data:image/png;base64,{k_strip}' title='{k_tip}'>
-                    </div>
-                    <div class='qkv-vector-row'>
-                        <span class='qkv-label qkv-label-v'>V</span>
-                        <img class='heatmap' src='data:image/png;base64,{v_strip}' title='{v_tip}'>
-                    </div>
+            <div class='qkv-item'>
+                <div class='qkv-token-header'>{tok}:</div>
+                <div class='qkv-row-item'>
+                    <span class='qkv-label'>Q</span>
+                    <img class='heatmap' src='data:image/png;base64,{q_strip}' title='{q_tip}'>
+                </div>
+                <div class='qkv-row-item'>
+                    <span class='qkv-label'>K</span>
+                    <img class='heatmap' src='data:image/png;base64,{k_strip}' title='{k_tip}'>
+                </div>
+                <div class='qkv-row-item'>
+                    <span class='qkv-label'>V</span>
+                    <img class='heatmap' src='data:image/png;base64,{v_strip}' title='{v_tip}'>
                 </div>
             </div>
             """
@@ -336,7 +333,7 @@ def server(input, output, session):
 
         html = (
             "<div class='card-scroll'>"
-            "<div class='qkv-grid'>"
+            "<div class='qkv-container'>"
             + "".join(cards)
             + "</div></div>"
         )

@@ -142,16 +142,24 @@ app_ui = ui.page_fluid(
         .form-control {
             border-radius: 8px;
             border: 1px solid #334155;
-            padding: 10px 12px;
-            font-size: 14px;
+            padding: 8px 12px;
+            font-size: 13px;
             background: #2d2d44;
             color: white;
+            height: auto;
         }
-        
+
         .form-control:focus {
             border-color: var(--primary-color);
             box-shadow: 0 0 0 2px rgba(255, 92, 169, 0.2);
             outline: none;
+        }
+
+        /* Sidebar select styling */
+        .sidebar select.form-control {
+            padding: 6px 12px;
+            font-size: 12px;
+            height: 32px;
         }
 
         /* Cards */
@@ -301,9 +309,9 @@ app_ui = ui.page_fluid(
 
         .token-name {
             font-family: 'JetBrains Mono', monospace;
-            font-weight: 500;
+            font-weight: 600;
             color: var(--primary-color);
-            font-size: 11px; /* Reduced size */
+            font-size: 11px;
         }
 
         /* Segment Embeddings Grid */
@@ -359,13 +367,15 @@ app_ui = ui.page_fluid(
             color: #1e293b;
         }
 
-        /* Compact Select */
-        .select-compact {
+        /* Compact Select - Unified styling for all dropdowns */
+        .select-compact,
+        .select-mini {
             position: relative;
             display: inline-block;
         }
-        
-        .select-compact select {
+
+        .select-compact select,
+        .select-mini select {
             appearance: none;
             background-color: #fff;
             border: 1px solid #e2e8f0;
@@ -376,14 +386,20 @@ app_ui = ui.page_fluid(
             color: #475569;
             cursor: pointer;
             transition: all 0.2s;
+            height: 26px;
+            line-height: 18px;
+            min-width: fit-content;
+            max-width: 200px;
         }
-        
-        .select-compact select:hover {
+
+        .select-compact select:hover,
+        .select-mini select:hover {
             border-color: var(--primary-color);
             color: var(--primary-color);
         }
-        
-        .select-compact::after {
+
+        .select-compact::after,
+        .select-mini::after {
             content: "▼";
             font-size: 8px;
             color: #94a3b8;
@@ -424,14 +440,7 @@ app_ui = ui.page_fluid(
             align-items: center;
         }
         
-        .select-mini select {
-            padding: 4px 8px;
-            border-radius: 6px;
-            border: 1px solid var(--border-color);
-            font-size: 12px;
-            background: white;
-            cursor: pointer;
-        }
+        /* Removed - now unified with .select-compact above */
         
         /* Token Buttons */
         .token-btn {
@@ -535,73 +544,43 @@ app_ui = ui.page_fluid(
             margin-bottom: 8px;
         }
 
-        /* Q/K/V Redesign */
+
+        /* Q/K/V Projections - Vertical layout */
         .qkv-container {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 16px;
         }
-        .qkv-row {
-            display: flex;
-            align-items: center;
+
+        .qkv-item {
             background: #f8fafc;
             border-radius: 8px;
-            padding: 8px;
+            padding: 12px;
             border: 1px solid #e2e8f0;
-            position: relative;
-            overflow: hidden;
         }
-        .qkv-token-label {
-            position: absolute;
-            left: 8px;
-            top: 50%;
-            transform: translateY(-50%);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 48px;
-            font-weight: 700;
-            color: rgba(0,0,0,0.03);
-            pointer-events: none;
-            z-index: 0;
-            white-space: nowrap;
-        }
-        .qkv-data {
-            position: relative;
-            z-index: 1;
-            width: 100%;
-            display: flex;
-            gap: 16px;
-            align-items: center;
-        }
-        .qkv-main-token {
+
+        .qkv-token-header {
             font-family: 'JetBrains Mono', monospace;
             font-size: 12px;
             font-weight: 600;
             color: var(--primary-color);
-            min-width: 60px;
+            margin-bottom: 8px;
         }
-        .qkv-vector-group {
+
+        .qkv-row-item {
             display: flex;
-            flex-direction: column;
-            gap: 2px;
-            flex: 1;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 4px;
+            padding-left: 16px;
         }
-        .qkv-vector-label {
-            font-size: 9px;
-            color: #94a3b8;
-            text-transform: uppercase;
-            font-weight: 600;
-        }
-        .qkv-vector-val {
-            font-family: 'JetBrains Mono', monospace;
+
+        .qkv-label {
             font-size: 10px;
-            color: #475569;
-            background: white;
-            padding: 2px 4px;
-            border-radius: 4px;
-            border: 1px solid #f1f5f9;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            font-weight: 700;
+            color: #64748b;
+            text-transform: uppercase;
+            min-width: 12px;
         }
 
         /* Scaled Dot-Product Attention */
