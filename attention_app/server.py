@@ -352,34 +352,17 @@ def server(input, output, session):
             return ui.HTML("<p style='font-size:10px;color:#6b7280;'>No segment information available.</p>")
         ids = segment_ids[0].cpu().numpy().tolist()
         rows = []
-        counts = {}
-        colors = ["#6366f1", "#a855f7", "#ec4899", "#f97316"]
 
         for tok, seg in zip(tokens, ids):
-            counts[seg] = counts.get(seg, 0) + 1
-            color = colors[seg % len(colors)]
-            badge = f"<span style='display:inline-block;padding:2px 8px;border-radius:999px;background:{color};color:white;font-size:9px;font-weight:600;'>Seg {seg}</span>"
             rows.append(
-                f"<tr><td class='token-name'>{tok}</td><td>{badge}</td></tr>"
-            )
-
-        summary_badges = []
-        for k, v in sorted(counts.items()):
-            color = colors[k % len(colors)]
-            summary_badges.append(
-                f"<span style='display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:{color}15;border:1px solid {color}40;font-size:10px;font-weight:600;color:{color};'>"
-                f"<span style='width:8px;height:8px;border-radius:50%;background:{color};'></span>"
-                f"Segment {k}: <strong>{v} tokens</strong></span>"
+                f"<tr><td class='token-name'>{tok}</td><td>{seg}</td></tr>"
             )
 
         html = (
             "<div class='card-scroll'>"
-            "<table class='token-table-segment'>"
+            "<table class='token-table'><tr><th>Token</th><th>Segment</th></tr>"
             + "".join(rows)
             + "</table></div>"
-            "<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;'>"
-            + "".join(summary_badges)
-            + "</div>"
         )
         return ui.HTML(html)
 
@@ -984,54 +967,73 @@ def server(input, output, session):
             mlm_outputs = mlm_model(**mlm_inputs)
             probs = torch.softmax(mlm_outputs.logits, dim=-1)[0]
         logits_tensor = mlm_outputs.logits[0]
-        logsumexp_vals = torch.logsumexp(logits_tensor, dim=-1)
 
         mlm_tokens = tokenizer.convert_ids_to_tokens(mlm_inputs["input_ids"][0])
-        rows = []
+        cards = ""
         top_k = 5
+        
         for i, tok in enumerate(mlm_tokens):
             token_probs = probs[i]
             top_vals, top_idx = torch.topk(token_probs, top_k)
-            inner = "<div style='font-size:10px;'>"
+            
+            pred_rows = ""
             for rank, (p, idx) in enumerate(zip(top_vals, top_idx)):
                 ptok = tokenizer.decode([idx.item()]) or "[UNK]"
                 pval = float(p)
                 width = max(4, int(pval * 100))
                 logit_val = float(logits_tensor[i, idx])
-
-                # Calculate exponential and normalization factor for this specific token
                 exp_logit = float(torch.exp(logits_tensor[i, idx]))
                 sum_exp = float(torch.sum(torch.exp(logits_tensor[i])))
+                
+                unique_id = f"mlm-detail-{i}-{rank}"
 
-                # Create clickable prediction span with data attributes
-                inner += (
-                    "<div style='margin:3px 0;'>"
-                    "<div class='prob-line'>"
-                    f"<span class='mlm-prediction-token' "
-                    f"data-token-idx='{i}' "
-                    f"data-pred-token='{ptok}' "
-                    f"data-orig-token='{tok}' "
-                    f"data-logit='{logit_val:.4f}' "
-                    f"data-exp-logit='{exp_logit:.4f}' "
-                    f"data-sum-exp='{sum_exp:.4f}' "
-                    f"data-prob='{pval:.4f}' "
-                    f"style='font-family:monospace;font-size:10px;min-width:70px;font-weight:600;cursor:pointer;'>"
-                    f"{ptok}</span>"
-                    f"<div style='flex:1;background:#e5e7eb;border-radius:999px;height:12px;'>"
-                    f"<div style='width:{width}%;height:12px;border-radius:999px;"
-                    f"background:linear-gradient(90deg,#3b82f6,#8b5cf6);'></div></div>"
-                    f"<span style='font-size:10px;font-weight:600;min-width:45px;text-align:right;'>{pval:.1%}</span>"
-                    "</div>"
-                    "</div>"
-                )
-            inner += "</div>"
-            rows.append(f"<tr><td class='token-name'>{tok}</td><td>{inner}</td></tr>")
+                pred_rows += f"""
+                <div class='mlm-pred-row'>
+                    <span class='mlm-pred-token' onclick="toggleMlmDetails('{unique_id}')">
+                        {ptok}
+                    </span>
+                    <div class='mlm-bar-bg'>
+                        <div class='mlm-bar-fill' style='width:{width}%;'></div>
+                    </div>
+                    <span class='mlm-prob-text'>{pval:.1%}</span>
+                </div>
+                <div id='{unique_id}' class='mlm-details-panel'>
+                    <div class='mlm-math'>softmax(logit<sub>i</sub>) = exp(logit<sub>i</sub>) / Σ<sub>j</sub> exp(logit<sub>j</sub>)</div>
+                    <div class='mlm-step'>
+                        <span>logit<sub>i</sub></span>
+                        <b>{logit_val:.4f}</b>
+                    </div>
+                    <div class='mlm-step'>
+                        <span>exp(logit<sub>i</sub>)</span>
+                        <b>{exp_logit:.4f}</b>
+                    </div>
+                    <div class='mlm-step'>
+                        <span>Σ exp(logit<sub>j</sub>)</span>
+                        <b>{sum_exp:.4f}</b>
+                    </div>
+                    <div class='mlm-step' style='margin-top:4px;padding-top:4px;border-top:1px dashed #cbd5e1;'>
+                        <span>Probability</span>
+                        <b style='color:var(--primary-color);'>{pval:.6f}</b>
+                    </div>
+                </div>
+                """
+            
+            cards += f"""
+            <div class='mlm-card'>
+                <div class='mlm-token-header'>{tok}</div>
+                <div style='display:flex;flex-direction:column;gap:4px;'>
+                    {pred_rows}
+                </div>
+            </div>
+            """
 
-        html = (
-            "<div class='prediction-panel'>"
-            "<div class='card-scroll' style='max-height:340px;'>"
-            "<table class='token-table'><tr><th>Token</th><th>Top-5 Probabilities</th></tr>"
-            + "".join(rows)
-            + "</table></div></div>"
-        )
+        html = f"""
+        <div class='prediction-panel'>
+            <div class='card-scroll' style='max-height:340px;'>
+                <div class='mlm-grid'>
+                    {cards}
+                </div>
+            </div>
+        </div>
+        """
         return ui.HTML(html)
