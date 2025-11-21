@@ -380,16 +380,17 @@ app_ui = ui.page_fluid(
             background-color: #fff;
             border: 1px solid #e2e8f0;
             border-radius: 6px;
-            padding: 4px 24px 4px 8px;
+            padding: 2px 20px 2px 6px;
             font-size: 11px;
             font-weight: 500;
             color: #475569;
             cursor: pointer;
             transition: all 0.2s;
-            height: 26px;
+            height: 24px;
             line-height: 18px;
             min-width: fit-content;
-            max-width: 200px;
+            max-width: 120px;
+            width: auto;
         }
 
         .select-compact select:hover,
@@ -401,13 +402,54 @@ app_ui = ui.page_fluid(
         .select-compact::after,
         .select-mini::after {
             content: "▼";
-            font-size: 8px;
+            font-size: 7px;
             color: #94a3b8;
             position: absolute;
-            right: 8px;
+            right: 6px;
             top: 50%;
             transform: translateY(-50%);
             pointer-events: none;
+        }
+
+        /* --- NEW: Segment Embeddings Table --- */
+        .segment-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+        
+        .segment-table th {
+            text-align: left;
+            padding: 8px;
+            font-size: 10px;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            border-bottom: 1px solid #e2e8f0;
+            background: #f8fafc;
+            position: sticky;
+            top: 0;
+        }
+        
+        .segment-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        
+        .seg-0 {
+            background-color: #dbeafe;
+            color: #1e40af;
+        }
+        
+        .seg-1 {
+            background-color: #ffe4e6;
+            color: #9f1239;
+        }
+
+        /* Ensure full width for specific containers */
+        .qkv-container, .qkv-item {
+            width: 100%;
         }
 
         /* Custom Scrollbar */
@@ -432,12 +474,19 @@ app_ui = ui.page_fluid(
             justify-content: space-between;
             align-items: center;
             margin-bottom: 16px;
+            flex-wrap: nowrap;
         }
-        
+
+        .header-controls h4 {
+            margin: 0;
+            white-space: nowrap;
+        }
+
         .header-right {
             display: flex;
-            gap: 8px;
+            gap: 4px;
             align-items: center;
+            flex-shrink: 0;
         }
         
         /* Removed - now unified with .select-compact above */
@@ -698,6 +747,228 @@ app_ui = ui.page_fluid(
             overflow-y: auto;
             min-height: 300px; /* Ensure minimum height */
         }
+
+        /* --- NEW: Segment Embeddings Grid --- */
+        .segment-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 12px;
+            padding: 8px;
+        }
+
+        .segment-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        
+        .segment-card:hover {
+            border-color: var(--primary-color);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        .segment-id-badge {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+            background: white;
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid #f1f5f9;
+            align-self: flex-start;
+        }
+
+        .segment-tokens {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .segment-token-item {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #334155;
+            background: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+        }
+
+        /* --- NEW: MLM Predictions Grid --- */
+        .mlm-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+            padding: 8px;
+        }
+
+        .mlm-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .mlm-card:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        .mlm-token-header {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--primary-color);
+            border-bottom: 1px solid #f1f5f9;
+            padding-bottom: 6px;
+            margin-bottom: 4px;
+        }
+
+        .mlm-pred-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+        }
+
+        .mlm-pred-token {
+            font-family: 'JetBrains Mono', monospace;
+            color: #334155;
+            min-width: 60px;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        
+        .mlm-pred-token:hover {
+            color: var(--primary-color);
+            font-weight: 700;
+        }
+
+        .mlm-bar-bg {
+            flex: 1;
+            height: 6px;
+            background: #f1f5f9;
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .mlm-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 999px;
+        }
+
+        .mlm-prob-text {
+            font-size: 9px;
+            color: #94a3b8;
+            min-width: 32px;
+            text-align: right;
+        }
+
+        /* --- NEW: MLM Details Panel --- */
+        .mlm-details-panel {
+            display: none;
+            margin-top: 8px;
+            padding: 8px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            font-size: 11px;
+            color: #475569;
+        }
+
+        .mlm-math {
+            font-family: 'JetBrains Mono', monospace;
+            background: white;
+            padding: 6px;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+            margin: 4px 0;
+            font-size: 10px;
+            color: #334155;
+        }
+
+        .mlm-step {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2px;
+        }
+
+        /* --- NEW: Loading & Sync Rendering --- */
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease-out;
+        }
+
+        .loading-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .loading-spinner-large {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(255, 92, 169, 0.2);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+
+        .loading-text {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-main);
+            letter-spacing: -0.5px;
+        }
+
+        /* Hide content while computing */
+        .content-hidden {
+            opacity: 0;
+            transition: opacity 0.1s;
+        }
+        
+        .content-visible {
+            opacity: 1;
+            transition: opacity 0.5s ease-in;
+        }
+        """
+    ),
+    ui.tags.script(
+        """
+        $(document).on('shiny:connected', function() {
+            // Toggle MLM Details
+            window.toggleMlmDetails = function(id) {
+                var el = document.getElementById(id);
+                if (el.style.display === 'none' || el.style.display === '') {
+                    el.style.display = 'block';
+                } else {
+                    el.style.display = 'none';
+                }
+            };
+        });
         """
     ),
     ui.tags.head(
