@@ -10,11 +10,12 @@ import traceback
 from shiny import ui, render, reactive
 from shinywidgets import render_plotly, output_widget
 
-from .helpers import positional_encoding, array_to_base64_img
+from .helpers import positional_encoding, array_to_base64_img, compute_influence_tree
 from .metrics import compute_all_attention_metrics
 from .models import ModelManager
+from .head_specialization import compute_all_heads_specialization
 
-# === HELPER FUNCTIONS FOR HTML GENERATION ===
+# HELPER FUNCTIONS FOR HTML GENERATION 
 
 def get_embedding_table(res):
     tokens, embeddings, *_ = res
@@ -127,7 +128,7 @@ def get_sum_layernorm_view(res, encoder_model):
     )
 
 def get_qkv_table(res, layer_idx):
-    tokens, _, _, _, hidden_states, _, _, encoder_model, _ = res
+    tokens, _, _, _, hidden_states, _, _, encoder_model, *_ = res
     layer = encoder_model.encoder.layer[layer_idx].attention.self
     hs_in = hidden_states[layer_idx]
 
@@ -175,7 +176,7 @@ def get_qkv_table(res, layer_idx):
     )
 
 def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx):
-    tokens, _, _, attentions, hidden_states, _, _, encoder_model, _ = res
+    tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
     if attentions is None or len(attentions) == 0:
         return ui.HTML("")
     
@@ -231,7 +232,7 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx):
     return ui.HTML(html)
 
 def get_add_norm_view(res, layer_idx):
-    tokens, _, _, _, hidden_states, _, _, _, _ = res
+    tokens, _, _, _, hidden_states, *_ = res
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
     hs_in = hidden_states[layer_idx][0].cpu().numpy()
@@ -256,7 +257,7 @@ def get_add_norm_view(res, layer_idx):
     )
 
 def get_ffn_view(res, layer_idx):
-    tokens, _, _, _, hidden_states, _, _, encoder_model, _ = res
+    tokens, _, _, _, hidden_states, _, _, encoder_model, *_ = res
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
     layer = encoder_model.encoder.layer[layer_idx]
@@ -286,7 +287,7 @@ def get_ffn_view(res, layer_idx):
     )
 
 def get_add_norm_post_ffn_view(res, layer_idx):
-    tokens, _, _, _, hidden_states, _, _, _, _ = res
+    tokens, _, _, _, hidden_states, *_ = res
     if layer_idx + 2 >= len(hidden_states):
         return ui.HTML("<p style='font-size:10px;color:#6b7280;'>Select a lower layer to inspect residual output.</p>")
     hs_mid = hidden_states[layer_idx + 1][0].cpu().numpy()
@@ -311,7 +312,7 @@ def get_add_norm_post_ffn_view(res, layer_idx):
     )
 
 def get_layer_output_view(res, layer_idx):
-    tokens, _, _, _, hidden_states, _, _, _, _ = res
+    tokens, _, _, _, hidden_states, *_ = res
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
     hs = hidden_states[layer_idx + 1][0].cpu().numpy()
@@ -357,7 +358,7 @@ def get_output_probabilities(res, use_mlm, text):
             "</div>"
         )
 
-    _, _, _, _, _, inputs, tokenizer, _, mlm_model = res
+    _, _, _, _, _, inputs, tokenizer, _, mlm_model, *_ = res
     device = ModelManager.get_device()
     
     # We need to re-tokenize to be sure, but we can reuse inputs if they match
@@ -432,7 +433,7 @@ def get_output_probabilities(res, use_mlm, text):
     )
 
 def get_metrics_display(res):
-    _, _, _, attentions, _, _, _, _, _ = res
+    _, _, _, attentions, *_ = res
     if attentions is None or len(attentions) == 0:
         return ui.HTML("")
     
@@ -465,6 +466,33 @@ def get_metrics_display(res):
     cards_html += '</div>'
     return ui.HTML(cards_html)
 
+def get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth):
+    """Generate JSON tree data for D3.js visualization."""
+    tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
+    if attentions is None or len(attentions) == 0:
+        return None
+    
+    # Get attention matrix for selected layer and head
+    att = attentions[layer_idx][0, head_idx].cpu().numpy()
+    
+    # Get Q and K for computing dot products
+    layer = encoder_model.encoder.layer[layer_idx].attention.self
+    hs_in = hidden_states[layer_idx]
+    with torch.no_grad():
+        Q = layer.query(hs_in)[0].cpu().numpy()
+        K = layer.key(hs_in)[0].cpu().numpy()
+    
+    num_heads = layer.num_attention_heads if hasattr(layer, "num_attention_heads") else 12
+    d_k = Q.shape[-1] // num_heads
+    
+    # Compute the tree structure with proper JSON format
+    tree = compute_influence_tree(att, tokens, Q, K, d_k, root_idx, top_k, max_depth)
+    
+    return tree
+
+
+
+
 
 def server(input, output, session):
     running = reactive.value(False)
@@ -493,7 +521,17 @@ def server(input, output, session):
         attentions = outputs.attentions
         hidden_states = outputs.hidden_states
         pos_enc = positional_encoding(len(tokens), embeddings.shape[1])
-        return (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model)
+        
+        # Compute head specialization metrics
+        head_specialization = None
+        try:
+            head_specialization = compute_all_heads_specialization(attentions, tokens, text)
+        except Exception as e:
+            print(f"Warning: Could not compute head specialization: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model, head_specialization)
 
     @reactive.effect
     @reactive.event(input.generate_all)
@@ -524,7 +562,7 @@ def server(input, output, session):
         if not res:
             t = input.text_input().strip()
             return ui.HTML(f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">Type a sentence above and click Generate All.</div>')
-        tokens, _, _, attentions, _, _, _, _, _ = res
+        tokens, _, _, attentions, *_ = res
         if attentions is None or len(attentions) == 0:
             return ui.HTML('<div style="color:#9ca3af;font-size:12px;">No attention data available.</div>')
         att_layers = [layer[0].cpu().numpy() for layer in attentions]
@@ -558,7 +596,7 @@ def server(input, output, session):
             if not res:
                 return ui.HTML("<script>$('#loading_spinner').hide(); $('#generate_all').prop('disabled', false).css('opacity', '1');</script>")
             
-            tokens, _, _, attentions, hidden_states, _, _, encoder_model, _ = res
+            tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
             num_layers = len(encoder_model.encoder.layer)
             num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
 
@@ -584,11 +622,25 @@ def server(input, output, session):
             try: text_val = input.text_input()
             except: text_val = ""
             
+            # Get inputs for new selectors
+            try: radar_mode = input.radar_mode()
+            except: radar_mode = "single"
+            
+            try: radar_layer = int(input.radar_layer())
+            except: radar_layer = 0
+            
+            try: radar_head = int(input.radar_head())
+            except: radar_head = 0
+            
+            try: tree_root_idx = int(input.tree_root_token())
+            except: tree_root_idx = 0
+            
             # Clean tokens for selectors
             clean_tokens = [t.replace("##", "") if t.startswith("##") else t for t in tokens]
 
             # Construct UI
-            layout = ui.TagList(
+            layout = ui.div(
+                {"class": "dashboard-stack"},
                 # Row 1
                 ui.layout_columns(
                     ui.div({"class": "card"}, ui.h4("Token Embeddings"), get_embedding_table(res)),
@@ -664,14 +716,80 @@ def server(input, output, session):
                     ),
                     col_widths=[6, 6]
                 ),
-                # Row 4
+                # Head Specialization Radar
+
+                # Row 4 - Radar and Tree (Side by Side)
+                ui.layout_columns(
+                    ui.div(
+                        {"class": "card"},
+                        ui.div(
+                            {"class": "header-controls-stacked"},
+                            ui.div(
+                                {"class": "header-row-top"},
+                                ui.h4("Head Specialization Radar"),
+                                ui.div(
+                                    {"class": "header-right"},
+                                    ui.div({"class": "select-compact", "id": "radar_head_selector"}, ui.input_select("radar_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(radar_head))),
+                                    ui.div({"class": "select-compact"}, ui.input_select("radar_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(radar_layer))),
+                                )
+                            ),
+                            ui.div(
+                                {"class": "header-row-bottom"},
+                                ui.span("Attention Mode:", class_="toggle-label"),
+                                ui.input_radio_buttons("radar_mode", None, {"single": "Single Head", "all": "All Heads"}, selected=radar_mode, inline=True)
+                            )
+                        ),
+                        head_specialization_radar(res, radar_layer, radar_head, radar_mode),
+                        ui.HTML(f"""
+                            <div class="radar-explanation" style="margin-top: 10px;">
+                                <p style="margin: 10px 0 8px 0; font-size: 11px; color: #64748b; text-align: center;">
+                                    <strong>Head Specialization Dimensions</strong> — click any to see detailed explanation
+                                </p>
+                                <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">
+                                    <span class="metric-tag" onclick="showMetricModal('Syntax', {radar_layer}, {radar_head})">Syntax</span>
+                                    <span class="metric-tag" onclick="showMetricModal('Semantics', {radar_layer}, {radar_head})">Semantics</span>
+                                    <span class="metric-tag" onclick="showMetricModal('CLS Focus', {radar_layer}, {radar_head})">CLS Focus</span>
+                                    <span class="metric-tag" onclick="showMetricModal('Punctuation', {radar_layer}, {radar_head})">Punctuation</span>
+                                    <span class="metric-tag" onclick="showMetricModal('Entities', {radar_layer}, {radar_head})">Entities</span>
+                                    <span class="metric-tag" onclick="showMetricModal('Long-range', {radar_layer}, {radar_head})">Long-range</span>
+                                    <span class="metric-tag" onclick="showMetricModal('Self-attention', {radar_layer}, {radar_head})">Self-attention</span>
+                                </div>
+                            </div>
+                        """)
+                    ),
+                    ui.div(
+                        {"class": "card card-compact"},
+                        ui.div(
+                            {"class": "header-controls-stacked"},
+                            ui.div(
+                                {"class": "header-row-top"},
+                                ui.h4("Token Influence Tree"),
+                                ui.div(
+                                    {"class": "header-right"},
+                                    ui.tags.span("Root:", style="font-size:11px; font-weight:600; color:#64748b; margin-right: 4px;"),
+                                    ui.input_select(
+                                        "tree_root_token",
+                                        None,
+                                        choices={str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}, # Will be updated
+                                        selected=str(tree_root_idx),
+                                        width="120px"
+                                    )
+                                )
+                            )
+                        ),
+                        get_influence_tree_ui(res, tree_root_idx, radar_layer, radar_head)
+                    ),
+                    col_widths=[5, 7]
+                ),
+                
+                # Row 5 - Residuals & FFN
                 ui.layout_columns(
                     ui.div({"class": "card"}, ui.h4("Add & Norm"), get_add_norm_view(res, att_layer)),
                     ui.div({"class": "card"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, att_layer)),
                     ui.div({"class": "card"}, ui.h4("Add & Norm (post-FFN)"), get_add_norm_post_ffn_view(res, att_layer)),
                     col_widths=[4, 4, 4]
                 ),
-                # Row 5
+                # Row 6
                 ui.layout_columns(
                     ui.div({"class": "card"}, ui.h4("Hidden States"), get_layer_output_view(res, att_layer)),
                     ui.div({"class": "card"}, ui.h4("Token Output Predictions (MLM)"), get_output_probabilities(res, use_mlm_val, text_val)),
@@ -697,7 +815,7 @@ def server(input, output, session):
     def attention_map():
         res = cached_result.get()
         if not res: return None
-        tokens, _, _, attentions, hidden_states, _, _, encoder_model, _ = res
+        tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
         if attentions is None or len(attentions) == 0: return None
         try: layer_idx = int(input.att_layer())
         except: layer_idx = 0
@@ -742,7 +860,7 @@ def server(input, output, session):
     def attention_flow():
         res = cached_result.get()
         if not res: return None
-        tokens, _, _, attentions, _, _, _, _, _ = res
+        tokens, _, _, attentions, *_ = res
         if attentions is None or len(attentions) == 0: return None
         try: layer_idx = int(input.att_layer())
         except: layer_idx = 0
@@ -794,3 +912,250 @@ def server(input, output, session):
         
         fig.update_layout(title=title_text, xaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-0.05, 1.05]), yaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-0.25, 1.25]), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', font=dict(color='#111827'), height=500, margin=dict(l=20, r=20, t=60, b=40), clickmode='event+select', hovermode='closest', dragmode=False)
         return fig
+
+    # This function is now called directly from dashboard_content
+    def head_specialization_radar(res, layer_idx, head_idx, mode):
+        if not res: return None
+        
+        tokens, _, _, attentions, _, _, _, _, _, head_specialization, *_ = res
+        if attentions is None or len(attentions) == 0 or head_specialization is None:
+            return None
+        
+        # Get metrics for the selected layer
+        if layer_idx not in head_specialization:
+            return None
+        
+        layer_metrics = head_specialization[layer_idx]
+        
+        # Dimension names for radar chart
+        dimensions = ["Syntax", "Semantics", "CLS Focus", "Punctuation", "Entities", "Long-range", "Self-attention"]
+        dimension_keys = ["syntax", "semantics", "cls", "punct", "entities", "long_range", "self"]
+        
+        # Color palette - Attention Atlas colors
+        colors = ['#ff5ca9', '#b28df2', '#0b1d3a', '#ff74b8', '#9370db', '#1e3a5f', '#ff8dc7', 
+                  '#c8b3f0', '#2d5a8a', '#ffb3d9', '#d4c5f9', '#4a7ba7']
+        
+        fig = go.Figure()
+        
+        if mode == "single":
+            # Single head mode
+            if head_idx not in layer_metrics:
+                return None
+            
+            metrics = layer_metrics[head_idx]
+            values = [metrics[key] for key in dimension_keys]
+            values.append(values[0])  # Close the polygon
+            
+            fig.add_trace(go.Scatterpolar(
+                r=values,
+                theta=dimensions + [dimensions[0]],
+                fill='toself',
+                fillcolor=f'rgba(255, 92, 169, 0.3)',
+                line=dict(color='#ff5ca9', width=2),
+                name=f'Head {head_idx}',
+                hovertemplate='<b>%{theta}</b><br>Value: %{r:.4f}<extra></extra>'
+            ))
+            
+            title_text = f'Head Specialization Radar — Layer {layer_idx}, Head {head_idx}'
+        else:
+            # All heads mode
+            num_heads = len(layer_metrics)
+            for h_idx in range(num_heads):
+                if h_idx not in layer_metrics:
+                    continue
+                
+                metrics = layer_metrics[h_idx]
+                values = [metrics[key] for key in dimension_keys]
+                values.append(values[0])  # Close the polygon
+                
+                color = colors[h_idx % len(colors)]
+                # Convert hex to rgba with transparency
+                if color.startswith('#'):
+                    r = int(color[1:3], 16)
+                    g = int(color[3:5], 16)
+                    b = int(color[5:7], 16)
+                    fill_color = f'rgba({r}, {g}, {b}, 0.15)'
+                    line_color = color
+                else:
+                    fill_color = color
+                    line_color = color
+                
+                fig.add_trace(go.Scatterpolar(
+                    r=values,
+                    theta=dimensions + [dimensions[0]],
+                    fill='toself',
+                    fillcolor=fill_color,
+                    line=dict(color=line_color, width=1.5),
+                    name=f'Head {h_idx}',
+                    hovertemplate=f'<b>Head {h_idx}</b><br>%{{theta}}: %{{r:.4f}}<extra></extra>'
+                ))
+            
+            title_text = f'Head Specialization Radar — Layer {layer_idx} (All Heads)'
+        
+        fig.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 1],
+                    showticklabels=True,
+                    ticks='outside',
+                    tickfont=dict(size=10),
+                    gridcolor='#e2e8f0'
+                ),
+                angularaxis=dict(
+                    tickfont=dict(size=11, color='#475569'),
+                    gridcolor='#e2e8f0'
+                ),
+                bgcolor='#ffffff'
+            ),
+            showlegend=(mode == "all"),
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=1,
+                xanchor="left",
+                x=1.05,
+                font=dict(size=10)
+            ),
+            title=dict(
+                text=title_text,
+                font=dict(size=14, color='#1e293b'),
+                x=0.5,
+                xanchor='center'
+            ),
+            paper_bgcolor='#ffffff',
+            plot_bgcolor='#ffffff',
+            height=500,
+            margin=dict(l=80, r=150, t=60, b=80)
+        )
+        
+        return ui.HTML(fig.to_html(full_html=False, include_plotlyjs=False))
+
+    # This function replaces the previous @output @render.ui def influence_tree():
+    def get_influence_tree_ui(res, root_idx=0, layer_idx=0, head_idx=0):
+        if not res:
+            return ui.HTML("""
+                <div style='padding: 20px; text-align: center;'>
+                    <p style='font-size:11px;color:#9ca3af;'>Generate attention data to view the influence tree.</p>
+                </div>
+            """)
+        
+        tokens, _, _, attentions, *_ = res
+        if attentions is None or len(attentions) == 0:
+            return ui.HTML("<p style='font-size:11px;color:#6b7280;'>No attention data available.</p>")
+        
+        # Use passed layer/head indices
+        depth = 2     # Maximum depth 
+        top_k = 3     # Default top-k
+        
+        # Ensure valid indices
+        root_idx = max(0, min(root_idx, len(tokens) - 1))
+        
+        # Placeholder for actual tree data generation logic
+        # This function would typically call a backend utility to compute the tree
+        # For this example, we'll simulate a simple tree structure.
+        
+        # Example: A simple tree structure for demonstration
+        # In a real application, this would be computed from 'attentions'
+        # based on 'layer_idx', 'head_idx', 'root_idx', 'depth', 'top_k'.
+        
+        # For the purpose of this edit, we'll assume a function `_generate_tree_data` exists
+        # that takes these parameters and returns a dict suitable for D3.
+        # Since the actual `_generate_tree_data` is not provided, we'll create a dummy one.
+        
+        def _generate_tree_data(tokens, root_idx, layer_idx, head_idx, max_depth, top_k):
+            # Get attention matrix for the specific layer and head
+            # attentions[layer_idx] is (batch, num_heads, seq_len, seq_len)
+            try:
+                att_matrix = attentions[layer_idx][0, head_idx].cpu().numpy()
+            except:
+                return None
+
+            def build_node(current_idx, current_depth, current_value):
+                token = tokens[current_idx]
+                node = {
+                    "name": f"{current_idx}: {token}",
+                    "att": current_value, 
+                    "children": []
+                }
+
+                if current_depth < max_depth:
+                    # Get attention weights for this token (what it attends to)
+                    row = att_matrix[current_idx]
+                    
+                    # Get top-k indices
+                    top_indices = np.argsort(row)[-top_k:][::-1]
+                    
+                    for child_idx in top_indices:
+                        child_idx = int(child_idx) # Ensure native int
+                        raw_att = float(row[child_idx])
+                        
+                        # Handle NaN/Inf for JSON safety
+                        if np.isnan(raw_att) or np.isinf(raw_att):
+                            raw_att = 0.0
+                            
+                        # Cumulative influence: parent_value * current_attention
+                        child_value = current_value * raw_att if current_depth > 0 else raw_att
+                        
+                        child_node = build_node(child_idx, current_depth + 1, child_value)
+                        # We store the raw attention too if needed, but 'att' is now cumulative influence
+                        child_node["raw_att"] = raw_att 
+                        child_node["qk_sim"] = 0.0 # Placeholder for D3 compatibility
+                        
+                        node["children"].append(child_node)
+                
+                return node
+
+            # Root starts with influence 1.0
+            return build_node(root_idx, 0, 1.0)
+
+        try:
+            tree_data = _generate_tree_data(tokens, root_idx, layer_idx, head_idx, depth, top_k)
+            
+            if tree_data is None:
+                return ui.HTML("<p style='font-size:11px;color:#6b7280;'>Unable to generate tree.</p>")
+            
+            # Convert to JSON
+            import json
+            tree_json = json.dumps(tree_data)
+        except Exception as e:
+            return ui.HTML(f"<p style='font-size:11px;color:#ef4444;'>Error generating tree: {str(e)}</p>")
+        
+        # Explanation text - minimalist and after tree
+        explanation = """
+        <div class="tree-explanation">
+            <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.6;">
+                <strong>Token Influence Tree:</strong> Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2).
+                <span style="color: #94a3b8;">Click nodes to expand further. Thicker edges = stronger influence.</span>
+            </p>
+        </div>
+        """
+        
+        html = f"""
+        <div class="influence-tree-wrapper">
+            <div id="tree-viz-container" class="tree-viz-container"></div>
+        </div>
+        {explanation}
+        <script>
+                (function() {{
+                    function tryRender() {{
+                        if (typeof d3 !== 'undefined' && typeof renderInfluenceTree !== 'undefined') {{
+                            try {{
+                                renderInfluenceTree({tree_json}, 'tree-viz-container');
+                            }} catch(e) {{
+                                console.error('Error rendering tree:', e);
+                                document.getElementById('tree-viz-container').innerHTML = 
+                                    '<p style="color:#ef4444;padding:20px;font-size:12px;">Error rendering tree. Check console for details.</p>';
+                            }}
+                        }} else {{
+                            // Retry after a short delay
+                            setTimeout(tryRender, 100);
+                        }}
+                    }}
+                    tryRender();
+                }})();
+            </script>
+        </div>
+        """
+        
+        return ui.HTML(html)
