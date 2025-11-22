@@ -1138,12 +1138,37 @@ app_ui = ui.page_fluid(
             transition: all 0.2s;
             font-weight: 500;
         }
-        
+
+        .metric-tag.specialization {
+            background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
+            border: 2px solid #ff3d94;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 11px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            box-shadow: 0 4px 12px rgba(255, 92, 169, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
         .metric-tag:hover {
             background: var(--primary-color);
             color: white;
             border-color: var(--primary-color);
             transform: translateY(-1px);
+        }
+
+        .metric-tag.specialization:hover {
+            background: linear-gradient(135deg, #ff3d94 0%, #ff5ca9 100%);
+            border-color: #ff2080;
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 6px 20px rgba(255, 92, 169, 0.5);
+        }
+
+        .metric-tag.specialization:active {
+            transform: translateY(-1px) scale(1.02);
+            box-shadow: 0 3px 10px rgba(255, 92, 169, 0.4);
         }
         
         .tree-viz-container svg {
@@ -1376,6 +1401,41 @@ app_ui = ui.page_fluid(
             title.textContent = metricName;
 
             var explanations = {
+                'Syntax': {
+                    formula: 'SYN<sup>l,h</sup> = (sum<sub>i</sub> sum<sub>j in syntax</sub> A<sub>ij</sub><sup>l,h</sup>) / (sum<sub>i</sub> sum<sub>j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Share of attention mass that lands on function-word tokens (POS tags grouped as syntax). POS tags come from spaCy, a lightweight NLP library for tokenization and POS/NER tagging. Computed by summing attention over those tags and normalizing by total attention weight.',
+                    interpretation: 'Higher values mean the head consistently routes attention toward syntactic scaffolding words (articles, prepositions, conjunctions), indicating a role in structural parsing rather than content tracking.'
+                },
+                'Semantics': {
+                    formula: 'SEM<sup>l,h</sup> = (sum<sub>i</sub> sum<sub>j in semantics</sub> A<sub>ij</sub><sup>l,h</sup>) / (sum<sub>i</sub> sum<sub>j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Proportion of attention directed to content-bearing tokens. POS tags are provided by spaCy (lightweight NLP library) and are pooled over nouns, verbs, adjectives, adverbs, numerals, and proper nouns, then divided by the total attention mass.',
+                    interpretation: 'High values show the head favors meaning-carrying tokens, suggesting it tracks semantic content rather than syntactic glue.'
+                },
+                'CLS Focus': {
+                    formula: 'CLS<sup>l,h</sup> = (1/n) sum<sub>i</sub> A<sub>i,CLS</sub><sup>l,h</sup>',
+                    description: 'Average attention each token pays to the [CLS] token (column 0 of the matrix). Calculated by averaging the [CLS] column across all query positions.',
+                    interpretation: 'A high score implies the head pulls contextual information into [CLS] or relies on global summary signals anchored at that position.'
+                },
+                'Punctuation': {
+                    formula: 'PUNC<sup>l,h</sup> = (sum<sub>i</sub> sum<sub>j in punct</sub> A<sub>ij</sub><sup>l,h</sup>) / (sum<sub>i</sub> sum<sub>j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Fraction of attention that falls on punctuation tokens. Computed by summing attention toward any token that matches Python string.punctuation and normalizing by total attention.',
+                    interpretation: 'Elevated values indicate the head uses punctuation as anchors or boundary markers when structuring the sequence.'
+                },
+                'Entities': {
+                    formula: 'ENT<sup>l,h</sup> = (sum<sub>i</sub> sum<sub>j in entities</sub> A<sub>ij</sub><sup>l,h</sup>) / (sum<sub>i</sub> sum<sub>j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Attention share assigned to tokens recognized as named entities by spaCy (NER tag not O). spaCy is a lightweight NLP library that supplies the NER labels used here. Computed by summing attention to those positions and dividing by total mass.',
+                    interpretation: 'High scores suggest the head specializes in tracking named entities or salient spans across the sequence.'
+                },
+                'Long-range': {
+                    formula: 'LR<sup>l,h</sup> = mean(A<sub>ij</sub><sup>l,h</sup> | |i-j| >= 5)',
+                    description: 'Mean attention weight over token pairs separated by five or more positions. Derived by masking the matrix to long-distance pairs and averaging the remaining values.',
+                    interpretation: 'Larger values reveal a head that bridges distant tokens instead of focusing only on local neighborhoods.'
+                },
+                'Self-attention': {
+                    formula: 'SELF<sup>l,h</sup> = mean(diag(A<sub>l,h</sub>))',
+                    description: 'Average diagonal weight of the attention matrix, capturing how much each token attends to itself. Computed as the mean of A<sub>ii</sub> across all positions.',
+                    interpretation: 'Higher scores indicate strong self-loops, often used for preserving token identity or stabilizing representations.'
+                },
                 'Confidence Max': {
                     formula: 'C<sub>max</sub><sup>l,h</sup> = max<sub>i,j</sub>(A<sub>ij</sub><sup>l,h</sup>)',
                     description: 'The maximum attention weight in the attention matrix. Measures the strongest connection between any query-key pair.',
@@ -1416,6 +1476,17 @@ app_ui = ui.page_fluid(
 
             var info = explanations[metricName];
             if (info) {
+                var referenceBlock = info.paper ? `
+                    <div class="modal-section">
+                        <h4>Reference</h4>
+                        <p style="font-size:11px;line-height:1.6;">
+                            Golshanrad, Pouria and Faghih, Fathiyeh, <em>From Attention to Assurance: Enhancing Transformer Encoder Reliability Through Advanced Testing and Online Error Prediction</em>.
+                            <a href="https://ssrn.com/abstract=4856933" target="_blank" style="color:#ff5ca9;text-decoration:none;border-bottom:1px solid rgba(255,92,169,0.3);">Available at SSRN</a> or
+                            <a href="http://dx.doi.org/10.2139/ssrn.4856933" target="_blank" style="color:#ff5ca9;text-decoration:none;border-bottom:1px solid rgba(255,92,169,0.3);">DOI</a>
+                        </p>
+                    </div>
+                ` : '';
+
                 body.innerHTML = `
                     <div class="modal-section">
                         <h4>Formula</h4>
@@ -1430,14 +1501,7 @@ app_ui = ui.page_fluid(
                         <h4>Interpretation</h4>
                         <p>${info.interpretation}</p>
                     </div>
-                    <div class="modal-section">
-                        <h4>Reference</h4>
-                        <p style="font-size:11px;line-height:1.6;">
-                            Golshanrad, Pouria and Faghih, Fathiyeh, <em>From Attention to Assurance: Enhancing Transformer Encoder Reliability Through Advanced Testing and Online Error Prediction</em>.
-                            <a href="https://ssrn.com/abstract=4856933" target="_blank" style="color:#ff5ca9;text-decoration:none;border-bottom:1px solid rgba(255,92,169,0.3);">Available at SSRN</a> or
-                            <a href="http://dx.doi.org/10.2139/ssrn.4856933" target="_blank" style="color:#ff5ca9;text-decoration:none;border-bottom:1px solid rgba(255,92,169,0.3);">DOI</a>
-                        </p>
-                    </div>
+                    ${referenceBlock}
                 `;
             } else {
                 body.innerHTML = '<p>No explanation available for this metric.</p>';
