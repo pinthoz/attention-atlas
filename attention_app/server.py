@@ -742,17 +742,17 @@ def server(input, output, session):
                         head_specialization_radar(res, radar_layer, radar_head, radar_mode),
                         ui.HTML(f"""
                             <div class="radar-explanation" style="margin-top: 10px;">
-                                <p style="margin: 10px 0 8px 0; font-size: 11px; color: #64748b; text-align: center;">
-                                    <strong>Head Specialization Dimensions</strong> — click any to see detailed explanation
+                                <p style="margin: 10px 0 12px 0; font-size: 13px; color: #1e293b; text-align: center; font-weight: 600; line-height: 1.8;">
+                                    <strong style="color: #ff5ca9;">Head Specialization Dimensions</strong> — click any to see detailed explanation:<br>
                                 </p>
-                                <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">
-                                    <span class="metric-tag" onclick="showMetricModal('Syntax', {radar_layer}, {radar_head})">Syntax</span>
-                                    <span class="metric-tag" onclick="showMetricModal('Semantics', {radar_layer}, {radar_head})">Semantics</span>
-                                    <span class="metric-tag" onclick="showMetricModal('CLS Focus', {radar_layer}, {radar_head})">CLS Focus</span>
-                                    <span class="metric-tag" onclick="showMetricModal('Punctuation', {radar_layer}, {radar_head})">Punctuation</span>
-                                    <span class="metric-tag" onclick="showMetricModal('Entities', {radar_layer}, {radar_head})">Entities</span>
-                                    <span class="metric-tag" onclick="showMetricModal('Long-range', {radar_layer}, {radar_head})">Long-range</span>
-                                    <span class="metric-tag" onclick="showMetricModal('Self-attention', {radar_layer}, {radar_head})">Self-attention</span>
+                                <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 12px; background: linear-gradient(135deg, #fff5f9 0%, #ffe5f3 100%); border-radius: 12px; border: 2px solid #ffcce5;">
+                                    <span class="metric-tag specialization" onclick="showMetricModal('Syntax', {radar_layer}, {radar_head})">Syntax</span>
+                                    <span class="metric-tag specialization" onclick="showMetricModal('Semantics', {radar_layer}, {radar_head})">Semantics</span>
+                                    <span class="metric-tag specialization" onclick="showMetricModal('CLS Focus', {radar_layer}, {radar_head})">CLS Focus</span>
+                                    <span class="metric-tag specialization" onclick="showMetricModal('Punctuation', {radar_layer}, {radar_head})">Punctuation</span>
+                                    <span class="metric-tag specialization" onclick="showMetricModal('Entities', {radar_layer}, {radar_head})">Entities</span>
+                                    <span class="metric-tag specialization" onclick="showMetricModal('Long-range', {radar_layer}, {radar_head})">Long-range</span>
+                                    <span class="metric-tag specialization" onclick="showMetricModal('Self-attention', {radar_layer}, {radar_head})">Self-attention</span>
                                 </div>
                             </div>
                         """)
@@ -781,6 +781,8 @@ def server(input, output, session):
                     ),
                     col_widths=[5, 7]
                 ),
+                # Spacer before residual/FFN row for clearer separation
+                ui.tags.div(style="height: var(--section-gap);"),
                 
                 # Row 5 - Residuals & FFN
                 ui.layout_columns(
