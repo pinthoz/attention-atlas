@@ -32,18 +32,26 @@ app_ui = ui.page_fluid(
         :root {
             --primary-color: #ff5ca9;
             --primary-hover: #ff74b8;
-            --bg-color: #f5f7fb;
+            --accent-blue: #3b82f6;
+            --bg-color: #f0f4f8;
             --card-bg: #ffffff;
             --text-main: #1e293b;
             --text-muted: #64748b;
             --border-color: #e2e8f0;
-            --sidebar-bg: #1e1e2e;
+            --sidebar-bg: #0f172a;
             --sidebar-text: #e2e8f0;
             
             /* Spacing variables */
             --section-gap: 32px;
             --card-padding: 24px;
             --input-gap: 8px;
+        }
+
+        /* Ensure Plotly in modal is visible */
+        .modal-content canvas, 
+        .modal-content .js-plotly-plot {
+            width: 100% !important;
+            height: auto !important;
         }
 
         body {
@@ -248,7 +256,7 @@ app_ui = ui.page_fluid(
             padding: 6px 28px 6px 10px;
             font-size: 12px;
             height: 32px;
-            background: #2d2d44;
+            background: #1e293b;
             color: white;
             border-color: #334155;
         }
@@ -1260,6 +1268,27 @@ app_ui = ui.page_fluid(
             opacity: 1;
             transition: opacity 0.5s ease-in;
         }
+
+        /* ISA Layout Adjustments */
+        .token-to-token-container {
+            height: 500px;
+            overflow-y: auto;
+            margin-top: 20px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #ffffff;
+        }
+
+        .isa-explanation-block {
+            margin-top: 24px;
+            padding: 16px;
+            background: #f8fafc;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #475569;
+            line-height: 1.6;
+            border: 1px solid #e2e8f0;
+        }
         """
     ),
     ui.tags.script(
@@ -1324,7 +1353,7 @@ app_ui = ui.page_fluid(
         ui.div(
             {"class": "sidebar-section"},
             ui.tags.span("Input Text", class_="sidebar-label"),
-            ui.input_text_area("text_input", None, "The quick brown fox jumps over the lazy dog.", rows=3),
+            ui.input_text_area("text_input", None, "I have 3 balls. I buy 2 more cans, each containing 3 balls. How many balls do I have now?", rows=3),
             ui.div(
                 ui.input_action_button("generate_all", "Generate All", class_="btn-primary"),
                 ui.div(
@@ -1368,6 +1397,52 @@ app_ui = ui.page_fluid(
                 ui.tags.span({"class": "close-btn", "onclick": "document.getElementById('metric-modal').style.display='none'"}, "×"),
             ),
             ui.tags.div({"class": "modal-body", "id": "modal-body"}, "Loading..."),
+        ),
+    ),
+
+    # Modal for ISA overlay
+    ui.tags.div(
+        {"id": "isa-overlay-modal", "class": "modal"},
+        ui.tags.div(
+            {"class": "modal-content"},
+            ui.tags.div(
+                {"class": "modal-header"},
+                ui.tags.h3({"class": "modal-title"}, "Inter-Sentence Attention Details"),
+                ui.tags.span({"class": "close-btn", "onclick": "document.getElementById('isa-overlay-modal').style.display='none'"}, "×"),
+            ),
+            ui.tags.div(
+                {"class": "modal-body"},
+                ui.tags.div(
+                    {"class": "isa-sentence-section", "style": "margin-bottom: 20px;"},
+                    ui.tags.h4({"style": "color: #ff5ca9; font-size: 14px; margin-bottom: 8px;"}, "Sentence X (Target)"),
+                    ui.tags.p({"id": "isa-sentence-x", "style": "font-size: 13px; line-height: 1.6; color: #cbd5e1; margin-bottom: 16px;"}, ""),
+                    ui.tags.h4({"style": "color: #ff5ca9; font-size: 14px; margin-bottom: 8px;"}, "Sentence Y (Source)"),
+                    ui.tags.p({"id": "isa-sentence-y", "style": "font-size: 13px; line-height: 1.6; color: #cbd5e1; margin-bottom: 16px;"}, ""),
+                    ui.tags.div(
+                        {"style": "background: rgba(255,92,169,0.1); border-left: 3px solid #ff5ca9; padding: 12px; margin: 12px 0; border-radius: 6px;"},
+                        ui.tags.strong({"style": "color: #ff5ca9;"}, "ISA Score: "),
+                        ui.tags.span({"id": "isa-score", "style": "color: #cbd5e1; font-family: 'JetBrains Mono', monospace;"}, ""),
+                    ),
+                ),
+                ui.tags.div(
+                    {"class": "isa-explanation", "style": "margin-bottom: 20px; font-size: 13px; line-height: 1.8; color: #cbd5e1;"},
+                    ui.tags.h4({"style": "color: #ff5ca9; font-size: 14px; margin-bottom: 8px;"}, "What does this represent?"),
+                    ui.tags.p(
+                        "This value represents the maximum attention strength between any token in Sentence X and any token in Sentence Y, aggregated across all heads and layers."
+                    ),
+                    ui.tags.h4({"style": "color: #ff5ca9; font-size: 14px; margin-bottom: 8px; margin-top: 16px;"}, "Interpretation"),
+                    ui.tags.ul(
+                        {"style": "margin: 0; padding-left: 20px;"},
+                        ui.tags.li({"style": "margin-bottom: 6px;"}, ui.tags.strong("High ISA"), " → strong dependency across sentences (semantic or syntactic connection)"),
+                        ui.tags.li("Low ISA → weak or no cross-sentence influence"),
+                    ),
+                ),
+                ui.tags.h4({"style": "color: #ff5ca9; font-size: 14px; margin-bottom: 12px;"}, "Token-to-Token Attention"),
+                ui.tags.div(
+                    {"id": "isa-heatmap-container", "style": "min-height: 400px;"},
+                    # ui.output_image("isa_token_view", height="400px", width="100%") # Removed to avoid duplicate ID with server.py widget
+                ),
+            ),
         ),
     ),
 
@@ -1510,10 +1585,49 @@ app_ui = ui.page_fluid(
             modal.style.display = 'block';
         }
 
+        // ISA Overlay handler
+        function showISAOverlay(sentXIdx, sentYIdx, sentXText, sentYText, isaScore) {
+            var modal = document.getElementById('isa-overlay-modal');
+            var sentXEl = document.getElementById('isa-sentence-x');
+            var sentYEl = document.getElementById('isa-sentence-y');
+            var scoreEl = document.getElementById('isa-score');
+            
+            // Populate sentence data
+            sentXEl.textContent = sentXText;
+            sentYEl.textContent = sentYText;
+            
+            // Safe number parsing
+            var safeScore = Number(isaScore);
+            if (isNaN(safeScore)) {
+                safeScore = 0.0;
+            }
+            scoreEl.textContent = safeScore.toFixed(4);
+            
+            // Store indices for Shiny to access
+            window.isa_selected_pair = [sentXIdx, sentYIdx];
+            
+            // Trigger Shiny reactive to update visualization
+            if (typeof Shiny !== 'undefined') {
+                Shiny.setInputValue('isa_overlay_trigger', {
+                    sentXIdx: sentXIdx,
+                    sentYIdx: sentYIdx,
+                    timestamp: Date.now()
+                }, {priority: 'event'});
+            }
+            
+            // Show modal
+            modal.style.display = 'block';
+        }
+        window.showISAOverlay = showISAOverlay;
+
         window.onclick = function(event) {
             var modal = document.getElementById('metric-modal');
             if (event.target == modal) {
                 modal.style.display = 'none';
+            }
+            var isaModal = document.getElementById('isa-overlay-modal');
+            if (event.target == isaModal) {
+                isaModal.style.display = 'none';
             }
         }
 
@@ -1535,6 +1649,60 @@ app_ui = ui.page_fluid(
             }
         }
         window.toggleMlmDetails = toggleMlmDetails;
+
+        // ISA Matrix Click Handler - attach to Plotly plot after it's rendered
+        $(document).on('shiny:value', function(event) {
+            if (event.name === 'isa_matrix') {
+                setTimeout(function() {
+                    var isaPlot = document.querySelector('#isa_matrix .js-plotly-plot');
+                    if (isaPlot && !isaPlot.hasAttribute('data-isa-listener')) {
+                        isaPlot.setAttribute('data-isa-listener', 'true');
+                        isaPlot.on('plotly_click', function(data) {
+                            if (data.points && data.points.length > 0) {
+                                var point = data.points[0];
+                                var customdata = point.customdata;
+                                if (customdata && customdata.length >= 5) {
+                                    var sentXIdx = customdata[0];
+                                    var sentYIdx = customdata[1];
+                                    var sentXText = customdata[2];
+                                    var sentYText = customdata[3];
+                                    var isaScore = customdata[4];
+                                    showISAOverlay(sentXIdx, sentYIdx, sentXText, sentYText, isaScore);
+                                }
+                            }
+                        });
+                    }
+                }, 500);
+            }
+        });
+        // Reliable Plotly click → Shiny input for ISA matrix
+        $(document).on("shiny:connected", function () {
+            function attachIsaClick() {
+                const plot = document.querySelector("#isa_matrix .js-plotly-plot");
+                if (plot && !plot.dataset.isaListener) {
+                    plot.dataset.isaListener = "true";
+                    plot.on("plotly_click", function (e) {
+                        if (!e.points || !e.points[0]) return;
+                        const pt = e.points[0];
+                        const cd = pt.customdata;
+                        if (!cd) return;
+
+                        Shiny.setInputValue("isa_click", {
+                            x: pt.x,  // source sentence index (Sentence B)
+                            y: pt.y   // target sentence index (Sentence A)
+                        }, {priority: "event"});
+                    });
+                }
+            }
+
+            // Re-attach every time the plot is re-rendered
+            $(document).on("shiny:value", function (ev) {
+                if (ev.name === "isa_matrix") setTimeout(attachIsaClick, 100);
+            });
+
+            attachIsaClick();
+        });
+
         """
     ),
     # D3.js library
@@ -1715,6 +1883,16 @@ app_ui = ui.page_fluid(
         window.renderInfluenceTree = renderInfluenceTree;
         console.log('D3.js version:', typeof d3 !== 'undefined' ? d3.version : 'not loaded');
         console.log('renderInfluenceTree:', typeof renderInfluenceTree !== 'undefined' ? 'loaded' : 'not loaded');
+        
+        document.addEventListener("DOMContentLoaded", function() {
+            const origError = console.error;
+            console.error = function(...args) {
+                if (args[0] && typeof args[0] === "string" && args[0].includes("anywidget")) {
+                    return; // silencia
+                }
+                origError.apply(console, args);
+            };
+        });
         """
     )
 )

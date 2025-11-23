@@ -18,3 +18,4 @@ matplotlib>=3.7.0
 
 # Utilities
 Pillow>=10.0.0
+nltk>=3.8.1

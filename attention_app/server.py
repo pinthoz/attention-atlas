@@ -1,5 +1,8 @@
 import re
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
 import torch
@@ -8,12 +11,13 @@ from concurrent.futures import ThreadPoolExecutor
 import traceback
 
 from shiny import ui, render, reactive
-from shinywidgets import render_plotly, output_widget
+from shinywidgets import render_plotly, output_widget, render_widget
 
 from .helpers import positional_encoding, array_to_base64_img, compute_influence_tree
 from .metrics import compute_all_attention_metrics
 from .models import ModelManager
 from .head_specialization import compute_all_heads_specialization
+from .isa import compute_isa
 
 # HELPER FUNCTIONS FOR HTML GENERATION 
 
@@ -497,6 +501,8 @@ def get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth
 def server(input, output, session):
     running = reactive.value(False)
     cached_result = reactive.value(None)
+    isa_selected_pair = reactive.Value(None)
+    
 
     def tokenize_with_segments(text: str, tokenizer):
         pattern = re.search(r"([.!?])\s+([A-Za-z])", text)
@@ -509,13 +515,16 @@ def server(input, output, session):
         return tokenizer(text, return_tensors="pt")
 
     def heavy_compute(text, model_name):
+        print("DEBUG: Starting heavy_compute")
         if not text: return None
         tokenizer, encoder_model, mlm_model = ModelManager.get_model(model_name)
+        print("DEBUG: Models loaded")
         device = ModelManager.get_device()
         inputs = tokenize_with_segments(text, tokenizer)
         inputs = {k: v.to(device) for k, v in inputs.items()}
         with torch.no_grad():
             outputs = encoder_model(**inputs)
+        print("DEBUG: Model inference complete")
         tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
         embeddings = outputs.last_hidden_state[0].cpu().numpy()
         attentions = outputs.attentions
@@ -525,13 +534,26 @@ def server(input, output, session):
         # Compute head specialization metrics
         head_specialization = None
         try:
+            print("DEBUG: Computing head specialization")
             head_specialization = compute_all_heads_specialization(attentions, tokens, text)
+            print("DEBUG: Head specialization complete")
         except Exception as e:
             print(f"Warning: Could not compute head specialization: {e}")
             import traceback
             traceback.print_exc()
         
-        return (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model, head_specialization)
+        # Compute ISA
+        isa_data = None
+        try:
+            print("DEBUG: Computing ISA")
+            isa_data = compute_isa(attentions, tokens, text, tokenizer, inputs)
+            print("DEBUG: ISA complete")
+        except Exception as e:
+            print(f"Warning: Could not compute ISA: {e}")
+            traceback.print_exc()
+
+        print("DEBUG: heavy_compute finished")
+        return (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model, head_specialization, isa_data)
 
     @reactive.effect
     @reactive.event(input.generate_all)
@@ -572,7 +594,7 @@ def server(input, output, session):
         token_html = []
         for i, (tok, att_recv, recv_norm) in enumerate(zip(tokens, attention_received, att_received_norm)):
             opacity = 0.2 + (recv_norm * 0.6)
-            bg_color = f"rgba(59, 130, 246, {opacity})"
+            bg_color = f"rgba(59, 130, 246, {opacity})" # Keep blue for attention
             tooltip = f"Token: {tok}&#10;Attention Received: {att_recv:.3f}"
             token_html.append(f'<span class="token-viz" style="background:{bg_color};" title="{tooltip}">{tok}</span>')
         html = '<div class="token-viz-container">' + ''.join(token_html) + '</div>'
@@ -726,7 +748,7 @@ def server(input, output, session):
                             {"class": "header-controls-stacked"},
                             ui.div(
                                 {"class": "header-row-top"},
-                                ui.h4("Head Specialization Radar"),
+                                ui.h4("Attention Head Specialization"),
                                 ui.div(
                                     {"class": "header-right"},
                                     ui.div({"class": "select-compact", "id": "radar_head_selector"}, ui.input_select("radar_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(radar_head))),
@@ -741,9 +763,26 @@ def server(input, output, session):
                         ),
                         head_specialization_radar(res, radar_layer, radar_head, radar_mode),
                         ui.HTML(f"""
+                            <style>
+                                .metric-tag.specialization {{
+                                    color: #ff5ca9 !important;
+                                    font-weight: 700 !important;
+                                    font-size: 13px !important;
+                                    padding: 6px 12px;
+                                    border-radius: 20px;
+                                    transition: all 0.2s ease;
+                                    display: inline-block;
+                                    cursor: pointer;
+                                }}
+                                .metric-tag.specialization:hover {{
+                                    transform: scale(1.05);
+                                    color: #ff78bc !important;
+                                    background-color: rgba(255, 92, 169, 0.1);
+                                }}
+                            </style>
                             <div class="radar-explanation" style="margin-top: 10px;">
                                 <p style="margin: 10px 0 12px 0; font-size: 13px; color: #1e293b; text-align: center; font-weight: 600; line-height: 1.8;">
-                                    <strong style="color: #ff5ca9;">Head Specialization Dimensions</strong> — click any to see detailed explanation:<br>
+                                    <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
                                 </p>
                                 <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 12px; background: linear-gradient(135deg, #fff5f9 0%, #ffe5f3 100%); border-radius: 12px; border: 2px solid #ffcce5;">
                                     <span class="metric-tag specialization" onclick="showMetricModal('Syntax', {radar_layer}, {radar_head})">Syntax</span>
@@ -758,21 +797,23 @@ def server(input, output, session):
                         """)
                     ),
                     ui.div(
-                        {"class": "card card-compact"},
+                        {"class": "card"},
                         ui.div(
                             {"class": "header-controls-stacked"},
                             ui.div(
                                 {"class": "header-row-top"},
-                                ui.h4("Token Influence Tree"),
+                                ui.h4("Attention Dependency Tree"),
                                 ui.div(
                                     {"class": "header-right"},
                                     ui.tags.span("Root:", style="font-size:11px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                                    ui.input_select(
-                                        "tree_root_token",
-                                        None,
-                                        choices={str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}, # Will be updated
-                                        selected=str(tree_root_idx),
-                                        width="120px"
+                                    ui.div(
+                                        {"class": "select-compact"},
+                                        ui.input_select(
+                                            "tree_root_token",
+                                            None,
+                                            choices={str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)},
+                                            selected=str(tree_root_idx)
+                                        )
                                     )
                                 )
                             )
@@ -780,6 +821,25 @@ def server(input, output, session):
                         get_influence_tree_ui(res, tree_root_idx, radar_layer, radar_head)
                     ),
                     col_widths=[5, 7]
+                ),
+                # Row 4.5 - Inter-Sentence Attention (ISA)
+                ui.div(
+                    {"class": "card"},
+                    ui.h4("Inter-Sentence Attention (ISA)"),
+                    ui.layout_columns(
+                        ui.card(output_widget("isa_scatter"), height="520px", style="overflow: auto;"),
+                        ui.div(
+                            ui.output_ui("isa_detail_info"),
+                            ui.div(output_widget("isa_token_view"), class_="token-to-token-container"),
+                        ),
+                        col_widths=[6, 6],
+                    ),
+                    ui.div(
+                        {"class": "isa-explanation-block"},
+                        ui.tags.strong("Inter-Sentence Attention (ISA)"), " visualizes the relationship between two sentences, focusing on how the tokens in Sentence X attend to the tokens in Sentence Y. The ", ui.tags.strong("ISA score"), " quantifies this relationship, with higher values indicating a stronger connection between the tokens in Sentence X and Sentence Y.",
+                        ui.br(), ui.br(),
+                        "In the ", ui.tags.strong("Token-to-Token Attention"), " plot, each square represents the attention strength between a token from Sentence X (left) and a token from Sentence Y (top). Thicker squares indicate stronger attention, meaning those tokens are more related in terms of the model's attention mechanism."
+                    )
                 ),
                 # Spacer before residual/FFN row for clearer separation
                 ui.tags.div(style="height: var(--section-gap);"),
@@ -812,6 +872,185 @@ def server(input, output, session):
                 </div>
                 <script>$('#loading_spinner').hide(); $('#generate_all').prop('disabled', false).css('opacity', '1');</script>
             """)
+
+    @output
+    @output
+    @render_widget
+    def isa_scatter():
+        res = cached_result.get()
+        if not res or not res[-1]:
+            return None
+
+        isa_data = res[-1]
+        matrix = isa_data["sentence_attention_matrix"]
+        sentences = isa_data["sentence_texts"]
+        n = len(sentences)
+
+        x, y = np.meshgrid(np.arange(n), np.arange(n))
+        x_flat, y_flat = x.flatten(), y.flatten()
+        scores = np.nan_to_num(matrix.flatten(), nan=0.0)
+
+        hover_texts = [
+            f"Target ← {sentences[int(r)][:60]}...<br>Source → {sentences[int(c)][:60]}...<br>ISA = {s:.4f}"
+            for r, c, s in zip(y_flat, x_flat, scores)
+        ]
+
+        customdata = list(zip(y_flat.tolist(), x_flat.tolist()))
+
+        fig = go.FigureWidget(data=go.Scatter(
+            x=x_flat, y=y_flat,
+            mode="markers",
+            marker=dict(
+                size=np.clip(scores * 40 + 12, 12, 80),
+                color=scores,
+                colorscale="Viridis",
+                showscale=True,
+                colorbar=dict(title="ISA Score"),
+                line=dict(width=1, color="white")
+            ),
+            text=hover_texts,
+            hoverinfo="text",
+            customdata=customdata
+        ))
+
+        labels = [s[:30] + "..." if len(s) > 30 else s for s in sentences]
+
+        fig.update_layout(
+            title="Inter-Sentence Attention (ISA) — click a dot",
+            xaxis=dict(title="Source (Sentence Y)", tickmode="array", tickvals=np.arange(n), ticktext=labels),
+            yaxis=dict(title="Target (Sentence X)", tickmode="array", tickvals=np.arange(n), ticktext=labels, autorange="reversed"),
+            height=500,
+            autosize=True,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            clickmode="event+select",
+            margin=dict(l=60, r=60, t=60, b=60),
+        )
+
+        def on_click(trace, points, state):
+            if points.point_inds:
+                target_idx = int(points.ys[0])
+                source_idx = int(points.xs[0])
+                isa_selected_pair.set((target_idx, source_idx))
+
+        fig.data[0].on_click(on_click)
+        return fig
+
+
+    @output
+    @render_plotly
+    def isa_token_view():
+        pair = isa_selected_pair()
+        res = cached_result.get()
+
+        if res is None or pair is None:
+            fig = go.Figure()
+            fig.update_layout(
+                title="Click a dot on the left chart",
+                xaxis=dict(visible=False),
+                yaxis=dict(visible=False),
+                height=500,
+                autosize=True,
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+            return fig
+
+        target_idx, source_idx = pair
+        tokens, _, _, attentions, *_ = res
+        isa_data = res[-1]
+        boundaries = isa_data["sentence_boundaries_ids"]
+
+        from .isa import get_sentence_token_attention
+        sub_att, tokens_combined, src_start = get_sentence_token_attention(
+            attentions, tokens, target_idx, source_idx, boundaries
+        )
+
+        toks_target = tokens_combined[:src_start]
+        toks_source = tokens_combined[src_start:]
+
+        fig = go.Figure(data=go.Heatmap(
+            z=sub_att,
+            x=toks_source,
+            y=toks_target,
+            colorscale="Viridis",
+            colorbar=dict(title="Attention"),
+            hovertemplate="Target: %{y}<br>Source: %{x}<br>Weight: %{z:.4f}<extra></extra>",
+        ))
+
+        fig.update_layout(
+            title=f"Token-to-Token — S{target_idx} ← S{source_idx}",
+            xaxis_title="Source tokens",
+            yaxis_title="Target tokens",
+            height=500,
+            autosize=True,
+            margin=dict(l=80, r=60, t=60, b=60),
+        )
+        return fig
+
+
+    @output
+    @render.ui
+    def isa_detail_info():
+        pair = isa_selected_pair()
+        if pair is None:
+            return ui.HTML("<em style='color:#94a3b8;'>Click a dot on the ISA chart.</em>")
+        tx, sy = pair
+        res = cached_result.get()
+        score = 0.0
+        if res and res[-1]:
+            score = res[-1]["sentence_attention_matrix"][tx, sy]
+        return ui.HTML(f"Sentence {tx} (target) ← Sentence {sy} (source) · ISA: <strong>{score:.4f}</strong>")
+
+
+    @reactive.effect
+    @reactive.event(input.isa_click)
+    def _handle_isa_click():
+        click = input.isa_click()
+        if not click or "x" not in click or "y" not in click:
+            return
+        # Plotly coordinates: x = source (B), y = target (A)
+        source_idx = click["x"]
+        target_idx = click["y"]
+        isa_selected_pair.set((int(target_idx), int(source_idx)))
+
+
+
+    # New ISA overlay trigger handler
+    @reactive.effect
+    @reactive.event(input.isa_click)
+    def handle_isa_overlay():
+        trigger_data = input.isa_click()
+        print(f"DEBUG: handle_isa_overlay triggered with: {trigger_data}")
+        if not trigger_data: return
+        
+        # Map coordinates from Plotly click
+        # input x is Source (Sentence B) -> sent_y_idx
+        # input y is Target (Sentence A) -> sent_x_idx
+        sent_x_idx = trigger_data.get('y')
+        sent_y_idx = trigger_data.get('x')
+        
+        if sent_x_idx is None or sent_y_idx is None: return
+        
+        # Store the selected pair for the drilldown renderer
+        print(f"DEBUG: Setting isa_selected_pair to ({sent_x_idx}, {sent_y_idx})")
+        isa_selected_pair.set((sent_x_idx, sent_y_idx))
+
+    @reactive.effect
+    @reactive.event(input.isa_overlay_trigger)
+    def _handle_isa_overlay_trigger():
+        data = input.isa_overlay_trigger()
+        print(f"DEBUG: isa_overlay_trigger received: {data}")
+        if data:
+            try:
+                x = int(data["sentXIdx"])
+                y = int(data["sentYIdx"])
+                print(f"DEBUG: Setting isa_selected_pair to ({x}, {y})")
+                isa_selected_pair.set((x, y))
+            except Exception as e:
+                print(f"DEBUG: Error parsing trigger data: {e}")
+
+
 
     @render_plotly
     def attention_map():
@@ -874,7 +1113,7 @@ def server(input, output, session):
         
         att = attentions[layer_idx][0, head_idx].cpu().numpy()
         n_tokens = len(tokens)
-        color_palette = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#ffa07a', '#98d8c8', '#f7dc6f', '#bb8fce', '#85c1e2', '#f8b739', '#52be80', '#ec7063', '#af7ac5', '#5dade2', '#f39c12', '#27ae60']
+        color_palette = ['#ff5ca9', '#3b82f6', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e', '#a855f7', '#0ea5e9']
         fig = go.Figure()
         block_width = 0.8 / n_tokens
         for i, tok in enumerate(tokens):
@@ -933,9 +1172,9 @@ def server(input, output, session):
         dimensions = ["Syntax", "Semantics", "CLS Focus", "Punctuation", "Entities", "Long-range", "Self-attention"]
         dimension_keys = ["syntax", "semantics", "cls", "punct", "entities", "long_range", "self"]
         
-        # Color palette - Attention Atlas colors
-        colors = ['#ff5ca9', '#b28df2', '#0b1d3a', '#ff74b8', '#9370db', '#1e3a5f', '#ff8dc7', 
-                  '#c8b3f0', '#2d5a8a', '#ffb3d9', '#d4c5f9', '#4a7ba7']
+        # Color palette - Attention Atlas colors (Blue/Pink theme)
+        colors = ['#ff5ca9', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4', '#6366f1', '#f43f5e', 
+                  '#a855f7', '#0ea5e9', '#d946ef', '#2dd4bf', '#f59e0b']
         
         fig = go.Figure()
         
@@ -1127,17 +1366,18 @@ def server(input, output, session):
         explanation = """
         <div class="tree-explanation">
             <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.6;">
-                <strong>Token Influence Tree:</strong> Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2).
+                <strong>Attention Dependency Tree:</strong> Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2).
                 <span style="color: #94a3b8;">Click nodes to expand further. Thicker edges = stronger influence.</span>
             </p>
         </div>
         """
         
         html = f"""
-        <div class="influence-tree-wrapper">
-            <div id="tree-viz-container" class="tree-viz-container"></div>
+        <div class="influence-tree-wrapper" style="height: 100%; min-height: 600px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div class="influence-tree-wrapper" style="height: 100%; min-height: 600px; display: flex; flex-direction: column; justify-content: space-between;">
+            <div id="tree-viz-container" class="tree-viz-container" style="flex: 1; width: 100%; overflow-x: auto; overflow-y: hidden; text-align: center; position: relative;"></div>
+            {explanation}
         </div>
-        {explanation}
         <script>
                 (function() {{
                     function tryRender() {{
