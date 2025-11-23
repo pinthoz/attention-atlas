@@ -827,18 +827,29 @@ def server(input, output, session):
                     {"class": "card"},
                     ui.h4("Inter-Sentence Attention (ISA)"),
                     ui.layout_columns(
-                        ui.card(output_widget("isa_scatter"), height="520px", style="overflow: auto;"),
+                        ui.div(
+                            {"style": "overflow: auto; height: 520px;"},
+                            output_widget("isa_scatter")
+                        ),
                         ui.div(
                             ui.output_ui("isa_detail_info"),
-                            ui.div(output_widget("isa_token_view"), class_="token-to-token-container"),
+                            ui.div(output_widget("isa_token_view")),
                         ),
                         col_widths=[6, 6],
                     ),
                     ui.div(
                         {"class": "isa-explanation-block"},
-                        ui.tags.strong("Inter-Sentence Attention (ISA)"), " visualizes the relationship between two sentences, focusing on how the tokens in Sentence X attend to the tokens in Sentence Y. The ", ui.tags.strong("ISA score"), " quantifies this relationship, with higher values indicating a stronger connection between the tokens in Sentence X and Sentence Y.",
-                        ui.br(), ui.br(),
-                        "In the ", ui.tags.strong("Token-to-Token Attention"), " plot, each square represents the attention strength between a token from Sentence X (left) and a token from Sentence Y (top). Thicker squares indicate stronger attention, meaning those tokens are more related in terms of the model's attention mechanism."
+                        ui.tags.p(
+                            ui.tags.strong("Inter-Sentence Attention (ISA):"), 
+                            " visualizes the relationship between two sentences, focusing on how the tokens in Sentence X attend to the tokens in Sentence Y. The ", 
+                            ui.tags.strong("ISA score"), 
+                            " quantifies this relationship, with higher values indicating a stronger connection between the tokens in Sentence X and Sentence Y.",
+                            ui.br(), ui.br(),
+                            "In the ", 
+                            ui.tags.strong("Token-to-Token Attention"), 
+                            " plot, each square represents the attention strength between a token from Sentence X (left) and a token from Sentence Y (top). Thicker squares indicate stronger attention, meaning those tokens are more related in terms of the model's attention mechanism.",
+                            style = "margin: 0; font-size: 11px; color: #64748b; line-height: 1.6;"
+                        )
                     )
                 ),
                 # Spacer before residual/FFN row for clearer separation
