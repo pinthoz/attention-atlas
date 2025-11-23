@@ -840,20 +840,18 @@ def server(input, output, session):
                     ui.div(
                         {"class": "isa-explanation-block"},
                         ui.tags.p(
-                            ui.tags.strong("Inter-Sentence Attention (ISA):"), 
+                            ui.tags.strong("Inter-Sentence Attention (ISA):", style="color: #ff5ca9;"), 
                             " visualizes the relationship between two sentences, focusing on how the tokens in Sentence X attend to the tokens in Sentence Y. The ", 
                             ui.tags.strong("ISA score"), 
                             " quantifies this relationship, with higher values indicating a stronger connection between the tokens in Sentence X and Sentence Y.",
                             ui.br(), ui.br(),
                             "In the ", 
-                            ui.tags.strong("Token-to-Token Attention"), 
+                            ui.tags.strong("Token-to-Token Attention", style="color: #ff5ca9;"), 
                             " plot, each square represents the attention strength between a token from Sentence X (left) and a token from Sentence Y (top). Thicker squares indicate stronger attention, meaning those tokens are more related in terms of the model's attention mechanism.",
                             style = "margin: 0; font-size: 11px; color: #64748b; line-height: 1.6;"
                         )
                     )
                 ),
-                # Spacer before residual/FFN row for clearer separation
-                ui.tags.div(style="height: var(--section-gap);"),
                 
                 # Row 5 - Residuals & FFN
                 ui.layout_columns(
@@ -927,7 +925,7 @@ def server(input, output, session):
         labels = [s[:30] + "..." if len(s) > 30 else s for s in sentences]
 
         fig.update_layout(
-            title="Inter-Sentence Attention (ISA) — click a dot",
+            title="Click a dot",
             xaxis=dict(title="Source (Sentence Y)", tickmode="array", tickvals=np.arange(n), ticktext=labels),
             yaxis=dict(title="Target (Sentence X)", tickmode="array", tickvals=np.arange(n), ticktext=labels, autorange="reversed"),
             height=500,

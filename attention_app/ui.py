@@ -907,12 +907,29 @@ app_ui = ui.page_fluid(
             min-height: 300px; /* Ensure minimum height */
         }
 
+        /* MLM Predictions - Prediction Panel Container */
+        .prediction-panel {
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        .prediction-panel .card-scroll {
+            flex: none; /* Override flex: 1 from general .card-scroll to prevent height issues */
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 0;
+            margin: 0;
+            box-sizing: border-box;
+        }
+
         /* MLM Predictions Grid */
         .mlm-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             gap: 12px;
-            padding: 8px;
+            padding: 12px; /* Uniform padding */
+            box-sizing: border-box;
         }
 
         .mlm-card {
