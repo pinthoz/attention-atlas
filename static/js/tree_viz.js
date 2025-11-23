@@ -16,9 +16,23 @@ function renderInfluenceTree(treeData, containerId) {
     }
 
     // Configuration
-    const margin = { top: 20, right: 120, bottom: 20, left: 120 };
-    const width = 960 - margin.right - margin.left;
-    const height = 600 - margin.top - margin.bottom;
+    // Configuration
+    const container = document.getElementById(containerId);
+    const containerWidth = container.clientWidth || 960;
+    const containerHeight = container.clientHeight || 600;
+
+    const margin = { top: 40, right: 60, bottom: 40, left: 60 };
+
+    // Dynamic width calculation
+    // We need to count leaf nodes to determine required width
+    const rootForCount = d3.hierarchy(treeData);
+    const leafCount = rootForCount.leaves().length;
+    const minNodeWidth = 60; // Reduced from 100 to make it more compact
+    // We want it to fit in container if possible, but expand if needed
+    const requiredWidth = Math.max(containerWidth - margin.left - margin.right, leafCount * minNodeWidth);
+
+    const width = requiredWidth;
+    const height = containerHeight - margin.top - margin.bottom;
 
     // Color palette
     const colors = {
@@ -33,13 +47,23 @@ function renderInfluenceTree(treeData, containerId) {
         .append("svg")
         .attr("width", width + margin.right + margin.left)
         .attr("height", height + margin.top + margin.bottom)
-        .style("font", "12px 'Inter', sans-serif");
+        .style("font", "12px 'Inter', sans-serif")
+        .style("display", "inline-block") // Allows centering via text-align: center on parent
+        .style("min-width", "100%"); // Ensure it fills at least the container
 
     const g = svg.append("g")
         .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Create tree layout
-    const tree = d3.tree().size([height, width]);
+    // Create tree layout - Vertical (size([width, height]))
+    const tree = d3.tree().size([width, height]);
+
+    // Auto-scroll to center if content exceeds container
+    if (width > (containerWidth - margin.left - margin.right)) {
+        setTimeout(() => {
+            const scrollLeft = (width + margin.left + margin.right - containerWidth) / 2;
+            container.scrollLeft = scrollLeft;
+        }, 100);
+    }
 
     // Create hierarchy
     const root = d3.hierarchy(treeData);
@@ -63,8 +87,8 @@ function renderInfluenceTree(treeData, containerId) {
         const nodes = treeData.descendants();
         const links = treeData.descendants().slice(1);
 
-        // Normalize for fixed-depth
-        nodes.forEach(d => { d.y = d.depth * 180; });
+        // Normalize for fixed-depth - Vertical spacing
+        nodes.forEach(d => { d.y = d.depth * 80; }); // Reduced vertical spacing from 120 to 80
 
         // ****************** Nodes section ***************************
 
@@ -75,7 +99,7 @@ function renderInfluenceTree(treeData, containerId) {
         // Enter any new nodes at the parent's previous position
         const nodeEnter = node.enter().append('g')
             .attr('class', 'node')
-            .attr("transform", d => `translate(${source.y0 || 0},${source.x0 || 0})`)
+            .attr("transform", d => `translate(${source.x0 || width / 2},${source.y0 || 0})`)
             .on('click', click);
 
         // Add Circle for the nodes
@@ -90,16 +114,18 @@ function renderInfluenceTree(treeData, containerId) {
         // Add labels for the nodes
         nodeEnter.append('text')
             .attr("dy", ".35em")
+            .attr("dy", ".35em")
             .attr("x", d => d.children || d._children ? -13 : 13)
             .attr("text-anchor", d => d.children || d._children ? "end" : "start")
             .text(d => d.data.name)
             .style("fill", d => getNodeColor(d))
             .style("font-weight", d => d.depth === 0 ? "700" : "500")
-            .style("font-size", d => d.depth === 0 ? "14px" : "12px");
+            .style("font-size", d => d.depth === 0 ? "12px" : "10px"); // Reduced font size
 
         // Add attention score label
         nodeEnter.append('text')
             .attr("dy", "1.5em")
+            .attr("dy", "1.8em")
             .attr("x", d => d.children || d._children ? -13 : 13)
             .attr("text-anchor", d => d.children || d._children ? "end" : "start")
             .text(d => d.depth > 0 ? `att: ${d.data.att.toFixed(3)}` : "")
@@ -119,18 +145,18 @@ function renderInfluenceTree(treeData, containerId) {
         // Transition to the proper position for the node
         nodeUpdate.transition()
             .duration(750)
-            .attr("transform", d => `translate(${d.y},${d.x})`);
+            .attr("transform", d => `translate(${d.x},${d.y})`);
 
         // Update the node attributes and style
         nodeUpdate.select('circle.node-circle')
-            .attr('r', d => 6 + (d.data.att || 0) * 4)
+            .attr('r', d => 4 + (d.data.att || 0) * 3) // Reduced radius from 6 to 4
             .style("fill", d => d._children ? getNodeColor(d) : "#fff")
             .style("cursor", "pointer");
 
         // Remove any exiting nodes
         const nodeExit = node.exit().transition()
             .duration(750)
-            .attr("transform", d => `translate(${source.y},${source.x})`)
+            .attr("transform", d => `translate(${source.x},${source.y})`)
             .remove();
 
         // On exit reduce the node circles size to 0
@@ -151,7 +177,7 @@ function renderInfluenceTree(treeData, containerId) {
         const linkEnter = link.enter().insert('path', "g")
             .attr("class", "link")
             .attr('d', d => {
-                const o = { x: source.x0 || 0, y: source.y0 || 0 };
+                const o = { x: source.x0 || width / 2, y: source.y0 || 0 };
                 return diagonal(o, o);
             })
             .style("fill", "none")
@@ -182,12 +208,12 @@ function renderInfluenceTree(treeData, containerId) {
             d.y0 = d.y;
         });
 
-        // Creates a curved (diagonal) path from parent to the child nodes
+        // Creates a curved (diagonal) path from parent to the child nodes - Vertical
         function diagonal(s, d) {
-            return `M ${s.y} ${s.x}
-                    C ${(s.y + d.y) / 2} ${s.x},
-                      ${(s.y + d.y) / 2} ${d.x},
-                      ${d.y} ${d.x}`;
+            return `M ${s.x} ${s.y}
+                    C ${s.x} ${(s.y + d.y) / 2},
+                      ${d.x} ${(s.y + d.y) / 2},
+                      ${d.x} ${d.y}`;
         }
 
         // Toggle children on click
