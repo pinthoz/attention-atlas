@@ -284,6 +284,12 @@ app_ui = ui.page_fluid(
             display: flex;
             flex-direction: column;
         }
+
+        /* Card with horizontal scroll for Attention Flow */
+        .card-scroll-horizontal {
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+        }
         
         /* Compact card for Token Influence Tree */
         .card-compact {
@@ -326,10 +332,10 @@ app_ui = ui.page_fluid(
         }
 
         .metric-card {
-            background: white;
+            background: linear-gradient(135deg, #ffe5f3 0%, #ffd4ec 100%);
             border-radius: 12px;
             padding: 16px;
-            border: 1px solid var(--border-color);
+            border: 1px solid #ffb8de;
             transition: all 0.2s;
             cursor: pointer;
         }
@@ -554,6 +560,7 @@ app_ui = ui.page_fluid(
             background: #cbd5e1;
             border-radius: 4px;
         }
+        ::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
         }
         
@@ -593,6 +600,50 @@ app_ui = ui.page_fluid(
             gap: 8px !important; /* Reduced gap between selectors */
             align-items: center;
             flex-shrink: 0;
+        }
+
+        /* Selection boxes container - top-right alignment with wrapping */
+        .selection-boxes-container {
+            display: flex;
+            justify-content: flex-end; /* Align to the right */
+            flex-wrap: wrap;  /* Allow wrapping to the next line when needed */
+            gap: 8px;
+            align-items: center;
+            margin-top: 0;
+        }
+
+        .selection-box {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        /* Header with selection boxes at top-right */
+        .header-with-selectors {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .header-with-selectors h4 {
+            margin: 0;
+            flex-shrink: 0;
+        }
+
+        /* Responsive behavior for smaller screens */
+        @media (max-width: 768px) {
+            .selection-boxes-container {
+                justify-content: flex-start;
+                width: 100%;
+                margin-top: 8px;
+            }
+
+            .header-with-selectors {
+                flex-direction: column;
+                align-items: flex-start;
+            }
         }
 
         /* Stacked Header Controls (for Radar) */
@@ -785,6 +836,14 @@ app_ui = ui.page_fluid(
             gap: 12px;
             margin-bottom: 4px;
             padding-left: 16px;
+            width: 100%;
+        }
+
+        .qkv-row-item img.heatmap {
+            flex: 1;
+            width: 100%;
+            height: auto;
+            max-width: 100%;
         }
 
         .qkv-label {
@@ -793,6 +852,7 @@ app_ui = ui.page_fluid(
             color: #64748b;
             text-transform: uppercase;
             min-width: 12px;
+            flex-shrink: 0;
         }
 
         /* Scaled Dot-Product Attention */
@@ -1308,6 +1368,33 @@ app_ui = ui.page_fluid(
             line-height: 1.6;
             border: 1px solid #e2e8f0;
         }
+
+        /* Attention Flow Plot Container - Horizontal Scrollable for Large Inputs */
+        #attention_flow {
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+
+        #attention_flow .js-plotly-plot {
+            display: block !important;
+            overflow: visible !important;
+        }
+
+        #attention_flow .plotly {
+            overflow: visible !important;
+        }
+
+        #attention_flow .plotly .main-svg {
+            overflow: visible !important;
+        }
+
+        /* Prevent Plotly from auto-resizing */
+        #attention_flow .plotly-graph-div {
+            overflow-x: visible !important;
+            overflow-y: visible !important;
+        }
         """
     ),
     ui.tags.script(
@@ -1687,6 +1774,34 @@ app_ui = ui.page_fluid(
                                 }
                             }
                         });
+                    }
+                }, 500);
+            }
+
+            // Force horizontal scroll for Attention Flow plot
+            if (event.name === 'attention_flow') {
+                setTimeout(function() {
+                    var flowContainer = document.getElementById('attention_flow');
+                    if (flowContainer) {
+                        // Set overflow styles
+                        flowContainer.style.overflowX = 'auto';
+                        flowContainer.style.overflowY = 'hidden';
+                        flowContainer.style.width = '100%';
+
+                        // Set parent styles
+                        var parent = flowContainer.parentElement;
+                        if (parent) {
+                            parent.style.overflowX = 'auto';
+                            parent.style.overflowY = 'hidden';
+                            parent.style.width = '100%';
+                        }
+
+                        // Find and configure Plotly div
+                        var plotlyDiv = flowContainer.querySelector('.js-plotly-plot');
+                        if (plotlyDiv && window.Plotly) {
+                            // Disable responsive behavior
+                            window.Plotly.Plots.resize(plotlyDiv);
+                        }
                     }
                 }, 500);
             }

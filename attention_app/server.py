@@ -678,11 +678,17 @@ def server(input, output, session):
                     ui.div(
                         {"class": "card"},
                         ui.div(
-                            {"class": "header-controls"},
+                            {"class": "header-with-selectors"},
                             ui.h4("Q/K/V Projections", title="Query / Key / Value Projections"),
                             ui.div(
-                                {"class": "select-compact"},
-                                ui.input_select("qkv_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(qkv_layer))
+                                {"class": "selection-boxes-container"},
+                                ui.div(
+                                    {"class": "selection-box"},
+                                    ui.div(
+                                        {"class": "select-compact"},
+                                        ui.input_select("qkv_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(qkv_layer))
+                                    )
+                                )
                             )
                         ),
                         get_qkv_table(res, qkv_layer)
@@ -690,14 +696,17 @@ def server(input, output, session):
                     ui.div(
                         {"class": "card"},
                         ui.div(
-                            {"class": "header-controls-responsive"},
+                            {"class": "header-with-selectors"},
                             ui.h4("Scaled Dot-Product Attention"),
                             ui.div(
-                                {"class": "header-right"},
-                                ui.tags.span("Focus:", style="font-size:10px; font-weight:600; color:#64748b;"),
+                                {"class": "selection-boxes-container"},
+                                ui.tags.span("Focus:", style="font-size:10px; font-weight:600; color:#64748b; margin-right: 4px;"),
                                 ui.div(
-                                    {"class": "select-compact"},
-                                    ui.input_select("scaled_attention_token", None, choices={str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}, selected=str(focus_token_idx))
+                                    {"class": "selection-box"},
+                                    ui.div(
+                                        {"class": "select-compact"},
+                                        ui.input_select("scaled_attention_token", None, choices={str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}, selected=str(focus_token_idx))
+                                    )
                                 )
                             )
                         ),
@@ -712,12 +721,18 @@ def server(input, output, session):
                     ui.div(
                         {"class": "card"},
                         ui.div(
-                            {"class": "header-controls"},
+                            {"class": "header-with-selectors"},
                             ui.h4("Multi-Head Attention"),
                             ui.div(
-                                {"class": "header-right"},
-                                ui.div({"class": "select-compact"}, ui.input_select("att_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(att_layer))),
-                                ui.div({"class": "select-compact"}, ui.input_select("att_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(att_head))),
+                                {"class": "selection-boxes-container"},
+                                ui.div(
+                                    {"class": "selection-box"},
+                                    ui.div({"class": "select-compact"}, ui.input_select("att_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(att_layer)))
+                                ),
+                                ui.div(
+                                    {"class": "selection-box"},
+                                    ui.div({"class": "select-compact"}, ui.input_select("att_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(att_head)))
+                                )
                             )
                         ),
                         output_widget("attention_map")
@@ -725,18 +740,24 @@ def server(input, output, session):
                     ui.div(
                         {"class": "card"},
                         ui.div(
-                            {"class": "header-controls"},
+                            {"class": "header-with-selectors"},
                             ui.h4("Attention Flow"),
                             ui.div(
-                                {"class": "header-right"},
-                                ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b;"),
+                                {"class": "selection-boxes-container"},
+                                ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
                                 ui.div(
-                                    {"class": "select-compact"},
-                                    ui.input_select("flow_token_select", None, choices={"all": "All tokens", **{str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}}, selected=flow_select)
+                                    {"class": "selection-box"},
+                                    ui.div(
+                                        {"class": "select-compact"},
+                                        ui.input_select("flow_token_select", None, choices={"all": "All tokens", **{str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}}, selected=flow_select)
+                                    )
                                 )
                             )
                         ),
-                        output_widget("attention_flow")
+                        ui.div(
+                            {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
+                            output_widget("attention_flow")
+                        )
                     ),
                     col_widths=[6, 6]
                 ),
@@ -953,7 +974,6 @@ def server(input, output, session):
         if res is None or pair is None:
             fig = go.Figure()
             fig.update_layout(
-                title="Click a dot on the left chart",
                 xaxis=dict(visible=False),
                 yaxis=dict(visible=False),
                 height=500,
@@ -1117,22 +1137,39 @@ def server(input, output, session):
         try: selected = input.flow_token_select()
         except: selected = "all"
         focus_idx = None if selected == "all" else int(selected)
-        
+
         att = attentions[layer_idx][0, head_idx].cpu().numpy()
         n_tokens = len(tokens)
         color_palette = ['#ff5ca9', '#3b82f6', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e', '#a855f7', '#0ea5e9']
+
         fig = go.Figure()
-        block_width = 0.8 / n_tokens
+
+        # Calculate dynamic width based on token count to ensure enough horizontal space
+        # Increased to 50 pixels per token for proper spacing even with long tokens
+        min_pixels_per_token = 50
+        calculated_width = max(1000, n_tokens * min_pixels_per_token)
+
+        # Adjust block spacing to prevent horizontal overlap
+        block_width = 0.95 / n_tokens  # Maximum spacing
+
         for i, tok in enumerate(tokens):
             color = color_palette[i % len(color_palette)]
             x_pos = i / n_tokens + block_width / 2
             show_focus = focus_idx is not None
             is_selected = focus_idx == i if show_focus else True
-            font_size = 13 if is_selected else 10
+
+            # Dynamically adjust font size for many tokens
+            if n_tokens > 30:
+                font_size = 9 if is_selected else 8
+            elif n_tokens > 20:
+                font_size = 11 if is_selected else 10
+            else:
+                font_size = 13 if is_selected else 10
+
             text_color = color if (show_focus and is_selected) else "#111827"
             fig.add_trace(go.Scatter(x=[x_pos], y=[1.05], mode='text', text=tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
             fig.add_trace(go.Scatter(x=[x_pos], y=[-0.05], mode='text', text=tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
-        
+
         threshold = 0.04
         for i in range(n_tokens):
             for j in range(n_tokens):
@@ -1152,13 +1189,33 @@ def server(input, output, session):
                         line_opacity = 0.003
                         line_width = 0.1
                     fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color=line_color, width=line_width), opacity=line_opacity, showlegend=False, hoverinfo='text' if is_line_focused else 'skip', hovertext=f"<b>{tokens[i]} to {tokens[j]}</b><br>Attention: {weight:.4f}"))
-        
+
         title_text = ""
         if focus_idx is not None:
             focus_color = color_palette[focus_idx % len(color_palette)]
             title_text += f" · <b style='color:{focus_color}'>Focused: '{tokens[focus_idx]}'</b>"
-        
-        fig.update_layout(title=title_text, xaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-0.05, 1.05]), yaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-0.25, 1.25]), plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', font=dict(color='#111827'), height=500, margin=dict(l=20, r=20, t=60, b=40), clickmode='event+select', hovermode='closest', dragmode=False)
+
+        fig.update_layout(
+            title=title_text,
+            xaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-0.05, 1.05]),
+            yaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-0.25, 1.25]),
+            plot_bgcolor='#ffffff',
+            paper_bgcolor='#ffffff',
+            font=dict(color='#111827'),
+            height=500,
+            width=calculated_width,  # Dynamic width for horizontal spacing
+            margin=dict(l=20, r=20, t=60, b=40),
+            clickmode='event+select',
+            hovermode='closest',
+            dragmode=False,
+            autosize=False  # Disable autosize to respect fixed width
+        )
+
+        # Configure the figure to prevent responsive resizing
+        fig.update_layout(
+            modebar=dict(orientation='v')
+        )
+
         return fig
 
     # This function is now called directly from dashboard_content
