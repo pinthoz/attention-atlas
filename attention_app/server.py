@@ -456,8 +456,12 @@ def get_metrics_display(res):
     for idx, (label, value, icon, metric_name, layer, head) in enumerate(metrics):
         gradient = gradients[idx % len(gradients)]
         cards_html += f'''
-            <div class="metric-card" onclick="showMetricModal('{metric_name}', {layer}, {head})" 
-                 style="background: {gradient};">
+            <div class="metric-card"
+                 data-metric-name="{metric_name}"
+                 data-layer="{layer}"
+                 data-head="{head}"
+                 onclick="showMetricModal('{metric_name}', {layer}, {head})"
+                 style="background: {gradient}; cursor: pointer;">
                 <div class="metric-icon">{icon}</div>
                 <div class="metric-label">{label}</div>
                 <div class="metric-value">{value}</div>
@@ -569,9 +573,11 @@ def server(input, output, session):
             cached_result.set(result)
         except Exception:
             cached_result.set(None)
-            await session.send_custom_message('stop_loading', {}) # Only stop if error
+        finally:
+            await session.send_custom_message('stop_loading', {})
             running.set(False)
-        # Note: We do NOT stop loading here on success. The dashboard render will do it.
+
+
 
     @output
     @render.ui
@@ -863,7 +869,7 @@ def server(input, output, session):
                     col_widths=[6, 6]
                 ),
                 # Script to hide spinner when this UI is mounted
-                ui.tags.script("$('#loading_spinner').hide(); $('#generate_all').prop('disabled', false).css('opacity', '1');")
+                # ui.tags.script("$('#loading_spinner').hide(); $('#generate_all').prop('disabled', false).css('opacity', '1');")
             )
             return layout
         except Exception as e:
@@ -875,7 +881,6 @@ def server(input, output, session):
                     <h3>Error Rendering Dashboard</h3>
                     <pre style='white-space:pre-wrap; font-size:11px;'>{err_msg}</pre>
                 </div>
-                <script>$('#loading_spinner').hide(); $('#generate_all').prop('disabled', false).css('opacity', '1');</script>
             """)
 
     @output
