@@ -153,9 +153,25 @@ app_ui = ui.page_fluid(
         .dashboard-stack > .shiny-layout-columns {
             margin-bottom: var(--section-gap) !important;
         }
-        
+
         .dashboard-stack > *:last-child {
             margin-bottom: 0 !important;
+        }
+
+        /* Ensure equal heights for cards in layout columns */
+        .shiny-layout-columns {
+            display: flex;
+            align-items: stretch;
+        }
+
+        .shiny-layout-columns > div {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .shiny-layout-columns .card {
+            flex: 1;
+            min-height: 500px;
         }
 
         /* Ensure consistent spacing for generated content */
@@ -1186,8 +1202,11 @@ app_ui = ui.page_fluid(
         /* D3.js Tree Visualization Styles */
         .influence-tree-wrapper {
             padding: 4px;
-            max-height: 400px;
+            height: 100%;
+            min-height: 500px;
             overflow-y: auto;
+            display: flex;
+            flex-direction: column;
         }
         
         .tree-explanation {
@@ -1209,9 +1228,12 @@ app_ui = ui.page_fluid(
             border-radius: 12px;
             padding: 10px;
             flex: 1;
+            min-height: 400px;
             overflow: auto;
             display: flex;
             flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
         
         .metric-tag {
@@ -1855,11 +1877,13 @@ app_ui = ui.page_fluid(
                 return;
             }
             
-            // Vertical tree configuration
-            // Vertical tree configuration
-            const margin = {top: 80, right: 20, bottom: 20, left: 20};
+            // Vertical tree configuration - dynamically calculate based on container
+            const container = document.getElementById(containerId);
+            const containerHeight = container ? container.clientHeight : 500;
+
+            const margin = {top: 80, right: 20, bottom: 60, left: 20};
             const width = 600 - margin.right - margin.left;
-            const height = 450 - margin.top - margin.bottom;
+            const height = Math.max(400, containerHeight - margin.top - margin.bottom);
             
             const colors = {
                 root: '#ff5ca9',
@@ -1891,9 +1915,13 @@ app_ui = ui.page_fluid(
                 const treeData = tree(root);
                 const nodes = treeData.descendants();
                 const links = treeData.descendants().slice(1);
-                
-                // Vertical spacing by depth
-                nodes.forEach(d => { d.y = d.depth * 110; }); /* Compacted vertical spacing */
+
+                // Calculate max depth to distribute nodes evenly
+                const maxDepth = d3.max(nodes, d => d.depth);
+                const verticalSpacing = maxDepth > 0 ? height / (maxDepth + 1) : height;
+
+                // Distribute nodes evenly across available height
+                nodes.forEach(d => { d.y = d.depth * verticalSpacing; });
                 
                 const node = g.selectAll('g.node')
                     .data(nodes, d => d.id || (d.id = ++i));

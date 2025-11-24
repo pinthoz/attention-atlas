@@ -1,9 +1,3 @@
-"""Head Specialization Radar - Behavioral metrics for attention heads.
-
-This module computes linguistic and structural behavioral metrics for each
-attention head in BERT, enabling visualization of head specializations.
-"""
-
 import string
 import numpy as np
 from functools import lru_cache
