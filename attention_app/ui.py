@@ -1312,27 +1312,139 @@ app_ui = ui.page_fluid(
     ),
     ui.tags.script(
         """
-        $(document).on('shiny:connected', function() {
-            // Toggle MLM Details
-            window.toggleMlmDetails = function(id) {
-                var el = document.getElementById(id);
-                if (el.style.display === 'none' || el.style.display === '') {
-                    el.style.display = 'block';
-                } else {
-                    el.style.display = 'none';
+        // Define global functions immediately (before Shiny connects)
+        window.toggleMlmDetails = function(id) {
+            var el = document.getElementById(id);
+            if (el.style.display === 'none' || el.style.display === '') {
+                el.style.display = 'block';
+            } else {
+                el.style.display = 'none';
+            }
+        };
+
+        window.toggleTreeNode = function(nodeId) {
+            var children = document.getElementById(nodeId + '-children');
+            var toggle = document.getElementById(nodeId + '-toggle');
+            if (children && toggle) {
+                children.classList.toggle('collapsed');
+                toggle.classList.toggle('collapsed');
+            }
+        };
+
+        // Define showMetricModal early so it's available for onclick handlers
+        window.showMetricModal = function(metricName, layer, head) {
+            var modal = document.getElementById('metric-modal');
+            var title = document.getElementById('modal-title');
+            var body = document.getElementById('modal-body');
+
+            title.textContent = metricName;
+
+            var explanations = {
+                'Syntax': {
+                    formula: 'SYN<sup>l,h</sup> = (Σ<sub>i,j∈syntax</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Proportion of total attention mass directed toward function words (determiners, prepositions, auxiliaries, conjunctions, particles, pronouns). POS tags are identified using spaCy\\'s part-of-speech tagger and include: DET, ADP, AUX, CCONJ, SCONJ, PART, PRON. The metric sums all attention weights targeting these syntactic tokens and divides by the total attention mass.',
+                    interpretation: 'Higher values (closer to 1) indicate the head specializes in syntactic structure, focusing on grammatical scaffolding rather than semantic content. These heads typically play a role in parsing sentence structure and establishing grammatical relationships. Low values suggest the head ignores function words in favor of content.'
+                },
+                'Semantics': {
+                    formula: 'SEM<sup>l,h</sup> = (Σ<sub>i,j∈semantics</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Proportion of total attention mass directed toward content-bearing words (nouns, proper nouns, verbs, adjectives, adverbs, numerals). POS tags from spaCy include: NOUN, PROPN, VERB, ADJ, ADV, NUM. The metric sums all attention weights targeting these semantic tokens and divides by the total attention mass.',
+                    interpretation: 'Higher values (closer to 1) indicate the head specializes in semantic content, tracking meaning-carrying words that convey the main ideas and concepts. These heads typically focus on topic words and key information. Low values suggest the head prioritizes structural elements over semantic ones.'
+                },
+                'CLS Focus': {
+                    formula: 'CLS<sup>l,h</sup> = (1/n) Σ<sub>i=1</sub><sup>n</sup> A<sub>i,CLS</sub><sup>l,h</sup>',
+                    description: 'Average attention weight from all tokens to the [CLS] token at position 0. Computed by taking column 0 of the attention matrix (all queries attending to [CLS]) and averaging across all query positions.',
+                    interpretation: 'Higher values (closer to 1) indicate the head uses [CLS] as a central aggregation point, pulling information from the entire sequence into this special token. This is common in later layers where [CLS] accumulates sentence-level representations. Low values suggest the head doesn\\'t use [CLS] as a special aggregation point.'
+                },
+                'Punctuation': {
+                    formula: 'PUNC<sup>l,h</sup> = (Σ<sub>i,j∈punct</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Proportion of total attention mass directed toward punctuation marks. Punctuation is identified using Python\\'s string.punctuation set (.,!?;:\\'\"()[]{}-/\\\\). The metric sums all attention weights targeting punctuation tokens and divides by the total attention mass.',
+                    interpretation: 'Higher values (closer to 1) indicate the head uses punctuation as structural anchors or boundary markers, often for clause/phrase segmentation. These heads may help identify sentence boundaries or syntactic breaks. Low values suggest the head ignores punctuation entirely.'
+                },
+                'Entities': {
+                    formula: 'ENT<sup>l,h</sup> = (Σ<sub>i,j∈entities</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Proportion of total attention mass directed toward named entities (people, organizations, locations, etc.). Named Entity Recognition tags are identified using spaCy\\'s NER tagger - any token with a tag other than "O" (outside) is considered an entity. The metric sums all attention weights targeting entity tokens and divides by the total attention mass.',
+                    interpretation: 'Higher values (closer to 1) indicate the head specializes in tracking named entities and important noun phrases across the sequence. This suggests a role in coreference resolution or entity tracking. Low values (or 0 if no entities present) suggest the head doesn\\'t prioritize named entities.'
+                },
+                'Long-range': {
+                    formula: 'LR<sup>l,h</sup> = mean(A<sub>ij</sub><sup>l,h</sup> | |i-j| ≥ 5)',
+                    description: 'Average attention weight for token pairs separated by 5 or more positions. Only attention weights where the absolute distance between query position i and key position j is at least 5 are included in the calculation. This measures the head\\'s tendency to bridge distant tokens rather than focusing on local context.',
+                    interpretation: 'Higher values indicate the head specializes in long-range dependencies, connecting tokens that are far apart in the sequence. This is important for capturing global context and long-distance relationships. Low values suggest the head focuses primarily on local neighborhoods and immediate context.'
+                },
+                'Self-attention': {
+                    formula: 'SELF<sup>l,h</sup> = (1/n) Σ<sub>i=1</sub><sup>n</sup> A<sub>ii</sub><sup>l,h</sup>',
+                    description: 'Average of the diagonal elements of the attention matrix, measuring how much each token attends to itself. Computed by extracting the diagonal (where i = j) and averaging these self-attention weights across all positions.',
+                    interpretation: 'Higher values (closer to 1) indicate strong self-attention loops where tokens primarily attend to themselves. This often serves to preserve token identity or stabilize representations. Lower values suggest the head focuses on contextual relationships rather than self-preservation.'
+                },
+                'Confidence Max': {
+                    formula: 'C<sub>max</sub><sup>l,h</sup> = max<sub>i,j</sub>(A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'The maximum attention weight in the attention matrix. Measures the strongest connection between any query-key pair.',
+                    interpretation: 'Higher values indicate that this head has a very confident focus on a specific token. Values close to 1 suggest the head is highly specialized and focuses almost exclusively on one token-pair relationship.',
+                    paper: 'Attention Confidence metric from attention analysis literature'
+                },
+                'Confidence Avg': {
+                    formula: 'C<sub>avg</sub><sup>l,h</sup> = (1/n) Σ<sub>i=1</sub><sup>n</sup> max<sub>j</sub>(A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Average of the maximum attention weight per row. Each row represents how a query token attends to all key tokens.',
+                    interpretation: 'This metric captures the overall confidence level of the attention head. High values (closer to 1) suggest the head consistently focuses strongly on specific tokens for each query, indicating specialized behavior across all positions.',
+                    paper: 'Attention Confidence metric from attention analysis literature'
+                },
+                'Focus': {
+                    formula: 'E<sub>l,h</sub> = -Σ<sub>i=1</sub><sup>n</sup> Σ<sub>j=1</sub><sup>n</sup> A<sub>ij</sub><sup>l,h</sup> log(A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Shannon entropy measures the uncertainty or randomness in the attention distribution. Quantifies how spread out the attention is.',
+                    interpretation: 'Low entropy (e.g., < 2) = highly focused attention on few tokens. High entropy (e.g., > 4) = attention broadly distributed across many tokens.',
+                    paper: 'Attention Focus metric using entropy from information theory'
+                },
+                'Sparsity': {
+                    formula: 'S<sub>l,h</sub> = (1/n²) Σ<sub>i=1</sub><sup>n</sup> Σ<sub>j</sub><sup>n</sup> 𝟙(A<sub>ij</sub><sup>l,h</sup> < τ)',
+                    description: 'Proportion of attention weights below threshold τ = 0.01. Measures how many token connections the head effectively ignores.',
+                    interpretation: 'High sparsity (closer to 100%) = selective attention on very few tokens, most connections ignored.',
+                    paper: 'Attention Sparsity metric with threshold τ = 0.01'
+                },
+                'Distribution': {
+                    formula: 'Q<sub>0.5</sub><sup>l,h</sup> = median(A<sub>l,h</sub>)',
+                    description: 'The median (50th percentile) of all attention weights in the matrix.',
+                    interpretation: 'Low median + high max = attention concentrated on few tokens. High median = more evenly distributed.',
+                    paper: 'Attention Distribution Attributes using quantiles'
+                },
+                'Uniformity': {
+                    formula: 'U<sub>l,h</sub> = √[(1/n²) Σ<sub>i,j</sub> (A<sub>ij</sub><sup>l,h</sub> - μ<sub>l,h</sub>)²]',
+                    description: 'Standard deviation of all attention weights. Measures the variability in the attention distribution.',
+                    interpretation: 'High uniformity = high variance, low uniformity = homogeneous attention distribution.',
+                    paper: 'Attention Uniformity metric measuring distribution variance'
                 }
             };
-            
-            // Toggle Tree Node
-            window.toggleTreeNode = function(nodeId) {
-                var children = document.getElementById(nodeId + '-children');
-                var toggle = document.getElementById(nodeId + '-toggle');
-                if (children && toggle) {
-                    children.classList.toggle('collapsed');
-                    toggle.classList.toggle('collapsed');
-                }
-            };
-        });
+
+            var info = explanations[metricName];
+            if (info) {
+                var referenceBlock = info.paper ? `
+                    <div class="modal-section">
+                        <h4>Reference</h4>
+                        <p style="font-size:11px;line-height:1.6;">
+                            Golshanrad, Pouria and Faghih, Fathiyeh, <em>From Attention to Assurance: Enhancing Transformer Encoder Reliability Through Advanced Testing and Online Error Prediction</em>.
+                            <a href="https://ssrn.com/abstract=4856933" target="_blank" style="color:#ff5ca9;text-decoration:none;border-bottom:1px solid rgba(255,92,169,0.3);">Available at SSRN</a> or
+                            <a href="http://dx.doi.org/10.2139/ssrn.4856933" target="_blank" style="color:#ff5ca9;text-decoration:none;border-bottom:1px solid rgba(255,92,169,0.3);">DOI</a>
+                        </p>
+                    </div>
+                ` : '';
+
+                body.innerHTML = `
+                    <div class="modal-section">
+                        <h4>Formula</h4>
+                        <div class="modal-formula">${info.formula}</div>
+                    </div>
+                    <div class="modal-section">
+                        <h4>Description</h4>
+                        <p>${info.description}</p>
+                    </div>
+                    <div class="modal-section">
+                        <h4>Interpretation</h4>
+                        <p>${info.interpretation}</p>
+                    </div>
+                    ${referenceBlock}
+                `;
+            }
+
+            modal.style.display = 'block';
+        };
         """
     ),
     ui.tags.head(
@@ -1487,120 +1599,7 @@ app_ui = ui.page_fluid(
             $('#generate_all').prop('disabled', false).css('opacity', '1');
         });
 
-        function showMetricModal(metricName, layer, head) {
-            var modal = document.getElementById('metric-modal');
-            var title = document.getElementById('modal-title');
-            var body = document.getElementById('modal-body');
-
-            title.textContent = metricName;
-
-            var explanations = {
-                'Syntax': {
-                    formula: 'SYN<sup>l,h</sup> = (Σ<sub>i,j∈syntax</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Proportion of total attention mass directed toward function words (determiners, prepositions, auxiliaries, conjunctions, particles, pronouns). POS tags are identified using spaCy\'s part-of-speech tagger and include: DET, ADP, AUX, CCONJ, SCONJ, PART, PRON. The metric sums all attention weights targeting these syntactic tokens and divides by the total attention mass.',
-                    interpretation: 'Higher values (closer to 1) indicate the head specializes in syntactic structure, focusing on grammatical scaffolding rather than semantic content. These heads typically play a role in parsing sentence structure and establishing grammatical relationships. Low values suggest the head ignores function words in favor of content.'
-                },
-                'Semantics': {
-                    formula: 'SEM<sup>l,h</sup> = (Σ<sub>i,j∈semantics</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Proportion of total attention mass directed toward content-bearing words (nouns, proper nouns, verbs, adjectives, adverbs, numerals). POS tags from spaCy include: NOUN, PROPN, VERB, ADJ, ADV, NUM. The metric sums all attention weights targeting these semantic tokens and divides by the total attention mass.',
-                    interpretation: 'Higher values (closer to 1) indicate the head specializes in semantic content, tracking meaning-carrying words that convey the main ideas and concepts. These heads typically focus on topic words and key information. Low values suggest the head prioritizes structural elements over semantic ones.'
-                },
-                'CLS Focus': {
-                    formula: 'CLS<sup>l,h</sup> = (1/n) Σ<sub>i=1</sub><sup>n</sup> A<sub>i,CLS</sub><sup>l,h</sup>',
-                    description: 'Average attention weight from all tokens to the [CLS] token at position 0. Computed by taking column 0 of the attention matrix (all queries attending to [CLS]) and averaging across all query positions.',
-                    interpretation: 'Higher values (closer to 1) indicate the head uses [CLS] as a central aggregation point, pulling information from the entire sequence into this special token. This is common in later layers where [CLS] accumulates sentence-level representations. Low values suggest the head doesn\'t use [CLS] as a special aggregation point.'
-                },
-                'Punctuation': {
-                    formula: 'PUNC<sup>l,h</sup> = (Σ<sub>i,j∈punct</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Proportion of total attention mass directed toward punctuation marks. Punctuation is identified using Python\'s string.punctuation set (.,!?;:\'"()[]{}-/\\). The metric sums all attention weights targeting punctuation tokens and divides by the total attention mass.',
-                    interpretation: 'Higher values (closer to 1) indicate the head uses punctuation as structural anchors or boundary markers, often for clause/phrase segmentation. These heads may help identify sentence boundaries or syntactic breaks. Low values suggest the head ignores punctuation entirely.'
-                },
-                'Entities': {
-                    formula: 'ENT<sup>l,h</sup> = (Σ<sub>i,j∈entities</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Proportion of total attention mass directed toward named entities (people, organizations, locations, etc.). Named Entity Recognition tags are identified using spaCy\'s NER tagger - any token with a tag other than "O" (outside) is considered an entity. The metric sums all attention weights targeting entity tokens and divides by the total attention mass.',
-                    interpretation: 'Higher values (closer to 1) indicate the head specializes in tracking named entities and important noun phrases across the sequence. This suggests a role in coreference resolution or entity tracking. Low values (or 0 if no entities present) suggest the head doesn\'t prioritize named entities.'
-                },
-                'Long-range': {
-                    formula: 'LR<sup>l,h</sup> = mean(A<sub>ij</sub><sup>l,h</sup> | |i-j| ≥ 5)',
-                    description: 'Average attention weight for token pairs separated by 5 or more positions. Only attention weights where the absolute distance between query position i and key position j is at least 5 are included in the calculation. This measures the head\'s tendency to bridge distant tokens rather than focusing on local context.',
-                    interpretation: 'Higher values indicate the head specializes in long-range dependencies, connecting tokens that are far apart in the sequence. This is important for capturing global context and long-distance relationships. Low values suggest the head focuses primarily on local neighborhoods and immediate context.'
-                },
-                'Self-attention': {
-                    formula: 'SELF<sup>l,h</sup> = (1/n) Σ<sub>i=1</sub><sup>n</sup> A<sub>ii</sub><sup>l,h</sup>',
-                    description: 'Average of the diagonal elements of the attention matrix, measuring how much each token attends to itself. Computed by extracting the diagonal (where i = j) and averaging these self-attention weights across all positions.',
-                    interpretation: 'Higher values (closer to 1) indicate strong self-attention loops where tokens primarily attend to themselves. This often serves to preserve token identity or stabilize representations. Lower values suggest the head focuses on contextual relationships rather than self-preservation.'
-                },
-                'Confidence Max': {
-                    formula: 'C<sub>max</sub><sup>l,h</sup> = max<sub>i,j</sub>(A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'The maximum attention weight in the attention matrix. Measures the strongest connection between any query-key pair.',
-                    interpretation: 'Higher values indicate that this head has a very confident focus on a specific token. Values close to 1 suggest the head is highly specialized and focuses almost exclusively on one token-pair relationship.',
-                    paper: 'Attention Confidence metric from attention analysis literature'
-                },
-                'Confidence Avg': {
-                    formula: 'C<sub>avg</sub><sup>l,h</sup> = (1/n) Σ<sub>i=1</sub><sup>n</sup> max<sub>j</sub>(A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Average of the maximum attention weight per row. Each row represents how a query token attends to all key tokens.',
-                    interpretation: 'This metric captures the overall confidence level of the attention head. High values (closer to 1) suggest the head consistently focuses strongly on specific tokens for each query, indicating specialized behavior across all positions.',
-                    paper: 'Attention Confidence metric from attention analysis literature'
-                },
-                'Focus': {
-                    formula: 'E<sub>l,h</sub> = -Σ<sub>i=1</sub><sup>n</sup> Σ<sub>j=1</sub><sup>n</sup> A<sub>ij</sub><sup>l,h</sup> log(A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Shannon entropy measures the uncertainty or randomness in the attention distribution. Quantifies how spread out the attention is.',
-                    interpretation: 'Low entropy (e.g., < 2) = highly focused attention on few tokens. High entropy (e.g., > 4) = attention broadly distributed across many tokens.',
-                    paper: 'Attention Focus metric using entropy from information theory'
-                },
-                'Sparsity': {
-                    formula: 'S<sub>l,h</sub> = (1/n²) Σ<sub>i=1</sub><sup>n</sup> Σ<sub>j</sub><sup>n</sup> 𝟙(A<sub>ij</sub><sup>l,h</sup> < τ)',
-                    description: 'Proportion of attention weights below threshold τ = 0.01. Measures how many token connections the head effectively ignores.',
-                    interpretation: 'High sparsity (closer to 100%) = selective attention on very few tokens, most connections ignored.',
-                    paper: 'Attention Sparsity metric with threshold τ = 0.01'
-                },
-                'Distribution': {
-                    formula: 'Q<sub>0.5</sub><sup>l,h</sup> = median(A<sub>l,h</sub>)',
-                    description: 'The median (50th percentile) of all attention weights in the matrix.',
-                    interpretation: 'Low median + high max = attention concentrated on few tokens. High median = more evenly distributed.',
-                    paper: 'Attention Distribution Attributes using quantiles'
-                },
-                'Uniformity': {
-                    formula: 'U<sub>l,h</sub> = √[(1/n²) Σ<sub>i,j</sub> (A<sub>ij</sub><sup>l,h</sub> - μ<sub>l,h</sub>)²]',
-                    description: 'Standard deviation of all attention weights. Measures the variability in the attention distribution.',
-                    interpretation: 'High uniformity = high variance, low uniformity = homogeneous attention distribution.',
-                    paper: 'Attention Uniformity metric measuring distribution variance'
-                }
-            };
-
-            var info = explanations[metricName];
-            if (info) {
-                var referenceBlock = info.paper ? `
-                    <div class="modal-section">
-                        <h4>Reference</h4>
-                        <p style="font-size:11px;line-height:1.6;">
-                            Golshanrad, Pouria and Faghih, Fathiyeh, <em>From Attention to Assurance: Enhancing Transformer Encoder Reliability Through Advanced Testing and Online Error Prediction</em>.
-                            <a href="https://ssrn.com/abstract=4856933" target="_blank" style="color:#ff5ca9;text-decoration:none;border-bottom:1px solid rgba(255,92,169,0.3);">Available at SSRN</a> or
-                            <a href="http://dx.doi.org/10.2139/ssrn.4856933" target="_blank" style="color:#ff5ca9;text-decoration:none;border-bottom:1px solid rgba(255,92,169,0.3);">DOI</a>
-                        </p>
-                    </div>
-                ` : '';
-
-                body.innerHTML = `
-                    <div class="modal-section">
-                        <h4>Formula</h4>
-                        <div class="modal-formula">${info.formula}</div>
-                    </div>
-                    <div class="modal-section">
-                        <h4>Description</h4>
-                        <p>${info.description}</p>
-                    </div>
-                    <div class="modal-section">
-                        <h4>Interpretation</h4>
-                        <p>${info.interpretation}</p>
-                    </div>
-                    ${referenceBlock}
-                `;
-            }
-
-            modal.style.display = 'block';
-        }
-        window.showMetricModal = showMetricModal;
+        // showMetricModal is already defined above - no need to redefine
 
         // ISA Overlay handler
         function showISAOverlay(sentXIdx, sentYIdx, sentXText, sentYText, isaScore) {
