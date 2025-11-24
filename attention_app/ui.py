@@ -554,7 +554,6 @@ app_ui = ui.page_fluid(
             background: #cbd5e1;
             border-radius: 4px;
         }
-        ::-webkit-scrollbar-thumb:hover {
             background: #94a3b8;
         }
         
@@ -570,6 +569,21 @@ app_ui = ui.page_fluid(
         }
 
         .header-controls h4 {
+            margin: 0;
+            white-space: nowrap;
+        }
+
+        .header-controls-responsive {
+            display: flex;
+            justify-content: flex-start;
+            gap: 16px;
+            row-gap: 8px;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .header-controls-responsive h4 {
             margin: 0;
             white-space: nowrap;
         }
@@ -787,22 +801,6 @@ app_ui = ui.page_fluid(
             border-radius: 12px;
             padding: 16px;
             border: 1px solid #e2e8f0;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden; /* Prevent double scroll */
-        }
-        .scaled-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid #e2e8f0;
-            flex-shrink: 0;
-        }
-        .scaled-label {
-            font-size: 10px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -912,15 +910,19 @@ app_ui = ui.page_fluid(
             display: flex;
             flex-direction: column;
             box-sizing: border-box;
+            height: 100%; /* Ensure it takes full height of parent */
+            flex: 1;
+            min-height: 0; /* Critical for flexbox scrolling */
         }
 
         .prediction-panel .card-scroll {
-            flex: none; /* Override flex: 1 from general .card-scroll to prevent height issues */
+            flex: 1; /* Allow it to grow to fill remaining space */
             overflow-y: auto;
             overflow-x: hidden;
             padding: 0;
             margin: 0;
             box-sizing: border-box;
+            max-height: 500px; /* Enforce same max-height as other sections */
         }
 
         /* MLM Predictions Grid */
@@ -1131,8 +1133,9 @@ app_ui = ui.page_fluid(
         .tree-explanation {
             border-top: 1px solid #e2e8f0;
             padding: 12px 0 0 0;
-            margin-top: 16px;
+            margin-top: auto;
             text-align: center;
+            background: #f8fafc;
         }
         
         .tree-explanation strong {
@@ -1140,16 +1143,15 @@ app_ui = ui.page_fluid(
             font-weight: 600;
         }
         
+
         .tree-viz-container {
             background: #f8fafc;
             border-radius: 12px;
             padding: 10px;
-        .tree-viz-container {
-            background: #f8fafc;
-            border-radius: 12px;
-            padding: 10px;
-            height: 450px; /* Increased height to fill section better */
+            flex: 1;
             overflow: auto;
+            display: flex;
+            flex-direction: column;
         }
         
         .metric-tag {
@@ -1198,7 +1200,7 @@ app_ui = ui.page_fluid(
         
         .tree-viz-container svg {
             display: block;
-            margin: 0 auto;
+            margin: auto;
         }
         
         .tree-viz-container .node circle {
@@ -1494,39 +1496,39 @@ app_ui = ui.page_fluid(
 
             var explanations = {
                 'Syntax': {
-                    formula: 'SYN<sup>l,h</sup> = (sum<sub>i</sub> sum<sub>j in syntax</sub> A<sub>ij</sub><sup>l,h</sup>) / (sum<sub>i</sub> sum<sub>j</sub> A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Share of attention mass that lands on function-word tokens (POS tags grouped as syntax). POS tags come from spaCy, a lightweight NLP library for tokenization and POS/NER tagging. Computed by summing attention over those tags and normalizing by total attention weight.',
-                    interpretation: 'Higher values mean the head consistently routes attention toward syntactic scaffolding words (articles, prepositions, conjunctions), indicating a role in structural parsing rather than content tracking.'
+                    formula: 'SYN<sup>l,h</sup> = (Σ<sub>i,j∈syntax</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Proportion of total attention mass directed toward function words (determiners, prepositions, auxiliaries, conjunctions, particles, pronouns). POS tags are identified using spaCy\'s part-of-speech tagger and include: DET, ADP, AUX, CCONJ, SCONJ, PART, PRON. The metric sums all attention weights targeting these syntactic tokens and divides by the total attention mass.',
+                    interpretation: 'Higher values (closer to 1) indicate the head specializes in syntactic structure, focusing on grammatical scaffolding rather than semantic content. These heads typically play a role in parsing sentence structure and establishing grammatical relationships. Low values suggest the head ignores function words in favor of content.'
                 },
                 'Semantics': {
-                    formula: 'SEM<sup>l,h</sup> = (sum<sub>i</sub> sum<sub>j in semantics</sub> A<sub>ij</sub><sup>l,h</sup>) / (sum<sub>i</sub> sum<sub>j</sub> A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Proportion of attention directed to content-bearing tokens. POS tags are provided by spaCy (lightweight NLP library) and are pooled over nouns, verbs, adjectives, adverbs, numerals, and proper nouns, then divided by the total attention mass.',
-                    interpretation: 'High values show the head favors meaning-carrying tokens, suggesting it tracks semantic content rather than syntactic glue.'
+                    formula: 'SEM<sup>l,h</sup> = (Σ<sub>i,j∈semantics</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Proportion of total attention mass directed toward content-bearing words (nouns, proper nouns, verbs, adjectives, adverbs, numerals). POS tags from spaCy include: NOUN, PROPN, VERB, ADJ, ADV, NUM. The metric sums all attention weights targeting these semantic tokens and divides by the total attention mass.',
+                    interpretation: 'Higher values (closer to 1) indicate the head specializes in semantic content, tracking meaning-carrying words that convey the main ideas and concepts. These heads typically focus on topic words and key information. Low values suggest the head prioritizes structural elements over semantic ones.'
                 },
                 'CLS Focus': {
-                    formula: 'CLS<sup>l,h</sup> = (1/n) sum<sub>i</sub> A<sub>i,CLS</sub><sup>l,h</sup>',
-                    description: 'Average attention each token pays to the [CLS] token (column 0 of the matrix). Calculated by averaging the [CLS] column across all query positions.',
-                    interpretation: 'A high score implies the head pulls contextual information into [CLS] or relies on global summary signals anchored at that position.'
+                    formula: 'CLS<sup>l,h</sup> = (1/n) Σ<sub>i=1</sub><sup>n</sup> A<sub>i,CLS</sub><sup>l,h</sup>',
+                    description: 'Average attention weight from all tokens to the [CLS] token at position 0. Computed by taking column 0 of the attention matrix (all queries attending to [CLS]) and averaging across all query positions.',
+                    interpretation: 'Higher values (closer to 1) indicate the head uses [CLS] as a central aggregation point, pulling information from the entire sequence into this special token. This is common in later layers where [CLS] accumulates sentence-level representations. Low values suggest the head doesn\'t use [CLS] as a special aggregation point.'
                 },
                 'Punctuation': {
-                    formula: 'PUNC<sup>l,h</sup> = (sum<sub>i</sub> sum<sub>j in punct</sub> A<sub>ij</sub><sup>l,h</sup>) / (sum<sub>i</sub> sum<sub>j</sub> A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Fraction of attention that falls on punctuation tokens. Computed by summing attention toward any token that matches Python string.punctuation and normalizing by total attention.',
-                    interpretation: 'Elevated values indicate the head uses punctuation as anchors or boundary markers when structuring the sequence.'
+                    formula: 'PUNC<sup>l,h</sup> = (Σ<sub>i,j∈punct</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Proportion of total attention mass directed toward punctuation marks. Punctuation is identified using Python\'s string.punctuation set (.,!?;:\'"()[]{}-/\\). The metric sums all attention weights targeting punctuation tokens and divides by the total attention mass.',
+                    interpretation: 'Higher values (closer to 1) indicate the head uses punctuation as structural anchors or boundary markers, often for clause/phrase segmentation. These heads may help identify sentence boundaries or syntactic breaks. Low values suggest the head ignores punctuation entirely.'
                 },
                 'Entities': {
-                    formula: 'ENT<sup>l,h</sup> = (sum<sub>i</sub> sum<sub>j in entities</sub> A<sub>ij</sub><sup>l,h</sup>) / (sum<sub>i</sub> sum<sub>j</sub> A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Attention share assigned to tokens recognized as named entities by spaCy (NER tag not O). spaCy is a lightweight NLP library that supplies the NER labels used here. Computed by summing attention to those positions and dividing by total mass.',
-                    interpretation: 'High scores suggest the head specializes in tracking named entities or salient spans across the sequence.'
+                    formula: 'ENT<sup>l,h</sup> = (Σ<sub>i,j∈entities</sub> A<sub>ij</sub><sup>l,h</sup>) / (Σ<sub>i,j</sub> A<sub>ij</sub><sup>l,h</sup>)',
+                    description: 'Proportion of total attention mass directed toward named entities (people, organizations, locations, etc.). Named Entity Recognition tags are identified using spaCy\'s NER tagger - any token with a tag other than "O" (outside) is considered an entity. The metric sums all attention weights targeting entity tokens and divides by the total attention mass.',
+                    interpretation: 'Higher values (closer to 1) indicate the head specializes in tracking named entities and important noun phrases across the sequence. This suggests a role in coreference resolution or entity tracking. Low values (or 0 if no entities present) suggest the head doesn\'t prioritize named entities.'
                 },
                 'Long-range': {
-                    formula: 'LR<sup>l,h</sup> = mean(A<sub>ij</sub><sup>l,h</sup> | |i-j| >= 5)',
-                    description: 'Mean attention weight over token pairs separated by five or more positions. Derived by masking the matrix to long-distance pairs and averaging the remaining values.',
-                    interpretation: 'Larger values reveal a head that bridges distant tokens instead of focusing only on local neighborhoods.'
+                    formula: 'LR<sup>l,h</sup> = mean(A<sub>ij</sub><sup>l,h</sup> | |i-j| ≥ 5)',
+                    description: 'Average attention weight for token pairs separated by 5 or more positions. Only attention weights where the absolute distance between query position i and key position j is at least 5 are included in the calculation. This measures the head\'s tendency to bridge distant tokens rather than focusing on local context.',
+                    interpretation: 'Higher values indicate the head specializes in long-range dependencies, connecting tokens that are far apart in the sequence. This is important for capturing global context and long-distance relationships. Low values suggest the head focuses primarily on local neighborhoods and immediate context.'
                 },
                 'Self-attention': {
-                    formula: 'SELF<sup>l,h</sup> = mean(diag(A<sub>l,h</sub>))',
-                    description: 'Average diagonal weight of the attention matrix, capturing how much each token attends to itself. Computed as the mean of A<sub>ii</sub> across all positions.',
-                    interpretation: 'Higher scores indicate strong self-loops, often used for preserving token identity or stabilizing representations.'
+                    formula: 'SELF<sup>l,h</sup> = (1/n) Σ<sub>i=1</sub><sup>n</sup> A<sub>ii</sub><sup>l,h</sup>',
+                    description: 'Average of the diagonal elements of the attention matrix, measuring how much each token attends to itself. Computed by extracting the diagonal (where i = j) and averaging these self-attention weights across all positions.',
+                    interpretation: 'Higher values (closer to 1) indicate strong self-attention loops where tokens primarily attend to themselves. This often serves to preserve token identity or stabilize representations. Lower values suggest the head focuses on contextual relationships rather than self-preservation.'
                 },
                 'Confidence Max': {
                     formula: 'C<sub>max</sub><sup>l,h</sup> = max<sub>i,j</sub>(A<sub>ij</sub><sup>l,h</sup>)',
@@ -1583,7 +1585,6 @@ app_ui = ui.page_fluid(
                     <div class="modal-section">
                         <h4>Formula</h4>
                         <div class="modal-formula">${info.formula}</div>
-                        <p><em>Layer ${layer}, Head ${head}</em></p>
                     </div>
                     <div class="modal-section">
                         <h4>Description</h4>
@@ -1595,12 +1596,11 @@ app_ui = ui.page_fluid(
                     </div>
                     ${referenceBlock}
                 `;
-            } else {
-                body.innerHTML = '<p>No explanation available for this metric.</p>';
             }
 
             modal.style.display = 'block';
         }
+        window.showMetricModal = showMetricModal;
 
         // ISA Overlay handler
         function showISAOverlay(sentXIdx, sentYIdx, sentXText, sentYText, isaScore) {
@@ -1742,9 +1742,10 @@ app_ui = ui.page_fluid(
             }
             
             // Vertical tree configuration
-            const margin = {top: 80, right: 20, bottom: 20, left: 20}; /* Increased top margin for root node */
-            const width = 1000 - margin.right - margin.left;
-            const height = 800 - margin.top - margin.bottom;
+            // Vertical tree configuration
+            const margin = {top: 80, right: 20, bottom: 20, left: 20};
+            const width = 600 - margin.right - margin.left;
+            const height = 450 - margin.top - margin.bottom;
             
             const colors = {
                 root: '#ff5ca9',
@@ -1778,7 +1779,7 @@ app_ui = ui.page_fluid(
                 const links = treeData.descendants().slice(1);
                 
                 // Vertical spacing by depth
-                nodes.forEach(d => { d.y = d.depth * 130; }); /* Adjusted vertical spacing */
+                nodes.forEach(d => { d.y = d.depth * 110; }); /* Compacted vertical spacing */
                 
                 const node = g.selectAll('g.node')
                     .data(nodes, d => d.id || (d.id = ++i));
@@ -1895,6 +1896,14 @@ app_ui = ui.page_fluid(
                 if (d.depth === 2) return colors.level2;
                 return colors.level3;
             }
+            // Center the scroll view
+            setTimeout(() => {
+                const container = document.getElementById(containerId);
+                if (container) {
+                    const scrollLeft = (container.scrollWidth - container.clientWidth) / 2;
+                    container.scrollLeft = scrollLeft;
+                }
+            }, 100);
         }
         
         window.renderInfluenceTree = renderInfluenceTree;

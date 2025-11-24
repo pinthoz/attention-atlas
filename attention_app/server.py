@@ -223,10 +223,6 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx):
 
     html = f"""
     <div class='scaled-attention-box'>
-        <div class='scaled-header'>
-            <span class='scaled-label'>Focus Token</span>
-            <span class='token-name' style='font-size:12px;'>{tokens[focus_idx]}</span>
-        </div>
         <div class='scaled-formula'>softmax(Q·K<sup>T</sup>/√d<sub>k</sub>)</div>
         <div class='scaled-computations'>
             {computations}
@@ -433,7 +429,7 @@ def get_output_probabilities(res, use_mlm, text):
         """
 
     return ui.HTML(
-        f"<div class='prediction-panel'><div class='card-scroll' style='max-height:340px;'><div class='mlm-grid'>{cards}</div></div></div>"
+        f"<div class='prediction-panel'><div class='card-scroll'><div class='mlm-grid'>{cards}</div></div></div>"
     )
 
 def get_metrics_display(res):
@@ -688,7 +684,7 @@ def server(input, output, session):
                     ui.div(
                         {"class": "card"},
                         ui.div(
-                            {"class": "header-controls"},
+                            {"class": "header-controls-responsive"},
                             ui.h4("Scaled Dot-Product Attention"),
                             ui.div(
                                 {"class": "header-right"},
@@ -765,7 +761,7 @@ def server(input, output, session):
                         ui.HTML(f"""
                             <style>
                                 .metric-tag.specialization {{
-                                    color: #ff5ca9 !important;
+                                    color: white !important;
                                     font-weight: 700 !important;
                                     font-size: 13px !important;
                                     padding: 6px 12px;
@@ -784,7 +780,7 @@ def server(input, output, session):
                                 <p style="margin: 10px 0 12px 0; font-size: 13px; color: #1e293b; text-align: center; font-weight: 600; line-height: 1.8;">
                                     <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
                                 </p>
-                                <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 12px; background: linear-gradient(135deg, #fff5f9 0%, #ffe5f3 100%); border-radius: 12px; border: 2px solid #ffcce5;">
+                                <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 12px; background: linear-gradient(135deg, #fff5f9 0%, #ffe5f3 100%); border-radius: 12px; border: 2px solid #ffcce5; color: #ffffff;">
                                     <span class="metric-tag specialization" onclick="showMetricModal('Syntax', {radar_layer}, {radar_head})">Syntax</span>
                                     <span class="metric-tag specialization" onclick="showMetricModal('Semantics', {radar_layer}, {radar_head})">Semantics</span>
                                     <span class="metric-tag specialization" onclick="showMetricModal('CLS Focus', {radar_layer}, {radar_head})">CLS Focus</span>
@@ -828,7 +824,7 @@ def server(input, output, session):
                     ui.h4("Inter-Sentence Attention (ISA)"),
                     ui.layout_columns(
                         ui.div(
-                            {"style": "overflow: auto; height: 520px;"},
+                            {"style": "height: 500px; max-height: 60vh; width: 100%; display: flex; justify-content: center; align-items: center;"},
                             output_widget("isa_scatter")
                         ),
                         ui.div(
@@ -883,7 +879,6 @@ def server(input, output, session):
             """)
 
     @output
-    @output
     @render_widget
     def isa_scatter():
         res = cached_result.get()
@@ -925,10 +920,8 @@ def server(input, output, session):
         labels = [s[:30] + "..." if len(s) > 30 else s for s in sentences]
 
         fig.update_layout(
-            title="Click a dot",
             xaxis=dict(title="Source (Sentence Y)", tickmode="array", tickvals=np.arange(n), ticktext=labels),
             yaxis=dict(title="Target (Sentence X)", tickmode="array", tickvals=np.arange(n), ticktext=labels, autorange="reversed"),
-            height=500,
             autosize=True,
             plot_bgcolor="white",
             paper_bgcolor="white",
@@ -1382,11 +1375,10 @@ def server(input, output, session):
         """
         
         html = f"""
-        <div class="influence-tree-wrapper" style="height: 100%; min-height: 600px; display: flex; flex-direction: column; justify-content: space-between;">
-        <div class="influence-tree-wrapper" style="height: 100%; min-height: 600px; display: flex; flex-direction: column; justify-content: space-between;">
-            <div id="tree-viz-container" class="tree-viz-container" style="flex: 1; width: 100%; overflow-x: auto; overflow-y: hidden; text-align: center; position: relative;"></div>
-            {explanation}
-        </div>
+    <div class="influence-tree-wrapper" style="height: 100%; display: flex; flex-direction: column; position: relative;">
+        <div id="tree-viz-container" class="tree-viz-container" style="flex: 1; width: 100%; overflow: auto; text-align: center; display: flex; align-items: center; justify-content: center;"></div>
+        {explanation}
+    </div>
         <script>
                 (function() {{
                     function tryRender() {{
@@ -1406,7 +1398,6 @@ def server(input, output, session):
                     tryRender();
                 }})();
             </script>
-        </div>
         """
         
         return ui.HTML(html)
