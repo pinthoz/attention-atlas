@@ -65,7 +65,7 @@ def align_spacy_to_bert_tokens(bert_tokens, spacy_doc):
                 ner_tags.append("O")
         else:
             # New word - find corresponding spaCy token
-            clean_token = bert_token.lower()
+            clean_token = bert_token.lower().replace("ġ", "") # Handle GPT-2 prefix
             
             # Try to match with current spaCy word
             if spacy_idx < len(spacy_words):

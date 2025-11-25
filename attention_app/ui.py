@@ -1579,8 +1579,17 @@ app_ui = ui.page_fluid(
             {"class": "sidebar-section"},
             ui.tags.span("Model Configuration", class_="sidebar-label"),
             ui.input_select(
+                "model_family",
+                "Model Family",
+                choices={
+                    "bert": "BERT (Encoder)",
+                    "gpt2": "GPT-2 (Decoder)",
+                },
+                selected="bert"
+            ),
+            ui.input_select(
                 "model_name",
-                "Select Architecture",
+                "Model Variant",
                 choices={
                     "bert-base-uncased": "BERT Base (Uncased)",
                     "bert-large-uncased": "BERT Large (Uncased)",

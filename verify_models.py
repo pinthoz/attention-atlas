@@ -12,7 +12,9 @@ def verify_models():
     models_to_test = [
         "bert-base-uncased",
         "bert-large-uncased",
-        "bert-base-multilingual-uncased"
+        "bert-base-multilingual-uncased",
+        "gpt2",
+        "gpt2-medium"
     ]
     
     print("Starting model verification...")

@@ -80,7 +80,7 @@ def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> 
             token_to_sent.append(-1) # Special token
             continue
             
-        clean_tok = tok.replace("##", "")
+        clean_tok = tok.replace("##", "").replace("Ġ", "")
         # Find this token in text starting from current_text_pos
         # We need to be careful about case and whitespace.
         # BERT tokens are usually lowercased if uncased model.
@@ -146,24 +146,63 @@ def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> 
             
     return sentences, final_boundaries
 
+def aggregate_attention(attentions):
+    """
+    Aggregates attention across layers and heads in a more refined way.
+    """
+    # Stack attentions: (num_layers, num_heads, seq_len, seq_len)
+    stacked_attentions = torch.cat(attentions, dim=0)
+    
+    # Mean across layers
+    avg_attention = torch.mean(stacked_attentions, dim=0)  # (num_heads, seq_len, seq_len)
+    
+    # Max across heads
+    max_attention = torch.max(avg_attention, dim=0)[0]  # (seq_len, seq_len)
+    return max_attention
+
+def apply_attention_mask(attention_matrix, sentence_boundaries_ids):
+    """
+    Applies a mask to the attention matrix, highlighting inter-sentence interactions.
+    Penalizes interactions within the same sentence.
+    """
+    mask = np.ones_like(attention_matrix)
+    num_tokens = attention_matrix.shape[0]
+    
+    # Define ranges for each sentence
+    ranges = []
+    for k in range(len(sentence_boundaries_ids)):
+        start = sentence_boundaries_ids[k]
+        if k < len(sentence_boundaries_ids) - 1:
+            end = sentence_boundaries_ids[k+1]
+        else:
+            end = num_tokens
+        ranges.append((start, end))
+        
+    # Set intra-sentence blocks to 0 (or very low value)
+    for start, end in ranges:
+        # Ensure indices are within bounds
+        s = max(0, min(start, num_tokens))
+        e = max(0, min(end, num_tokens))
+        mask[s:e, s:e] = 0.0
+        
+    attention_matrix *= mask
+    return attention_matrix
+
+def normalize_attention_matrix(isa_matrix):
+    """
+    Normalizes the inter-sentence attention matrix for easier visualization.
+    """
+    max_value = np.max(isa_matrix)
+    min_value = np.min(isa_matrix)
+    if max_value - min_value == 0:
+        return np.zeros_like(isa_matrix)
+        
+    normalized_matrix = (isa_matrix - min_value) / (max_value - min_value)
+    return normalized_matrix
+
 def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs):
     """
-    Compute Inter-Sentence Attention (ISA) matrix.
-    
-    Args:
-        attentions: Tuple of tensors (num_layers, batch, num_heads, seq_len, seq_len)
-                   or list of tensors.
-        tokens: List of token strings.
-        text: Original input text.
-        tokenizer: The tokenizer used.
-        inputs: The inputs dict (optional, for offset mapping if we could use it).
-        
-    Returns:
-        dict: {
-            "sentence_texts": List[str],
-            "sentence_boundaries_ids": List[int],
-            "sentence_attention_matrix": np.ndarray (num_sentences, num_sentences)
-        }
+    Modifies the ISA calculation in GPT-2 to better highlight inter-sentence interactions.
     """
     # 1. Sentence Segmentation
     sentence_texts, sentence_boundaries_ids = get_sentence_boundaries(text, tokens, tokenizer, inputs)
@@ -177,25 +216,21 @@ def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs):
             "sentence_attention_matrix": np.ones((1, 1))
         }
 
-    # 2. Integrate Token-Level Attention (Layer Aggregation)
-    # Stack attentions: (num_layers, num_heads, seq_len, seq_len)
-    # attentions is usually a tuple of tensors, each (batch, num_heads, seq_len, seq_len)
-    # We assume batch_size=1
+    # 2. Aggregate Attention
+    # A is (seq_len, seq_len)
+    A = aggregate_attention(attentions)
     
-    # Convert to single tensor
-    # layer_attentions: [ (1, H, L, L), ... ]
-    stacked_attentions = torch.cat(attentions, dim=0) # (num_layers, H, L, L)
+    # 3. Apply Mask (Penalize Intra-Sentence)
+    A_masked = apply_attention_mask(A.cpu().numpy(), sentence_boundaries_ids)
     
-    # Max across layers
-    # A shape: (H, L, L)
-    A = torch.max(stacked_attentions, dim=0)[0]
+    # 4. Normalize
+    A_normalized = normalize_attention_matrix(A_masked)
     
-    # 3. Aggregate Token Attention -> Sentence Attention
-    # ISA(Sa, Sb) = max_h max_{i in Sa, j in Sb} A[h, i, j]
+    # 5. Aggregate to Sentence-Level Matrix
+    # We need to reduce the token-level matrix (seq_len, seq_len) to (num_sentences, num_sentences)
+    # Since we masked intra-sentence, the diagonal blocks are 0.
     
-    # We need token ranges for each sentence.
-    # sentence_boundaries_ids gives start indices.
-    # End index is the start of next sentence, or end of sequence.
+    isa_matrix = np.zeros((num_sentences, num_sentences))
     
     ranges = []
     for k in range(num_sentences):
@@ -203,30 +238,24 @@ def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs):
         if k < num_sentences - 1:
             end = sentence_boundaries_ids[k+1]
         else:
-            # For the last sentence, go until the first special token after it or end of seq
             end = len(tokens)
         ranges.append((start, end))
         
-    isa_matrix = np.zeros((num_sentences, num_sentences))
-    
     for r_idx, (start_row, end_row) in enumerate(ranges):
         for c_idx, (start_col, end_col) in enumerate(ranges):
             if start_row >= end_row or start_col >= end_col:
                 continue
                 
-            # Extract submatrix for this sentence pair: (H, Sa_len, Sb_len)
-            sub_att = A[:, start_row:end_row, start_col:end_col]
+            # Extract submatrix
+            sub_att = A_normalized[start_row:end_row, start_col:end_col]
             
-            # Max over Sa, Sb
-            if sub_att.numel() > 0:
-                val = torch.max(sub_att).item()
+            if sub_att.size > 0:
+                # Use mean over tokens to represent the strength of connection between sentences
+                val = np.mean(sub_att)
             else:
                 val = 0.0
             
             isa_matrix[r_idx, c_idx] = val
-            
-    # Final safety check for NaNs
-    isa_matrix = np.nan_to_num(isa_matrix, nan=0.0)
             
     return {
         "sentence_texts": sentence_texts,
@@ -238,24 +267,10 @@ def get_sentence_token_attention(attentions, tokens: List[str], sent_x_idx: int,
                                    sentence_boundaries_ids: List[int]) -> Tuple[np.ndarray, List[str], int]:
     """
     Extract token-level attention for a specific sentence pair.
-    
-    Args:
-        attentions: Tuple of attention tensors (num_layers, batch, num_heads, seq_len, seq_len)
-        tokens: List of token strings
-        sent_x_idx: Index of source sentence X (target)
-        sent_y_idx: Index of source sentence Y (source)
-        sentence_boundaries_ids: List of sentence start indices
-        
-    Returns:
-        attention_data: numpy array (len(sent_x_tokens), len(sent_y_tokens)) - max attention across layers & heads
-        tokens_combined: concatenated list of [sent_x_tokens, sent_y_tokens]
-        sentence_b_start: index where sent_y tokens start in tokens_combined
+    Uses the same aggregation logic as compute_isa (Mean layers -> Max heads).
     """
-    # Stack attentions and max over layers
-    stacked_attentions = torch.cat(attentions, dim=0)  # (num_layers, H, L, L)
-    A = torch.max(stacked_attentions, dim=0)[0]  # (H, L, L)
-    # Max over heads
-    A_max = torch.max(A, dim=0)[0].cpu().numpy()  # (L, L)
+    # Aggregate attention: Mean layers, Max heads
+    A = aggregate_attention(attentions).cpu().numpy()  # (seq_len, seq_len)
     
     # Get token ranges for the two sentences
     num_sentences = len(sentence_boundaries_ids)
@@ -272,7 +287,7 @@ def get_sentence_token_attention(attentions, tokens: List[str], sent_x_idx: int,
     start_y, end_y = get_range(sent_y_idx)
     
     # Extract submatrix: rows=sent_x, cols=sent_y
-    sub_att = A_max[start_x:end_x, start_y:end_y]
+    sub_att = A[start_x:end_x, start_y:end_y]
     
     # Extract tokens
     toks_x = tokens[start_x:end_x]
