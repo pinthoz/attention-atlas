@@ -1719,6 +1719,12 @@ app_ui = ui.page_fluid(
             {"class": "sidebar-section"},
             ui.tags.span("Model Configuration", class_="sidebar-label"),
             ui.input_select(
+                "model_family",
+                "Model Family",
+                choices={"bert": "BERT", "gpt2": "GPT-2"},
+                selected="bert"
+            ),
+            ui.input_select(
                 "model_name",
                 "Select Architecture",
                 choices={
