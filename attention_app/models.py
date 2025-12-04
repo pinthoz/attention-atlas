@@ -44,27 +44,52 @@ class ModelManager:
         print(f"Loading model: {model_name}...")
         
         try:
-            tokenizer = BertTokenizer.from_pretrained(model_name)
+
+            is_gpt2 = "gpt2" in model_name
             
-            encoder = BertModel.from_pretrained(
-                model_name,
-                output_attentions=True,
-                output_hidden_states=True,
-            )
-            encoder.eval()
-            
-            # Some models might not have a corresponding MaskedLM head easily available 
-            # or might need specific handling, but for standard BERTs this is fine.
-            try:
-                mlm = BertForMaskedLM.from_pretrained(
+            if is_gpt2:
+                from transformers import GPT2Tokenizer, GPT2Model, GPT2LMHeadModel
+                tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+                if tokenizer.pad_token is None:
+                    tokenizer.pad_token = tokenizer.eos_token
+                    
+                encoder = GPT2Model.from_pretrained(
                     model_name,
-                    output_attentions=False,
-                    output_hidden_states=False,
+                    output_attentions=True,
+                    output_hidden_states=True,
                 )
-                mlm.eval()
-            except Exception as e:
-                print(f"Warning: Could not load MLM head for {model_name}: {e}")
-                mlm = None
+                encoder.eval()
+                
+                try:
+                    mlm = GPT2LMHeadModel.from_pretrained(
+                        model_name,
+                        output_attentions=False,
+                        output_hidden_states=False,
+                    )
+                    mlm.eval()
+                except Exception as e:
+                    print(f"Warning: Could not load LM head for {model_name}: {e}")
+                    mlm = None
+            else:
+                tokenizer = BertTokenizer.from_pretrained(model_name)
+                
+                encoder = BertModel.from_pretrained(
+                    model_name,
+                    output_attentions=True,
+                    output_hidden_states=True,
+                )
+                encoder.eval()
+                
+                try:
+                    mlm = BertForMaskedLM.from_pretrained(
+                        model_name,
+                        output_attentions=False,
+                        output_hidden_states=False,
+                    )
+                    mlm.eval()
+                except Exception as e:
+                    print(f"Warning: Could not load MLM head for {model_name}: {e}")
+                    mlm = None
 
             # Move to GPU if available
             device = "cuda" if torch.cuda.is_available() else "cpu"

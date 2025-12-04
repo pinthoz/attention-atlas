@@ -23,6 +23,42 @@ from .isa import compute_isa
 
 # HELPER FUNCTIONS FOR HTML GENERATION 
 
+def get_layer_block(model, layer_idx):
+    """Get the layer block for BERT or GPT-2."""
+    if hasattr(model, "encoder"): # BERT
+        return model.encoder.layer[layer_idx]
+    else: # GPT-2
+        return model.h[layer_idx]
+
+def extract_qkv(layer_block, hidden_states):
+    """Extract Q, K, V from a layer block given hidden states."""
+    with torch.no_grad():
+        if hasattr(layer_block, "attention"): # BERT
+            # layer_block is BertLayer
+            self_attn = layer_block.attention.self
+            Q = self_attn.query(hidden_states)[0].cpu().numpy()
+            K = self_attn.key(hidden_states)[0].cpu().numpy()
+            V = self_attn.value(hidden_states)[0].cpu().numpy()
+        elif hasattr(layer_block, "attn"): # GPT-2
+            # layer_block is GPT2Block
+            attn = layer_block.attn
+            # c_attn projects to 3 * hidden_size
+            # shape: (batch, seq_len, 3 * hidden_size)
+            c_attn_out = attn.c_attn(hidden_states)
+            
+            # Split
+            # c_attn_out is (batch, seq_len, 3*hidden)
+            # We take [0] to get (seq_len, 3*hidden)
+            c_attn_out = c_attn_out[0]
+            
+            hidden_size = c_attn_out.shape[-1] // 3
+            Q = c_attn_out[:, :hidden_size].cpu().numpy()
+            K = c_attn_out[:, hidden_size:2*hidden_size].cpu().numpy()
+            V = c_attn_out[:, 2*hidden_size:].cpu().numpy()
+        else:
+            raise ValueError("Unknown layer type")
+    return Q, K, V
+
 def arrow(from_section, to_section, direction="horizontal", **kwargs):
     """
     Uniform arrow component - centered positioning
@@ -136,12 +172,29 @@ def get_sum_layernorm_view(res, encoder_model):
     seq_len = input_ids.shape[1]
     device = input_ids.device
     with torch.no_grad():
-        word_embed = encoder_model.embeddings.word_embeddings(input_ids)
-        position_ids = torch.arange(seq_len, device=device).unsqueeze(0)
-        pos_embed = encoder_model.embeddings.position_embeddings(position_ids)
-        seg_embed = encoder_model.embeddings.token_type_embeddings(segment_ids)
-        summed = word_embed + pos_embed + seg_embed
-        normalized = encoder_model.embeddings.LayerNorm(summed)
+        if hasattr(encoder_model, "embeddings"): # BERT
+            word_embed = encoder_model.embeddings.word_embeddings(input_ids)
+            position_ids = torch.arange(seq_len, device=device).unsqueeze(0)
+            pos_embed = encoder_model.embeddings.position_embeddings(position_ids)
+            seg_embed = encoder_model.embeddings.token_type_embeddings(segment_ids)
+            summed = word_embed + pos_embed + seg_embed
+            normalized = encoder_model.embeddings.LayerNorm(summed)
+        else: # GPT-2
+            # GPT-2 uses wte (token) and wpe (position)
+            word_embed = encoder_model.wte(input_ids)
+            position_ids = torch.arange(seq_len, device=device).unsqueeze(0)
+            pos_embed = encoder_model.wpe(position_ids)
+            summed = word_embed + pos_embed
+            normalized = encoder_model.ln_f(summed) # Use final layernorm as proxy or first block's ln_1?
+            # Actually GPT-2 has LN inside blocks. The initial embedding is just sum.
+            # But for visualization consistency, we can show sum vs normalized (if applicable).
+            # Standard GPT-2 doesn't have a LayerNorm immediately after embedding, it's pre-norm inside blocks.
+            # So "normalized" here might be misleading for GPT-2. 
+            # Let's just use summed for both columns or skip normalization viz for GPT-2?
+            # Better: Show summed and "N/A" or just summed.
+            # Or use the first layer's LN?
+            normalized = summed # Placeholder since GPT-2 is pre-norm
+            
     summed_np = summed[0].cpu().numpy()
     norm_np = normalized[0].cpu().numpy()
     rows = []
@@ -164,13 +217,10 @@ def get_sum_layernorm_view(res, encoder_model):
 
 def get_qkv_table(res, layer_idx):
     tokens, _, _, _, hidden_states, _, _, encoder_model, *_ = res
-    layer = encoder_model.encoder.layer[layer_idx].attention.self
+    layer_block = get_layer_block(encoder_model, layer_idx)
     hs_in = hidden_states[layer_idx]
 
-    with torch.no_grad():
-        Q = layer.query(hs_in)[0].cpu().numpy()
-        K = layer.key(hs_in)[0].cpu().numpy()
-        V = layer.value(hs_in)[0].cpu().numpy()
+    Q, K, V = extract_qkv(layer_block, hs_in)
 
     cards = []
     for i, tok in enumerate(tokens):
@@ -217,12 +267,19 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx):
     
     att = attentions[layer_idx][0, head_idx].cpu().numpy()
     focus_idx = max(0, min(focus_idx, len(tokens) - 1))
-    layer = encoder_model.encoder.layer[layer_idx].attention.self
+    
+    layer_block = get_layer_block(encoder_model, layer_idx)
     hs_in = hidden_states[layer_idx]
-    with torch.no_grad():
-        Q = layer.query(hs_in)[0].cpu().numpy()
-        K = layer.key(hs_in)[0].cpu().numpy()
-    d_k = Q.shape[-1] // layer.num_attention_heads if hasattr(layer, "num_attention_heads") else Q.shape[-1]
+    
+    Q, K, V = extract_qkv(layer_block, hs_in)
+    
+    # Determine d_k
+    if hasattr(layer_block, "attention"): # BERT
+        num_heads = layer_block.attention.self.num_attention_heads
+    else: # GPT-2
+        num_heads = layer_block.attn.num_heads
+        
+    d_k = Q.shape[-1] // num_heads
 
     # Get top 3 connections
     top_idx = np.argsort(att[focus_idx])[::-1][:3]
@@ -291,12 +348,18 @@ def get_ffn_view(res, layer_idx):
     tokens, _, _, _, hidden_states, _, _, encoder_model, *_ = res
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
-    layer = encoder_model.encoder.layer[layer_idx]
+    layer_block = get_layer_block(encoder_model, layer_idx)
     hs_in = hidden_states[layer_idx][0]
     with torch.no_grad():
-        inter = layer.intermediate.dense(hs_in)
-        inter_act = layer.intermediate.intermediate_act_fn(inter)
-        proj = layer.output.dense(inter_act)
+        if hasattr(layer_block, "intermediate"): # BERT
+            inter = layer_block.intermediate.dense(hs_in)
+            inter_act = layer_block.intermediate.intermediate_act_fn(inter)
+            proj = layer_block.output.dense(inter_act)
+        else: # GPT-2
+            # GPT-2: mlp.c_fc -> act -> mlp.c_proj
+            inter = layer_block.mlp.c_fc(hs_in)
+            inter_act = layer_block.mlp.act(inter)
+            proj = layer_block.mlp.c_proj(inter_act)
     inter_np = inter_act.cpu().numpy()
     proj_np = proj.cpu().numpy()
     rows = []
@@ -511,13 +574,17 @@ def get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth
     att = attentions[layer_idx][0, head_idx].cpu().numpy()
     
     # Get Q and K for computing dot products
-    layer = encoder_model.encoder.layer[layer_idx].attention.self
+    # Get Q and K for computing dot products
+    layer_block = get_layer_block(encoder_model, layer_idx)
     hs_in = hidden_states[layer_idx]
-    with torch.no_grad():
-        Q = layer.query(hs_in)[0].cpu().numpy()
-        K = layer.key(hs_in)[0].cpu().numpy()
     
-    num_heads = layer.num_attention_heads if hasattr(layer, "num_attention_heads") else 12
+    Q, K, V = extract_qkv(layer_block, hs_in)
+    
+    if hasattr(layer_block, "attention"): # BERT
+        num_heads = layer_block.attention.self.num_attention_heads
+    else: # GPT-2
+        num_heads = layer_block.attn.num_heads
+        
     d_k = Q.shape[-1] // num_heads
     
     # Compute the tree structure with proper JSON format
@@ -534,8 +601,6 @@ def server(input, output, session):
     cached_result = reactive.value(None)
     isa_selected_pair = reactive.Value(None)
     
-<<<<<<< Updated upstream
-=======
     @reactive.Effect
     @reactive.event(input.model_family)
     def update_model_choices():
@@ -556,7 +621,6 @@ def server(input, output, session):
             selected = "gpt2"
             
         ui.update_select("model_name", choices=choices, selected=selected)
->>>>>>> Stashed changes
 
     def tokenize_with_segments(text: str, tokenizer):
         pattern = re.search(r"([.!?])\s+([A-Za-z])", text)
@@ -675,8 +739,6 @@ def server(input, output, session):
         '''
         return ui.HTML(html + legend_html)
 
-<<<<<<< Updated upstream
-=======
 
 
     def get_gpt2_dashboard_ui(res, input, output, session):
@@ -965,7 +1027,6 @@ def server(input, output, session):
             )
         )
 
->>>>>>> Stashed changes
     @output
     @render.ui
     def visualization_options_container():
@@ -976,291 +1037,6 @@ def server(input, output, session):
         except:
             model_family = "bert"
             
-<<<<<<< Updated upstream
-            tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
-            num_layers = len(encoder_model.encoder.layer)
-            num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
-
-            # Get current selections or defaults
-            try: qkv_layer = int(input.qkv_layer())
-            except: qkv_layer = 0
-            
-            try: att_layer = int(input.att_layer())
-            except: att_layer = 0
-            
-            try: att_head = int(input.att_head())
-            except: att_head = 0
-            
-            try: focus_token_idx = int(input.scaled_attention_token())
-            except: focus_token_idx = 0
-
-            try: flow_select = input.flow_token_select()
-            except: flow_select = "all"
-
-            try: use_mlm_val = input.use_mlm()
-            except: use_mlm_val = False
-
-            try: text_val = input.text_input()
-            except: text_val = ""
-            
-            # Get inputs for new selectors
-            try: radar_mode = input.radar_mode()
-            except: radar_mode = "single"
-            
-            try: radar_layer = int(input.radar_layer())
-            except: radar_layer = 0
-            
-            try: radar_head = int(input.radar_head())
-            except: radar_head = 0
-            
-            try: tree_root_idx = int(input.tree_root_token())
-            except: tree_root_idx = 0
-            
-            # Clean tokens for selectors
-            clean_tokens = [t.replace("##", "") if t.startswith("##") else t for t in tokens]
-
-            # Construct UI
-            layout = ui.div(
-                {"class": "dashboard-stack"},
-                # Row 1
-                ui.layout_columns(
-                    ui.div({"class": "card"}, ui.h4("Token Embeddings"), get_embedding_table(res)),
-                    ui.div({"class": "card"}, ui.h4("Segment Embeddings"), get_segment_embedding_view(res)),
-                    ui.div({"class": "card"}, ui.h4("Positional Embeddings"), get_posenc_table(res)),
-                    col_widths=[4, 4, 4]
-                ),
-                # Row 2
-                ui.layout_columns(
-                    ui.div({"class": "card"}, ui.h4("Sum & Layer Normalization"), get_sum_layernorm_view(res, encoder_model)),
-                    ui.div(
-                        {"class": "card"},
-                        ui.div(
-                            {"class": "header-with-selectors"},
-                            ui.h4("Q/K/V Projections", title="Query / Key / Value Projections"),
-                            ui.div(
-                                {"class": "selection-boxes-container"},
-                                ui.div(
-                                    {"class": "selection-box"},
-                                    ui.div(
-                                        {"class": "select-compact"},
-                                        ui.input_select("qkv_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(qkv_layer))
-                                    )
-                                )
-                            )
-                        ),
-                        get_qkv_table(res, qkv_layer)
-                    ),
-                    ui.div(
-                        {"class": "card"},
-                        ui.div(
-                            {"class": "header-with-selectors"},
-                            ui.h4("Scaled Dot-Product Attention"),
-                            ui.div(
-                                {"class": "selection-boxes-container"},
-                                ui.tags.span("Focus:", style="font-size:10px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                                ui.div(
-                                    {"class": "selection-box"},
-                                    ui.div(
-                                        {"class": "select-compact"},
-                                        ui.input_select("scaled_attention_token", None, choices={str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}, selected=str(focus_token_idx))
-                                    )
-                                )
-                            )
-                        ),
-                        get_scaled_attention_view(res, att_layer, att_head, focus_token_idx)
-                    ),
-                    col_widths=[4, 4, 4]
-                ),
-                # Global Metrics
-                ui.div({"class": "card"}, ui.h4("Global Attention Metrics"), get_metrics_display(res)),
-                # Row 3
-                ui.layout_columns(
-                    ui.div(
-                        {"class": "card"},
-                        ui.div(
-                            {"class": "header-with-selectors"},
-                            ui.h4("Multi-Head Attention"),
-                            ui.div(
-                                {"class": "selection-boxes-container"},
-                                ui.div(
-                                    {"class": "selection-box"},
-                                    ui.div({"class": "select-compact"}, ui.input_select("att_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(att_layer)))
-                                ),
-                                ui.div(
-                                    {"class": "selection-box"},
-                                    ui.div({"class": "select-compact"}, ui.input_select("att_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(att_head)))
-                                )
-                            )
-                        ),
-                        output_widget("attention_map")
-                    ),
-                    ui.div(
-                        {"class": "card"},
-                        ui.div(
-                            {"class": "header-with-selectors"},
-                            ui.h4("Attention Flow"),
-                            ui.div(
-                                {"class": "selection-boxes-container"},
-                                ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                                ui.div(
-                                    {"class": "selection-box"},
-                                    ui.div(
-                                        {"class": "select-compact"},
-                                        ui.input_select("flow_token_select", None, choices={"all": "All tokens", **{str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}}, selected=flow_select)
-                                    )
-                                )
-                            )
-                        ),
-                        ui.div(
-                            {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
-                            output_widget("attention_flow")
-                        )
-                    ),
-                    col_widths=[6, 6]
-                ),
-                # Head Specialization Radar
-
-                # Row 4 - Radar and Tree (Side by Side)
-                ui.layout_columns(
-                    ui.div(
-                        {"class": "card"},
-                        ui.div(
-                            {"class": "header-controls-stacked"},
-                            ui.div(
-                                {"class": "header-row-top"},
-                                ui.h4("Attention Head Specialization"),
-                                ui.div(
-                                    {"class": "header-right"},
-                                    ui.div({"class": "select-compact", "id": "radar_head_selector"}, ui.input_select("radar_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(radar_head))),
-                                    ui.div({"class": "select-compact"}, ui.input_select("radar_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(radar_layer))),
-                                )
-                            ),
-                            ui.div(
-                                {"class": "header-row-bottom"},
-                                ui.span("Attention Mode:", class_="toggle-label"),
-                                ui.input_radio_buttons("radar_mode", None, {"single": "Single Head", "all": "All Heads"}, selected=radar_mode, inline=True)
-                            )
-                        ),
-                        head_specialization_radar(res, radar_layer, radar_head, radar_mode),
-                        ui.HTML(f"""
-                            <style>
-                                .metric-tag.specialization {{
-                                    color: white !important;
-                                    font-weight: 700 !important;
-                                    font-size: 13px !important;
-                                    padding: 6px 12px;
-                                    border-radius: 20px;
-                                    transition: all 0.2s ease;
-                                    display: inline-block;
-                                    cursor: pointer;
-                                }}
-                                .metric-tag.specialization:hover {{
-                                    transform: scale(1.05);
-                                    color: #ff78bc !important;
-                                    background-color: rgba(255, 92, 169, 0.1);
-                                }}
-                            </style>
-                            <div class="radar-explanation" style="margin-top: 10px;">
-                                <p style="margin: 10px 0 12px 0; font-size: 13px; color: #1e293b; text-align: center; font-weight: 600; line-height: 1.8;">
-                                    <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
-                                </p>
-                                <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 12px; background: linear-gradient(135deg, #fff5f9 0%, #ffe5f3 100%); border-radius: 12px; border: 2px solid #ffcce5; color: #ffffff;">
-                                    <span class="metric-tag specialization" onclick="showMetricModal('Syntax', {radar_layer}, {radar_head})">Syntax</span>
-                                    <span class="metric-tag specialization" onclick="showMetricModal('Semantics', {radar_layer}, {radar_head})">Semantics</span>
-                                    <span class="metric-tag specialization" onclick="showMetricModal('CLS Focus', {radar_layer}, {radar_head})">CLS Focus</span>
-                                    <span class="metric-tag specialization" onclick="showMetricModal('Punctuation', {radar_layer}, {radar_head})">Punctuation</span>
-                                    <span class="metric-tag specialization" onclick="showMetricModal('Entities', {radar_layer}, {radar_head})">Entities</span>
-                                    <span class="metric-tag specialization" onclick="showMetricModal('Long-range', {radar_layer}, {radar_head})">Long-range</span>
-                                    <span class="metric-tag specialization" onclick="showMetricModal('Self-attention', {radar_layer}, {radar_head})">Self-attention</span>
-                                </div>
-                            </div>
-                        """)
-                    ),
-                    ui.div(
-                        {"class": "card"},
-                        ui.div(
-                            {"class": "header-controls-stacked"},
-                            ui.div(
-                                {"class": "header-row-top"},
-                                ui.h4("Attention Dependency Tree"),
-                                ui.div(
-                                    {"class": "header-right"},
-                                    ui.tags.span("Root:", style="font-size:11px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                                    ui.div(
-                                        {"class": "select-compact"},
-                                        ui.input_select(
-                                            "tree_root_token",
-                                            None,
-                                            choices={str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)},
-                                            selected=str(tree_root_idx)
-                                        )
-                                    )
-                                )
-                            )
-                        ),
-                        get_influence_tree_ui(res, tree_root_idx, radar_layer, radar_head)
-                    ),
-                    col_widths=[5, 7]
-                ),
-                # Row 4.5 - Inter-Sentence Attention (ISA)
-                ui.div(
-                    {"class": "card"},
-                    ui.h4("Inter-Sentence Attention (ISA)"),
-                    ui.layout_columns(
-                        ui.div(
-                            {"style": "height: 500px; max-height: 60vh; width: 100%; display: flex; justify-content: center; align-items: center;"},
-                            output_widget("isa_scatter")
-                        ),
-                        ui.div(
-                            ui.output_ui("isa_detail_info"),
-                            ui.div(output_widget("isa_token_view")),
-                        ),
-                        col_widths=[6, 6],
-                    ),
-                    ui.div(
-                        {"class": "isa-explanation-block"},
-                        ui.tags.p(
-                            ui.tags.strong("Inter-Sentence Attention (ISA):", style="color: #ff5ca9;"), 
-                            " visualizes the relationship between two sentences, focusing on how the tokens in Sentence X attend to the tokens in Sentence Y. The ", 
-                            ui.tags.strong("ISA score"), 
-                            " quantifies this relationship, with higher values indicating a stronger connection between the tokens in Sentence X and Sentence Y.",
-                            ui.br(), ui.br(),
-                            "In the ", 
-                            ui.tags.strong("Token-to-Token Attention", style="color: #ff5ca9;"), 
-                            " plot, each square represents the attention strength between a token from Sentence X (left) and a token from Sentence Y (top). Thicker squares indicate stronger attention, meaning those tokens are more related in terms of the model's attention mechanism.",
-                            style = "margin: 0; font-size: 11px; color: #64748b; line-height: 1.6;"
-                        )
-                    )
-                ),
-                
-                # Row 5 - Residuals & FFN
-                ui.layout_columns(
-                    ui.div({"class": "card"}, ui.h4("Add & Norm"), get_add_norm_view(res, att_layer)),
-                    ui.div({"class": "card"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, att_layer)),
-                    ui.div({"class": "card"}, ui.h4("Add & Norm (post-FFN)"), get_add_norm_post_ffn_view(res, att_layer)),
-                    col_widths=[4, 4, 4]
-                ),
-                # Row 6
-                ui.layout_columns(
-                    ui.div({"class": "card"}, ui.h4("Hidden States"), get_layer_output_view(res, att_layer)),
-                    ui.div({"class": "card"}, ui.h4("Token Output Predictions (MLM)"), get_output_probabilities(res, use_mlm_val, text_val)),
-                    col_widths=[6, 6]
-                ),
-                # Script to hide spinner when this UI is mounted
-                # ui.tags.script("$('#loading_spinner').hide(); $('#generate_all').prop('disabled', false).css('opacity', '1');")
-            )
-            return layout
-        except Exception as e:
-            import traceback
-            err_msg = traceback.format_exc()
-            print(err_msg)
-            return ui.HTML(f"""
-                <div style='color:red; padding:20px; border:1px solid red; border-radius:8px; background:#fff0f0;'>
-                    <h3>Error Rendering Dashboard</h3>
-                    <pre style='white-space:pre-wrap; font-size:11px;'>{err_msg}</pre>
-                </div>
-            """)
-=======
         if model_family == "gpt2":
             return None
             
@@ -1269,7 +1045,6 @@ def server(input, output, session):
             ui.tags.span("Visualization Options", class_="sidebar-label"),
             ui.input_switch("use_mlm", "Show MLM Predictions", value=False)
         )
->>>>>>> Stashed changes
 
     @output
     @render.ui
@@ -2195,23 +1970,21 @@ def server(input, output, session):
         except: head_idx = 0
         
         att = attentions[layer_idx][0, head_idx].cpu().numpy()
-<<<<<<< Updated upstream
-        layer = encoder_model.encoder.layer[layer_idx].attention.self
-=======
         att = attentions[layer_idx][0, head_idx].cpu().numpy()
-        if hasattr(encoder_model, "encoder"): # BERT
-            layer = encoder_model.encoder.layer[layer_idx].attention.self
+        layer_block = get_layer_block(encoder_model, layer_idx)
+        
+        if hasattr(layer_block, "attention"): # BERT
+            num_heads = layer_block.attention.self.num_attention_heads
             num_layers = len(encoder_model.encoder.layer)
         else: # GPT-2
-            layer = encoder_model.h[layer_idx].attn
+            num_heads = layer_block.attn.num_heads
             num_layers = len(encoder_model.h)
->>>>>>> Stashed changes
+            
         hs_in = hidden_states[layer_idx]
-        with torch.no_grad():
-            Q = layer.query(hs_in)[0].cpu().numpy()
-            K = layer.key(hs_in)[0].cpu().numpy()
+        
+        Q, K, V = extract_qkv(layer_block, hs_in)
+        
         L = len(tokens)
-        num_heads = layer.num_attention_heads if hasattr(layer, "num_attention_heads") else 12
         d_k = Q.shape[-1] // num_heads
         custom = np.empty((L, L, 5), dtype=object)
         for i in range(L):
