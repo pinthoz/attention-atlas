@@ -21,6 +21,36 @@ from .isa import compute_isa
 
 # HELPER FUNCTIONS FOR HTML GENERATION 
 
+# HELPER FUNCTIONS FOR HTML GENERATION 
+
+def arrow(from_section, to_section, direction="horizontal", **kwargs):
+    """
+    Uniform arrow component - centered positioning
+    direction: "horizontal" | "vertical" | "initial"
+    """
+    arrow_id = f"arrow_{from_section.replace(' ', '_').replace('&', '').replace('(', '').replace(')', '')}_{to_section.replace(' ', '_').replace('&', '').replace('(', '').replace(')', '')}"
+    
+    # Use the same "↓" glyph for both to ensure identical design (thickness/style)
+    # Rotate it -90deg for horizontal to point right
+    if direction == "horizontal":
+        icon = ui.tags.span({"style": "display: inline-block; transform: rotate(-90deg);"}, "↓")
+    else:
+        icon = "↓"
+    
+    attrs = {
+        "class": f"transition-arrow arrow-{direction}",
+        "onclick": f"showTransitionModal('{from_section}', '{to_section}')",
+        "id": arrow_id,
+        "title": f"Click: {from_section} → {to_section}"
+    }
+    attrs.update(kwargs)
+    
+    return ui.tags.div(attrs, icon) 
+
+def get_choices(tokens):
+    if not tokens: return {}
+    return {str(i): f"{i}: {t}" for i, t in enumerate(tokens)}
+
 def get_embedding_table(res):
     tokens, embeddings, *_ = res
     rows = []
@@ -51,10 +81,11 @@ def get_segment_embedding_view(res):
     rows = ""
     for i, (tok, seg) in enumerate(zip(tokens, ids)):
         row_class = f"seg-row-{seg}" if seg in [0, 1] else ""
+        seg_label = "A" if seg == 0 else "B" if seg == 1 else str(seg)
         rows += f"""
         <tr class='{row_class}'>
             <td class='token-cell'>{tok}</td>
-            <td class='segment-cell'>{seg}</td>
+            <td class='segment-cell'>{seg_label}</td>
         </tr>
         """
     
@@ -503,6 +534,29 @@ def server(input, output, session):
     cached_result = reactive.value(None)
     isa_selected_pair = reactive.Value(None)
     
+<<<<<<< Updated upstream
+=======
+    @reactive.Effect
+    @reactive.event(input.model_family)
+    def update_model_choices():
+        family = input.model_family()
+        if family == "bert":
+            choices = {
+                "bert-base-uncased": "BERT Base (Uncased)",
+                "bert-large-uncased": "BERT Large (Uncased)",
+                "bert-base-multilingual-uncased": "BERT Multilingual",
+            }
+            selected = "bert-base-uncased"
+        else: # gpt2
+            choices = {
+                "gpt2": "GPT-2 Small",
+                "gpt2-medium": "GPT-2 Medium",
+                "gpt2-large": "GPT-2 Large",
+            }
+            selected = "gpt2"
+            
+        ui.update_select("model_name", choices=choices, selected=selected)
+>>>>>>> Stashed changes
 
     def tokenize_with_segments(text: str, tokenizer):
         pattern = re.search(r"([.!?])\s+([A-Za-z])", text)
@@ -558,23 +612,32 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.generate_all)
     async def compute_all():
+        print("DEBUG: compute_all triggered")
         text = input.text_input().strip()
+        print(f"DEBUG: Input text: '{text}'")
         if not text:
+            print("DEBUG: No text input, returning")
             return
         
         running.set(True)
         await session.send_custom_message('start_loading', {})
         await asyncio.sleep(0.1)
         model_name = input.model_name()
+        print(f"DEBUG: Model name: {model_name}")
         try:
             loop = asyncio.get_running_loop()
             with ThreadPoolExecutor() as pool:
+                print("DEBUG: Starting heavy_compute in executor")
                 result = await loop.run_in_executor(pool, heavy_compute, text, model_name)
+                print("DEBUG: heavy_compute returned")
             cached_result.set(result)
-        except Exception:
+        except Exception as e:
+            print(f"ERROR in compute_all: {e}")
+            import traceback
+            traceback.print_exc()
             cached_result.set(None)
-        finally:
             await session.send_custom_message('stop_loading', {})
+        finally:
             running.set(False)
 
 
@@ -612,14 +675,308 @@ def server(input, output, session):
         '''
         return ui.HTML(html + legend_html)
 
+<<<<<<< Updated upstream
+=======
+
+
+    def get_gpt2_dashboard_ui(res, input, output, session):
+        tokens, _, _, _, _, _, _, encoder_model, *_ = res
+        num_layers = len(encoder_model.h)
+        num_heads = encoder_model.h[0].attn.num_heads
+        
+        # Get current selections
+        try: qkv_layer = int(input.qkv_layer())
+        except: qkv_layer = 0
+        try: att_layer = int(input.att_layer())
+        except: att_layer = 0
+        try: att_head = int(input.att_head())
+        except: att_head = 0
+        try: focus_token_idx = int(input.scaled_attention_token())
+        except: focus_token_idx = 0
+        try: flow_select = input.flow_token_select()
+        except: flow_select = "all"
+        try: use_mlm_val = input.use_mlm()
+        except: use_mlm_val = False
+        try: text_val = input.text_input()
+        except: text_val = ""
+        
+        try: radar_mode = input.radar_mode()
+        except: radar_mode = "single"
+        try: radar_layer = int(input.radar_layer())
+        except: radar_layer = 0
+        try: radar_head = int(input.radar_head())
+        except: radar_head = 0
+        try: tree_root_idx = int(input.tree_root_token())
+        except: tree_root_idx = 0
+        
+        clean_tokens = [t.replace("##", "") if t.startswith("##") else t for t in tokens]
+
+        return ui.div(
+            {"class": "dashboard-stack gpt2-layout"},
+            
+            # Row 1: Embeddings
+            ui.layout_columns(
+                ui.div(
+                    {"class": "card"}, 
+                    ui.h4("Token Embeddings"), 
+                    ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    get_embedding_table(res)
+                ),
+                ui.div(
+                    {"class": "card"}, 
+                    ui.h4("Positional Embeddings"), 
+                    ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    get_posenc_table(res)
+                ),
+                ui.div(
+                    {"class": "card"},
+                    ui.h4("Sum & Layer Normalization"),
+                    ui.p("Sum of embeddings + Pre-Norm", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    get_sum_layernorm_view(res, encoder_model)
+                ),
+                col_widths=[4, 4, 4]
+            ),
+
+            # Row 2: Transformer Block Details
+            ui.layout_columns(
+                ui.div(
+                    {"class": "card"},
+                    ui.div(
+                        {"class": "header-with-selectors"},
+                        ui.h4("Q/K/V Projections"),
+                        ui.div(
+                            {"class": "selection-boxes-container"},
+                            ui.div(
+                                {"class": "selection-box"},
+                                ui.div(
+                                    {"class": "select-compact"},
+                                    ui.input_select("qkv_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(qkv_layer))
+                                )
+                            )
+                        )
+                    ),
+                    ui.p("Projects input to Query, Key, Value vectors.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    get_qkv_table(res, qkv_layer)
+                ),
+                ui.div(
+                    {"class": "card"},
+                    ui.div(
+                        {"class": "header-with-selectors"},
+                        ui.h4("Scaled Dot-Product Attention"),
+                        ui.div(
+                            {"class": "selection-boxes-container"},
+                            ui.tags.span("Focus:", style="font-size:10px; font-weight:600; color:#64748b; margin-right: 4px;"),
+                            ui.div(
+                                {"class": "selection-box"},
+                                ui.div(
+                                    {"class": "select-compact"},
+                                    ui.input_select("scaled_attention_token", None, choices={str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}, selected=str(focus_token_idx))
+                                )
+                            )
+                        )
+                    ),
+                    ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    get_scaled_attention_view(res, att_layer, att_head, focus_token_idx)
+                ),
+                ui.div(
+                    {"class": "card"}, 
+                    ui.h4("Feed-Forward Network"), 
+                    ui.p("Expansion -> Activation -> Projection", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    get_ffn_view(res, att_layer)
+                ),
+                col_widths=[4, 4, 4]
+            ),
+
+            # Row 3: Global Metrics & Attention Map
+            ui.div({"class": "card"}, ui.h4("Global Attention Metrics"), get_metrics_display(res)),
+            
+            ui.layout_columns(
+                ui.div(
+                    {"class": "card"},
+                    ui.div(
+                        {"class": "header-with-selectors"},
+                        ui.h4("Multi-Head Attention"),
+                        ui.div(
+                            {"class": "selection-boxes-container"},
+                            ui.div(
+                                {"class": "selection-box"},
+                                ui.div({"class": "select-compact"}, ui.input_select("att_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(att_layer)))
+                            ),
+                            ui.div(
+                                {"class": "selection-box"},
+                                ui.div({"class": "select-compact"}, ui.input_select("att_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(att_head)))
+                            )
+                        )
+                    ),
+                    ui.p("Visualizes attention weights. Lower triangular due to causal masking.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    output_widget("attention_map")
+                ),
+                ui.div(
+                    {"class": "card"},
+                    ui.div(
+                        {"class": "header-with-selectors"},
+                        ui.h4("Attention Flow"),
+                        ui.div(
+                            {"class": "selection-boxes-container"},
+                            ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
+                            ui.div(
+                                {"class": "selection-box"},
+                                ui.div(
+                                    {"class": "select-compact"},
+                                    ui.input_select("flow_token_select", None, choices={"all": "All tokens", **{str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}}, selected=flow_select)
+                                )
+                            )
+                        )
+                    ),
+                    ui.div(
+                        {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
+                        ui.output_ui("attention_flow")
+                    )
+                ),
+                col_widths=[6, 6]
+            ),
+
+            # Row 4: Radar & Tree
+            ui.layout_columns(
+                ui.div(
+                    {"class": "card"},
+                    ui.div(
+                        {"class": "header-controls-stacked"},
+                        ui.div(
+                            {"class": "header-row-top"},
+                            ui.h4("Attention Head Specialization"),
+                            ui.div(
+                                {"class": "header-right"},
+                                ui.div({"class": "select-compact", "id": "radar_head_selector"}, ui.input_select("radar_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(radar_head))),
+                                ui.div({"class": "select-compact"}, ui.input_select("radar_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(radar_layer))),
+                            )
+                        ),
+                        ui.div(
+                            {"class": "header-row-bottom"},
+                            ui.span("Attention Mode:", class_="toggle-label"),
+                            ui.input_radio_buttons("radar_mode", None, {"single": "Single Head", "all": "All Heads"}, selected=radar_mode, inline=True)
+                        )
+                    ),
+                    head_specialization_radar(res, radar_layer, radar_head, radar_mode),
+                    ui.HTML(f"""
+                        <style>
+                            .metric-tag.specialization {{
+                                color: white !important;
+                                font-weight: 700 !important;
+                                font-size: 13px !important;
+                                padding: 6px 12px;
+                                border-radius: 20px;
+                                transition: all 0.2s ease;
+                                display: inline-block;
+                                cursor: pointer;
+                            }}
+                            .metric-tag.specialization:hover {{
+                                transform: scale(1.05);
+                                color: #ff78bc !important;
+                                background-color: rgba(255, 92, 169, 0.1);
+                            }}
+                        </style>
+                        <div class="radar-explanation" style="margin-top: 10px;">
+                            <p style="margin: 10px 0 12px 0; font-size: 13px; color: #1e293b; text-align: center; font-weight: 600; line-height: 1.8;">
+                                <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
+                            </p>
+                            <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 12px; background: linear-gradient(135deg, #fff5f9 0%, #ffe5f3 100%); border-radius: 12px; border: 2px solid #ffcce5; color: #ffffff;">
+                                <span class="metric-tag specialization" onclick="showMetricModal('Syntax', {radar_layer}, {radar_head})">Syntax</span>
+                                <span class="metric-tag specialization" onclick="showMetricModal('Semantics', {radar_layer}, {radar_head})">Semantics</span>
+                                <span class="metric-tag specialization" onclick="showMetricModal('CLS Focus', {radar_layer}, {radar_head})">CLS Focus</span>
+                                <span class="metric-tag specialization" onclick="showMetricModal('Punctuation', {radar_layer}, {radar_head})">Punctuation</span>
+                                <span class="metric-tag specialization" onclick="showMetricModal('Entities', {radar_layer}, {radar_head})">Entities</span>
+                                <span class="metric-tag specialization" onclick="showMetricModal('Long-range', {radar_layer}, {radar_head})">Long-range</span>
+                                <span class="metric-tag specialization" onclick="showMetricModal('Self-attention', {radar_layer}, {radar_head})">Self-attention</span>
+                            </div>
+                        </div>
+                    """)
+                ),
+                ui.div(
+                    {"class": "card"},
+                    ui.div(
+                        {"class": "header-controls-stacked"},
+                        ui.div(
+                            {"class": "header-row-top"},
+                            ui.h4("Attention Dependency Tree"),
+                            ui.div(
+                                {"class": "header-right"},
+                                ui.tags.span("Root:", style="font-size:11px; font-weight:600; color:#64748b; margin-right: 4px;"),
+                                ui.div(
+                                    {"class": "select-compact"},
+                                    ui.input_select(
+                                        "tree_root_token",
+                                        None,
+                                        choices={str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)},
+                                        selected=str(tree_root_idx)
+                                    )
+                                )
+                            )
+                        )
+                    ),
+                    get_influence_tree_ui(res, tree_root_idx, radar_layer, radar_head)
+                ),
+                col_widths=[5, 7]
+            ),
+
+            # Row 5: ISA
+            ui.div(
+                {"class": "card"},
+                ui.h4("Inter-Sentence Attention (ISA)"),
+                ui.layout_columns(
+                    ui.div(
+                        {"style": "height: 500px; max-height: 60vh; width: 100%; display: flex; justify-content: center; align-items: center;"},
+                        ui.output_ui("isa_scatter")
+                    ),
+                    ui.div(
+                        ui.output_ui("isa_detail_info"),
+                        ui.div(ui.output_ui("isa_token_view")),
+                    ),
+                    col_widths=[6, 6],
+                ),
+                ui.div(
+                    {"class": "isa-explanation-block"},
+                    ui.tags.p(
+                        ui.tags.strong("Inter-Sentence Attention (ISA):", style="color: #ff5ca9;"), 
+                        " visualizes the relationship between two sentences, focusing on how the tokens in Sentence X attend to the tokens in Sentence Y. The ", 
+                        ui.tags.strong("ISA score"), 
+                        " quantifies this relationship, with higher values indicating a stronger connection between the tokens in Sentence X and Sentence Y.",
+                        ui.br(), ui.br(),
+                        "In the ", 
+                        ui.tags.strong("Token-to-Token Attention", style="color: #ff5ca9;"), 
+                        " plot, each square represents the attention strength between a token from Sentence X (left) and a token from Sentence Y (top). Thicker squares indicate stronger attention, meaning those tokens are more related in terms of the model's attention mechanism.",
+                        style = "margin: 0; font-size: 11px; color: #64748b; line-height: 1.6;"
+                    )
+                )
+            ),
+
+            # Row 6: Unembedding & Predictions
+            ui.layout_columns(
+                ui.div({"class": "card"}, ui.h4("Hidden States"), ui.p("Final vector representation before projection.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_layer_output_view(res, num_layers - 1)),
+                ui.div({"class": "card"}, ui.h4("Next Token Predictions"), ui.p("Probabilities for the next token (Softmax output).", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_output_probabilities(res, use_mlm_val, text_val)),
+                col_widths=[6, 6]
+            ),
+            
+            # Autoregressive Loop Note
+            ui.div(
+                {"class": "card"},
+                ui.h4("Autoregressive Loop"),
+                ui.p("In generation, the predicted token is added to the input, and the entire process repeats.", style="font-size:13px; color:#4b5563;")
+            )
+        )
+
+>>>>>>> Stashed changes
     @output
     @render.ui
-    def dashboard_content():
+    def visualization_options_container():
+        # Only show Visualization Options for BERT (encoder-only models)
+        # For GPT-2, we hide the entire section
         try:
-            res = cached_result.get()
-            if not res:
-                return ui.HTML("<script>$('#loading_spinner').hide(); $('#generate_all').prop('disabled', false).css('opacity', '1');</script>")
+            model_family = input.model_family()
+        except:
+            model_family = "bert"
             
+<<<<<<< Updated upstream
             tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
             num_layers = len(encoder_model.encoder.layer)
             num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
@@ -903,40 +1260,676 @@ def server(input, output, session):
                     <pre style='white-space:pre-wrap; font-size:11px;'>{err_msg}</pre>
                 </div>
             """)
+=======
+        if model_family == "gpt2":
+            return None
+            
+        return ui.div(
+            {"class": "sidebar-section"},
+            ui.tags.span("Visualization Options", class_="sidebar-label"),
+            ui.input_switch("use_mlm", "Show MLM Predictions", value=False)
+        )
+>>>>>>> Stashed changes
 
     @output
-    @render_widget
-    def isa_scatter():
+    @render.ui
+    def render_embedding_table():
         res = cached_result.get()
-        if not res or not res[-1]:
+        if not res: return None
+        return get_embedding_table(res)
+
+    @output
+    @render.ui
+    def render_segment_table():
+        res = cached_result.get()
+        if not res: return None
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"}, 
+            ui.h4("Segment Embeddings"), 
+            ui.p("Segment ID (Sentence A/B)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            get_segment_embedding_view(res)
+        )
+
+    @output
+    @render.ui
+    def render_posenc_table():
+        res = cached_result.get()
+        if not res: return None
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"}, 
+            ui.h4("Positional Embeddings"), 
+            ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            get_posenc_table(res)
+        )
+
+    @output
+    @render.ui
+    def render_sum_layernorm():
+        res = cached_result.get()
+        if not res: return None
+        _, _, _, _, _, _, _, encoder_model, *_ = res
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"},
+            ui.h4("Sum & Layer Normalization"),
+            ui.p("Sum of embeddings + Pre-Norm", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            get_sum_layernorm_view(res, encoder_model)
+        )
+
+    @output
+    @render.ui
+    def render_qkv_table():
+        res = cached_result.get()
+        if not res: return None
+        try: layer_idx = int(input.qkv_layer())
+        except: layer_idx = 0
+        
+        # Get num_layers for selector
+        _, _, _, _, _, _, _, encoder_model, *_ = res
+        is_gpt2 = not hasattr(encoder_model, "encoder")
+        if is_gpt2: num_layers = len(encoder_model.h)
+        else: num_layers = len(encoder_model.encoder.layer)
+
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"},
+            ui.div(
+                {"class": "header-with-selectors"},
+                ui.h4("Q/K/V Projections"),
+                ui.div(
+                    {"class": "selection-boxes-container"},
+                    ui.div(
+                        {"class": "selection-box"},
+                        ui.div(
+                            {"class": "select-compact"},
+                            ui.input_select("qkv_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(layer_idx))
+                        )
+                    )
+                )
+            ),
+            ui.p("Projects input to Query, Key, Value vectors.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            get_qkv_table(res, layer_idx)
+        )
+
+    @output
+    @render.ui
+    def render_scaled_attention():
+        res = cached_result.get()
+        if not res: return None
+        try: selected_token = input.scaled_attention_token()
+        except: selected_token = "0"
+        
+        try: layer_idx = int(input.att_layer())
+        except: layer_idx = 0
+        try: head_idx = int(input.att_head())
+        except: head_idx = 0
+        
+        focus_idx = int(selected_token) if selected_token else 0
+        
+        # Get tokens for selector
+        clean_tokens = tokens_data()
+        choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
+
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"},
+            ui.div(
+                {"class": "header-with-selectors"},
+                ui.h4("Scaled Dot-Product Attention"),
+                ui.div(
+                    {"class": "selection-boxes-container"},
+                    ui.tags.span("Focus:", style="font-size:10px; font-weight:600; color:#64748b; margin-right: 4px;"),
+                    ui.div(
+                        {"class": "selection-box"},
+                        ui.div(
+                            {"class": "select-compact"},
+                            ui.input_select("scaled_attention_token", None, choices=choices, selected=selected_token)
+                        )
+                    )
+                )
+            ),
+            ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            get_scaled_attention_view(res, layer_idx, head_idx, focus_idx)
+        )
+
+    @output
+    @render.ui
+    def render_ffn():
+        res = cached_result.get()
+        if not res: return None
+        try: layer = int(input.att_layer())
+        except: layer = 0
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"}, 
+            ui.h4("Feed-Forward Network"), 
+            ui.p("Expansion -> Activation -> Projection", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            get_ffn_view(res, layer)
+        )
+
+    @output
+    @render.ui
+    def render_add_norm():
+        res = cached_result.get()
+        if not res: return None
+        try: layer = int(input.att_layer())
+        except: layer = 0
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"},
+            ui.h4("Add & Norm"),
+            ui.p("Residual Connection + Layer Normalization", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            get_add_norm_view(res, layer)
+        )
+
+    @output
+    @render.ui
+    def render_add_norm_post_ffn():
+        res = cached_result.get()
+        if not res: return None
+        try: layer = int(input.att_layer())
+        except: layer = 0
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"},
+            ui.h4("Add & Norm (Post-FFN)"),
+            ui.p("Residual Connection + Layer Normalization", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            get_add_norm_post_ffn_view(res, layer)
+        )
+
+    @output
+    @render.ui
+    def render_layer_output():
+        res = cached_result.get()
+        if not res: return None
+        _, _, _, _, _, _, _, encoder_model, *_ = res
+        if hasattr(encoder_model, "encoder"): # BERT
+            num_layers = len(encoder_model.encoder.layer)
+        else: # GPT-2
+            num_layers = len(encoder_model.h)
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"},
+            ui.h4("Hidden States"),
+            ui.p("Final vector representation before projection.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            get_layer_output_view(res, num_layers - 1)
+        )
+
+    @output
+    @render.ui
+    def render_mlm_predictions():
+        res = cached_result.get()
+        if not res: return None
+        
+        # Determine if we should show predictions
+        # GPT-2: Always show
+        # BERT: Show only if switch is on
+        try:
+            model_family = input.model_family()
+        except:
+            model_family = "bert"
+            
+        if model_family == "gpt2":
+            use_mlm = True
+        else:
+            try: use_mlm = input.use_mlm()
+            except: use_mlm = False
+            
+        try: text = input.text_input()
+        except: text = ""
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"},
+            ui.h4("Next Token Predictions"),
+            ui.p("Probabilities for the next token (Softmax output).", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            get_output_probabilities(res, use_mlm, text)
+        )
+
+    @output
+    @render.ui
+    def render_radar_view():
+        res = cached_result.get()
+        if not res: return None
+        try: layer_idx = int(input.radar_layer())
+        except: layer_idx = 0
+        try: head_idx = int(input.radar_head())
+        except: head_idx = 0
+        try: mode = input.radar_mode()
+        except: mode = "single"
+        
+        # Get num_layers/heads for selector
+        _, _, _, _, _, _, _, encoder_model, *_ = res
+        is_gpt2 = not hasattr(encoder_model, "encoder")
+        if is_gpt2: 
+            num_layers = len(encoder_model.h)
+            num_heads = encoder_model.h[0].attn.num_heads
+        else: 
+            num_layers = len(encoder_model.encoder.layer)
+            num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
+
+        return ui.div(
+            {"class": "card card-compact-height", "style": "height: 100%;"},
+            ui.div(
+                {"class": "header-controls-stacked"},
+                ui.div(
+                    {"class": "header-row-top"},
+                    ui.h4("Attention Head Specialization"),
+                    ui.div(
+                        {"class": "header-right"},
+                        ui.div({"class": "select-compact", "id": "radar_head_selector"}, ui.input_select("radar_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(head_idx))),
+                        ui.div({"class": "select-compact"}, ui.input_select("radar_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(layer_idx))),
+                    )
+                ),
+                ui.div(
+                    {"class": "header-row-bottom", "style": "display: flex; flex-direction: column; gap: 8px; margin-top: 4px;"},
+                    ui.p("Analyzes the linguistic roles (syntax, semantics, etc.) performed by each attention head.", style="font-size:11px; color:#6b7280; margin: 0; width: 100%;"),
+                    ui.div(
+                        {"style": "display: flex; align-items: center; gap: 12px; align-self: flex-end;"},
+                        ui.span("ATTENTION MODE:", style="font-size: 11px; font-weight: 600; color: #64748b; letter-spacing: 0.5px;"),
+                        ui.input_radio_buttons("radar_mode", None, {"single": "Single Head", "all": "All Heads"}, inline=True, selected=mode)
+                    )
+                )
+            ),
+            head_specialization_radar(res, layer_idx, head_idx, mode),
+            ui.HTML(f"""
+                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: #f8fafc; border-radius: 8px; margin-top: 12px; border: 1px solid #e2e8f0; padding-bottom: 4px;">
+                    <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+                        <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
+                        <span class="metric-tag" onclick="showMetricModal('Semantics', 0, 0)">Semantics</span>
+                        <span class="metric-tag" onclick="showMetricModal('CLS Focus', 0, 0)">CLS Focus</span>
+                        <span class="metric-tag" onclick="showMetricModal('Punctuation', 0, 0)">Punctuation</span>
+                        <span class="metric-tag" onclick="showMetricModal('Entities', 0, 0)">Entities</span>
+                        <span class="metric-tag" onclick="showMetricModal('Long-range', 0, 0)">Long-range</span>
+                        <span class="metric-tag" onclick="showMetricModal('Self-attention', 0, 0)">Self-attention</span>
+                    </div>
+                </div>
+            """)
+        )
+
+    @output
+    @render.ui
+    def render_tree_view():
+        res = cached_result.get()
+        if not res: return None
+        try: root_idx = int(input.tree_root_token())
+        except: root_idx = 0
+        try: layer_idx = int(input.radar_layer())
+        except: layer_idx = 0
+        try: head_idx = int(input.radar_head())
+        except: head_idx = 0
+        
+        # Get tokens for selector
+        clean_tokens = tokens_data()
+        choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
+
+        return ui.div(
+            {"class": "card card-compact-height", "style": "height: 100%;"},
+            ui.div(
+                {"class": "header-controls-stacked"},
+                ui.div(
+                    {"class": "header-row-top"},
+                    ui.h4("Attention Dependency Tree"),
+                    ui.div(
+                        {"class": "header-right"},
+                        ui.tags.span("Root:", style="font-size:11px; font-weight:600; color:#64748b; margin-right: 4px;"),
+                        ui.div(
+                            {"class": "select-compact"},
+                            ui.input_select(
+                                "tree_root_token",
+                                None,
+                                choices=choices,
+                                selected=str(root_idx)
+                            )
+                        )
+                    )
+                )
+            ),
+            ui.p("Visualizes the hierarchical influence of tokens on the selected root token.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            get_influence_tree_ui(res, root_idx, layer_idx, head_idx)
+        )
+
+    @output
+    @render.ui
+    def render_global_metrics():
+        res = cached_result.get()
+        if not res: return None
+        return ui.div(
+            {"class": "card"}, 
+            ui.h4("Global Attention Metrics"), 
+            get_metrics_display(res),
+            ui.tags.script("$('#loading_spinner').hide(); $('#generate_all').prop('disabled', false).css('opacity', '1'); $('#dashboard-container').removeClass('content-hidden').addClass('content-visible');")
+        )
+
+    def dashboard_layout_helper(is_gpt2, num_layers, num_heads, clean_tokens):
+        # Helper to generate choices dict
+        def get_choices(items):
+            return {str(i): f"{i}: {t}" for i, t in enumerate(items)}
+
+        if is_gpt2:
+            # GPT-2 Layout
+            return ui.div(
+                {"id": "dashboard-container", "class": "dashboard-stack gpt2-layout content-hidden"},
+                
+                # Row 1: Embeddings
+                ui.div(
+                    {"class": "flex-row-container"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        arrow("Sentence Preview", "Token Embeddings", "vertical", style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), ui.output_ui("render_embedding_table", style="height: 100%;"))
+                    ),
+                    arrow("Token Embeddings", "Positional Embeddings", "horizontal"),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.output_ui("render_posenc_table", style="height: 100%;"),
+                        arrow("Sum & Layer Normalization", "Q/K/V Projections", "vertical", style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;")
+                    ),
+                    arrow("Positional Embeddings", "Sum & Layer Normalization", "horizontal"),
+                    ui.div({"class": "flex-card"}, ui.output_ui("render_sum_layernorm", style="height: 100%;")),
+                ),
+
+                # Row 2: Transformer Block Details (Attention)
+                ui.div(
+                    {"class": "flex-row-container"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.output_ui("render_qkv_table", style="height: 100%;")
+                    ),
+                    arrow("Q/K/V Projections", "Scaled Dot-Product Attention", "horizontal"),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.output_ui("render_scaled_attention", style="height: 100%;")
+                    ),
+                ),
+                
+                # Row 3: Global Metrics & Attention Map
+                ui.output_ui("render_global_metrics"),
+                
+                ui.layout_columns(
+                    ui.output_ui("attention_map"),
+                    ui.output_ui("attention_flow"),
+                    col_widths=[6, 6]
+                ),
+
+                # Row 4: Radar & Tree
+                ui.layout_columns(
+                    ui.output_ui("render_radar_view"),
+                    ui.output_ui("render_tree_view"),
+                    col_widths=[5, 7]
+                ),
+
+                # Row 5: ISA
+                ui.output_ui("isa_scatter"),
+
+                # Row 6: Transformer Block Details (FFN)
+                ui.div(
+                    {"class": "flex-row-container"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        arrow("Inter-Sentence Attention", "Add & Norm", "vertical", style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                        ui.output_ui("render_add_norm", style="height: 100%;")
+                    ),
+                    arrow("Add & Norm", "Feed-Forward Network", "horizontal"),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.output_ui("render_ffn", style="height: 100%;"),
+                        arrow("Add & Norm (post-FFN)", "Hidden States", "vertical", style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;")
+                    ),
+                    arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal"),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.output_ui("render_add_norm_post_ffn", style="height: 100%;")
+                    ),
+                ),
+
+                # Row 7: Unembedding & Predictions
+                ui.div(
+                    {"class": "flex-row-container"},
+                    ui.div({"class": "flex-card"}, ui.output_ui("render_layer_output", style="height: 100%;")),
+                    arrow("Hidden States", "Next Token Predictions", "horizontal"),
+                    ui.div({"class": "flex-card"}, ui.output_ui("render_mlm_predictions", style="height: 100%;")),
+                )
+            )
+
+
+
+        # Construct UI (BERT)
+        return ui.div(
+            {"id": "dashboard-container", "class": "dashboard-stack content-hidden"}, # Initially hidden
+            ui.div(
+                {"class": "dashboard-stack"},
+                # Row 1: Initial Embeddings 
+                ui.div(
+                    {"class": "flex-row-container"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        arrow("Sentence Preview", "Token Embeddings", "vertical", style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), ui.output_ui("render_embedding_table"))
+                    ),
+                    arrow("Token Embeddings", "Segment Embeddings", "horizontal"),
+                    ui.div({"class": "flex-card"}, ui.output_ui("render_segment_table", style="height: 100%;")),
+                    arrow("Segment Embeddings", "Positional Embeddings", "horizontal"),
+                    ui.div({"class": "flex-card"}, ui.output_ui("render_posenc_table", style="height: 100%;")),
+                ),
+                
+                # Row 2: Processing
+                ui.div(
+                    {"class": "flex-row-container"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.output_ui("render_sum_layernorm")
+                    ),
+                    arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal"),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        arrow("Positional Embeddings", "Sum & Layer Normalization", "vertical", style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;"),
+                        ui.output_ui("render_qkv_table")
+                    ),
+                    arrow("Q/K/V Projections", "Scaled Dot-Product Attention", "horizontal"),
+                    ui.div(
+                        {"class": "flex-card"},
+                        ui.output_ui("render_scaled_attention")
+                    ),
+                ),
+                
+                # Row 3: Global Metrics
+                ui.output_ui("render_global_metrics"),
+                
+                # Row 4: Attention Visualizations 
+                ui.layout_columns(
+                    ui.output_ui("attention_map"),
+                    ui.output_ui("attention_flow"),
+                    col_widths=[6, 6]
+                ),
+                
+                
+                # Row 5: Specialization Analysis
+                ui.layout_columns(
+                    ui.output_ui("render_radar_view"),
+                    ui.output_ui("render_tree_view"),
+                    col_widths=[5, 7]
+                ),
+                
+                
+                # Row 6: Inter-Sentence Attention (full width)
+                ui.output_ui("isa_scatter"),
+                
+                
+                # Row 7: Residual Connections
+                ui.div(
+                    {"class": "flex-row-container"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        arrow("Inter-Sentence Attention", "Add & Norm", "vertical", style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                        ui.output_ui("render_add_norm")
+                    ),
+                    arrow("Add & Norm", "Feed-Forward Network", "horizontal"),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.output_ui("render_ffn"),
+                        arrow("Add & Norm (post-FFN)", "Hidden States", "vertical", style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;")
+                    ),
+                    arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal"),
+                    ui.div({"class": "flex-card"}, ui.output_ui("render_add_norm_post_ffn")),
+                ),
+                
+                # Row 8: Final Outputs 
+                ui.div(
+                    {"class": "flex-row-container"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.output_ui("render_layer_output")
+                    ),
+                    arrow("Hidden States", "Token Output Predictions", "horizontal"),
+                    ui.div({"class": "flex-card"}, ui.output_ui("render_mlm_predictions")),
+                ),
+            ),
+        )
+
+    # Deduplicating reactive value for layout configuration
+    # This ensures dashboard_content only re-renders when the model structure actually changes
+    current_layout_config = reactive.Value(None)
+
+    @reactive.Effect
+    def _update_layout_config():
+        res = cached_result.get()
+        if not res: return
+        
+        _, _, _, _, _, _, _, encoder_model, *_ = res
+        is_gpt2 = not hasattr(encoder_model, "encoder")
+        
+        if is_gpt2:
+             num_layers = len(encoder_model.h)
+             num_heads = encoder_model.h[0].attn.num_heads
+        else:
+             num_layers = len(encoder_model.encoder.layer)
+             num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
+        
+        new_config = (is_gpt2, num_layers, num_heads)
+        
+        # Only update if changed
+        if current_layout_config.get() != new_config:
+            print(f"DEBUG: Layout config changed to {new_config}")
+            current_layout_config.set(new_config)
+
+    @reactive.calc
+    def tokens_data():
+        res = cached_result.get()
+        if not res: return []
+        tokens = res[0]
+        return [t.replace("##", "") if t.startswith("##") else t for t in tokens]
+
+    @reactive.effect
+    def update_selectors():
+        clean_tokens = tokens_data()
+        if not clean_tokens: return
+        
+        choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
+        
+        # Update all token-based selectors
+        ui.update_select("scaled_attention_token", choices=choices)
+        ui.update_select("flow_token_select", choices={"all": "All tokens", **choices})
+        ui.update_select("tree_root_token", choices=choices)
+
+    @output
+    @render.ui
+    def dashboard_content():
+        config = current_layout_config.get()
+        if not config:
+            return ui.HTML("<script>$('#loading_spinner').hide(); $('#generate_all').prop('disabled', false).css('opacity', '1');</script>")
+        
+        is_gpt2, num_layers, num_heads = config
+        
+        print("DEBUG: Rendering dashboard_content (Layout Re-build)")
+        # Pass empty tokens list to avoid re-rendering layout when tokens change
+        # The selectors will be populated by update_selectors
+        return dashboard_layout_helper(is_gpt2, num_layers, num_heads, [])
+
+    @output(id="isa_scatter")
+    @render.ui
+    def isa_scatter_renderer():
+        with open("debug_log.txt", "a") as f:
+            f.write("DEBUG: isa_scatter_renderer called\n")
+        
+        res = cached_result.get()
+        if not res:
+            with open("debug_log.txt", "a") as f:
+                f.write("DEBUG: isa_scatter - No res\n")
             return None
+        
+        # REMOVED EARLY RETURN THAT HID THE SECTION WHEN ISA_DATA WAS MISSING
+        # if not res[-1]:
+        #     with open("debug_log.txt", "a") as f:
+        #         f.write("DEBUG: isa_scatter - No isa_data\n")
+        #     return None
+        
+        with open("debug_log.txt", "a") as f:
+            f.write("DEBUG: isa_scatter - Generating figure\n")
 
         isa_data = res[-1]
+        isa_data = res[-1]
+        with open("C:/Users/anoca/Documents/GitHub/attention-atlas/debug_isa_server.txt", "a") as f:
+            f.write(f"DEBUG: isa_scatter_renderer - isa_data type: {type(isa_data)}\n")
+            if isa_data:
+                f.write(f"DEBUG: isa_data keys: {isa_data.keys()}\n")
+                if "sentence_attention_matrix" in isa_data:
+                    f.write(f"DEBUG: matrix shape: {isa_data['sentence_attention_matrix'].shape}\n")
+                    f.write(f"DEBUG: matrix sample: {isa_data['sentence_attention_matrix']}\n")
+            else:
+                f.write("DEBUG: isa_data is None or empty\n")
+
+        if not isa_data or "sentence_attention_matrix" not in isa_data or "sentence_texts" not in isa_data:
+             return ui.div(
+                {"class": "card"},
+                ui.h4("Inter-Sentence Attention (ISA)"),
+                ui.HTML("<div style='color:#9ca3af;font-size:12px;padding:20px;'>ISA data not available. Ensure input has multiple sentences.</div>")
+             )
+             
         matrix = isa_data["sentence_attention_matrix"]
         sentences = isa_data["sentence_texts"]
         n = len(sentences)
 
         x, y = np.meshgrid(np.arange(n), np.arange(n))
-        x_flat, y_flat = x.flatten(), y.flatten()
-        scores = np.nan_to_num(matrix.flatten(), nan=0.0)
+        x_flat = x.flatten().tolist()
+        y_flat = y.flatten().tolist()
+        scores = np.nan_to_num(matrix.flatten(), nan=0.0).tolist()
+
+        with open("C:/Users/anoca/Documents/GitHub/attention-atlas/debug_isa_server.txt", "a") as f:
+            f.write(f"DEBUG: n={n}\n")
+            f.write(f"DEBUG: x_flat={x_flat}\n")
+            f.write(f"DEBUG: y_flat={y_flat}\n")
+            f.write(f"DEBUG: scores={scores}\n")
 
         hover_texts = [
             f"Target ← {sentences[int(r)][:60]}...<br>Source → {sentences[int(c)][:60]}...<br>ISA = {s:.4f}"
             for r, c, s in zip(y_flat, x_flat, scores)
         ]
 
-        customdata = list(zip(y_flat.tolist(), x_flat.tolist()))
+        customdata = list(zip(y_flat, x_flat))
+        
+        sizes = np.clip(np.array(scores) * 40 + 12, 12, 80).tolist()
 
-        fig = go.FigureWidget(data=go.Scatter(
+        # Custom colorscale matching the app's theme (Pink/Blue/Purple)
+        # Using a custom sequential scale from light blue/slate to vibrant pink/purple
+        custom_colorscale = [
+            [0.0, '#f1f5f9'],   # Slate-100 (Lightest)
+            [0.2, '#cbd5e1'],   # Slate-300
+            [0.4, '#94a3b8'],   # Slate-400
+            [0.6, '#60a5fa'],   # Blue-400
+            [0.8, '#818cf8'],   # Indigo-400
+            [1.0, '#ec4899']    # Pink-500 (Strongest)
+        ]
+
+        fig = go.Figure(data=go.Scatter(
             x=x_flat, y=y_flat,
             mode="markers",
             marker=dict(
-                size=np.clip(scores * 40 + 12, 12, 80),
+                size=sizes,
                 color=scores,
-                colorscale="Viridis",
+                colorscale=custom_colorscale,
                 showscale=True,
-                colorbar=dict(title="ISA Score"),
-                line=dict(width=1, color="white")
+                colorbar=dict(
+                    title=dict(
+                        text="ISA Score",
+                        side="right",
+                        font=dict(color="#64748b", size=11)
+                    ),
+                    tickfont=dict(color="#64748b", size=10)
+                ),
+                line=dict(width=1, color="rgba(255,255,255,0.5)") # Subtle white border
             ),
             text=hover_texts,
             hoverinfo="text",
@@ -946,42 +1939,114 @@ def server(input, output, session):
         labels = [s[:30] + "..." if len(s) > 30 else s for s in sentences]
 
         fig.update_layout(
-            xaxis=dict(title="Source (Sentence Y)", tickmode="array", tickvals=np.arange(n), ticktext=labels),
-            yaxis=dict(title="Target (Sentence X)", tickmode="array", tickvals=np.arange(n), ticktext=labels, autorange="reversed"),
-            autosize=True,
-            plot_bgcolor="white",
-            paper_bgcolor="white",
+            xaxis=dict(
+                title=dict(
+                    text="Source (Sentence Y)",
+                    font=dict(color="#475569", size=12, family="Inter, system-ui, sans-serif")
+                ),
+                tickmode="array", 
+                tickvals=list(range(n)), 
+                ticktext=labels,
+                showgrid=False,
+                zeroline=False,
+                tickfont=dict(color="#64748b", size=11),
+            ),
+            yaxis=dict(
+                title=dict(
+                    text="Target (Sentence X)",
+                    font=dict(color="#475569", size=12, family="Inter, system-ui, sans-serif")
+                ),
+                tickmode="array", 
+                tickvals=list(range(n)), 
+                ticktext=labels, 
+                autorange="reversed",
+                showgrid=False,
+                zeroline=False,
+                tickfont=dict(color="#64748b", size=11),
+            ),
+            height=500,
+            width=500,
+            autosize=False,
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
             clickmode="event+select",
-            margin=dict(l=60, r=60, t=60, b=60),
+            margin=dict(l=40, r=40, t=20, b=20),
+            font=dict(family="Inter, system-ui, sans-serif")
         )
 
-        def on_click(trace, points, state):
-            if points.point_inds:
-                target_idx = int(points.ys[0])
-                source_idx = int(points.xs[0])
-                isa_selected_pair.set((target_idx, source_idx))
+        # Generate HTML with unique ID
+        plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="isa_scatter_plot", config={'displayModeBar': False})
+        
+        # Custom JS to handle clicks and send to Shiny
+        js = """
+        <script>
+        (function() {
+            console.log("DEBUG: Initializing ISA Plot Script");
+            function initPlot() {
+                var plot = document.getElementById('isa_scatter_plot');
+                if (plot) {
+                    console.log("DEBUG: ISA Plot found, attaching listener");
+                    plot.on('plotly_click', function(data){
+                        var pt = data.points[0];
+                        var x = pt.x; // source index
+                        var y = pt.y; // target index
+                        // Send to Shiny input 'isa_scatter_click'
+                        Shiny.setInputValue('isa_scatter_click', {x: x, y: y}, {priority: 'event'});
+                    });
+                } else {
+                    console.log("DEBUG: ISA Plot not found yet, retrying...");
+                    setTimeout(initPlot, 100);
+                }
+            }
+            initPlot();
+        })();
+        </script>
+        """
+        
+        # Determine model type for explanation
+        _, _, _, _, _, _, _, encoder_model, *_ = res
+        is_gpt2 = not hasattr(encoder_model, "encoder")
+        model_type = "GPT-2" if is_gpt2 else "BERT"
 
-        fig.data[0].on_click(on_click)
-        return fig
+        return ui.div(
+            {"class": "card"},
+            ui.div(
+                {"style": "display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"},
+                ui.h4(
+                    "Inter-Sentence Attention (ISA)", 
+                    style="margin: 0; cursor: pointer; border-bottom: 1px dashed #cbd5e1; display: inline-block;",
+                    onclick=f"showISACalcExplanation('{model_type}')",
+                    title="Click to see how this is calculated"
+                ),
+            ),
+            ui.p("Visualizes the relationship between two sentences, focusing on how the tokens in Sentence X attend to the tokens in Sentence Y. The ISA score quantifies this relationship, with higher values indicating a stronger connection between the tokens in Sentence X and Sentence Y.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.layout_columns(
+                ui.div(
+                    {"style": "height: 500px; width: 100%; display: flex; justify-content: center; align-items: center;"},
+                    ui.HTML(plot_html + js)
+                ),
+                ui.div(
+                    {"style": "display: flex; flex-direction: column; justify-content: flex-start; height: 100%;"},
+                    ui.div(ui.output_ui("isa_detail_info"), style="flex: 0 0 auto; margin-bottom: 10px;"),
+                    ui.div(ui.output_ui("isa_token_view"), style="flex: 1; display: flex; flex-direction: column;"),
+                ),
+                col_widths=[6, 6],
+            ),
+        )
 
 
     @output
-    @render_plotly
+    @render.ui
     def isa_token_view():
         pair = isa_selected_pair()
         res = cached_result.get()
 
         if res is None or pair is None:
-            fig = go.Figure()
-            fig.update_layout(
-                xaxis=dict(visible=False),
-                yaxis=dict(visible=False),
-                height=500,
-                autosize=True,
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
+            return ui.div(
+                ui.p("Select a point on the scatter plot to view token-to-token attention.", 
+                     style="color: #94a3b8; font-size: 13px; font-style: italic;"),
+                style="height: 350px; display: flex; align-items: center; justify-content: center; border: 1px dashed #e2e8f0; border-radius: 8px; background: #f8fafc;"
             )
-            return fig
 
         target_idx, source_idx = pair
         tokens, _, _, attentions, *_ = res
@@ -996,24 +2061,62 @@ def server(input, output, session):
         toks_target = tokens_combined[:src_start]
         toks_source = tokens_combined[src_start:]
 
+        # Custom colorscale for heatmap (Light Blue -> Deep Blue/Purple)
+        heatmap_colorscale = [
+            [0.0, '#f8fafc'],   # Slate-50
+            [0.2, '#e0f2fe'],   # Sky-100
+            [0.4, '#bae6fd'],   # Sky-200
+            [0.6, '#60a5fa'],   # Blue-400
+            [0.8, '#3b82f6'],   # Blue-500
+            [1.0, '#4f46e5']    # Indigo-600
+        ]
+
         fig = go.Figure(data=go.Heatmap(
             z=sub_att,
             x=toks_source,
             y=toks_target,
-            colorscale="Viridis",
-            colorbar=dict(title="Attention"),
+            colorscale=heatmap_colorscale,
+            colorbar=dict(
+                title=dict(
+                    text="Attention",
+                    side="right",
+                    font=dict(color="#64748b", size=11)
+                ),
+                tickfont=dict(color="#64748b", size=10)
+            ),
             hovertemplate="Target: %{y}<br>Source: %{x}<br>Weight: %{z:.4f}<extra></extra>",
         ))
 
         fig.update_layout(
-            title=f"Token-to-Token — S{target_idx} ← S{source_idx}",
-            xaxis_title="Source tokens",
-            yaxis_title="Target tokens",
-            height=500,
+            title=dict(
+                text=f"Token-to-Token — S{target_idx} ← S{source_idx}",
+                font=dict(size=14, color="#1e293b", family="Inter, system-ui, sans-serif")
+            ),
+            xaxis=dict(
+                title=dict(
+                    text="Source tokens",
+                    font=dict(color="#475569", size=11)
+                ),
+                tickfont=dict(color="#64748b", size=10),
+                gridcolor="#f1f5f9"
+            ),
+            yaxis=dict(
+                title=dict(
+                    text="Target tokens",
+                    font=dict(color="#475569", size=11)
+                ),
+                tickfont=dict(color="#64748b", size=10),
+                gridcolor="#f1f5f9",
+                autorange="reversed" 
+            ),
+            height=350,
             autosize=True,
-            margin=dict(l=80, r=60, t=60, b=60),
+            margin=dict(l=60, r=40, t=60, b=40),
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="Inter, system-ui, sans-serif")
         )
-        return fig
+        return ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="isa_token_view_plot", config={'displayModeBar': False}))
 
 
     @output
@@ -1031,9 +2134,9 @@ def server(input, output, session):
 
 
     @reactive.effect
-    @reactive.event(input.isa_click)
+    @reactive.event(input.isa_scatter_click)
     def _handle_isa_click():
-        click = input.isa_click()
+        click = input.isa_scatter_click()
         if not click or "x" not in click or "y" not in click:
             return
         # Plotly coordinates: x = source (B), y = target (A)
@@ -1079,7 +2182,8 @@ def server(input, output, session):
 
 
 
-    @render_plotly
+    @output
+    @render.ui
     def attention_map():
         res = cached_result.get()
         if not res: return None
@@ -1091,7 +2195,17 @@ def server(input, output, session):
         except: head_idx = 0
         
         att = attentions[layer_idx][0, head_idx].cpu().numpy()
+<<<<<<< Updated upstream
         layer = encoder_model.encoder.layer[layer_idx].attention.self
+=======
+        att = attentions[layer_idx][0, head_idx].cpu().numpy()
+        if hasattr(encoder_model, "encoder"): # BERT
+            layer = encoder_model.encoder.layer[layer_idx].attention.self
+            num_layers = len(encoder_model.encoder.layer)
+        else: # GPT-2
+            layer = encoder_model.h[layer_idx].attn
+            num_layers = len(encoder_model.h)
+>>>>>>> Stashed changes
         hs_in = hidden_states[layer_idx]
         with torch.no_grad():
             Q = layer.query(hs_in)[0].cpu().numpy()
@@ -1115,16 +2229,63 @@ def server(input, output, session):
             "3. Softmax Result: <b>%{customdata[4]}</b><br><br><b>Vectors (first 5 dims):</b><br>"
             "Q = %{customdata[0]}<br>K = %{customdata[1]}<extra></extra>"
         )
-        fig = px.imshow(att, x=tokens, y=tokens, color_continuous_scale="Blues", aspect="auto")
+        # Custom colorscale for attention map (White -> Blue -> Dark Blue)
+        att_colorscale = [
+            [0.0, '#ffffff'],
+            [0.1, '#f0f9ff'],
+            [0.3, '#bae6fd'],
+            [0.6, '#3b82f6'],
+            [1.0, '#1e3a8a']
+        ]
+
+        fig = px.imshow(att, x=tokens, y=tokens, color_continuous_scale=att_colorscale, aspect="auto")
         fig.update_traces(customdata=custom, hovertemplate=hover)
         fig.update_layout(
-            xaxis_title="Key (attending to)", yaxis_title="Query (attending from)",
-            margin=dict(l=40, r=10, t=40, b=40), coloraxis_colorbar=dict(title="Attention"),
-            plot_bgcolor="#ffffff", paper_bgcolor="#ffffff", font=dict(color="#111827"),
+            xaxis_title="Key (attending to)", 
+            yaxis_title="Query (attending from)",
+            margin=dict(l=40, r=10, t=40, b=40), 
+            coloraxis_colorbar=dict(
+                title=dict(
+                    text="Attention",
+                    font=dict(color="#64748b", size=11)
+                ),
+                tickfont=dict(color="#64748b", size=10)
+            ),
+            plot_bgcolor="rgba(0,0,0,0)", 
+            paper_bgcolor="rgba(0,0,0,0)", 
+            font=dict(color="#64748b", family="Inter, system-ui, sans-serif"),
+            xaxis=dict(
+                tickfont=dict(size=10), 
+                title=dict(font=dict(size=11))
+            ),
+            yaxis=dict(
+                tickfont=dict(size=10), 
+                title=dict(font=dict(size=11))
+            )
         )
-        return fig
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"},
+            ui.div(
+                {"class": "header-with-selectors"},
+                ui.h4("Multi-Head Attention"),
+                ui.div(
+                    {"class": "selection-boxes-container"},
+                    ui.div(
+                        {"class": "selection-box"},
+                        ui.div({"class": "select-compact"}, ui.input_select("att_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(layer_idx)))
+                    ),
+                    ui.div(
+                        {"class": "selection-box"},
+                        ui.div({"class": "select-compact"}, ui.input_select("att_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(head_idx)))
+                    )
+                )
+            ),
+            ui.p("Visualizes attention weights.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_map_plot"))
+        )
 
-    @render_plotly
+    @output
+    @render.ui
     def attention_flow():
         res = cached_result.get()
         if not res: return None
@@ -1138,6 +2299,8 @@ def server(input, output, session):
         except: selected = "all"
         focus_idx = None if selected == "all" else int(selected)
 
+        clean_tokens = tokens_data()
+        
         att = attentions[layer_idx][0, head_idx].cpu().numpy()
         n_tokens = len(tokens)
         color_palette = ['#ff5ca9', '#3b82f6', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e', '#a855f7', '#0ea5e9']
@@ -1216,7 +2379,29 @@ def server(input, output, session):
             modebar=dict(orientation='v')
         )
 
-        return fig
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"},
+            ui.div(
+                {"class": "header-with-selectors"},
+                ui.h4("Attention Flow"),
+                ui.div(
+                    {"class": "selection-boxes-container"},
+                    ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
+                    ui.div(
+                        {"class": "selection-box"},
+                        ui.div(
+                            {"class": "select-compact"},
+                            ui.input_select("flow_token_select", None, choices={"all": "All tokens", **{str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}}, selected=selected)
+                        )
+                    )
+                )
+            ),
+            ui.p("Traces how information flows from one token to another through attention layers.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.div(
+                {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
+                ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_flow_plot"))
+            )
+        )
 
     # This function is now called directly from dashboard_content
     def head_specialization_radar(res, layer_idx, head_idx, mode):
@@ -1304,37 +2489,35 @@ def server(input, output, session):
                     range=[0, 1],
                     showticklabels=True,
                     ticks='outside',
-                    tickfont=dict(size=10),
-                    gridcolor='#e2e8f0'
+                    tickfont=dict(size=10, color="#94a3b8"),
+                    gridcolor='#e2e8f0',
+                    linecolor='#e2e8f0'
                 ),
                 angularaxis=dict(
-                    tickfont=dict(size=11, color='#475569'),
-                    gridcolor='#e2e8f0'
+                    tickfont=dict(size=11, color='#475569', family="Inter, system-ui, sans-serif"),
+                    gridcolor='#e2e8f0',
+                    linecolor='#e2e8f0'
                 ),
-                bgcolor='#ffffff'
+                bgcolor="rgba(0,0,0,0)"
             ),
             showlegend=(mode == "all"),
-            legend=dict(
-                orientation="v",
-                yanchor="top",
-                y=1,
-                xanchor="left",
-                x=1.05,
-                font=dict(size=10)
-            ),
+            legend=dict(font=dict(size=10, color="#64748b")),
             title=dict(
                 text=title_text,
-                font=dict(size=14, color='#1e293b'),
-                x=0.5,
-                xanchor='center'
+                font=dict(size=14, color="#1e293b", family="Inter, system-ui, sans-serif"),
+                y=0.95
             ),
-            paper_bgcolor='#ffffff',
-            plot_bgcolor='#ffffff',
-            height=500,
-            margin=dict(l=80, r=150, t=60, b=80)
+            margin=dict(l=40, r=40, t=60, b=40),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="Inter, system-ui, sans-serif"),
+            height=300,
+            width=350,
+            autosize=False
         )
         
-        return ui.HTML(fig.to_html(full_html=False, include_plotlyjs=False))
+        return ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="radar_plot", config={'displayModeBar': False}))
+
 
     # This function replaces the previous @output @render.ui def influence_tree():
     def get_influence_tree_ui(res, root_idx=0, layer_idx=0, head_idx=0):
@@ -1438,7 +2621,7 @@ def server(input, output, session):
         
         html = f"""
     <div class="influence-tree-wrapper" style="height: 100%; display: flex; flex-direction: column; position: relative;">
-        <div id="tree-viz-container" class="tree-viz-container" style="flex: 1; width: 100%; overflow: auto; text-align: center; display: flex; align-items: center; justify-content: center;"></div>
+        <div id="tree-viz-container" class="tree-viz-container" style="height: 300px; width: 100%; overflow: auto; text-align: center; display: flex; align-items: center; justify-content: center;"></div>
         {explanation}
     </div>
         <script>

@@ -28,8 +28,18 @@ class ModelManager:
         Returns (tokenizer, encoder_model, mlm_model) for the specified model_name.
         Loads from cache if available, otherwise loads from HuggingFace.
         """
+        # Check if model is already loaded
         if model_name in cls._instances:
             return cls._instances[model_name]
+
+        # Clear existing cache to free memory
+        if cls._instances:
+            print(f"Unloading previous models to free memory...")
+            cls._instances.clear()
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         print(f"Loading model: {model_name}...")
         

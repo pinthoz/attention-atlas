@@ -47,6 +47,12 @@ app_ui = ui.page_fluid(
             --input-gap: 8px;
         }
 
+        code {
+            color: var(--primary-color);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+        }
+
         /* Ensure Plotly in modal is visible */
         .modal-content canvas, 
         .modal-content .js-plotly-plot {
@@ -69,7 +75,7 @@ app_ui = ui.page_fluid(
             background: var(--sidebar-bg);
             color: var(--sidebar-text);
             padding: 24px;
-            overflow-y: auto;
+            /* overflow-y: auto; Removed by request */
             box-shadow: 4px 0 24px rgba(0,0,0,0.1);
             z-index: 100;
         }
@@ -174,10 +180,36 @@ app_ui = ui.page_fluid(
             min-height: 500px;
         }
 
+        .shiny-layout-columns .card.card-compact-height {
+            min-height: 300px !important;
+        }
+
         /* Ensure consistent spacing for generated content */
         .shiny-html-output {
             margin-bottom: var(--section-gap) !important;
             display: block;
+            height: 100%; /* Ensure it fills parent */
+        }
+        
+        /* Specific fix for flex cards to ensure children stretch */
+        .flex-card .shiny-html-output {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            height: 100%;
+            margin-bottom: 0 !important;
+        }
+
+        .flex-card .shiny-html-output > .card {
+            flex: 1;
+            height: 100%;
+            margin-bottom: 0 !important;
+        }
+
+        .shiny-layout-columns .shiny-html-output {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
         }
         
         /* Force spacing between dashboard stack elements */
@@ -459,6 +491,110 @@ app_ui = ui.page_fluid(
             font-weight: 600;
             color: var(--primary-color);
             font-size: 11px;
+        }
+
+        /* Uniform arrow styling - same thickness for all */
+        .transition-arrow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 20px; /* Uniform size */
+            color: #94a3b8;
+            opacity: 0.8;
+            transition: all 0.2s ease;
+            user-select: none;
+            line-height: normal;
+            z-index: 1000;
+            position: relative;
+        }
+
+        .transition-arrow:hover {
+            color: #ff5ca9;
+            opacity: 1;
+            transform: scale(1.3);
+        }
+
+        /* Horizontal arrows - vertically centered between cards */
+        .arrow-horizontal {
+            width: 24px;
+            height: auto;
+            align-self: stretch;
+            display: flex;
+            align-items: center;          /* center icon inside arrow box */
+            justify-content: center;
+            margin: 0 8px;
+            flex-shrink: 0;
+        }
+
+        /* Single vertical arrow - horizontally centered */
+        .arrow-vertical {
+            width: 100%;
+            height: 24px;
+            display: flex;
+            justify-content: center; /* Horizontal centering */
+            align-items: center;
+            margin: -16px auto; /* Negative margin to reduce gap */
+        }
+
+        /* Initial arrow indicator */
+        .arrow-initial {
+            position: absolute;
+            left: -45px;
+            top: 50%;
+            transform: translateY(-70%);
+            font-size: 20px;
+        }
+
+        /* Return Arrow Styling */
+        .return-arrow {
+            cursor: pointer;
+            opacity: 0.6;
+            transition: all 0.2s ease;
+        }
+        
+        .return-arrow:hover {
+            opacity: 1;
+            transform: scale(1.02);
+        }
+        
+        .return-line {
+            background-color: #cbd5e1;
+            transition: background-color 0.2s ease;
+        }
+        
+        .return-head {
+            color: #cbd5e1;
+            transition: color 0.2s ease;
+        }
+        
+        .return-arrow:hover .return-line {
+            background-color: #ff5ca9;
+        }
+        
+        .return-arrow:hover .return-head {
+            color: #ff5ca9;
+        }
+
+        /* Flex Layout for Horizontal Arrows */
+        .flex-row-container {
+            display: flex;
+            flex-direction: row;
+            gap: 0; /* Minimal gap, let arrows handle margins */
+            align-items: stretch; /* Stretch cards to same height */
+            width: 100%;
+        }
+
+        .flex-card {
+            flex: 1; /* Take available space */
+            min-width: 0; /* Prevent overflow issues */
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .flex-card > .card {
+            height: 100%; /* Fill the flex-card container */
+            margin-bottom: 0 !important; /* Remove default margins */
         }
 
         /* Compact Select - Unified styling for all dropdowns */
@@ -836,6 +972,8 @@ app_ui = ui.page_fluid(
             border-radius: 8px;
             padding: 12px;
             border: 1px solid #e2e8f0;
+            overflow: hidden;
+            max-width: 100%;
         }
 
         .qkv-token-header {
@@ -853,6 +991,8 @@ app_ui = ui.page_fluid(
             margin-bottom: 4px;
             padding-left: 16px;
             width: 100%;
+            box-sizing: border-box;
+            overflow: hidden;
         }
 
         .qkv-row-item img.heatmap {
@@ -1228,7 +1368,7 @@ app_ui = ui.page_fluid(
             border-radius: 12px;
             padding: 10px;
             flex: 1;
-            min-height: 400px;
+            min-height: 300px;
             overflow: auto;
             display: flex;
             flex-direction: column;
@@ -1593,7 +1733,7 @@ app_ui = ui.page_fluid(
         ui.div(
             {"class": "sidebar-section"},
             ui.tags.span("Input Text", class_="sidebar-label"),
-            ui.input_text_area("text_input", None, "I have 3 balls. I buy 2 more cans, each containing 3 balls. How many balls do I have now?", rows=3),
+            ui.input_text_area("text_input", None, "Men are often expected to take leadership roles in the workplace. As a result, women are typically underrepresented in top management positions.", rows=6),
             ui.div(
                 ui.input_action_button("generate_all", "Generate All", class_="btn-primary"),
                 ui.div(
@@ -1604,11 +1744,7 @@ app_ui = ui.page_fluid(
             ),
         ),
 
-        ui.div(
-            {"class": "sidebar-section"},
-            ui.tags.span("Visualization Options", class_="sidebar-label"),
-            ui.input_switch("use_mlm", "Show MLM Predictions", value=False),
-        )
+        ui.output_ui("visualization_options_container")
     ),
 
     # Main Content
@@ -1701,6 +1837,7 @@ app_ui = ui.page_fluid(
         Shiny.addCustomMessageHandler('start_loading', function(msg) {
             $('#loading_spinner').css('display', 'flex');
             $('#generate_all').prop('disabled', true).css('opacity', '0.7');
+            $('#dashboard-container').addClass('content-hidden').removeClass('content-visible');
         });
 
         Shiny.addCustomMessageHandler('stop_loading', function(msg) {
@@ -1883,7 +2020,7 @@ app_ui = ui.page_fluid(
 
             const margin = {top: 80, right: 20, bottom: 60, left: 20};
             const width = 600 - margin.right - margin.left;
-            const height = Math.max(400, containerHeight - margin.top - margin.bottom);
+            const height = Math.max(300, containerHeight - margin.top - margin.bottom);
             
             const colors = {
                 root: '#ff5ca9',
@@ -2061,6 +2198,355 @@ app_ui = ui.page_fluid(
                 origError.apply(console, args);
             };
         });
+        """
+    ),
+    # Transformation Modal Script
+    ui.tags.script(
+        """
+        window.showTransitionModal = function(fromSection, toSection) {
+            var modalId = 'transition-modal';
+            var modal = document.getElementById(modalId);
+            
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = modalId;
+                modal.className = 'modal';
+                document.body.appendChild(modal);
+                
+                // Close on outside click
+                window.addEventListener('click', function(event) {
+                    if (event.target == modal) {
+                        modal.style.display = "none";
+                    }
+                });
+            }
+            
+            var explanation = getTransitionExplanation(fromSection, toSection);
+            
+            var content = `
+                <div class="modal-content" style="max-width: 650px; border: 1px solid rgba(255, 92, 169, 0.3);">
+                    <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px; margin-bottom: 15px;">
+                        <div class="modal-title" style="font-size: 18px; display: flex; align-items: center; gap: 10px;">
+                            <span style="color: #cbd5e1; font-weight: 500;">${fromSection}</span>
+                            <span style="color: #64748b; font-size: 16px;">➜</span>
+                            <span style="color: #ff5ca9; font-weight: 700;">${toSection}</span>
+                        </div>
+                        <span class="close-btn" onclick="document.getElementById('${modalId}').style.display='none'" style="color: #64748b; font-size: 24px; line-height: 1; cursor: pointer;">&times;</span>
+                    </div>
+                    <div class="modal-body" style="font-size: 14px; line-height: 1.7; color: #e2e8f0;">
+                        ${explanation}
+                    </div>
+                </div>
+            `;
+            
+            modal.innerHTML = content;
+            modal.style.display = 'block';
+        };
+
+        window.showISACalcExplanation = function(modelType) {
+            var modalId = 'isa-calc-modal';
+            var modal = document.getElementById(modalId);
+            
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = modalId;
+                modal.className = 'modal';
+                document.body.appendChild(modal);
+                
+                window.addEventListener('click', function(event) {
+                    if (event.target == modal) {
+                        modal.style.display = "none";
+                    }
+                });
+            }
+
+            var content = "";
+            if (modelType === 'BERT') {
+                content = `
+                    <div class="modal-content" style="max-width: 700px; border: 1px solid rgba(255, 92, 169, 0.3);">
+                        <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px; margin-bottom: 15px;">
+                            <h3 class="modal-title" style="color: #ff5ca9;">Inter-Sentence Attention (ISA): BERT</h3>
+                            <span class="close-btn" onclick="document.getElementById('${modalId}').style.display='none'" style="color: #64748b; cursor: pointer;">&times;</span>
+                        </div>
+                        <div class="modal-body" style="font-size: 14px; line-height: 1.6; color: #e2e8f0;">
+                            <h4 style="color: #cbd5e1; margin-top: 0;">Formula</h4>
+                            <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; margin-bottom: 16px;">
+                                ISA(Sₐ, Sᵦ) = max<sub>h∈H</sub> max<sub>(i,j)∈Sₐ×Sᵦ</sub> A(i,j)<br><br>
+                                where A(i,j) = max<sub>l∈L</sub> α_l(i,j)
+                            </div>
+                            
+                            <h4 style="color: #cbd5e1;">Explanation</h4>
+                            <ul style="padding-left: 20px; margin-bottom: 16px;">
+                                <li><strong>Layer aggregation:</strong> Take max attention across all layers</li>
+                                <li><strong>Token aggregation:</strong> Take max attention between any token pair from sentences Sₐ and Sᵦ</li>
+                                <li><strong>Head aggregation:</strong> Take max across all attention heads</li>
+                            </ul>
+
+                            <h4 style="color: #cbd5e1;">Properties</h4>
+                            <ul style="padding-left: 20px; margin-bottom: 16px;">
+                                <li><strong>Bidirectional:</strong> Every token can attend to all other tokens</li>
+                                <li><strong>Matrix shape:</strong> Nearly symmetric (ISA(Sₐ,Sᵦ) ≈ ISA(Sᵦ,Sₐ))</li>
+                                <li><strong>Interpretation:</strong> "Semantic relationship strength" between sentences</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            } else {
+                content = `
+                    <div class="modal-content" style="max-width: 700px; border: 1px solid rgba(255, 92, 169, 0.3);">
+                        <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px; margin-bottom: 15px;">
+                            <h3 class="modal-title" style="color: #ff5ca9;">Inter-Sentence Attention (ISA): GPT-2</h3>
+                            <span class="close-btn" onclick="document.getElementById('${modalId}').style.display='none'" style="color: #64748b; cursor: pointer;">&times;</span>
+                        </div>
+                        <div class="modal-body" style="font-size: 14px; line-height: 1.6; color: #e2e8f0;">
+                            <h4 style="color: #cbd5e1; margin-top: 0;">Formula</h4>
+                            <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; margin-bottom: 16px;">
+                                ISA(Sₐ, Sᵦ) = max<sub>h∈H</sub> max<sub>(i,j)∈Sₐ×Sᵦ, i≥j</sub> A(i,j)<br><br>
+                                where A(i,j) = max<sub>l∈L</sub> α_l(i,j) (0 if i < j)
+                            </div>
+                            
+                            <h4 style="color: #cbd5e1;">Explanation</h4>
+                            <ul style="padding-left: 20px; margin-bottom: 16px;">
+                                <li><strong>Causal constraint:</strong> Token i can only attend to tokens j where j ≤ i</li>
+                                <li><strong>Layer aggregation:</strong> Same as BERT (max across layers)</li>
+                                <li><strong>Token aggregation:</strong> Max between valid token pairs (respecting causality)</li>
+                            </ul>
+
+                            <h4 style="color: #cbd5e1;">Properties</h4>
+                            <ul style="padding-left: 20px; margin-bottom: 16px;">
+                                <li><strong>Unidirectional:</strong> Tokens only attend to previous tokens</li>
+                                <li><strong>Matrix shape:</strong> Lower triangular (zeros above diagonal)</li>
+                                <li><strong>Interpretation:</strong> "Directional dependency" - how much Sₐ depends on Sᵦ</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            }
+
+            modal.innerHTML = content;
+            modal.style.display = 'block';
+        };
+
+        function getTransitionExplanation(from, to) {
+            const explanations = {
+                'Sentence Preview_Token Embeddings': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Tokenization & Embedding Lookup</h4>
+                    <p>The input text is first processed by the <strong>WordPiece tokenizer</strong>, which breaks words into subword units (tokens). Each token is mapped to a unique integer ID.</p>
+                    <p>These IDs are then used to look up dense vectors from the <strong>Token Embedding Matrix</strong> (size: <code>vocab_size × hidden_dim</code>).</p>
+                    <ul>
+                        <li>Special tokens <code>[CLS]</code> (start) and <code>[SEP]</code> (separator) are added.</li>
+                        <li><strong>Output Shape:</strong> <code>(batch_size, seq_len, hidden_dim)</code></li>
+                    </ul>
+                `,
+                'Token Embeddings_Segment Embeddings': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Adding Sentence Context</h4>
+                    <p><strong>Segment Embeddings</strong> distinguish between different sentences in the input (e.g., Sentence A vs. Sentence B). This is crucial for tasks like Question Answering or Next Sentence Prediction.</p>
+                    <ul>
+                        <li><strong>Token Type IDs:</strong> 0 for the first sentence, 1 for the second.</li>
+                        <li>Embeddings are looked up from a learned matrix of size <code>2 × hidden_dim</code>.</li>
+                        <li>These are added element-wise to the Token Embeddings.</li>
+                    </ul>
+                `,
+                'Segment Embeddings_Positional Embeddings': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Injecting Position Information</h4>
+                    <p>Since the Transformer architecture has no inherent sense of order (unlike RNNs), <strong>Positional Embeddings</strong> are added to give the model information about the absolute position of each token.</p>
+                    <ul>
+                        <li>Learned embeddings for each position index (0, 1, 2, ...).</li>
+                        <li>Matrix size: <code>max_position_embeddings × hidden_dim</code> (typically 512 × 768 for BERT-base).</li>
+                        <li>Added element-wise to the previous sum of Token and Segment embeddings.</li>
+                    </ul>
+                `,
+                'Positional Embeddings_Sum & Layer Normalization': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Combination & Normalization</h4>
+                    <p>The final input representation is the sum of the three embedding types:</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Embedding = Token + Segment + Position</div>
+                    <p><strong>Layer Normalization</strong> is then applied to stabilize training:</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">LN(x) = γ((x - μ) / σ) + β</div>
+                    <p>This normalizes the values across the hidden dimension for each token independently.</p>
+                `,
+                'Sum & Layer Normalization_Q/K/V Projections': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Linear Projections</h4>
+                    <p>The input vectors are projected into three different spaces using learned linear transformations (dense layers) to create <strong>Query (Q)</strong>, <strong>Key (K)</strong>, and <strong>Value (V)</strong> vectors.</p>
+                    <ul>
+                        <li><strong>Q:</strong> What the token is looking for.</li>
+                        <li><strong>K:</strong> What the token "advertises" about itself.</li>
+                        <li><strong>V:</strong> The actual content information to be aggregated.</li>
+                    </ul>
+                    <p>Each projection uses a weight matrix of size <code>hidden_dim × hidden_dim</code>.</p>
+                `,
+                'Q/K/V Projections_Scaled Dot-Product Attention': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Computing Attention Scores</h4>
+                    <p>The core attention mechanism calculates how much each token should attend to every other token:</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Attention(Q, K, V) = softmax(QK^T / √d_k)V</div>
+                    <ol>
+                        <li><strong>Dot Product (QK^T):</strong> Measures similarity between Queries and Keys.</li>
+                        <li><strong>Scaling (1/√d_k):</strong> Prevents gradients from vanishing in the softmax.</li>
+                        <li><strong>Softmax:</strong> Converts scores into probabilities (attention weights).</li>
+                        <li><strong>Weighted Sum:</strong> Aggregates Values based on these weights.</li>
+                    </ol>
+                `,
+                'Scaled Dot-Product Attention_Global Attention Metrics': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Aggregating Statistics</h4>
+                    <p>We compute global metrics across all attention heads and layers to understand the model's behavior. This step doesn't change the data flow but analyzes the attention patterns produced in the previous step.</p>
+                    <ul>
+                        <li><strong>Entropy:</strong> How focused or diffuse the attention is.</li>
+                        <li><strong>Confidence:</strong> The magnitude of the maximum attention weight.</li>
+                        <li><strong>Sparsity:</strong> How many tokens receive significant attention.</li>
+                    </ul>
+                `,
+                'Global Attention Metrics_Multi-Head Attention': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Visualizing Attention Heads</h4>
+                    <p>This visualization allows us to inspect the raw attention matrices for individual heads. In <strong>Multi-Head Attention</strong>, the model runs the attention mechanism multiple times in parallel (12 heads for BERT-base).</p>
+                    <p>Each head can learn to focus on different relationships (e.g., one head might track next-token relationships, another might track subject-verb dependencies).</p>
+                `,
+                'Multi-Head Attention_Attention Flow': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Flow Visualization</h4>
+                    <p>The <strong>Attention Flow</strong> view provides a Sankey-style diagram to visualize the flow of information between tokens.</p>
+                    <ul>
+                        <li><strong>Lines:</strong> Represent attention weights.</li>
+                        <li><strong>Thickness:</strong> Proportional to the attention strength.</li>
+                        <li><strong>Filtering:</strong> Low-weight connections are often hidden to reduce clutter and reveal the most significant dependencies.</li>
+                    </ul>
+                `,
+                'Attention Flow_Attention Head Specialization': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Analyzing Head Roles</h4>
+                    <p>We analyze the attention patterns to determine what linguistic features each head specializes in. This is done by correlating attention weights with known linguistic properties.</p>
+                    <ul>
+                        <li><strong>Syntax:</strong> Attention to syntactic dependencies.</li>
+                        <li><strong>Positional:</strong> Attention to previous/next tokens.</li>
+                        <li><strong>Long-range:</strong> Attention to distant tokens.</li>
+                    </ul>
+                    <p>The Radar Chart visualizes this "profile" for each head.</p>
+                `,
+                'Attention Head Specialization_Attention Dependency Tree': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Hierarchical Influence</h4>
+                    <p>The <strong>Dependency Tree</strong> visualizes the chain of influence starting from a selected root token. It shows how attention propagates through the sequence.</p>
+                    <ul>
+                        <li><strong>Root:</strong> The token being analyzed.</li>
+                        <li><strong>Children:</strong> Tokens that the root attends to most strongly.</li>
+                        <li><strong>Depth:</strong> Shows multi-hop attention (tokens attending to tokens that attend to the root).</li>
+                    </ul>
+                `,
+                'Attention Dependency Tree_Inter-Sentence Attention': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Cross-Sentence Analysis</h4>
+                    <p><strong>Inter-Sentence Attention (ISA)</strong> specifically isolates and quantifies the attention flowing between the two input sentences (Sentence A and Sentence B).</p>
+                    <ul>
+                        <li><strong>ISA Score:</strong> Aggregates attention weights where the Source is in one sentence and the Target is in the other.</li>
+                        <li>High ISA indicates strong interaction or information exchange between the sentences.</li>
+                    </ul>
+                `,
+                'Positional Embeddings_Sum & Layer Normalization': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Embedding Summation & Normalization</h4>
+                    <p>The three embedding components are element-wise summed:</p>
+                    <div class="modal-formula">
+                        Input = Token_Embeddings + Segment_Embeddings + Positional_Embeddings
+                    </div>
+                    <p>This combined representation is then passed through <strong>Layer Normalization</strong> to stabilize training.</p>
+                    <ul>
+                        <li><strong>Summation:</strong> Combines semantic meaning, sentence segment info, and position info.</li>
+                        <li><strong>LayerNorm:</strong> Normalizes the vector for each token to have mean 0 and variance 1.</li>
+                    </ul>
+                `,
+                'Add & Norm (post-FFN)_Hidden States': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Final Layer Output</h4>
+                    <p>After the Feed-Forward Network, another residual connection and normalization step is applied.</p>
+                    <div class="modal-formula">
+                        Output = LayerNorm(FFN_Output + Input_to_FFN)
+                    </div>
+                    <p>This produces the final <strong>Hidden States</strong> for the current layer, which are passed to the next layer or used for final predictions.</p>
+                `,
+                'Hidden States_Token Output Predictions': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Unembedding & Prediction</h4>
+                    <p>The final hidden states are projected back to the vocabulary size to predict the next token (or masked token).</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Logits = LayerNorm(Hidden) · W_vocab + b</div>
+                    <p><strong>Softmax</strong> is then applied to convert these logits into probabilities:</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">P(token_i) = exp(logit_i) / Σ exp(logit_j)</div>
+                `,
+                'Inter-Sentence Attention_Add & Norm': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Residual Connection & Norm</h4>
+                    <p>After the attention mechanism, a <strong>Residual (Skip) Connection</strong> adds the original input back to the attention output, followed by another Layer Normalization.</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Output = LayerNorm(x + Attention(x))</div>
+                    <p>This allows gradients to flow through the network more easily and preserves information from the lower layers.</p>
+                `,
+                'Add & Norm_Feed-Forward Network': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Feed-Forward Processing</h4>
+                    <p>The output is passed through a position-wise <strong>Feed-Forward Network (FFN)</strong>. This is a two-layer perceptron applied to each token independently.</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">FFN(x) = GELU(xW_1 + b_1)W_2 + b_2</div>
+                    <ul>
+                        <li><strong>Expansion:</strong> The first layer expands the dimension (typically 4× hidden_dim, e.g., 3072).</li>
+                        <li><strong>Activation:</strong> GELU (Gaussian Error Linear Unit) introduces non-linearity.</li>
+                        <li><strong>Projection:</strong> The second layer projects it back to <code>hidden_dim</code>.</li>
+                    </ul>
+                `,
+                'Feed-Forward Network_Add & Norm (post-FFN)': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Second Residual & Norm</h4>
+                    <p>A second <strong>Residual Connection</strong> and <strong>Layer Normalization</strong> are applied after the FFN.</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Output = LayerNorm(x + FFN(x))</div>
+                    <p>This completes one full Transformer Encoder Block. In BERT-base, this entire process (Attention → Add&Norm → FFN → Add&Norm) repeats 12 times.</p>
+                `,
+                'Add & Norm (post-FFN)_Hidden States': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Final Layer Output</h4>
+                    <p>The output of the final (12th) encoder layer constitutes the <strong>Hidden States</strong> (or contextualized embeddings) for the sequence.</p>
+                    <ul>
+                        <li><strong>Shape:</strong> <code>(batch_size, seq_len, hidden_dim)</code></li>
+                        <li>These vectors contain rich, contextual information aggregated from all previous layers and are used for downstream tasks or the pre-training objectives.</li>
+                    </ul>
+                `,
+                'Hidden States_Token Output Predictions (MLM)': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Masked Language Modeling</h4>
+                    <p>For the pre-training objective, an <strong>MLM Head</strong> projects the hidden states back to the vocabulary size to predict the original identity of masked tokens.</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Logits = Linear(HiddenStates)</div>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Probabilities = Softmax(Logits)</div>
+                    <p>This gives a probability distribution over the entire vocabulary for each token position.</p>
+                `,
+                'Token Embeddings_Positional Embeddings': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Adding Position Information</h4>
+                    <p>In GPT-2, <strong>Positional Embeddings</strong> are added directly to the Token Embeddings. Unlike BERT, there are no Segment Embeddings because GPT-2 is typically trained on a continuous stream of text.</p>
+                    <ul>
+                        <li><strong>Token Embeddings:</strong> Represent the meaning of each word/subword.</li>
+                        <li><strong>Positional Embeddings:</strong> Indicate the order of tokens in the sequence.</li>
+                        <li><strong>Summation:</strong> The two vectors are added element-wise to create the initial input representation.</li>
+                    </ul>
+                `,
+                'Hidden States_Next Token Predictions': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Causal Language Modeling</h4>
+                    <p>The final hidden states are projected to the vocabulary size to predict the <strong>next token</strong> in the sequence.</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">P(token_{t+1} | token_1...token_t)</div>
+                    <p>This is the core objective of GPT-2: predicting the future based on the past context.</p>
+                `,
+                'Sum & Layer Normalization_Q/K/V Projections': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Linear Projections</h4>
+                    <p>The normalized input vectors are projected into three different spaces using learned linear transformations (dense layers) to create <strong>Query (Q)</strong>, <strong>Key (K)</strong>, and <strong>Value (V)</strong> vectors.</p>
+                    <ul>
+                        <li><strong>Q:</strong> What the token is looking for.</li>
+                        <li><strong>K:</strong> What the token "advertises" about itself.</li>
+                        <li><strong>V:</strong> The actual content information to be aggregated.</li>
+                    </ul>
+                    <p>In GPT-2, this is often implemented as a single 1D convolution (<code>c_attn</code>) that produces a vector of size <code>3 * hidden_dim</code>, which is then split.</p>
+                `,
+                'Scaled Dot-Product Attention_Add & Norm': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Residual & Norm</h4>
+                    <p>After attention, the original input (before attention) is added back to the attention output (Residual Connection), followed by Layer Normalization.</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Output = LayerNorm(x + Attention(x))</div>
+                `,
+                'Add & Norm_Feed-Forward Network': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Feed-Forward Processing</h4>
+                    <p>The normalized output is passed to the Feed-Forward Network (FFN).</p>
+                `,
+                'Feed-Forward Network_Add & Norm (post-FFN)': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Residual & Norm</h4>
+                    <p>Similar to the attention block, the input to the FFN is added back to the FFN output, followed by Layer Normalization.</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Output = LayerNorm(x + FFN(x))</div>
+                `,
+                'Add & Norm (post-FFN)_Hidden States': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Block Output</h4>
+                    <p>The output of the second Add & Norm step becomes the <strong>Hidden State</strong> for the current layer.</p>
+                `
+            };
+            
+            var key = from + '_' + to;
+            return explanations[key] || '<p>Explanation not available for this transition.</p>';
+        }
         """
     )
 )
