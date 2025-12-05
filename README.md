@@ -1,6 +1,6 @@
 # <img src="static/favicon.ico" alt="Attention Atlas" width="25"> Attention Atlas
 
-An interactive application for visualizing and exploring the BERT architecture in detail, with special focus on multi-head attention patterns, head specializations, and inter-sentence attention analysis.
+An interactive application for visualizing and exploring Transformer architectures (BERT, GPT-2) in detail, with special focus on multi-head attention patterns, head specializations, and inter-sentence attention analysis.
 
 ![Attention Atlas Architecture](static/images/architecture.png)
 
@@ -11,7 +11,7 @@ This repository is part of a Master's thesis on **Interpretable Large Language M
 
 ## Overview
 
-Attention Atlas is an educational and analytical tool that allows you to visually explore every component of the BERT architecture:
+Attention Atlas is an educational and analytical tool that allows you to visually explore every component of the BERT and GPT-2 architectures:
 
 - **Token Embeddings**: Visualization of contextual word vectors (768 dimensions)
 - **Positional Encodings**: Sinusoidal position encodings
@@ -181,7 +181,7 @@ attention-atlas/
 
 ## Supported Models
 
-Attention Atlas supports three BERT architectures from HuggingFace, allowing you to explore attention mechanisms across different model sizes and language capabilities:
+Attention Atlas supports various BERT and GPT-2 architectures from HuggingFace, allowing you to explore attention mechanisms across different model sizes and language capabilities:
 
 ### 🔹 BERT Base Uncased (Default)
 - **Model ID**: `bert-base-uncased`
@@ -212,6 +212,30 @@ Attention Atlas supports three BERT architectures from HuggingFace, allowing you
 - **Vocabulary**: ~105,000 WordPiece tokens (supports 104 languages)
 - **Total Parameters**: ~110 million
 - **Use Case**: Cross-lingual analysis, multilingual attention patterns, international text exploration
+
+### 🔹 GPT-2 Small
+- **Model ID**: `gpt2`
+- **Architecture**: 12 transformer layers (decoder-only)
+- **Attention Heads**: 12 heads per layer
+- **Hidden Dimensions**: 768
+- **Total Parameters**: ~117 million
+- **Use Case**: Text generation, causal language modeling
+
+### 🔹 GPT-2 Medium
+- **Model ID**: `gpt2-medium`
+- **Architecture**: 24 transformer layers
+- **Attention Heads**: 16 heads per layer
+- **Hidden Dimensions**: 1,024
+- **Total Parameters**: ~345 million
+- **Use Case**: Better generation quality, deeper context understanding
+
+### 🔹 GPT-2 Large
+- **Model ID**: `gpt2-large`
+- **Architecture**: 36 transformer layers
+- **Attention Heads**: 20 heads per layer
+- **Hidden Dimensions**: 1,280
+- **Total Parameters**: ~774 million
+- **Use Case**: High-quality text generation, complex reasoning tasks
 
 **Model Selection**: Switch between models using the dropdown selector in the sidebar under "Model Configuration". All visualizations, metrics, and analyses automatically adapt to the selected model's architecture.
 
