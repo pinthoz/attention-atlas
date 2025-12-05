@@ -1,5 +1,3 @@
-"""Model loading utilities with caching and dynamic selection."""
-
 import logging
 import warnings
 import torch

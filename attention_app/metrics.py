@@ -1,5 +1,3 @@
-"""Attention metric helpers extracted from the monolithic script."""
-
 import numpy as np
 
 
