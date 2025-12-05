@@ -19,9 +19,9 @@ function renderInfluenceTree(treeData, containerId) {
     // Configuration
     const container = document.getElementById(containerId);
     const containerWidth = container.clientWidth || 960;
-    const containerHeight = container.clientHeight || 600;
+    const containerHeight = container.clientHeight || 400;
 
-    const margin = { top: 40, right: 60, bottom: 40, left: 60 };
+    const margin = { top: 20, right: 60, bottom: 20, left: 60 };
 
     // Dynamic width calculation
     // We need to count leaf nodes to determine required width
