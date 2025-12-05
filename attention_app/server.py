@@ -1299,7 +1299,7 @@ def server(input, output, session):
             ),
             head_specialization_radar(res, layer_idx, head_idx, mode),
             ui.HTML(f"""
-                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: #f8fafc; border-radius: 8px; margin-top: 12px; border: 1px solid #e2e8f0; padding-bottom: 4px;">
+                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px;">
                     <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
                         <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
@@ -2289,7 +2289,10 @@ def server(input, output, session):
             autosize=False
         )
         
-        return ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="radar_plot", config={'displayModeBar': False}))
+        return ui.HTML(ui.div(
+            {"style": "display: flex; justify-content: center; width: 100%;"},
+            ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="radar_plot", config={'displayModeBar': False}))
+        ))
 
 
     # This function replaces the previous @output @render.ui def influence_tree():
@@ -2384,10 +2387,10 @@ def server(input, output, session):
         
         # Explanation text - minimalist and after tree
         explanation = """
-        <div class="tree-explanation">
+        <div class="tree-explanation" style="background: white; margin-top: 10px; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
             <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.6;">
                 <strong>Attention Dependency Tree:</strong> Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2).
-                <span style="color: #94a3b8;">Click nodes to expand further. Thicker edges = stronger influence.</span>
+                <span style="color: #94a3b8;">Click nodes to collapse/expand. Thicker edges = stronger influence.</span>
             </p>
         </div>
         """
