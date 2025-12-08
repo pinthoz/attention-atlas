@@ -28,19 +28,15 @@ attention_analysis_page = ui.page_fluid(
         ui.div(
             {"class": "sidebar-section"},
             ui.tags.span("Model Configuration", class_="sidebar-label"),
-            
-            ui.tags.span("Model Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 11px; color: #64748b;"),
             ui.input_select(
                 "model_family",
-                None,
+                "Model Family",
                 choices={"bert": "BERT", "gpt2": "GPT-2"},
                 selected="bert"
             ),
-            
-            ui.tags.span("Select Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 11px; color: #64748b; margin-top: 8px;"),
             ui.input_select(
                 "model_name",
-                None,
+                "Select Architecture",
                 choices={
                     "bert-base-uncased": "BERT Base (Uncased)",
                     "bert-large-uncased": "BERT Large (Uncased)",
@@ -53,7 +49,7 @@ attention_analysis_page = ui.page_fluid(
         ui.div(
             {"class": "sidebar-section"},
             ui.tags.span("Input Text", class_="sidebar-label"),
-            ui.input_text_area("text_input", None, "All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.", rows=6),
+            ui.input_text_area("text_input", None, "Men are often expected to take leadership roles in the workplace. As a result, women are typically underrepresented in top management positions.", rows=6),
             ui.div(
                 ui.input_action_button("generate_all", "Generate All", class_="btn-primary"),
                 ui.div(
@@ -92,11 +88,11 @@ bias_analysis_page = ui.page_fluid(
 # Main app UI with navbar
 app_ui = ui.page_navbar(
     ui.nav_panel(
-        "Attention",
+        "Attention Analysis",
         attention_analysis_page
     ),
     ui.nav_panel(
-        "Bias",
+        "Bias Analysis",
         bias_analysis_page
     ),
     title="Attention Atlas",

@@ -3,6 +3,8 @@ import warnings
 import torch
 from transformers import BertTokenizer, BertModel, BertForMaskedLM
 from transformers.utils import logging as transformers_logging
+from transformers import GPT2Tokenizer, GPT2Model, GPT2LMHeadModel
+import gc
 
 # Suppress warnings
 warnings.filterwarnings(
@@ -34,7 +36,6 @@ class ModelManager:
         if cls._instances:
             print(f"Unloading previous models to free memory...")
             cls._instances.clear()
-            import gc
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -46,7 +47,6 @@ class ModelManager:
             is_gpt2 = "gpt2" in model_name
             
             if is_gpt2:
-                from transformers import GPT2Tokenizer, GPT2Model, GPT2LMHeadModel
                 tokenizer = GPT2Tokenizer.from_pretrained(model_name)
                 if tokenizer.pad_token is None:
                     tokenizer.pad_token = tokenizer.eos_token

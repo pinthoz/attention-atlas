@@ -9,7 +9,7 @@ from shiny import ui
 
 from ..utils import array_to_base64_img, compute_influence_tree
 from ..metrics import compute_all_attention_metrics
-
+from ..models import ModelManager
 
 def get_layer_block(model, layer_idx):
     """Get the layer block for BERT or GPT-2."""
@@ -455,7 +455,6 @@ def get_output_probabilities(res, use_mlm, text):
         )
 
     _, _, _, _, _, inputs, tokenizer, _, mlm_model, *_ = res
-    from ..models import ModelManager
     device = ModelManager.get_device()
 
     # We need to re-tokenize to be sure, but we can reuse inputs if they match

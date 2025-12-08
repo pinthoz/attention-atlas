@@ -1,0 +1,28 @@
+{
+  "definitional_pairs": [
+    ["woman", "man"],
+    ["girl", "boy"],
+    ["she", "he"],
+    ["mother", "father"],
+    ["daughter", "son"],
+    ["gal", "guy"],
+    ["female", "male"],
+    ["her", "his"],
+    ["herself", "himself"],
+    ["Mary", "John"]
+  ],
+  "gender_specific_words": {
+    "female": [
+      "sister", "aunt", "niece", "girlfriend", "daughters", "mother", "mom",
+      "grandmother", "granddaughter", "bride", "wife", "actress", "waitress",
+      "queen", "princess", "heroine", "lady", "ladies", "woman", "women",
+      "girl", "girls", "female", "she", "her", "hers", "herself"
+    ],
+    "male": [
+      "brother", "uncle", "nephew", "boyfriend", "sons", "father", "dad",
+      "grandfather", "grandson", "groom", "husband", "actor", "waiter",
+      "king", "prince", "hero", "gentleman", "gentlemen", "man", "men",
+      "boy", "boys", "male", "he", "him", "his", "himself"
+    ]
+  }
+}
