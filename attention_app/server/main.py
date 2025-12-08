@@ -14,6 +14,7 @@ from shinywidgets import render_plotly, output_widget, render_widget
 
 from .logic import tokenize_with_segments, heavy_compute
 from .renderers import *
+from .bias_handlers import bias_server_handlers
 
 # Additional imports needed for server function
 from ..models import ModelManager
@@ -21,12 +22,33 @@ from ..utils import positional_encoding, array_to_base64_img, compute_influence_
 from ..metrics import compute_all_attention_metrics
 from ..head_specialization import compute_all_heads_specialization
 from ..isa import compute_isa
+from ..isa import get_sentence_token_attention
 
+import traceback
 
 def server(input, output, session):
+    # Register bias analysis handlers
+    bias_server_handlers(input, output, session)
     running = reactive.value(False)
     cached_result = reactive.value(None)
     isa_selected_pair = reactive.Value(None)
+    
+    # Synchronize text inputs between tabs
+    @reactive.Effect
+    @reactive.event(input.text_input)
+    def sync_attention_to_bias():
+        val = input.text_input()
+        current_bias = input.bias_input_text()
+        if val != current_bias:
+            ui.update_text_area("bias_input_text", value=val)
+
+    @reactive.Effect
+    @reactive.event(input.bias_input_text)
+    def sync_bias_to_attention():
+        val = input.bias_input_text()
+        current_attn = input.text_input()
+        if val != current_attn:
+            ui.update_text_area("text_input", value=val)
     
     @reactive.Effect
     @reactive.event(input.model_family)
@@ -44,6 +66,8 @@ def server(input, output, session):
                 "gpt2": "GPT-2 Small",
                 "gpt2-medium": "GPT-2 Medium",
                 "gpt2-large": "GPT-2 Large",
+                "openai-community/gpt2-xl": "GPT-2 XL",
+                "EleutherAI/gpt-neo-125M": "GPT-Neo 125M",
             }
             selected = "gpt2"
             
@@ -84,7 +108,6 @@ def server(input, output, session):
             print("DEBUG: Head specialization complete")
         except Exception as e:
             print(f"Warning: Could not compute head specialization: {e}")
-            import traceback
             traceback.print_exc()
         
         # Compute ISA
@@ -124,7 +147,6 @@ def server(input, output, session):
             cached_result.set(result)
         except Exception as e:
             print(f"ERROR in compute_all: {e}")
-            import traceback
             traceback.print_exc()
             cached_result.set(None)
             await session.send_custom_message('stop_loading', {})
@@ -470,7 +492,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "sidebar-section"},
             ui.tags.span("Visualization Options", class_="sidebar-label"),
-            ui.input_switch("use_mlm", "Show MLM Predictions", value=False)
+            ui.input_switch("use_mlm", ui.span("Show MLM Predictions", style="font-size: 14px; color: #64748b; font-weight: 500;"), value=False)
         )
 
     @output
@@ -1225,7 +1247,6 @@ def server(input, output, session):
         isa_data = res[-1]
         boundaries = isa_data["sentence_boundaries_ids"]
 
-        from ..isa import get_sentence_token_attention
         sub_att, tokens_combined, src_start = get_sentence_token_attention(
             attentions, tokens, target_idx, source_idx, boundaries
         )
@@ -1777,7 +1798,6 @@ def server(input, output, session):
                 return ui.HTML("<p style='font-size:11px;color:#6b7280;'>Unable to generate tree.</p>")
             
             # Convert to JSON
-            import json
             tree_json = json.dumps(tree_data)
         except Exception as e:
             return ui.HTML(f"<p style='font-size:11px;color:#ef4444;'>Error generating tree: {str(e)}</p>")

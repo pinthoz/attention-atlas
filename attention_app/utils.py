@@ -1,5 +1,3 @@
-"""Shared helper utilities for the Shiny attention explorer."""
-
 from io import BytesIO
 import base64
 

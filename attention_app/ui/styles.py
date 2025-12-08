@@ -37,10 +37,114 @@ CSS = """
             color: var(--text-main);
         }
 
+        /* Navbar Styling */
+        /* Navbar Styling - Bottom of Sidebar */
+        .navbar {
+            left: 0 !important;
+            width: 320px !important;
+            height: auto !important;
+            top: auto !important;
+            bottom: 0 !important;
+            position: fixed !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+            padding: 24px 0 !important;
+            background: transparent !important;
+            z-index: 1002 !important; /* Above sidebar background */
+            pointer-events: none; /* Allow clicks through empty areas */
+            box-shadow: none !important;
+        }
+
+        /* Force explicit centering on all bootstrap containers */
+        .navbar .container-fluid {
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+            width: 100% !important;
+        }
+
+        .navbar-collapse {
+            display: flex !important;
+            justify-content: center !important;
+            flex-grow: 1 !important;
+            width: 100% !important; /* Force full width */
+            margin: 0 !important;
+        }
+        
+        .navbar-brand {
+            display: none !important;
+        }
+
+        .navbar-nav {
+            display: flex !important;
+            flex-direction: row !important; /* Side-by-side buttons */
+            justify-content: center !important;
+            align-items: center !important;
+            gap: 12px;
+            
+            /* Visuals */
+            background: transparent;
+            padding: 0 24px !important; /* Sidebar padding matches */
+            border-radius: 0;
+            border: none;
+            box-shadow: none;
+            backdrop-filter: none;
+            
+            pointer-events: auto;
+            margin: 0 !important;
+            width: 100% !important;
+            box-sizing: border-box;
+        }
+
+        .navbar-nav > li {
+            flex: 1 1 0; /* Force equal width ignoring content */
+            width: 0;   /* Extra safety for flex layout */
+            display: flex;
+            min-width: 0; /* Allow shrinking below content size */
+        }
+
+        .navbar .nav-link {
+            width: 100%;
+            text-align: center;
+            justify-content: center;
+            display: flex !important;
+            align-items: center;
+            
+            border-radius: 999px !important;
+            padding: 10px 0 !important;
+            font-family: 'Outfit', sans-serif !important;
+            font-size: 14px !important;
+            font-weight: 600 !important;
+            border: 1px solid rgba(255,255,255,0.1) !important;
+            margin: 0 !important;
+            letter-spacing: 0.3px;
+            
+            /* Inactive State (Dark theme friendly) */
+            background: rgba(255, 255, 255, 0.05) !important;
+            color: #94a3b8 !important; /* Muted text */
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+
+        .navbar .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1) !important;
+            color: white !important;
+            border-color: rgba(255,255,255,0.2) !important;
+        }
+
+        .navbar .nav-link.active {
+            /* Active State matches btn-primary */
+            background: var(--primary-color) !important;
+            color: white !important;
+            border-color: var(--primary-color) !important;
+            box-shadow: 0 4px 6px -1px rgba(255, 92, 169, 0.2);
+        }
+
         /* Sidebar Styling */
         .sidebar {
             position: fixed;
-            left: 0; top: 0; bottom: 0;
+            left: 0; top: 0;
+            bottom: 0;
             width: 320px;
             background: var(--sidebar-bg);
             color: var(--sidebar-text);
@@ -105,6 +209,7 @@ CSS = """
         .content {
             margin-left: 320px;
             padding: 24px;
+            /* padding-top removed as navbar is now in sidebar */
             max-width: calc(100% - 320px);
             box-sizing: border-box;
             display: flex;
@@ -836,6 +941,30 @@ CSS = """
         }
 
         /* Fix for Shiny's default radio structure */
+        .shiny-options-group .radio label span {
+             margin-left: 4px;
+        }
+
+        /* Pink Bias Tabs Styling */
+        .nav-tabs .nav-link {
+            color: #64748b; /* Default muted slate */
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .nav-tabs .nav-link:hover {
+            color: var(--primary-color);
+            background-color: rgba(255, 92, 169, 0.05);
+            border-color: rgba(255, 92, 169, 0.2);
+        }
+
+        .nav-tabs .nav-link.active {
+            color: var(--primary-color) !important;
+            border-color: #e2e8f0 #e2e8f0 white !important;
+            background-color: white !important;
+            border-top: 2px solid var(--primary-color) !important; /* Top pink accent */
+        }
+
         .shiny-options-group .radio label {
             padding: 4px 12px !important;
             margin: 0 !important;
@@ -1527,6 +1656,287 @@ CSS = """
             overflow-x: visible !important;
             overflow-y: visible !important;
         }
+
+        /* ====================================
+           BIAS ANALYSIS STYLES
+           ==================================== */
+
+        /* Bias Badge Styles */
+        .bias-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 0 4px;
+        }
+
+        .bias-badge-gen {
+            background: linear-gradient(135deg, #f97316 0%, #fb923c 100%);
+            color: white;
+            box-shadow: 0 2px 4px rgba(249, 115, 22, 0.2);
+        }
+
+        .bias-badge-unfair {
+            background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+            color: white;
+            box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+        }
+
+        .bias-badge-stereo {
+            background: linear-gradient(135deg, #9c27b0 0%, #ba68c8 100%);
+            color: white;
+            box-shadow: 0 2px 4px rgba(156, 39, 176, 0.2);
+        }
+
+        /* Bias Summary Card Enhancements */
+        .bias-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 16px;
+            margin-top: 12px;
+        }
+
+        /* Bias Level Indicators */
+        .bias-level-low {
+            border-left: 4px solid #10b981;
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.1) 0%, transparent 100%);
+        }
+
+        .bias-level-moderate {
+            border-left: 4px solid #f59e0b;
+            background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, transparent 100%);
+        }
+
+        .bias-level-high {
+            border-left: 4px solid #ef4444;
+            background: linear-gradient(90deg, rgba(239, 68, 68, 0.1) 0%, transparent 100%);
+        }
+
+        /* Bias Visualization Containers */
+        .bias-viz-container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+
+        /* Token Bias Highlight Styles */
+        .token-biased {
+            position: relative;
+            display: inline-block;
+            padding: 2px 6px;
+            margin: 0 2px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            transition: all 0.2s ease;
+        }
+
+        .token-biased:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            z-index: 10;
+        }
+
+        .token-biased-gen {
+            background: rgba(249, 115, 22, 0.15);
+            border-bottom: 2px solid #f97316;
+        }
+
+        .token-biased-unfair {
+            background: rgba(239, 68, 68, 0.15);
+            border-bottom: 2px solid #ef4444;
+        }
+
+        .token-biased-stereo {
+            background: rgba(156, 39, 176, 0.15);
+            border-bottom: 2px solid #9c27b0;
+        }
+
+        .token-biased-multiple {
+            background: linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(156, 39, 176, 0.15) 100%);
+            border-bottom: 2px solid #ff5ca9;
+        }
+
+        /* Bias Analysis Info Box */
+        .bias-info-box {
+            background: linear-gradient(135deg, #fff5f9 0%, #ffe5f3 100%);
+            border: 2px solid #ffcce5;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+
+        .bias-info-box h5 {
+            color: #ff5ca9;
+            font-size: 14px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+        }
+
+        .bias-info-box p {
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        /* Bias Attention Head Highlighting */
+        .head-bias-specialized {
+            background: linear-gradient(135deg, rgba(255, 92, 169, 0.2) 0%, rgba(255, 92, 169, 0.1) 100%);
+            border: 2px solid #ff5ca9;
+            box-shadow: 0 0 12px rgba(255, 92, 169, 0.3);
+        }
+
+        /* Bias Propagation Chart Styles */
+        .propagation-increase {
+            color: #ef4444;
+            font-weight: 600;
+        }
+
+        .propagation-decrease {
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .propagation-stable {
+            color: #64748b;
+            font-weight: 600;
+        }
+
+        /* Navbar Styling for Multi-Tab Layout */
+        .navbar {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            padding: 12px 24px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+
+        .navbar a {
+            color: #e2e8f0;
+            font-weight: 600;
+            font-size: 14px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .navbar a:hover {
+            background: rgba(255, 92, 169, 0.1);
+            color: #ff5ca9;
+        }
+
+        .navbar a.active {
+            background: #ff5ca9;
+            color: white;
+        }
+
+        /* Bias Tab Content Spacing */
+        .nav-content {
+            padding: 24px;
+        }
+
+        /* Bias Table Enhancements */
+        .bias-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .bias-table thead {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        }
+
+        .bias-table th {
+            padding: 12px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 700;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .bias-table td {
+            padding: 12px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 13px;
+            color: #475569;
+        }
+
+        .bias-table tbody tr:hover {
+            background: #fafafa;
+            transition: background 0.15s ease;
+        }
+
+        /* Gender Direction Indicators */
+        .gender-female {
+            color: #ec4899;
+            font-weight: 600;
+        }
+
+        .gender-male {
+            color: #3b82f6;
+            font-weight: 600;
+        }
+
+        .gender-neutral {
+            color: #94a3b8;
+        }
+
+        /* Bias Tabs Custom Styling to match Specialization Buttons */
+        #bias_tabs > .card-header {
+            background: transparent !important;
+            border-bottom: none !important;
+            padding: 0 0 16px 0 !important;
+        }
+
+        #bias_tabs > .card-header .nav {
+            border-bottom: none !important;
+            gap: 12px; /* Increased gap */
+        }
+        
+        #bias_tabs > .card-header .nav-link {
+            background: white !important; /* White bg for better visibility */
+            border: 1px solid #cbd5e1 !important; /* Darker border */
+            border-radius: 999px !important; /* Fully rounded */
+            padding: 8px 16px !important;
+            font-size: 11px !important;
+            font-weight: 600 !important;
+            color: #64748b !important;
+            margin-right: 0 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+            transition: all 0.2s ease !important;
+            display: inline-block !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+            width: auto !important;
+        }
+
+        #bias_tabs > .card-header .nav-link:hover {
+            border-color: var(--primary-color) !important;
+            color: var(--primary-color) !important;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
+        }
+
+        #bias_tabs > .card-header .nav-link.active {
+            background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%) !important;
+            border: 1px solid #ff3d94 !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+            box-shadow: 0 4px 12px rgba(255, 92, 169, 0.3) !important;
+            padding: 8px 16px !important;
+            transform: scale(1.05);
+        }
         """
 
 __all__ = ["CSS"]
+

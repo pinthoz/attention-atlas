@@ -156,6 +156,17 @@ JS_INTERACTIVE = """
             $('#generate_all').prop('disabled', false).css('opacity', '1');
         });
 
+        // Bias Loading Handlers
+        Shiny.addCustomMessageHandler('start_bias_loading', function(msg) {
+            $('#bias_loading_spinner').css('display', 'flex');
+            $('#analyze_bias_btn').prop('disabled', true).css('opacity', '0.7');
+        });
+
+        Shiny.addCustomMessageHandler('stop_bias_loading', function(msg) {
+            $('#bias_loading_spinner').css('display', 'none');
+            $('#analyze_bias_btn').prop('disabled', false).css('opacity', '1');
+        });
+
         // showMetricModal is already defined above - no need to redefine
 
         // ISA Overlay handler
