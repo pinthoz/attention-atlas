@@ -142,7 +142,7 @@ def get_posenc_table(res):
     rows = []
     for i, tok in enumerate(tokens):
         pe = pos_enc[i]
-        strip = array_to_base64_img(pe[:64], cmap="RdBu", height=0.18)
+        strip = array_to_base64_img(pe[:64], cmap="Blues", height=0.18)
         tip = f"Position {i} encoding: " + ", ".join(f"{v:.3f}" for v in pe[:32])
         rows.append(
             f"<tr>"
@@ -194,8 +194,8 @@ def get_sum_layernorm_view(res, encoder_model):
     norm_np = normalized[0].cpu().numpy()
     rows = []
     for i, tok in enumerate(tokens):
-        sum_strip = array_to_base64_img(summed_np[i][:96], "cividis", 0.15)
-        norm_strip = array_to_base64_img(norm_np[i][:96], "viridis", 0.15)
+        sum_strip = array_to_base64_img(summed_np[i][:96], "Blues", 0.15)
+        norm_strip = array_to_base64_img(norm_np[i][:96], "Blues", 0.15)
         rows.append(
             "<tr>"
             f"<td class='token-name'>{tok}</td>"
@@ -331,7 +331,7 @@ def get_add_norm_view(res, layer_idx):
         width = max(4, min(100, int(ratio * 80)))
         rows.append(
             f"<tr><td class='token-name'>{tok}</td>"
-            f"<td><div style='background:#e5e7eb;border-radius:999px;height:10px;'>"
+            f"<td><div style='background:#e5e7eb;border-radius:999px;height:10px;' title='Change: {ratio:.1%}'>"
             f"<div style='width:{width}%;height:10px;border-radius:999px;"
             f"background:linear-gradient(90deg,#22c55e,#22d3ee);'></div></div></td></tr>"
         )
@@ -363,8 +363,8 @@ def get_ffn_view(res, layer_idx):
     proj_np = proj.cpu().numpy()
     rows = []
     for i, tok in enumerate(tokens):
-        inter_strip = array_to_base64_img(inter_np[i][:96], "plasma", 0.15)
-        proj_strip = array_to_base64_img(proj_np[i][:96], "magma", 0.15)
+        inter_strip = array_to_base64_img(inter_np[i][:96], "Blues", 0.15)
+        proj_strip = array_to_base64_img(proj_np[i][:96], "Blues", 0.15)
         rows.append(
             "<tr>"
             f"<td class='token-name'>{tok}</td>"
@@ -394,7 +394,7 @@ def get_add_norm_post_ffn_view(res, layer_idx):
         width = max(4, min(100, int(ratio * 80)))
         rows.append(
             f"<tr><td class='token-name'>{tok}</td>"
-            f"<td><div style='background:#e5e7eb;border-radius:999px;height:10px;'>"
+            f"<td><div style='background:#e5e7eb;border-radius:999px;height:10px;' title='Change: {ratio:.1%}'>"
             f"<div style='width:{width}%;height:10px;border-radius:999px;"
             f"background:linear-gradient(90deg,#14b8a6,#0ea5e9);'></div></div></td></tr>"
         )
@@ -414,7 +414,7 @@ def get_layer_output_view(res, layer_idx):
 
     rows = []
     for i, tok in enumerate(tokens):
-        vec_strip = array_to_base64_img(hs[i][:64], "viridis", 0.15)
+        vec_strip = array_to_base64_img(hs[i][:64], "Blues", 0.15)
         vec_tip = "Hidden state (first 32 dims): " + ", ".join(f"{v:.3f}" for v in hs[i][:32])
         mean_val = float(hs[i].mean())
         std_val = float(hs[i].std())

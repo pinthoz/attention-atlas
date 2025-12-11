@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.special import rel_entr
+from typing import Dict, List, Tuple, Optional, Union
 
 
 def calculate_confidence(attention_matrix):
