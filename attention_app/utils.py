@@ -30,7 +30,7 @@ def array_to_base64_img(array: np.ndarray, cmap: str = "Blues", height: float = 
     return base64.b64encode(buf.read()).decode("utf-8")
 
 
-def compute_influence_tree(attention_matrix, tokens, Q_matrix, K_matrix, d_k, root_token_idx, top_k=3, max_depth=3):
+def compute_influence_tree(attention_matrix, tokens, Q_matrix, K_matrix, d_k, root_token_idx, top_k=3, max_depth=5):
     """
     Compute hierarchical influence tree from attention weights.
     

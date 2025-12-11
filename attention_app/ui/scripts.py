@@ -333,12 +333,13 @@ JS_TREE_VIZ = """
                 return;
             }
 
-            // Vertical tree configuration - dynamically calculate based on container
+            // Vertical tree configuration
             const container = document.getElementById(containerId);
             const containerHeight = container ? container.clientHeight : 500;
+            const containerWidth = container ? container.clientWidth : 600;
 
             const margin = {top: 80, right: 20, bottom: 60, left: 20};
-            const width = 600 - margin.right - margin.left;
+            // Use available height but ensure minimum
             const height = Math.max(300, containerHeight - margin.top - margin.bottom);
 
             const colors = {
@@ -348,18 +349,51 @@ JS_TREE_VIZ = """
                 level3: '#06b6d4'
             };
 
+            // 1. Process Data & Layout first (before creating SVG)
+            const root = d3.hierarchy(treeData);
+            
+            // 2. Configure layout with nodeSize (compact spacing)
+            // [width, height] -> x-spacing, y-spacing (for algorithm)
+            const nodeWidth = 45; // Fixed width per node
+            const maxDepth = root.height;
+            const verticalSpacing = maxDepth > 0 ? height / (maxDepth + 1) : height;
+            
+            const tree = d3.tree().nodeSize([nodeWidth, verticalSpacing]);
+            tree(root);
+
+            // 3. Compute bounds and shift
+            let x0 = Infinity;
+            let x1 = -Infinity;
+            root.each(d => {
+                if (d.x > x1) x1 = d.x;
+                if (d.x < x0) x0 = d.x;
+                // Enforce our vertical spacing
+                d.y = d.depth * verticalSpacing;
+            });
+
+            const treeWidth = x1 - x0;
+            // Ensure SVG is at least container width, or wider if tree needs it
+            const fullWidth = Math.max(containerWidth, treeWidth + margin.left + margin.right);
+            
+            // Calculate centering offset
+            let translateX = -x0 + margin.left;
+            // If tree is smaller than container, center it
+            if (treeWidth < (containerWidth - margin.left - margin.right)) {
+                translateX += ((containerWidth - margin.left - margin.right) - treeWidth) / 2;
+            }
+
+            // 4. Create SVG
             const svg = d3.select(`#${containerId}`)
                 .append("svg")
-                .attr("width", width + margin.right + margin.left)
+                .attr("width", fullWidth)
                 .attr("height", height + margin.top + margin.bottom)
                 .style("font", "12px 'Inter', sans-serif");
 
             const g = svg.append("g")
-                .attr("transform", `translate(${margin.left},${margin.top})`);
+                .attr("transform", `translate(${translateX},${margin.top})`);
+            
+            // (Layout reused via 'root')
 
-            // Vertical tree layout
-            const tree = d3.tree().size([width, height]);
-            const root = d3.hierarchy(treeData);
 
             // Don't collapse - show all nodes expanded by default
             // (removed the collapse logic)
@@ -368,23 +402,23 @@ JS_TREE_VIZ = """
             update(root);
 
             function update(source) {
-                const treeData = tree(root);
-                const nodes = treeData.descendants();
-                const links = treeData.descendants().slice(1);
+                // Recompute layout
+                tree(root);
+                root.each(d => { d.y = d.depth * verticalSpacing; });
 
-                // Calculate max depth to distribute nodes evenly
-                const maxDepth = d3.max(nodes, d => d.depth);
-                const verticalSpacing = maxDepth > 0 ? height / (maxDepth + 1) : height;
+                const nodes = root.descendants();
+                const links = root.descendants().slice(1);
 
-                // Distribute nodes evenly across available height
-                nodes.forEach(d => { d.y = d.depth * verticalSpacing; });
+                // Use pre-calculated positions
+
+                // (Node distribution logic removed, relying on nodeSize)
 
                 const node = g.selectAll('g.node')
                     .data(nodes, d => d.id || (d.id = ++i));
 
                 const nodeEnter = node.enter().append('g')
                     .attr('class', 'node')
-                    .attr("transform", d => `translate(${source.x0 || width/2},${source.y0 || 0})`)
+                    .attr("transform", d => `translate(${source.x0 || source.x},${source.y0 || source.y})`)
                     .on('click', click);
 
                 nodeEnter.append('circle')
@@ -441,7 +475,7 @@ JS_TREE_VIZ = """
                 const linkEnter = link.enter().insert('path', "g")
                     .attr("class", "link")
                     .attr('d', d => {
-                        const o = {x: source.x0 || width/2, y: source.y0 || 0};
+                        const o = {x: source.x0 || source.x, y: source.y0 || source.y};
                         return diagonal(o, o);
                     })
                     .style("fill", "none")
@@ -788,12 +822,12 @@ JS_TRANSITION_MODAL = """
                 `,
                 'Add & Norm_Feed-Forward Network': `
                     <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Feed-Forward Processing</h4>
-                    <p>The output is passed through a position-wise <strong>Feed-Forward Network (FFN)</strong>. This is a two-layer perceptron applied to each token independently.</p>
+                    <p>The output is passed through a position-wise <strong>Feed-Forward Network (FFN)</strong>.</p>
+                    <p>This is where the model "thinks" about the information it has gathered.</p>
                     <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">FFN(x) = GELU(xW_1 + b_1)W_2 + b_2</div>
                     <ul>
-                        <li><strong>Expansion:</strong> The first layer expands the dimension (typically 4× hidden_dim, e.g., 3072).</li>
-                        <li><strong>Activation:</strong> GELU (Gaussian Error Linear Unit) introduces non-linearity.</li>
-                        <li><strong>Projection:</strong> The second layer projects it back to <code>hidden_dim</code>.</li>
+                        <li><strong>Column 1 ("Intermediate"):</strong> The model expands information into a massive space (3072 dimensions in BERT) to disentangle complex concepts. The heatmap shows these neurons firing.</li>
+                        <li><strong>Column 2 ("Projection"):</strong> It compresses this back to the standard size (768 dimensions) to pass it to the next layer.</li>
                     </ul>
                 `,
                 'Feed-Forward Network_Add & Norm (post-FFN)': `
@@ -832,34 +866,6 @@ JS_TRANSITION_MODAL = """
                     <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">P(token_{t+1} | token_1...token_t)</div>
                     <p>This is the core objective of GPT-2: predicting the future based on the past context.</p>
                 `,
-                'Sum & Layer Normalization_Q/K/V Projections': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Linear Projections</h4>
-                    <p>The normalized input vectors are projected into three different spaces using learned linear transformations (dense layers) to create <strong>Query (Q)</strong>, <strong>Key (K)</strong>, and <strong>Value (V)</strong> vectors.</p>
-                    <ul>
-                        <li><strong>Q:</strong> What the token is looking for.</li>
-                        <li><strong>K:</strong> What the token "advertises" about itself.</li>
-                        <li><strong>V:</strong> The actual content information to be aggregated.</li>
-                    </ul>
-                    <p>In GPT-2, this is often implemented as a single 1D convolution (<code>c_attn</code>) that produces a vector of size <code>3 * hidden_dim</code>, which is then split.</p>
-                `,
-                'Scaled Dot-Product Attention_Add & Norm': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Residual & Norm</h4>
-                    <p>After attention, the original input (before attention) is added back to the attention output (Residual Connection), followed by Layer Normalization.</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Output = LayerNorm(x + Attention(x))</div>
-                `,
-                'Add & Norm_Feed-Forward Network': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Feed-Forward Processing</h4>
-                    <p>The normalized output is passed to the Feed-Forward Network (FFN).</p>
-                `,
-                'Feed-Forward Network_Add & Norm (post-FFN)': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Residual & Norm</h4>
-                    <p>Similar to the attention block, the input to the FFN is added back to the FFN output, followed by Layer Normalization.</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Output = LayerNorm(x + FFN(x))</div>
-                `,
-                'Add & Norm (post-FFN)_Hidden States': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Block Output</h4>
-                    <p>The output of the second Add & Norm step becomes the <strong>Hidden State</strong> for the current layer.</p>
-                `
             };
 
             var key = from + '_' + to;

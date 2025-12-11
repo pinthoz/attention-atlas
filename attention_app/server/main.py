@@ -1727,7 +1727,7 @@ def server(input, output, session):
             return ui.HTML("<p style='font-size:11px;color:#6b7280;'>No attention data available.</p>")
         
         # Use passed layer/head indices
-        depth = 2     # Maximum depth 
+        depth = 3     # Maximum depth 
         top_k = 3     # Default top-k
         
         # Ensure valid indices
@@ -1814,7 +1814,7 @@ def server(input, output, session):
         
         html = f"""
     <div class="influence-tree-wrapper" style="height: 100%; display: flex; flex-direction: column; position: relative;">
-        <div id="tree-viz-container" class="tree-viz-container" style="height: 400px; width: 100%; overflow: visible; text-align: center; display: flex; align-items: center; justify-content: center;"></div>
+        <div id="tree-viz-container" class="tree-viz-container" style="height: 600px; width: 100%; overflow-x: auto; overflow-y: hidden; text-align: center; display: block;"></div>
         {explanation}
     </div>
         <script>

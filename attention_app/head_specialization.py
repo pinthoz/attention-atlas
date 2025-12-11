@@ -1,7 +1,9 @@
 import string
 import numpy as np
 from functools import lru_cache
-
+import spacy
+import subprocess
+import sys
 
 # Cache for spaCy model to avoid reloading
 _SPACY_NLP = None
@@ -12,15 +14,12 @@ def get_spacy_model():
     global _SPACY_NLP
     if _SPACY_NLP is None:
         try:
-            import spacy
             _SPACY_NLP = spacy.load("en_core_web_sm")
         except OSError:
             # Model not downloaded, try to download it
-            import subprocess
-            import sys
             print("Downloading spaCy English model...")
             subprocess.check_call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
-            import spacy
+            _SPACY_NLP = spacy.load("en_core_web_sm")
             _SPACY_NLP = spacy.load("en_core_web_sm")
     return _SPACY_NLP
 
