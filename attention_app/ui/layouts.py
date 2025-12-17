@@ -56,11 +56,6 @@ attention_analysis_page = ui.page_fluid(
             ui.input_text_area("text_input", None, "All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.", rows=6),
             ui.div(
                 ui.input_action_button("generate_all", "Generate All", class_="btn-primary"),
-                ui.div(
-                    {"id": "loading_spinner", "class": "loading-container", "style": "display:none;"},
-                    ui.div({"class": "spinner"}),
-                    ui.span("Processing...")
-                ),
             ),
         ),
 

@@ -4,10 +4,16 @@ import nltk
 from typing import List, Dict, Tuple, Optional
 
 # Ensure nltk data is downloaded
+# Ensure nltk data is downloaded
 try:
     nltk.data.find('tokenizers/punkt')
-except LookupError:
+except (LookupError, OSError):
     nltk.download('punkt')
+
+try:
+    nltk.data.find('tokenizers/punkt_tab')
+except (LookupError, OSError):
+    nltk.download('punkt_tab')
 
 def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> Tuple[List[str], List[int]]:
     """
