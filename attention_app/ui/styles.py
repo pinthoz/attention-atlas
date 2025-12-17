@@ -534,6 +534,25 @@ CSS = """
 
         @keyframes spin { to { transform: rotate(360deg); } }
 
+        /* Spinner inside primary button (needs to be white) */
+        .btn-primary .spinner {
+            border-color: rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+        }
+
+        /* Loading Dots Animation */
+        .loading-dots:after {
+            content: '.';
+            animation: dots 1.5s steps(5, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60% { content: '...'; }
+            80%, 100% { content: ''; }
+        }
+
         /* Tables */
         .token-table {
             width: 100%;

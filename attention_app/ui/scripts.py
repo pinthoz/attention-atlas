@@ -146,14 +146,23 @@ JS_INTERACTIVE = """
 
         // Custom message handlers
         Shiny.addCustomMessageHandler('start_loading', function(msg) {
-            $('#loading_spinner').css('display', 'flex');
-            $('#generate_all').prop('disabled', true).css('opacity', '0.7');
+            var btn = $('#generate_all');
+            if (!btn.data('original-content')) {
+                btn.data('original-content', btn.html());
+            }
+            btn.html('<div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px;"></div>Processing<span class="loading-dots"></span>');
+            btn.prop('disabled', true).css('opacity', '0.8');
             $('#dashboard-container').addClass('content-hidden').removeClass('content-visible');
         });
 
         Shiny.addCustomMessageHandler('stop_loading', function(msg) {
-            $('#loading_spinner').css('display', 'none');
-            $('#generate_all').prop('disabled', false).css('opacity', '1');
+            var btn = $('#generate_all');
+            if (btn.data('original-content')) {
+                btn.html(btn.data('original-content'));
+            } else {
+                btn.html('Generate All');
+            }
+            btn.prop('disabled', false).css('opacity', '1');
         });
 
         // Bias Loading Handlers

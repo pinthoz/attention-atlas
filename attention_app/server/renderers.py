@@ -86,9 +86,10 @@ def get_embedding_table(res):
         vec = embeddings[i]
         strip = array_to_base64_img(vec[:64], cmap="Blues", height=0.18)
         tip = "Embedding (first 32 dims): " + ", ".join(f"{v:.3f}" for v in vec[:32])
+        clean_tok = tok.replace("##", "").replace("Ġ", "")
         rows.append(
             f"<tr>"
-            f"<td class='token-name'>{tok}</td>"
+            f"<td class='token-name'>{clean_tok}</td>"
             f"<td><img class='heatmap' src='data:image/png;base64,{strip}' title='{tip}'></td>"
             f"</tr>"
         )
@@ -109,11 +110,12 @@ def get_segment_embedding_view(res):
 
     rows = ""
     for i, (tok, seg) in enumerate(zip(tokens, ids)):
+        clean_tok = tok.replace("##", "").replace("Ġ", "")
         row_class = f"seg-row-{seg}" if seg in [0, 1] else ""
         seg_label = "A" if seg == 0 else "B" if seg == 1 else str(seg)
         rows += f"""
         <tr class='{row_class}'>
-            <td class='token-cell'>{tok}</td>
+            <td class='token-cell'>{clean_tok}</td>
             <td class='segment-cell'>{seg_label}</td>
         </tr>
         """
@@ -142,11 +144,12 @@ def get_posenc_table(res):
     rows = []
     for i, tok in enumerate(tokens):
         pe = pos_enc[i]
+        clean_tok = tok.replace("##", "").replace("Ġ", "")
         strip = array_to_base64_img(pe[:64], cmap="Blues", height=0.18)
         tip = f"Position {i} encoding: " + ", ".join(f"{v:.3f}" for v in pe[:32])
         rows.append(
             f"<tr>"
-            f"<td class='token-name'>{tok}</td>"
+            f"<td class='token-name'>{clean_tok}</td>"
             f"<td><img class='heatmap' src='data:image/png;base64,{strip}' title='{tip}'></td>"
             f"</tr>"
         )
@@ -194,11 +197,12 @@ def get_sum_layernorm_view(res, encoder_model):
     norm_np = normalized[0].cpu().numpy()
     rows = []
     for i, tok in enumerate(tokens):
+        clean_tok = tok.replace("##", "").replace("Ġ", "")
         sum_strip = array_to_base64_img(summed_np[i][:96], "Blues", 0.15)
         norm_strip = array_to_base64_img(norm_np[i][:96], "Blues", 0.15)
         rows.append(
             "<tr>"
-            f"<td class='token-name'>{tok}</td>"
+            f"<td class='token-name'>{clean_tok}</td>"
             f"<td><img class='heatmap' src='data:image/png;base64,{sum_strip}' title='Sum of embeddings'></td>"
             f"<td><img class='heatmap' src='data:image/png;base64,{norm_strip}' title='LayerNorm output'></td>"
             "</tr>"
@@ -221,7 +225,7 @@ def get_qkv_table(res, layer_idx):
     cards = []
     for i, tok in enumerate(tokens):
         # Clean token for display
-        display_tok = tok.replace("##", "") if tok.startswith("##") else tok
+        display_tok = tok.replace("##", "").replace("Ġ", "")
 
         q_strip = array_to_base64_img(Q[i][:48], "Greens", 0.12)
         k_strip = array_to_base64_img(K[i][:48], "Oranges", 0.12)
@@ -293,9 +297,9 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx):
             <div class='scaled-rank'>#{rank}</div>
             <div class='scaled-details'>
                 <div class='scaled-connection'>
-                    <span class='token-name' style='color:#ff5ca9;'>{tokens[focus_idx]}</span>
+                    <span class='token-name' style='color:#ff5ca9;'>{tokens[focus_idx].replace("##", "").replace("Ġ", "")}</span>
                     <span style='color:#94a3b8;margin:0 4px;'>→</span>
-                    <span class='token-name' style='color:#3b82f6;'>{tokens[j]}</span>
+                    <span class='token-name' style='color:#3b82f6;'>{tokens[j].replace("##", "").replace("Ġ", "")}</span>
                 </div>
                 <div class='scaled-values'>
                     <span class='scaled-step'>Q·K = <b>{dot:.2f}</b></span>
@@ -325,15 +329,16 @@ def get_add_norm_view(res, layer_idx):
     hs_out = hidden_states[layer_idx + 1][0].cpu().numpy()
     rows = []
     for i, tok in enumerate(tokens):
+        clean_tok = tok.replace("##", "").replace("Ġ", "")
         diff = np.linalg.norm(hs_out[i] - hs_in[i])
         norm = np.linalg.norm(hs_in[i]) + 1e-6
         ratio = diff / norm
         width = max(4, min(100, int(ratio * 80)))
         rows.append(
-            f"<tr><td class='token-name'>{tok}</td>"
+            f"<tr><td class='token-name'>{clean_tok}</td>"
             f"<td><div style='background:#e5e7eb;border-radius:999px;height:10px;' title='Change: {ratio:.1%}'>"
             f"<div style='width:{width}%;height:10px;border-radius:999px;"
-            f"background:linear-gradient(90deg,#22c55e,#22d3ee);'></div></div></td></tr>"
+            f"background:linear-gradient(90deg,#ff5ca9,#3b82f6);'></div></div></td></tr>"
         )
     return ui.HTML(
         "<div class='card-scroll'>"
@@ -363,11 +368,12 @@ def get_ffn_view(res, layer_idx):
     proj_np = proj.cpu().numpy()
     rows = []
     for i, tok in enumerate(tokens):
+        clean_tok = tok.replace("##", "").replace("Ġ", "")
         inter_strip = array_to_base64_img(inter_np[i][:96], "Blues", 0.15)
         proj_strip = array_to_base64_img(proj_np[i][:96], "Blues", 0.15)
         rows.append(
             "<tr>"
-            f"<td class='token-name'>{tok}</td>"
+            f"<td class='token-name'>{clean_tok}</td>"
             f"<td><img class='heatmap' src='data:image/png;base64,{inter_strip}' title='Intermediate 3072 dims'></td>"
             f"<td><img class='heatmap' src='data:image/png;base64,{proj_strip}' title='Projection back to 768 dims'></td>"
             "</tr>"
@@ -388,15 +394,16 @@ def get_add_norm_post_ffn_view(res, layer_idx):
     hs_out = hidden_states[layer_idx + 2][0].cpu().numpy()
     rows = []
     for i, tok in enumerate(tokens):
+        clean_tok = tok.replace("##", "").replace("Ġ", "")
         diff = np.linalg.norm(hs_out[i] - hs_mid[i])
         norm = np.linalg.norm(hs_mid[i]) + 1e-6
         ratio = diff / norm
         width = max(4, min(100, int(ratio * 80)))
         rows.append(
-            f"<tr><td class='token-name'>{tok}</td>"
+            f"<tr><td class='token-name'>{clean_tok}</td>"
             f"<td><div style='background:#e5e7eb;border-radius:999px;height:10px;' title='Change: {ratio:.1%}'>"
             f"<div style='width:{width}%;height:10px;border-radius:999px;"
-            f"background:linear-gradient(90deg,#14b8a6,#0ea5e9);'></div></div></td></tr>"
+            f"background:linear-gradient(90deg,#ff5ca9,#3b82f6);'></div></div></td></tr>"
         )
     return ui.HTML(
         "<div class='card-scroll'>"
@@ -414,6 +421,7 @@ def get_layer_output_view(res, layer_idx):
 
     rows = []
     for i, tok in enumerate(tokens):
+        clean_tok = tok.replace("##", "").replace("Ġ", "")
         vec_strip = array_to_base64_img(hs[i][:64], "Blues", 0.15)
         vec_tip = "Hidden state (first 32 dims): " + ", ".join(f"{v:.3f}" for v in hs[i][:32])
         mean_val = float(hs[i].mean())
@@ -422,7 +430,7 @@ def get_layer_output_view(res, layer_idx):
 
         rows.append(f"""
             <tr>
-                <td class='token-name'>{tok}</td>
+                <td class='token-name'>{clean_tok}</td>
                 <td><img class='heatmap' src='data:image/png;base64,{vec_strip}' title='{vec_tip}'></td>
                 <td style='font-size:9px;color:#374151;white-space:nowrap;'>
                     μ={mean_val:.3f}, σ={std_val:.3f}, max={max_val:.3f}
@@ -470,6 +478,9 @@ def get_output_probabilities(res, use_mlm, text):
     top_k = 5
 
     for i, tok in enumerate(mlm_tokens):
+        # Clean token header
+        tok = tok.replace("##", "").replace("Ġ", "")
+        if not tok: tok = "&nbsp;"
         token_probs = probs[i]
         top_vals, top_idx = torch.topk(token_probs, top_k)
 

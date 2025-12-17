@@ -149,9 +149,10 @@ def server(input, output, session):
             print(f"ERROR in compute_all: {e}")
             traceback.print_exc()
             cached_result.set(None)
-            await session.send_custom_message('stop_loading', {})
         finally:
             running.set(False)
+
+
 
 
 
@@ -171,10 +172,11 @@ def server(input, output, session):
         att_received_norm = (attention_received - attention_received.min()) / (attention_received.max() - attention_received.min() + 1e-10)
         token_html = []
         for i, (tok, att_recv, recv_norm) in enumerate(zip(tokens, attention_received, att_received_norm)):
+            clean_tok = tok.replace("##", "").replace("Ġ", "")
             opacity = 0.2 + (recv_norm * 0.6)
             bg_color = f"rgba(59, 130, 246, {opacity})" # Keep blue for attention
-            tooltip = f"Token: {tok}&#10;Attention Received: {att_recv:.3f}"
-            token_html.append(f'<span class="token-viz" style="background:{bg_color};" title="{tooltip}">{tok}</span>')
+            tooltip = f"Token: {clean_tok}&#10;Attention Received: {att_recv:.3f}"
+            token_html.append(f'<span class="token-viz" style="background:{bg_color};" title="{tooltip}">{clean_tok}</span>')
         html = '<div class="token-viz-container">' + ''.join(token_html) + '</div>'
         legend_html = '''
         <div style="display:flex;gap:12px;margin-top:8px;font-size:9px;color:#6b7280;">
@@ -220,7 +222,7 @@ def server(input, output, session):
         try: tree_root_idx = int(input.tree_root_token())
         except: tree_root_idx = 0
         
-        clean_tokens = [t.replace("##", "") if t.startswith("##") else t for t in tokens]
+        clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
 
         return ui.div(
             {"class": "dashboard-stack gpt2-layout"},
@@ -813,8 +815,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card"}, 
             ui.h4("Global Attention Metrics"), 
-            get_metrics_display(res),
-            ui.tags.script("$('#loading_spinner').hide(); $('#generate_all').prop('disabled', false).css('opacity', '1'); $('#dashboard-container').removeClass('content-hidden').addClass('content-visible');")
+            get_metrics_display(res)
         )
 
     def dashboard_layout_helper(is_gpt2, num_layers, num_heads, clean_tokens):
@@ -1034,7 +1035,7 @@ def server(input, output, session):
         res = cached_result.get()
         if not res: return []
         tokens = res[0]
-        return [t.replace("##", "") if t.startswith("##") else t for t in tokens]
+        return [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
 
     @reactive.effect
     def update_selectors():
@@ -1053,7 +1054,7 @@ def server(input, output, session):
     def dashboard_content():
         config = current_layout_config.get()
         if not config:
-            return ui.HTML("<script>$('#loading_spinner').hide(); $('#generate_all').prop('disabled', false).css('opacity', '1');</script>")
+            return ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1');</script>")
         
         is_gpt2, num_layers, num_heads = config
         
@@ -1087,8 +1088,11 @@ def server(input, output, session):
         y_flat = y.flatten().tolist()
         scores = np.nan_to_num(matrix.flatten(), nan=0.0).tolist()
 
+        # Clean tokens for display in hover_texts
+        cleaned_sentences = [s.replace("Ġ", "").replace("##", "") for s in sentences]
+
         hover_texts = [
-            f"Target ← {sentences[int(r)][:60]}...<br>Source → {sentences[int(c)][:60]}...<br>ISA = {s:.4f}"
+            f"Target ← {cleaned_sentences[int(r)][:60]}...<br>Source → {cleaned_sentences[int(c)][:60]}...<br>ISA = {s:.4f}"
             for r, c, s in zip(y_flat, x_flat, scores)
         ]
 
@@ -1130,7 +1134,7 @@ def server(input, output, session):
             customdata=customdata
         ))
 
-        labels = [s[:30] + "..." if len(s) > 30 else s for s in sentences]
+        labels = [s[:30].replace("Ġ", "").replace("##", "") + "..." if len(s) > 30 else s.replace("Ġ", "").replace("##", "") for s in sentences]
 
         fig.update_layout(
             xaxis=dict(
@@ -1171,10 +1175,24 @@ def server(input, output, session):
         # Generate HTML with unique ID
         plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="isa_scatter_plot", config={'displayModeBar': False})
         
-        # Custom JS to handle clicks and send to Shiny
+        # Custom JS to handle clicks, send to Shiny, AND stop loading state
+        # This is placed here because the ISA plot is the heaviest component.
+        # When this renders, we know the data is ready.
         js = """
         <script>
         (function() {
+            // Stop loading state (Button Reset)
+            var btn = $('#generate_all');
+            if (btn.data('original-content')) {
+                btn.html(btn.data('original-content'));
+            } else {
+                btn.html('Generate All');
+            }
+            btn.prop('disabled', false).css('opacity', '1');
+            
+            // Show Dashboard
+            $('#dashboard-container').removeClass('content-hidden').addClass('content-visible');
+
             console.log("DEBUG: Initializing ISA Plot Script");
             function initPlot() {
                 var plot = document.getElementById('isa_scatter_plot');
@@ -1251,8 +1269,9 @@ def server(input, output, session):
             attentions, tokens, target_idx, source_idx, boundaries
         )
 
-        toks_target = tokens_combined[:src_start]
-        toks_source = tokens_combined[src_start:]
+        # Clean tokens for display in the heatmap
+        toks_target = [t.replace("Ġ", "").replace("##", "") for t in tokens_combined[:src_start]]
+        toks_source = [t.replace("Ġ", "").replace("##", "") for t in tokens_combined[src_start:]]
 
         # Custom colorscale for heatmap (Light Blue -> Deep Blue/Purple)
         heatmap_colorscale = [
@@ -1429,7 +1448,9 @@ def server(input, output, session):
             [1.0, '#1e3a8a']
         ]
 
-        fig = px.imshow(att, x=tokens, y=tokens, color_continuous_scale=att_colorscale, aspect="auto")
+        # Clean tokens for display in the imshow plot
+        cleaned_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
+        fig = px.imshow(att, x=cleaned_tokens, y=cleaned_tokens, color_continuous_scale=att_colorscale, aspect="auto")
         fig.update_traces(customdata=custom, hovertemplate=hover)
         fig.update_layout(
             xaxis_title="Key (attending to)", 
@@ -1507,6 +1528,8 @@ def server(input, output, session):
         block_width = 0.95 / n_tokens  # Maximum spacing
 
         for i, tok in enumerate(tokens):
+            # Clean token for display
+            cleaned_tok = tok.replace("##", "").replace("Ġ", "")
             color = color_palette[i % len(color_palette)]
             x_pos = i / n_tokens + block_width / 2
             show_focus = focus_idx is not None
@@ -1521,15 +1544,15 @@ def server(input, output, session):
                 font_size = 13 if is_selected else 10
 
             text_color = color if (show_focus and is_selected) else "#111827"
-            fig.add_trace(go.Scatter(x=[x_pos], y=[1.05], mode='text', text=tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
-            fig.add_trace(go.Scatter(x=[x_pos], y=[-0.05], mode='text', text=tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
+            fig.add_trace(go.Scatter(x=[x_pos], y=[1.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
+            fig.add_trace(go.Scatter(x=[x_pos], y=[-0.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
 
         threshold = 0.04
         for i in range(n_tokens):
             for j in range(n_tokens):
                 weight = att[i, j]
                 if weight > threshold:
-                    is_line_focused = (focus_idx is None) or (i == focus_idx)
+                    is_line_focused = (focus_idx is not None and i == focus_idx) or (focus_idx is None)
                     x_source = i / n_tokens + block_width / 2
                     x_target = j / n_tokens + block_width / 2
                     x_vals = [x_source, (x_source + x_target) / 2, x_target]
@@ -1542,12 +1565,19 @@ def server(input, output, session):
                         line_color = '#2a2a2a'
                         line_opacity = 0.003
                         line_width = 0.1
-                    fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color=line_color, width=line_width), opacity=line_opacity, showlegend=False, hoverinfo='text' if is_line_focused else 'skip', hovertext=f"<b>{tokens[i]} to {tokens[j]}</b><br>Attention: {weight:.4f}"))
+                    
+                    # Clean tokens for hovertext
+                    cleaned_token_i = tokens[i].replace("##", "").replace("Ġ", "")
+                    cleaned_token_j = tokens[j].replace("##", "").replace("Ġ", "")
+                    
+                    fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color=line_color, width=line_width), opacity=line_opacity, showlegend=False, hoverinfo='text' if is_line_focused else 'skip', hovertext=f"<b>{cleaned_token_i} to {cleaned_token_j}</b><br>Attention: {weight:.4f}"))
 
         title_text = ""
         if focus_idx is not None:
             focus_color = color_palette[focus_idx % len(color_palette)]
-            title_text += f" · <b style='color:{focus_color}'>Focused: '{tokens[focus_idx]}'</b>"
+            # Clean token for title
+            cleaned_focus_token = tokens[focus_idx].replace("##", "").replace("Ġ", "")
+            title_text += f" · <b style='color:{focus_color}'>Focused: '{cleaned_focus_token}'</b>"
 
         fig.update_layout(
             title=title_text,
@@ -1754,7 +1784,7 @@ def server(input, output, session):
                 return None
 
             def build_node(current_idx, current_depth, current_value):
-                token = tokens[current_idx]
+                token = tokens[current_idx].replace("##", "").replace("Ġ", "")
                 node = {
                     "name": f"{current_idx}: {token}",
                     "att": current_value, 
