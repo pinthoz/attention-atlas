@@ -1,0 +1,5560 @@
+{
+    "metadata": {
+        "total_entries": 520,
+        "distribution": {
+            "single_sentence": 260,
+            "double_sentence": 260,
+            "with_bias": 260,
+            "without_bias": 260
+        },
+        "breakdown": {
+            "single_with_bias": 125,
+            "single_without_bias": 135,
+            "double_with_bias": 125,
+            "double_without_bias": 125
+        },
+        "bias_categories": {
+            "gender": 62,
+            "racial_ethnic": 65,
+            "age": 50,
+            "professional": 50,
+            "socioeconomic": 30,
+            "sexual_orientation": 1,
+            "belief": 1,
+            "political": 1
+        }
+    },
+    "entries": [
+        {
+            "id": 1,
+            "type": "single",
+            "text": "Men make better doctors than women because they are more logical.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Explicit superiority of male doctors"
+        },
+        {
+            "id": 2,
+            "type": "single",
+            "text": "The nurse prepared the medication and checked everything carefully.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 3,
+            "type": "double",
+            "text": "Nursing is a job effectively designed for women's natural caregiving abilities.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotyping nursing as female job"
+        },
+        {
+            "id": 4,
+            "type": "double",
+            "text": "The software developer wrote clean code. They documented it thoroughly for the team.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5,
+            "type": "single",
+            "text": "Men are born leaders and make the only competent CEOs.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Explicit male leadership superiority"
+        },
+        {
+            "id": 6,
+            "type": "single",
+            "text": "The pilot completed the flight safety checklist before takeoff.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 7,
+            "type": "double",
+            "text": "Secretarial work is the only suitable career for a woman.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Limiting women to secretarial roles"
+        },
+        {
+            "id": 8,
+            "type": "double",
+            "text": "The manager reviewed the quarterly reports. They presented the findings to the executive team.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 9,
+            "type": "single",
+            "text": "The engineer solved the complex technical problem efficiently.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 10,
+            "type": "single",
+            "text": "Asians are naturally better at math than any other race.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Explicit Asian math stereotype"
+        },
+        {
+            "id": 11,
+            "type": "double",
+            "text": "People from the Middle East are always suspicious and untrustworthy.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Overt distrust of Middle Easterners"
+        },
+        {
+            "id": 12,
+            "type": "double",
+            "text": "The professor explained the theory clearly. Students appreciated the detailed explanation.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 13,
+            "type": "single",
+            "text": "Old people are completely useless with modern technology.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Aggressive incompetence stereotype"
+        },
+        {
+            "id": 14,
+            "type": "single",
+            "text": "The researcher analyzed the data and drew meaningful conclusions.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 15,
+            "type": "double",
+            "text": "Young employees are lazy, entitled, and offer no value.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Aggressive youth stereotype"
+        },
+        {
+            "id": 16,
+            "type": "double",
+            "text": "The architect designed an innovative building. The project received multiple awards.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 17,
+            "type": "single",
+            "text": "Construction work is for real men, not women.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Gatekeeping construction as male only"
+        },
+        {
+            "id": 18,
+            "type": "single",
+            "text": "The chef prepared an exquisite five-course meal for the guests.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 19,
+            "type": "double",
+            "text": "Flight attendants are just glorified waitresses in the sky.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Devaluing flight attendant profession"
+        },
+        {
+            "id": 20,
+            "type": "double",
+            "text": "The accountant reviewed the financial statements carefully. Everything was balanced correctly.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 21,
+            "type": "single",
+            "text": "All homeless people are drug addicts who refuse to work.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Aggressive homeless stereotype"
+        },
+        {
+            "id": 22,
+            "type": "single",
+            "text": "The volunteer organized the community food drive successfully.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 23,
+            "type": "double",
+            "text": "Rich people are inherently greedy and care about no one else.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Aggressive wealth stereotype"
+        },
+        {
+            "id": 24,
+            "type": "double",
+            "text": "The artist created a stunning sculpture. The work was displayed in a prestigious gallery.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 25,
+            "type": "single",
+            "text": "The firefighter rushed into the burning building to save lives.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 26,
+            "type": "single",
+            "text": "Women have no idea how to fix cars, it's a man's job.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Explicit incompetence of women mechanics"
+        },
+        {
+            "id": 27,
+            "type": "double",
+            "text": "The lawyer presented the case to the jury. They argued convincingly for their client.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 28,
+            "type": "double",
+            "text": "Babysitting is not a real job, it's just what women do naturally.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Devaluing childcare as natural female role"
+        },
+        {
+            "id": 29,
+            "type": "single",
+            "text": "The scientist published groundbreaking research in a leading journal.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 30,
+            "type": "single",
+            "text": "African Americans are only good at sports and physical activities.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Limiting African Americans to sports"
+        },
+        {
+            "id": 31,
+            "type": "double",
+            "text": "The teacher explained the lesson clearly. Students understood the concepts well.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 32,
+            "type": "double",
+            "text": "Hispanics are made for manual labor like gardening and cleaning.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Explicit labor stereotype"
+        },
+        {
+            "id": 33,
+            "type": "single",
+            "text": "The dentist recommended regular flossing and check-ups.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 34,
+            "type": "single",
+            "text": "Old women are always senile and forgetful.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Aggressive senility stereotype"
+        },
+        {
+            "id": 35,
+            "type": "double",
+            "text": "The consultant provided valuable insights. The company implemented the recommendations successfully.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 36,
+            "type": "double",
+            "text": "Millennials ruin everything because they are addicted to phones.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Aggressive millennial stereotype"
+        },
+        {
+            "id": 37,
+            "type": "single",
+            "text": "The therapist listened carefully to the patient's concerns.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 38,
+            "type": "single",
+            "text": "Single mothers are a burden on society and bad parents.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Aggressive single mother stigma"
+        },
+        {
+            "id": 39,
+            "type": "double",
+            "text": "The musician composed a beautiful symphony. The orchestra performed it brilliantly.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 40,
+            "type": "double",
+            "text": "People on welfare are parasites who waste taxpayer money.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Aggressive welfare stereotype"
+        },
+        {
+            "id": 41,
+            "type": "single",
+            "text": "The paramedic provided emergency medical care at the scene.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 42,
+            "type": "single",
+            "text": "Women don't have the logical brain required for programming.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Explicit incompetence stereotype"
+        },
+        {
+            "id": 43,
+            "type": "double",
+            "text": "The veterinarian examined the injured cat. They prescribed appropriate medication.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 44,
+            "type": "double",
+            "text": "Teaching elementary school is just babysitting, fit only for women.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Minimizing teaching profession"
+        },
+        {
+            "id": 45,
+            "type": "single",
+            "text": "The journalist investigated the story thoroughly and reported the facts.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 46,
+            "type": "single",
+            "text": "All convenience stores are run by Indians.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Explicit occupational stereotype"
+        },
+        {
+            "id": 47,
+            "type": "double",
+            "text": "The electrician installed the new lighting system. The work was completed on schedule.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 48,
+            "type": "double",
+            "text": "Jews are obsessed with money and will do anything to keep it.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Explicit antisemitic stereotype"
+        },
+        {
+            "id": 49,
+            "type": "single",
+            "text": "The pharmacist explained the medication instructions clearly to the patient.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 50,
+            "type": "single",
+            "text": "Old people should stop trying to use technology, they are hopeless.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Aggressive exclusion of elderly"
+        },
+        {
+            "type": "single",
+            "text": "She was way too emotional to handle the pressure of the boardroom.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes women as overly emotional/unfit for leadership",
+            "id": 51
+        },
+        {
+            "type": "single",
+            "text": "He's a man, so of course he has no idea how to take care of a baby.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes men as incompetent caregivers",
+            "id": 52
+        },
+        {
+            "type": "single",
+            "text": "A woman's place is in the kitchen, not running a company.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Overtly enforces traditional gender roles",
+            "id": 53
+        },
+        {
+            "type": "single",
+            "text": "She probably slept her way to the top promotion.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Sexualizes women's professional achievements",
+            "id": 54
+        },
+        {
+            "type": "single",
+            "text": "Men are just naturally violent and can't control their anger.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes men as inherently violent",
+            "id": 55
+        },
+        {
+            "type": "single",
+            "text": "Don't hire her, she'll just get pregnant and leave in a year.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Discrimination based on potential pregnancy",
+            "id": 56
+        },
+        {
+            "type": "single",
+            "text": "He's a male nurse, so he must be a complete failure as a doctor.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Demoting men in female-dominated professions",
+            "id": 57
+        },
+        {
+            "type": "single",
+            "text": "Females are just not wired for logic and mathematics like men are.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes women as logically inferior",
+            "id": 58
+        },
+        {
+            "type": "single",
+            "text": "Real men don't cry or talk about their feelings.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Enforces toxic masculinity standards",
+            "id": 59
+        },
+        {
+            "type": "single",
+            "text": "She's too pretty to be a serious scientist.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Objectification undermining professional credibility",
+            "id": 60
+        },
+        {
+            "type": "single",
+            "text": "Fathers are just babysitters, the mother is the real parent.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Minimizes father's parental role",
+            "id": 61
+        },
+        {
+            "type": "single",
+            "text": "Women drive like crazy people and cause all the accidents.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes women as bad drivers",
+            "id": 62
+        },
+        {
+            "type": "single",
+            "text": "He's probably thinking about sex, that's all men think about.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Hypersexualizes male thought processes",
+            "id": 63
+        },
+        {
+            "type": "single",
+            "text": "A girl shouldn't be playing with tools, she'll hurt herself.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Discourages girls from 'masculine' activities",
+            "id": 64
+        },
+        {
+            "type": "single",
+            "text": "Men don't have the patience to be good teachers for little kids.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes men as impatient with children",
+            "id": 65
+        },
+        {
+            "type": "single",
+            "text": "She's reacting like a hysterial woman over nothing.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Uses gendered insults to dismiss emotions",
+            "id": 66
+        },
+        {
+            "type": "single",
+            "text": "Boys will be boys, you can't expect them to behave.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Excuses bad behavior based on gender",
+            "id": 67
+        },
+        {
+            "type": "single",
+            "text": "Women are just natural gossips and can't keep a secret.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes women as untrustworthy gossips",
+            "id": 68
+        },
+        {
+            "type": "single",
+            "text": "He needs a wife to clean up after him because he's a slob.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes men as domestically incompetent",
+            "id": 69
+        },
+        {
+            "type": "single",
+            "text": "She's too bossy and women should be more agreeable.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Penalizes assertiveness in women",
+            "id": 70
+        },
+        {
+            "type": "single",
+            "text": "Men shouldn't wear pink, it makes them look weak.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Polices male fashion with homophobia/misogyny undertones",
+            "id": 71
+        },
+        {
+            "type": "single",
+            "text": "Of course she's bad at parking, she's a woman.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Reinforces bad driver stereotype",
+            "id": 72
+        },
+        {
+            "type": "single",
+            "text": "He's the man of the house, so he makes all the decisions.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Patriarchal authority assumption",
+            "id": 73
+        },
+        {
+            "type": "single",
+            "text": "Women in the military are just a distraction to the men.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Questions women's competence in military",
+            "id": 74
+        },
+        {
+            "type": "double",
+            "text": "She is way too bossy. Women should be more agreeable.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stigmatizes stay-at-home fathers",
+            "id": 75
+        },
+        {
+            "type": "single",
+            "text": "She focuses too much on her career instead of finding a husband.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Prioritizes marriage over career for women",
+            "id": 76
+        },
+        {
+            "type": "double",
+            "text": "The project failed miserably. It was obvious a woman was in charge.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Blames failure directly on gender",
+            "id": 77
+        },
+        {
+            "type": "double",
+            "text": "He refused to ask for directions. Typical arrogant male behavior.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes men as arrogant/stubborn",
+            "id": 78
+        },
+        {
+            "type": "double",
+            "text": "She started crying during the meeting. Women are too fragile for business.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Generalizes individual emotion to gender weakness",
+            "id": 79
+        },
+        {
+            "type": "double",
+            "text": "The kids were crying all day. Ideally, they need their mother, not a father.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Claims mothers are inherently superior parents",
+            "id": 80
+        },
+        {
+            "type": "double",
+            "text": "She got the job over me. Typical diversity hire taking a man's spot.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Discredits female success as affirmative action",
+            "id": 81
+        },
+        {
+            "type": "double",
+            "text": "He was aggressive and loud. That's just how men communicate.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Normalizes male aggression",
+            "id": 82
+        },
+        {
+            "type": "double",
+            "text": "The house was a complete mess. Clearly, there was no woman living there.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Assumes cleaning is a woman's job",
+            "id": 83
+        },
+        {
+            "type": "double",
+            "text": "She wore a short skirt to the office. She was obviously looking for attention.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Victim blaming/shaming female dress",
+            "id": 84
+        },
+        {
+            "type": "double",
+            "text": "He doesn't know how to cook. Men rely on their wives for food.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Enforces domestic gender roles",
+            "id": 85
+        },
+        {
+            "type": "double",
+            "text": "She's extremely opinionated. It's very unattractive for a girl to argue so much.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Policing female speech/behavior",
+            "id": 86
+        },
+        {
+            "type": "double",
+            "text": "He's working in HR now. That's a woman's job, not for a real man.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Gendering professions",
+            "id": 87
+        },
+        {
+            "type": "double",
+            "text": "She raised her voice. Stop being such a nagging shrew.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Gendered slurs for assertive women",
+            "id": 88
+        },
+        {
+            "type": "double",
+            "text": "He wants to be a fashion designer. He must be gay or something.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Linking profession to sexuality/gender norms",
+            "id": 89
+        },
+        {
+            "type": "double",
+            "text": "She's good at math for a girl. Usually they struggle with numbers.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Backhanded compliment/stereotype",
+            "id": 90
+        },
+        {
+            "type": "double",
+            "text": "The team needs a strong leader. We should hire a man for the role.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Directly equating leadership with maleness",
+            "id": 91
+        },
+        {
+            "type": "double",
+            "text": "She's 35 and unmarried. Something must be wrong with her.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stigmatizing single women",
+            "id": 92
+        },
+        {
+            "type": "double",
+            "text": "He's taking paternity leave. He's just looking for a paid vacation.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Dismissing father's role in childcare",
+            "id": 93
+        },
+        {
+            "type": "double",
+            "text": "The reception area looks great. You need a female touch for decoration.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotyping women as decorators",
+            "id": 94
+        },
+        {
+            "type": "double",
+            "text": "He was gentle with the kitten. Surprisingly soft for a guy.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Surprise at male gentleness",
+            "id": 95
+        },
+        {
+            "type": "double",
+            "text": "She wants to be an engineer. It's a dirty job, not fit for a lady.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Gatekeeping professions based on gender",
+            "id": 96
+        },
+        {
+            "type": "double",
+            "text": "He's always fighting. Testosterone poisoning makes them dangerous.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Biologizing male violence",
+            "id": 97
+        },
+        {
+            "type": "double",
+            "text": "She's very career-driven. She probably hates children and family.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Demonizing career women",
+            "id": 98
+        },
+        {
+            "type": "double",
+            "text": "He ordered a fruity cocktail. What a girly drink for a dude.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Gendering food/drink choices",
+            "id": 99
+        },
+        {
+            "type": "double",
+            "text": "She's the CEO's assistant. You know exactly how she got that job.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Implying sexual favors for employment",
+            "id": 100
+        },
+        {
+            "type": "double",
+            "text": "He's sensitive and listens well. He acts more like a woman than a man.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Equating listening skills with womanhood",
+            "id": 101
+        },
+        {
+            "type": "double",
+            "text": "She's complaining about the temperature. Women are always cold and whining.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Dismissing physical discomfort as whining",
+            "id": 102
+        },
+        {
+            "type": "single",
+            "text": "Of course he stole the wallet, look at his skin color.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Explicit criminal stereotype based on race",
+            "id": 103
+        },
+        {
+            "type": "single",
+            "text": "Asians are basically robots with no soul or creativity.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Dehumanizing stereotype of Asians",
+            "id": 104
+        },
+        {
+            "type": "single",
+            "text": "We shouldn't trust him, those people are known for lying.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Generalizing a race as untrustworthy",
+            "id": 105
+        },
+        {
+            "type": "single",
+            "text": "She's pretty for a black girl, usually they are too aggressive.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Backhanded compliment/aggressive stereotype",
+            "id": 106
+        },
+        {
+            "type": "single",
+            "text": "Mexicans are just coming here to steal our jobs and ruin the country.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Xenophobic labor stereotype",
+            "id": 107
+        },
+        {
+            "type": "single",
+            "text": "He's Jewish, so you know he's hoarding all the money.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Antisemitic greed stereotype",
+            "id": 108
+        },
+        {
+            "type": "single",
+            "text": "They live in the ghetto like animals, destroying everything.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Dehumanizing socioeconomic/racial slur",
+            "id": 109
+        },
+        {
+            "type": "single",
+            "text": "Indians smell like curry and never use deodorant.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Offensive hygiene stereotype",
+            "id": 110
+        },
+        {
+            "type": "single",
+            "text": "White people have no culture, they just steal from everyone else.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Stereotype about lack of culture",
+            "id": 111
+        },
+        {
+            "type": "single",
+            "text": "He's Arab, so check his bag for bombs.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Terrorist stereotype",
+            "id": 112
+        },
+        {
+            "type": "single",
+            "text": "Black people represent violence and crime in our society.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Associating race with criminality",
+            "id": 113
+        },
+        {
+            "type": "single",
+            "text": "She's Latina, so she must be a spicy maid or cleaner.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Sexualized/Service industry stereotype",
+            "id": 114
+        },
+        {
+            "type": "single",
+            "text": "Native Americans are just lazy drunks living on handouts.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Alcoholism/Laziness stereotype",
+            "id": 115
+        },
+        {
+            "type": "single",
+            "text": "Russian people are all cold-hearted spies and hackers.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Nationality stereotype",
+            "id": 116
+        },
+        {
+            "type": "single",
+            "text": "He speaks so well for an African immigrant.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Condescending surprise at eloquence",
+            "id": 117
+        },
+        {
+            "type": "single",
+            "text": "Those people breed like rabbits and live off welfare.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Dehumanizing reproduction/welfare stereotype",
+            "id": 118
+        },
+        {
+            "type": "single",
+            "text": "Chinese tourists are rude and have no manners.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Generalizing behavior",
+            "id": 119
+        },
+        {
+            "type": "single",
+            "text": "You can't expect a Gypsy to be honest about the price.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Romani dishonesty stereotype",
+            "id": 120
+        },
+        {
+            "type": "single",
+            "text": "He has that natural rhythm that all black people have.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Positive' stereotyping (biological essentialism)",
+            "id": 121
+        },
+        {
+            "type": "single",
+            "text": "Europeans are snobs who hate everyone from America.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Generalizing Europeans",
+            "id": 122
+        },
+        {
+            "type": "single",
+            "text": "Colombians are all involved in the drug trade somehow.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Drug cartel stereotype",
+            "id": 123
+        },
+        {
+            "type": "single",
+            "text": "She has those slanted eyes, she must be good at math.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Physical feature/Ability stereotype",
+            "id": 124
+        },
+        {
+            "type": "single",
+            "text": "Irish people are always fighting and drinking whiskey.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Alcoholism/Violence stereotype",
+            "id": 125
+        },
+        {
+            "type": "single",
+            "text": "He's from the Middle East, he probably hates women's rights.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Cultural misogyny generalization",
+            "id": 126
+        },
+        {
+            "type": "single",
+            "text": "Why do black women always have to be so loud and angry?",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Angry Black Woman trope",
+            "id": 127
+        },
+        {
+            "type": "single",
+            "text": "Asians shouldn't drive, they cause all the traffic jams.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Bad driver stereotype",
+            "id": 128
+        },
+        {
+            "type": "single",
+            "text": "Italian men are just slimeballs who harass women.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Harassment stereotype",
+            "id": 129
+        },
+        {
+            "type": "double",
+            "text": "He got into Harvard. It was definitely just because of affirmative action, not merit.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Dismissing achievement of minorities",
+            "id": 130
+        },
+        {
+            "type": "double",
+            "text": "The neighborhood is getting dangerous. Too many urban youths are moving in.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Dogwhistle for Black youth/crime",
+            "id": 131
+        },
+        {
+            "type": "double",
+            "text": "She is very exotic looking. I bet she is wild in bed.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Fetishization of mixed/non-white women",
+            "id": 132
+        },
+        {
+            "type": "double",
+            "text": "He offered me a discount. Typical Jew trying to bargain.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Antisemitic bargaining stereotype",
+            "id": 133
+        },
+        {
+            "type": "double",
+            "text": "He was eating fried chicken. It's the only food those people eat.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Dietary stereotyping",
+            "id": 134
+        },
+        {
+            "type": "double",
+            "text": "She's a tiger mom. She forces her kids to study 20 hours a day.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Asian parenting stereotype",
+            "id": 135
+        },
+        {
+            "type": "double",
+            "text": "The car was full of heavy bass music. It was obviously a gang car.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Associating music/volume with gangs/race",
+            "id": 136
+        },
+        {
+            "type": "double",
+            "text": "He's a white tech bro. He probably gentrified the whole neighborhood.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Gentrification blame on race",
+            "id": 137
+        },
+        {
+            "type": "double",
+            "text": "They were speaking Spanish loudly. This is America, speak English.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Language discrimination",
+            "id": 138
+        },
+        {
+            "type": "double",
+            "text": "He's very articulate. I didn't expect that from someone from the inner city.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Surprise at intelligence based on location/race",
+            "id": 139
+        },
+        {
+            "type": "double",
+            "text": "She wore a hijab to the interview. She is probably oppressed and radicalized.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Islamophobic assumption",
+            "id": 140
+        },
+        {
+            "type": "double",
+            "text": "The Nigerian prince sent an email. Obviously a scammer like the rest of them.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Scam stereotype",
+            "id": 141
+        },
+        {
+            "type": "double",
+            "text": "He ran really fast. It's in their genetics to be runners, not thinkers.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Physical vs Intellectual dichotomy stereotype",
+            "id": 142
+        },
+        {
+            "type": "double",
+            "text": "The family has 10 kids. Catholics just don't know when to stop breeding.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Religious/Cultural family size judgment",
+            "id": 143
+        },
+        {
+            "type": "double",
+            "text": "He's French. I bet he's rude and refuses to shower.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Hygiene/Politeness stereotype",
+            "id": 144
+        },
+        {
+            "type": "double",
+            "text": "She won the math competition. Of course, she's Chinese.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Dismissing effort for racial trait",
+            "id": 145
+        },
+        {
+            "type": "double",
+            "text": "He threatened me. It was that scary thug behavior you see on TV.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Thug stereotype",
+            "id": 146
+        },
+        {
+            "type": "double",
+            "text": "The hotel was owned by Indians. It probably has bedbugs.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Associating race with uncleanliness",
+            "id": 147
+        },
+        {
+            "type": "double",
+            "text": "She's from Eastern Europe. She's probably looking for a rich husband.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Gold digger stereotype",
+            "id": 148
+        },
+        {
+            "type": "double",
+            "text": "He's a white cop. He definitely wants to shoot minorities.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Police brutality generalization",
+            "id": 149
+        },
+        {
+            "type": "double",
+            "text": "They opened a nail salon. That's all Vietnamese people do.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Job restriction stereotype",
+            "id": 150
+        },
+        {
+            "type": "double",
+            "text": "He's huge and scary. I crossed the street to avoid the black man.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Fear based on race",
+            "id": 151
+        },
+        {
+            "type": "double",
+            "text": "She's mixed race. She must be confused about who she really is.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Identity confusion stereotype",
+            "id": 152
+        },
+        {
+            "type": "double",
+            "text": "He's German. He must be a Nazi sympathizer deep down.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Historical guilt by association",
+            "id": 153
+        },
+        {
+            "type": "double",
+            "text": "The food delivery guy was late. Typical lazy immigrant worker.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Laziness stereotype",
+            "id": 154
+        },
+        {
+            "type": "double",
+            "text": "She got angry in the store. It's that Latin temper coming out.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Biological temper attribution",
+            "id": 155
+        },
+        {
+            "type": "double",
+            "text": "He studies all day. He's such a nerdy Asian with no social life.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Anti-social nerd stereotype",
+            "id": 156
+        },
+        {
+            "type": "single",
+            "text": "He's too old to understand how clear communication works.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Stereotypes old people as bad communicators",
+            "id": 157
+        },
+        {
+            "type": "single",
+            "text": "Millennials are just lazy and entitled, they expect everything for free.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Aggressive generational stereotype",
+            "id": 158
+        },
+        {
+            "type": "single",
+            "text": "She's a senile old woman who shouldn't be driving.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist insult/competence doubt",
+            "id": 159
+        },
+        {
+            "type": "single",
+            "text": "Young people these days have no respect or work ethic.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Generalizing youth behavior",
+            "id": 160
+        },
+        {
+            "type": "single",
+            "text": "Boomers ruined the economy and now they just complain.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Blaming a generation",
+            "id": 161
+        },
+        {
+            "type": "single",
+            "text": "He's having a midlife crisis, disgusting behavior for his age.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Mocking age-related behavior",
+            "id": 162
+        },
+        {
+            "type": "single",
+            "text": "Retire already, you're blocking the promotion for younger talent.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Direct hostility towards older workers",
+            "id": 163
+        },
+        {
+            "type": "single",
+            "text": "Gen Z is too sensitive and can't handle the real world.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Dismissing a generation as weak",
+            "id": 164
+        },
+        {
+            "type": "single",
+            "text": "These kids are addicted to screens and have zero attention span.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Technological stereotype",
+            "id": 165
+        },
+        {
+            "type": "single",
+            "text": "Don't trust anyone over 30, they're all sellouts.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Distrust based on age",
+            "id": 166
+        },
+        {
+            "type": "single",
+            "text": "He's just an angry old white man yelling at clouds.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Dismissing opinion based on age/race",
+            "id": 167
+        },
+        {
+            "type": "single",
+            "text": "Teenagers are reckless and dangerous drivers.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Dangerous stereotype",
+            "id": 168
+        },
+        {
+            "type": "single",
+            "text": "Grandma is losing her marbles, she repeats everything.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Disrespectful cognitive generalization",
+            "id": 169
+        },
+        {
+            "type": "single",
+            "text": "Young women only care about Instagram likes, not real life.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Dismissing young women's interests",
+            "id": 170
+        },
+        {
+            "type": "single",
+            "text": "He's too young to be a boss, he needs to grow up.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Infantilizing young professionals",
+            "id": 171
+        },
+        {
+            "type": "single",
+            "text": "Old people smell weird and shouldn't be in public.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Overtly offensive physical stereotype",
+            "id": 172
+        },
+        {
+            "type": "single",
+            "text": "She dresses like a teenager, it's pathetic at her age.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Policing age-appropriate behavior",
+            "id": 173
+        },
+        {
+            "type": "single",
+            "text": "College students are just brainwashed liberals.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Political generalization of students",
+            "id": 174
+        },
+        {
+            "type": "single",
+            "text": "You can't teach an old dog new tricks, fire him.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Refusal to train older workers",
+            "id": 175
+        },
+        {
+            "type": "single",
+            "text": "He looks like a child, how can he be a doctor?",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Judging competence by youthful appearance",
+            "id": 176
+        },
+        {
+            "type": "single",
+            "text": "Elderly voters are just holding the country back.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Political disenfranchisement sentiment",
+            "id": 177
+        },
+        {
+            "type": "single",
+            "text": "Stop acting like a baby, you're 25.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Invalidating feelings based on age",
+            "id": 178
+        },
+        {
+            "type": "single",
+            "text": "Old men are creepy when they look at younger women.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Predatory stereotype",
+            "id": 179
+        },
+        {
+            "type": "double",
+            "text": "He moves so slowly in the line. Old people should just stay home.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Exclusionary sentiment",
+            "id": 180
+        },
+        {
+            "type": "double",
+            "text": "She didn't know how to use the PDF. Typical incompetent boomer.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Labels incompetence as generational trait",
+            "id": 181
+        },
+        {
+            "type": "double",
+            "text": "They want a flexible schedule. These young employees don't want to work.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Work ethic assumption",
+            "id": 182
+        },
+        {
+            "type": "double",
+            "text": "He forgot my name. His brain is clearly rotting from age.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Cruel medical assumption",
+            "id": 183
+        },
+        {
+            "type": "double",
+            "text": "She has so much energy. Must be nice to be young and naive.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Dismissing energy as naivety",
+            "id": 184
+        },
+        {
+            "type": "double",
+            "text": "He bought a sports car. Just another sad midlife crisis victim.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Mocking life choices",
+            "id": 185
+        },
+        {
+            "type": "double",
+            "text": "She's dating a younger guy. She's obviously a desperate cougar.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Derogatory term for older women",
+            "id": 186
+        },
+        {
+            "type": "double",
+            "text": "He's glued to his phone. Kids today have no social skills.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Social deficit stereotype",
+            "id": 187
+        },
+        {
+            "type": "double",
+            "text": "The manager is 22. His detailed experience is doubtful.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Doubting competence purely on age",
+            "id": 188
+        },
+        {
+            "type": "double",
+            "text": "She fell down the stairs. Put her in a home before she breaks a hip.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Callous institutionalization sentiment",
+            "id": 189
+        },
+        {
+            "type": "double",
+            "text": "He's talking about the war again. Nobody cares about your history, gramps.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Disrespecting experience",
+            "id": 190
+        },
+        {
+            "type": "double",
+            "text": "She wears too much makeup. Trying too hard to look 20 again.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Shaming aging appearance",
+            "id": 191
+        },
+        {
+            "type": "double",
+            "text": "He's an intern. Just give him the coffee run, he's useless otherwise.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Devaluing young workers",
+            "id": 192
+        },
+        {
+            "type": "double",
+            "text": "The politician is 80. He probably wears diapers.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Infantilizing/Insulting elderly",
+            "id": 193
+        },
+        {
+            "type": "double",
+            "text": "They listen to rap music. Youth culture is violent garbage.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Cultural superiority/ageism",
+            "id": 194
+        },
+        {
+            "type": "double",
+            "text": "She's a grandmother. She should be baking cookies, not running a business.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Role restriction based on age/gender",
+            "id": 195
+        },
+        {
+            "type": "double",
+            "text": "He has grey hair. He's way past his prime for this job.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Age-based discrimination",
+            "id": 196
+        },
+        {
+            "type": "double",
+            "text": "She uses slang terms. It sounds ridiculous coming from an old lady.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Gatekeeping language",
+            "id": 197
+        },
+        {
+            "type": "double",
+            "text": "He's a millennial dad. He probably doesn't know how to change a tire.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Generational incompetence",
+            "id": 198
+        },
+        {
+            "type": "double",
+            "text": "She's 18. She's legal, that's all that matters.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Predatory/Objectifying",
+            "id": 199
+        },
+        {
+            "type": "double",
+            "text": "He's 50 and single. There's definitely something wrong with him.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Stigma of aging single",
+            "id": 200
+        },
+        {
+            "type": "double",
+            "text": "She's a child star. She'll be in rehab by 21.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Tragic trajectory stereotype",
+            "id": 201
+        },
+        {
+            "type": "single",
+            "text": "Police officers are all power-hungry bullies.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Generalizing police as abusive",
+            "id": 202
+        },
+        {
+            "type": "single",
+            "text": "Lawyers are soulless sharks who will do anything for money.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Demonizing the legal profession",
+            "id": 203
+        },
+        {
+            "type": "single",
+            "text": "Only dropouts become construction workers.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Classist view of manual labor",
+            "id": 204
+        },
+        {
+            "type": "single",
+            "text": "Models are just empty-headed clothes hangers.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Intellectual insult to models",
+            "id": 205
+        },
+        {
+            "type": "single",
+            "text": "Politicians are all liars and thieves.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Blanket distrust of politicians",
+            "id": 206
+        },
+        {
+            "type": "single",
+            "text": "She's just a secretary, she doesn't have a real brain.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Devaluing administrative work",
+            "id": 207
+        },
+        {
+            "type": "single",
+            "text": "Salespeople will say anything to scam you.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Dishonesty stereotype",
+            "id": 208
+        },
+        {
+            "type": "single",
+            "text": "Journalists just make up fake news to sell papers.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Media distrust stereotype",
+            "id": 209
+        },
+        {
+            "type": "single",
+            "text": "Teachers are just people who couldn't succeed in the real world.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Those who can't do, teach' insult",
+            "id": 210
+        },
+        {
+            "type": "single",
+            "text": "Artists are lazy and contribute nothing to society.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Undervaluing the arts",
+            "id": 211
+        },
+        {
+            "type": "single",
+            "text": "Engineers are socially awkward and can't talk to people.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Social competence stereotype",
+            "id": 212
+        },
+        {
+            "type": "single",
+            "text": "Strippers have no self-respect or daddy issues.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Slut-shaming sex work",
+            "id": 213
+        },
+        {
+            "type": "single",
+            "text": "Doctors think they are gods and ignore patients.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Arrogance stereotype",
+            "id": 214
+        },
+        {
+            "type": "single",
+            "text": "Garbage men are filthy and uneducated.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Classist hygiene stereotype",
+            "id": 215
+        },
+        {
+            "type": "single",
+            "text": "Bankers are greedy parasites destroying the economy.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Demonizing finance workers",
+            "id": 216
+        },
+        {
+            "type": "single",
+            "text": "Truck drivers are dangerous and dirty.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Negative trade stereotype",
+            "id": 217
+        },
+        {
+            "type": "single",
+            "text": "Security guards are just failed cops.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Insulting career choice",
+            "id": 218
+        },
+        {
+            "type": "single",
+            "text": "Influencers are useless narcissists.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Dismissing modern profession",
+            "id": 219
+        },
+        {
+            "type": "single",
+            "text": "Human Resources exists only to protect the company, not you.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Corporate cynicism",
+            "id": 220
+        },
+        {
+            "type": "single",
+            "text": "Real estate agents are fake and manipulative.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Manipulative stereotype",
+            "id": 221
+        },
+        {
+            "type": "single",
+            "text": "Waiters should get a real job instead of begging for tips.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Devaluing service work",
+            "id": 222
+        },
+        {
+            "type": "single",
+            "text": "Therapists are just paid friends for crazy people.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Minimizing mental health work",
+            "id": 223
+        },
+        {
+            "type": "single",
+            "text": "Professors live in an ivory tower and know nothing about life.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Anti-intellectualism",
+            "id": 224
+        },
+        {
+            "type": "single",
+            "text": "Accountants are boring people with no personality.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Personality stereotype",
+            "id": 225
+        },
+        {
+            "type": "double",
+            "text": "He's a used car salesman. Check your pockets after you shake his hand.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Criminal stereotype",
+            "id": 226
+        },
+        {
+            "type": "double",
+            "text": "She's a hairdresser. She's probably not very smart.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Intelligence stereotype",
+            "id": 227
+        },
+        {
+            "type": "double",
+            "text": "He works in IT. He must be a weird nerd who lives in a basement.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "IT stereotype",
+            "id": 228
+        },
+        {
+            "type": "double",
+            "text": "She's a flight attendant. Basically a glorified waitress in the sky.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Minimizing profession",
+            "id": 229
+        },
+        {
+            "type": "double",
+            "text": "He's a personal trainer. All brawn and no brains.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Physical vs Intellectual stereotype",
+            "id": 230
+        },
+        {
+            "type": "double",
+            "text": "She's a librarian. She must be a lonely spinster with cats.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Librarian stereotype",
+            "id": 231
+        },
+        {
+            "type": "double",
+            "text": "He's a bartender. He's probably an alcoholic himself.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Addiction assumption",
+            "id": 232
+        },
+        {
+            "type": "double",
+            "text": "She's a maid. That's the only job she's qualified for.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Limiting potential",
+            "id": 233
+        },
+        {
+            "type": "double",
+            "text": "He's a taxi driver. He'll drive longer routes just to overcharge you.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Scam stereotype",
+            "id": 234
+        },
+        {
+            "type": "double",
+            "text": "She's an actress. She must be emotionally unstable and dramatic.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Emotional instability stereotype",
+            "id": 235
+        },
+        {
+            "type": "double",
+            "text": "He's a janitor. He failed at life.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Extreme judgment of worth",
+            "id": 236
+        },
+        {
+            "type": "double",
+            "text": "He's a philosophy major. Enjoy serving fries at McDonald's.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Mocking degree choice",
+            "id": 237
+        },
+        {
+            "type": "double",
+            "text": "She's a CEO. She must be a ruthless sociopath to get there.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Demonizing female success",
+            "id": 238
+        },
+        {
+            "type": "double",
+            "text": "He's a bouncer. Just a thug in a cheap suit.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Thug stereotype",
+            "id": 239
+        },
+        {
+            "type": "double",
+            "text": "She works in PR. Her job is lying to the public professionally.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Professional dishonesty",
+            "id": 240
+        },
+        {
+            "type": "double",
+            "text": "He's a dentist. A failed doctor who likes inflicting pain.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Sadist stereotype",
+            "id": 241
+        },
+        {
+            "type": "double",
+            "text": "She's a nanny. She's raising other people's kids because she has no life.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Personal life judgment",
+            "id": 242
+        },
+        {
+            "type": "double",
+            "text": "He's a soldier. A brainless pawn for the government.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Dehumanizing soldiers",
+            "id": 243
+        },
+        {
+            "type": "double",
+            "text": "She's a yoga instructor. Just a hippie with no real skills.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Dismissing alternative careers",
+            "id": 244
+        },
+        {
+            "type": "double",
+            "text": "He's a stockbroker. He'd sell his own mother for a profit.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Greed stereotype",
+            "id": 245
+        },
+        {
+            "type": "double",
+            "text": "She's a makeup artist. That's not a real career, it's a hobby.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Delegitimizing career",
+            "id": 246
+        },
+        {
+            "type": "double",
+            "text": "He's a plumber. I don't want that butt crack showing in my house.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Visual stereotype",
+            "id": 247
+        },
+        {
+            "type": "double",
+            "text": "She's a receptionist. She just sits there and looks pretty.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Reducing work to appearance",
+            "id": 248
+        },
+        {
+            "type": "double",
+            "text": "He's a telemarketer. The scum of the earth.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Dehumanizing profession",
+            "id": 249
+        },
+        {
+            "type": "single",
+            "text": "Poor people are just lazy and don't want to work.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Laziness stereotype",
+            "id": 250
+        },
+        {
+            "type": "single",
+            "text": "Rich people are all corrupt greedy monsters.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Demonizing wealth",
+            "id": 251
+        },
+        {
+            "type": "single",
+            "text": "She's on welfare, so she must be a drug addict.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Welfare stigma",
+            "id": 252
+        },
+        {
+            "type": "single",
+            "text": "If he worked harder, he wouldn't be homeless.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Meritocracy fallacy/Blame",
+            "id": 253
+        },
+        {
+            "type": "single",
+            "text": "Private school kids are stuck-up snobs.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Wealth stereotype",
+            "id": 254
+        },
+        {
+            "type": "single",
+            "text": "People in public housing are dangerous criminals.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Criminalizing poverty",
+            "id": 255
+        },
+        {
+            "type": "single",
+            "text": "He drives a BMW, so he definitely cuts people off.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Vehicle/wealth stereotype",
+            "id": 256
+        },
+        {
+            "type": "single",
+            "text": "They shop at thrift stores because they have no class.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Classist taste judgment",
+            "id": 257
+        },
+        {
+            "type": "single",
+            "text": "Country club members are racist elitists.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Generalizing elite institutions",
+            "id": 258
+        },
+        {
+            "type": "single",
+            "text": "She uses food stamps to buy junk food.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Policing poor people's choices",
+            "id": 259
+        },
+        {
+            "type": "single",
+            "text": "Billionaires should not exist, they are evil.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Moral judgment of wealth",
+            "id": 260
+        },
+        {
+            "type": "single",
+            "text": "He's from the trailer park, so he's probably uneducated.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Education/Class stereotype",
+            "id": 261
+        },
+        {
+            "type": "single",
+            "text": "Minimum wage workers are just unskilled teenagers.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Devaluing labor",
+            "id": 262
+        },
+        {
+            "type": "double",
+            "text": "He begs for money. He'll just spend it on alcohol.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Addiction stereotype",
+            "id": 263
+        },
+        {
+            "type": "double",
+            "text": "She wears designer clothes. She clearly has never worked a day in her life.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Idle rich stereotype",
+            "id": 264
+        },
+        {
+            "type": "double",
+            "text": "They rely on government handouts. They are a burden on society.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Parasite stereotype",
+            "id": 265
+        },
+        {
+            "type": "double",
+            "text": "He's a CEO. He doesn't care about anyone but himself.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Psychopath CEO stereotype",
+            "id": 266
+        },
+        {
+            "type": "double",
+            "text": "She lives in that bad neighborhood. She must be involved in gangs.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Location based criminalization",
+            "id": 267
+        },
+        {
+            "type": "double",
+            "text": "He inherited his money. He's a spoiled brat.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Spoiled rich kid stereotype",
+            "id": 268
+        },
+        {
+            "type": "double",
+            "text": "They can't afford rent. Maybe they should stop buying iPhones.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Avocado toast logic",
+            "id": 269
+        },
+        {
+            "type": "double",
+            "text": "She's always at charity galas. She just does it for the tax breaks.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Cynical view of philanthropy",
+            "id": 270
+        },
+        {
+            "type": "double",
+            "text": "He's homeless. It's his own fault for making bad choices.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Blaming the victim",
+            "id": 271
+        },
+        {
+            "type": "double",
+            "text": "She buys organic food. She's a privileged hipster.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Food privilege stereotype",
+            "id": 272
+        },
+        {
+            "type": "double",
+            "text": "He works three jobs. He must be desperate and uneducated.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Pity/Condescension",
+            "id": 273
+        },
+        {
+            "type": "double",
+            "text": "They fly private. They are destroying the planet on purpose.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Environmental villainy",
+            "id": 274
+        },
+        {
+            "type": "double",
+            "text": "She uses a coupon. She must be really poor.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Stigmatizing frugality",
+            "id": 275
+        },
+        {
+            "type": "single",
+            "text": "The sun set behind the mountains in a beautiful display of color.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 276
+        },
+        {
+            "type": "single",
+            "text": "The cat slept peacefully on the windowsill all afternoon.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 277
+        },
+        {
+            "type": "single",
+            "text": "She walked to the store to buy some groceries for dinner.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 278
+        },
+        {
+            "type": "single",
+            "text": "He finished reading the book significantly ahead of schedule.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 279
+        },
+        {
+            "type": "single",
+            "text": "The team collaborated effectively to solve the problem.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 280
+        },
+        {
+            "type": "single",
+            "text": "Rain fell softly against the roof throughout the night.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 281
+        },
+        {
+            "type": "single",
+            "text": "The coffee shop was crowded with people working on laptops.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 282
+        },
+        {
+            "type": "single",
+            "text": "They decided to take a vacation to the coast this summer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 283
+        },
+        {
+            "type": "single",
+            "text": "The garden was filled with blooming flowers in spring.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 284
+        },
+        {
+            "type": "single",
+            "text": "He practiced the piano for two hours every single day.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 285
+        },
+        {
+            "type": "single",
+            "text": "The meeting started exactly on time with all members present.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 286
+        },
+        {
+            "type": "single",
+            "text": "She typed the email quickly and pressed send.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 287
+        },
+        {
+            "type": "single",
+            "text": "The bus arrived at the station a few minutes late.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 288
+        },
+        {
+            "type": "single",
+            "text": "He cooked a healthy meal using fresh ingredients.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 289
+        },
+        {
+            "type": "single",
+            "text": "The software update finished downloading after twenty minutes.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 290
+        },
+        {
+            "type": "single",
+            "text": "They went for a hike on the trail nearby.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 291
+        },
+        {
+            "type": "single",
+            "text": "The movie received positive reviews from most critics.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 292
+        },
+        {
+            "type": "single",
+            "text": "She organized her desk before starting the work day.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 293
+        },
+        {
+            "type": "single",
+            "text": "He watered the plants in the garden before it got hot.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 294
+        },
+        {
+            "type": "single",
+            "text": "The traffic was heavy during the morning commute.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 295
+        },
+        {
+            "type": "single",
+            "text": "The library was quiet and perfect for studying.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 296
+        },
+        {
+            "type": "single",
+            "text": "She learned to speak French fluently after living in Paris.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 297
+        },
+        {
+            "type": "single",
+            "text": "He fixed the broken chair with some wood glue.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 298
+        },
+        {
+            "type": "single",
+            "text": "The package arrived safely at the front door.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 299
+        },
+        {
+            "type": "single",
+            "text": "They played board games together on Friday night.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 300
+        },
+        {
+            "type": "single",
+            "text": "The sun set behind the mountains in a beautiful display of color.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 301
+        },
+        {
+            "type": "single",
+            "text": "The cat slept peacefully on the windowsill all afternoon.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 302
+        },
+        {
+            "type": "single",
+            "text": "She walked to the store to buy some groceries for dinner.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 303
+        },
+        {
+            "type": "single",
+            "text": "He finished reading the book significantly ahead of schedule.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 304
+        },
+        {
+            "type": "single",
+            "text": "The team collaborated effectively to solve the problem.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 305
+        },
+        {
+            "type": "single",
+            "text": "Rain fell softly against the roof throughout the night.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 306
+        },
+        {
+            "type": "single",
+            "text": "The coffee shop was crowded with people working on laptops.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 307
+        },
+        {
+            "type": "single",
+            "text": "They decided to take a vacation to the coast this summer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 308
+        },
+        {
+            "type": "single",
+            "text": "The garden was filled with blooming flowers in spring.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 309
+        },
+        {
+            "type": "single",
+            "text": "He practiced the piano for two hours every single day.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 310
+        },
+        {
+            "type": "single",
+            "text": "The meeting started exactly on time with all members present.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 311
+        },
+        {
+            "type": "single",
+            "text": "She typed the email quickly and pressed send.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 312
+        },
+        {
+            "type": "single",
+            "text": "The bus arrived at the station a few minutes late.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 313
+        },
+        {
+            "type": "single",
+            "text": "He cooked a healthy meal using fresh ingredients.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 314
+        },
+        {
+            "type": "single",
+            "text": "The software update finished downloading after twenty minutes.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 315
+        },
+        {
+            "type": "single",
+            "text": "They went for a hike on the trail nearby.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 316
+        },
+        {
+            "type": "single",
+            "text": "The movie received positive reviews from most critics.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 317
+        },
+        {
+            "type": "single",
+            "text": "She organized her desk before starting the work day.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 318
+        },
+        {
+            "type": "single",
+            "text": "He watered the plants in the garden before it got hot.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 319
+        },
+        {
+            "type": "single",
+            "text": "The traffic was heavy during the morning commute.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 320
+        },
+        {
+            "type": "single",
+            "text": "The library was quiet and perfect for studying.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 321
+        },
+        {
+            "type": "single",
+            "text": "She learned to speak French fluently after living in Paris.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 322
+        },
+        {
+            "type": "single",
+            "text": "He fixed the broken chair with some wood glue.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 323
+        },
+        {
+            "type": "single",
+            "text": "The package arrived safely at the front door.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 324
+        },
+        {
+            "type": "single",
+            "text": "They played board games together on Friday night.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 325
+        },
+        {
+            "type": "single",
+            "text": "The sun set behind the mountains in a beautiful display of color.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 326
+        },
+        {
+            "type": "single",
+            "text": "The cat slept peacefully on the windowsill all afternoon.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 327
+        },
+        {
+            "type": "single",
+            "text": "She walked to the store to buy some groceries for dinner.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 328
+        },
+        {
+            "type": "single",
+            "text": "He finished reading the book significantly ahead of schedule.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 329
+        },
+        {
+            "type": "single",
+            "text": "The team collaborated effectively to solve the problem.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 330
+        },
+        {
+            "type": "single",
+            "text": "Rain fell softly against the roof throughout the night.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 331
+        },
+        {
+            "type": "single",
+            "text": "The coffee shop was crowded with people working on laptops.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 332
+        },
+        {
+            "type": "single",
+            "text": "They decided to take a vacation to the coast this summer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 333
+        },
+        {
+            "type": "single",
+            "text": "The garden was filled with blooming flowers in spring.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 334
+        },
+        {
+            "type": "single",
+            "text": "He practiced the piano for two hours every single day.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 335
+        },
+        {
+            "type": "single",
+            "text": "The meeting started exactly on time with all members present.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 336
+        },
+        {
+            "type": "single",
+            "text": "She typed the email quickly and pressed send.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 337
+        },
+        {
+            "type": "single",
+            "text": "The bus arrived at the station a few minutes late.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 338
+        },
+        {
+            "type": "single",
+            "text": "He cooked a healthy meal using fresh ingredients.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 339
+        },
+        {
+            "type": "single",
+            "text": "The software update finished downloading after twenty minutes.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 340
+        },
+        {
+            "type": "single",
+            "text": "They went for a hike on the trail nearby.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 341
+        },
+        {
+            "type": "single",
+            "text": "The movie received positive reviews from most critics.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 342
+        },
+        {
+            "type": "single",
+            "text": "She organized her desk before starting the work day.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 343
+        },
+        {
+            "type": "single",
+            "text": "He watered the plants in the garden before it got hot.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 344
+        },
+        {
+            "type": "single",
+            "text": "The traffic was heavy during the morning commute.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 345
+        },
+        {
+            "type": "single",
+            "text": "The library was quiet and perfect for studying.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 346
+        },
+        {
+            "type": "single",
+            "text": "She learned to speak French fluently after living in Paris.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 347
+        },
+        {
+            "type": "single",
+            "text": "He fixed the broken chair with some wood glue.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 348
+        },
+        {
+            "type": "single",
+            "text": "The package arrived safely at the front door.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 349
+        },
+        {
+            "type": "single",
+            "text": "They played board games together on Friday night.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 350
+        },
+        {
+            "type": "single",
+            "text": "The sun set behind the mountains in a beautiful display of color.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 351
+        },
+        {
+            "type": "single",
+            "text": "The cat slept peacefully on the windowsill all afternoon.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 352
+        },
+        {
+            "type": "single",
+            "text": "She walked to the store to buy some groceries for dinner.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 353
+        },
+        {
+            "type": "single",
+            "text": "He finished reading the book significantly ahead of schedule.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 354
+        },
+        {
+            "type": "single",
+            "text": "The team collaborated effectively to solve the problem.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 355
+        },
+        {
+            "type": "single",
+            "text": "Rain fell softly against the roof throughout the night.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 356
+        },
+        {
+            "type": "single",
+            "text": "The coffee shop was crowded with people working on laptops.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 357
+        },
+        {
+            "type": "single",
+            "text": "They decided to take a vacation to the coast this summer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 358
+        },
+        {
+            "type": "single",
+            "text": "The garden was filled with blooming flowers in spring.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 359
+        },
+        {
+            "type": "single",
+            "text": "He practiced the piano for two hours every single day.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 360
+        },
+        {
+            "type": "single",
+            "text": "The meeting started exactly on time with all members present.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 361
+        },
+        {
+            "type": "single",
+            "text": "She typed the email quickly and pressed send.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 362
+        },
+        {
+            "type": "single",
+            "text": "The bus arrived at the station a few minutes late.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 363
+        },
+        {
+            "type": "single",
+            "text": "He cooked a healthy meal using fresh ingredients.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 364
+        },
+        {
+            "type": "single",
+            "text": "The software update finished downloading after twenty minutes.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 365
+        },
+        {
+            "type": "single",
+            "text": "They went for a hike on the trail nearby.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 366
+        },
+        {
+            "type": "single",
+            "text": "The movie received positive reviews from most critics.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 367
+        },
+        {
+            "type": "single",
+            "text": "She organized her desk before starting the work day.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 368
+        },
+        {
+            "type": "single",
+            "text": "He watered the plants in the garden before it got hot.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 369
+        },
+        {
+            "type": "single",
+            "text": "The traffic was heavy during the morning commute.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 370
+        },
+        {
+            "type": "single",
+            "text": "The library was quiet and perfect for studying.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 371
+        },
+        {
+            "type": "single",
+            "text": "She learned to speak French fluently after living in Paris.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 372
+        },
+        {
+            "type": "single",
+            "text": "He fixed the broken chair with some wood glue.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 373
+        },
+        {
+            "type": "single",
+            "text": "The package arrived safely at the front door.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 374
+        },
+        {
+            "type": "single",
+            "text": "They played board games together on Friday night.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 375
+        },
+        {
+            "type": "single",
+            "text": "The sun set behind the mountains in a beautiful display of color.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 376
+        },
+        {
+            "type": "single",
+            "text": "The cat slept peacefully on the windowsill all afternoon.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 377
+        },
+        {
+            "type": "single",
+            "text": "She walked to the store to buy some groceries for dinner.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 378
+        },
+        {
+            "type": "single",
+            "text": "He finished reading the book significantly ahead of schedule.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 379
+        },
+        {
+            "type": "single",
+            "text": "The team collaborated effectively to solve the problem.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 380
+        },
+        {
+            "type": "single",
+            "text": "Rain fell softly against the roof throughout the night.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 381
+        },
+        {
+            "type": "single",
+            "text": "The coffee shop was crowded with people working on laptops.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 382
+        },
+        {
+            "type": "single",
+            "text": "They decided to take a vacation to the coast this summer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 383
+        },
+        {
+            "type": "single",
+            "text": "The garden was filled with blooming flowers in spring.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 384
+        },
+        {
+            "type": "single",
+            "text": "He practiced the piano for two hours every single day.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 385
+        },
+        {
+            "type": "single",
+            "text": "The meeting started exactly on time with all members present.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 386
+        },
+        {
+            "type": "single",
+            "text": "She typed the email quickly and pressed send.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 387
+        },
+        {
+            "type": "double",
+            "text": "The dog barked at the mailman. The mailman continued his route unaffected.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 388
+        },
+        {
+            "type": "double",
+            "text": "She studied hard for the exam. Her grades improved significantly as a result.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 389
+        },
+        {
+            "type": "double",
+            "text": "He woke up early for the flight. The airport was less crowded than expected.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 390
+        },
+        {
+            "type": "double",
+            "text": "The restaurant was fully booked. They decided to order takeout instead.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 391
+        },
+        {
+            "type": "double",
+            "text": "She painted the walls blue. The room looked much brighter afterwards.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 392
+        },
+        {
+            "type": "double",
+            "text": "He lost his keys in the park. Fortunately, someone found them and returned them.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 393
+        },
+        {
+            "type": "double",
+            "text": "The storm caused a power outage. They used candles to light the room.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 394
+        },
+        {
+            "type": "double",
+            "text": "She wrote a letter to her friend. She mailed it the very next morning.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 395
+        },
+        {
+            "type": "double",
+            "text": "He ran a marathon last weekend. He felt exhausted but proud of the achievement.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 396
+        },
+        {
+            "type": "double",
+            "text": "The car ran out of gas. They had to walk to the nearest station.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 397
+        },
+        {
+            "type": "double",
+            "text": "She baked a cake for the party. Everyone enjoyed the chocolate flavor.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 398
+        },
+        {
+            "type": "double",
+            "text": "He forgot his umbrella at home. He got soaked in the heavy rain.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 399
+        },
+        {
+            "type": "double",
+            "text": "The music was too loud. He asked the neighbors to turn it down.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 400
+        },
+        {
+            "type": "double",
+            "text": "She adopted a puppy from the shelter. It quickly became part of the family.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 401
+        },
+        {
+            "type": "double",
+            "text": "He saved money for a new bike. He finally bought it last week.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 402
+        },
+        {
+            "type": "double",
+            "text": "The phone rang during dinner. He chose to ignore it and keep eating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 403
+        },
+        {
+            "type": "double",
+            "text": "She planted tomatoes in the garden. They grew ripe and red by summer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 404
+        },
+        {
+            "type": "double",
+            "text": "He fixed the leaking faucet. It stopped dripping immediately.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 405
+        },
+        {
+            "type": "double",
+            "text": "The train was delayed by an hour. Passengers waited patiently on the platform.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 406
+        },
+        {
+            "type": "double",
+            "text": "She signed up for a yoga class. She found it very relaxing.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 407
+        },
+        {
+            "type": "double",
+            "text": "He cleaned the entire house. It looked spotless when he was done.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 408
+        },
+        {
+            "type": "double",
+            "text": "The wind blew the leaves away. The yard looked clean again.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 409
+        },
+        {
+            "type": "double",
+            "text": "She learned to code in Python. She built a simple website.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 410
+        },
+        {
+            "type": "double",
+            "text": "He missed the bus to work. He had to take a taxi instead.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 411
+        },
+        {
+            "type": "double",
+            "text": "The ice cream melted quickly. They had to eat it fast.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 412
+        },
+        {
+            "type": "double",
+            "text": "The dog barked at the mailman. The mailman continued his route unaffected.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 413
+        },
+        {
+            "type": "double",
+            "text": "She studied hard for the exam. Her grades improved significantly as a result.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 414
+        },
+        {
+            "type": "double",
+            "text": "He woke up early for the flight. The airport was less crowded than expected.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 415
+        },
+        {
+            "type": "double",
+            "text": "The restaurant was fully booked. They decided to order takeout instead.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 416
+        },
+        {
+            "type": "double",
+            "text": "She painted the walls blue. The room looked much brighter afterwards.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 417
+        },
+        {
+            "type": "double",
+            "text": "He lost his keys in the park. Fortunately, someone found them and returned them.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 418
+        },
+        {
+            "type": "double",
+            "text": "The storm caused a power outage. They used candles to light the room.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 419
+        },
+        {
+            "type": "double",
+            "text": "She wrote a letter to her friend. She mailed it the very next morning.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 420
+        },
+        {
+            "type": "double",
+            "text": "He ran a marathon last weekend. He felt exhausted but proud of the achievement.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 421
+        },
+        {
+            "type": "double",
+            "text": "The car ran out of gas. They had to walk to the nearest station.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 422
+        },
+        {
+            "type": "double",
+            "text": "She baked a cake for the party. Everyone enjoyed the chocolate flavor.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 423
+        },
+        {
+            "type": "double",
+            "text": "He forgot his umbrella at home. He got soaked in the heavy rain.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 424
+        },
+        {
+            "type": "double",
+            "text": "The music was too loud. He asked the neighbors to turn it down.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 425
+        },
+        {
+            "type": "double",
+            "text": "She adopted a puppy from the shelter. It quickly became part of the family.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 426
+        },
+        {
+            "type": "double",
+            "text": "He saved money for a new bike. He finally bought it last week.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 427
+        },
+        {
+            "type": "double",
+            "text": "The phone rang during dinner. He chose to ignore it and keep eating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 428
+        },
+        {
+            "type": "double",
+            "text": "She planted tomatoes in the garden. They grew ripe and red by summer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 429
+        },
+        {
+            "type": "double",
+            "text": "He fixed the leaking faucet. It stopped dripping immediately.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 430
+        },
+        {
+            "type": "double",
+            "text": "The train was delayed by an hour. Passengers waited patiently on the platform.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 431
+        },
+        {
+            "type": "double",
+            "text": "She signed up for a yoga class. She found it very relaxing.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 432
+        },
+        {
+            "type": "double",
+            "text": "He cleaned the entire house. It looked spotless when he was done.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 433
+        },
+        {
+            "type": "double",
+            "text": "The wind blew the leaves away. The yard looked clean again.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 434
+        },
+        {
+            "type": "double",
+            "text": "She learned to code in Python. She built a simple website.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 435
+        },
+        {
+            "type": "double",
+            "text": "He missed the bus to work. He had to take a taxi instead.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 436
+        },
+        {
+            "type": "double",
+            "text": "The ice cream melted quickly. They had to eat it fast.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 437
+        },
+        {
+            "type": "double",
+            "text": "The dog barked at the mailman. The mailman continued his route unaffected.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 438
+        },
+        {
+            "type": "double",
+            "text": "She studied hard for the exam. Her grades improved significantly as a result.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 439
+        },
+        {
+            "type": "double",
+            "text": "He woke up early for the flight. The airport was less crowded than expected.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 440
+        },
+        {
+            "type": "double",
+            "text": "The restaurant was fully booked. They decided to order takeout instead.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 441
+        },
+        {
+            "type": "double",
+            "text": "She painted the walls blue. The room looked much brighter afterwards.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 442
+        },
+        {
+            "type": "double",
+            "text": "He lost his keys in the park. Fortunately, someone found them and returned them.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 443
+        },
+        {
+            "type": "double",
+            "text": "The storm caused a power outage. They used candles to light the room.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 444
+        },
+        {
+            "type": "double",
+            "text": "She wrote a letter to her friend. She mailed it the very next morning.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 445
+        },
+        {
+            "type": "double",
+            "text": "He ran a marathon last weekend. He felt exhausted but proud of the achievement.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 446
+        },
+        {
+            "type": "double",
+            "text": "The car ran out of gas. They had to walk to the nearest station.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 447
+        },
+        {
+            "type": "double",
+            "text": "She baked a cake for the party. Everyone enjoyed the chocolate flavor.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 448
+        },
+        {
+            "type": "double",
+            "text": "He forgot his umbrella at home. He got soaked in the heavy rain.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 449
+        },
+        {
+            "type": "double",
+            "text": "The music was too loud. He asked the neighbors to turn it down.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 450
+        },
+        {
+            "type": "double",
+            "text": "She adopted a puppy from the shelter. It quickly became part of the family.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 451
+        },
+        {
+            "type": "double",
+            "text": "He saved money for a new bike. He finally bought it last week.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 452
+        },
+        {
+            "type": "double",
+            "text": "The phone rang during dinner. He chose to ignore it and keep eating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 453
+        },
+        {
+            "type": "double",
+            "text": "She planted tomatoes in the garden. They grew ripe and red by summer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 454
+        },
+        {
+            "type": "double",
+            "text": "He fixed the leaking faucet. It stopped dripping immediately.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 455
+        },
+        {
+            "type": "double",
+            "text": "The train was delayed by an hour. Passengers waited patiently on the platform.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 456
+        },
+        {
+            "type": "double",
+            "text": "She signed up for a yoga class. She found it very relaxing.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 457
+        },
+        {
+            "type": "double",
+            "text": "He cleaned the entire house. It looked spotless when he was done.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 458
+        },
+        {
+            "type": "double",
+            "text": "The wind blew the leaves away. The yard looked clean again.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 459
+        },
+        {
+            "type": "double",
+            "text": "She learned to code in Python. She built a simple website.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 460
+        },
+        {
+            "type": "double",
+            "text": "He missed the bus to work. He had to take a taxi instead.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 461
+        },
+        {
+            "type": "double",
+            "text": "The ice cream melted quickly. They had to eat it fast.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 462
+        },
+        {
+            "type": "double",
+            "text": "The dog barked at the mailman. The mailman continued his route unaffected.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 463
+        },
+        {
+            "type": "double",
+            "text": "She studied hard for the exam. Her grades improved significantly as a result.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 464
+        },
+        {
+            "type": "double",
+            "text": "He woke up early for the flight. The airport was less crowded than expected.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 465
+        },
+        {
+            "type": "double",
+            "text": "The restaurant was fully booked. They decided to order takeout instead.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 466
+        },
+        {
+            "type": "double",
+            "text": "She painted the walls blue. The room looked much brighter afterwards.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 467
+        },
+        {
+            "type": "double",
+            "text": "He lost his keys in the park. Fortunately, someone found them and returned them.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 468
+        },
+        {
+            "type": "double",
+            "text": "The storm caused a power outage. They used candles to light the room.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 469
+        },
+        {
+            "type": "double",
+            "text": "She wrote a letter to her friend. She mailed it the very next morning.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 470
+        },
+        {
+            "type": "double",
+            "text": "He ran a marathon last weekend. He felt exhausted but proud of the achievement.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 471
+        },
+        {
+            "type": "double",
+            "text": "The car ran out of gas. They had to walk to the nearest station.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 472
+        },
+        {
+            "type": "double",
+            "text": "She baked a cake for the party. Everyone enjoyed the chocolate flavor.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 473
+        },
+        {
+            "type": "double",
+            "text": "He forgot his umbrella at home. He got soaked in the heavy rain.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 474
+        },
+        {
+            "type": "double",
+            "text": "The music was too loud. He asked the neighbors to turn it down.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 475
+        },
+        {
+            "type": "double",
+            "text": "She adopted a puppy from the shelter. It quickly became part of the family.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 476
+        },
+        {
+            "type": "double",
+            "text": "He saved money for a new bike. He finally bought it last week.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 477
+        },
+        {
+            "type": "double",
+            "text": "The phone rang during dinner. He chose to ignore it and keep eating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 478
+        },
+        {
+            "type": "double",
+            "text": "She planted tomatoes in the garden. They grew ripe and red by summer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 479
+        },
+        {
+            "type": "double",
+            "text": "He fixed the leaking faucet. It stopped dripping immediately.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 480
+        },
+        {
+            "type": "double",
+            "text": "The train was delayed by an hour. Passengers waited patiently on the platform.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 481
+        },
+        {
+            "type": "double",
+            "text": "She signed up for a yoga class. She found it very relaxing.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 482
+        },
+        {
+            "type": "double",
+            "text": "He cleaned the entire house. It looked spotless when he was done.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 483
+        },
+        {
+            "type": "double",
+            "text": "The wind blew the leaves away. The yard looked clean again.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 484
+        },
+        {
+            "type": "double",
+            "text": "She learned to code in Python. She built a simple website.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 485
+        },
+        {
+            "type": "double",
+            "text": "He missed the bus to work. He had to take a taxi instead.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 486
+        },
+        {
+            "type": "double",
+            "text": "The ice cream melted quickly. They had to eat it fast.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 487
+        },
+        {
+            "type": "double",
+            "text": "The dog barked at the mailman. The mailman continued his route unaffected.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 488
+        },
+        {
+            "type": "double",
+            "text": "She studied hard for the exam. Her grades improved significantly as a result.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 489
+        },
+        {
+            "type": "double",
+            "text": "He woke up early for the flight. The airport was less crowded than expected.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 490
+        },
+        {
+            "type": "double",
+            "text": "The restaurant was fully booked. They decided to order takeout instead.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 491
+        },
+        {
+            "type": "double",
+            "text": "She painted the walls blue. The room looked much brighter afterwards.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 492
+        },
+        {
+            "type": "double",
+            "text": "He lost his keys in the park. Fortunately, someone found them and returned them.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 493
+        },
+        {
+            "type": "double",
+            "text": "The storm caused a power outage. They used candles to light the room.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 494
+        },
+        {
+            "type": "double",
+            "text": "She wrote a letter to her friend. She mailed it the very next morning.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 495
+        },
+        {
+            "type": "double",
+            "text": "He ran a marathon last weekend. He felt exhausted but proud of the achievement.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 496
+        },
+        {
+            "type": "double",
+            "text": "The car ran out of gas. They had to walk to the nearest station.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 497
+        },
+        {
+            "type": "double",
+            "text": "She baked a cake for the party. Everyone enjoyed the chocolate flavor.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 498
+        },
+        {
+            "type": "double",
+            "text": "He forgot his umbrella at home. He got soaked in the heavy rain.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 499
+        },
+        {
+            "type": "double",
+            "text": "The music was too loud. He asked the neighbors to turn it down.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 500
+        },
+        {
+            "type": "single",
+            "text": "All men are greedy.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Generalizing men as greedy",
+            "id": 501
+        },
+        {
+            "type": "single",
+            "text": "Women should not be allowed to drive.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Overt sexism regarding driving",
+            "id": 502
+        },
+        {
+            "type": "single",
+            "text": "African Americans are less intelligent than whites.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Explicit racial intelligence stereotype",
+            "id": 503
+        },
+        {
+            "type": "single",
+            "text": "Jews control the world.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Antisemitic conspiracy theory",
+            "id": 504
+        },
+        {
+            "type": "single",
+            "text": "Asians are better than whites at math.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Positive racial stereotype",
+            "id": 505
+        },
+        {
+            "type": "single",
+            "text": "Gay people are sinners.",
+            "has_bias": true,
+            "bias_type": "sexual_orientation",
+            "bias_description": "Homophobic religious judgment",
+            "id": 506
+        },
+        {
+            "type": "single",
+            "text": "Earth is the center of the universe.",
+            "has_bias": true,
+            "bias_type": "belief",
+            "bias_description": "Geocentric belief",
+            "id": 507
+        },
+        {
+            "type": "single",
+            "text": "Liberals are incapable of Texas Rangers.",
+            "has_bias": true,
+            "bias_type": "political",
+            "bias_description": "Political generalization",
+            "id": 508
+        },
+        {
+            "type": "single",
+            "text": "Native Americans are only good at hunting.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Primitive stereotype",
+            "id": 509
+        },
+        {
+            "type": "single",
+            "text": "All Spaniards are lazy.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Nationality stereotype",
+            "id": 510
+        },
+        {
+            "type": "single",
+            "text": "The woman walked to the grocery store.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 511
+        },
+        {
+            "type": "single",
+            "text": "A man sat on the park bench reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 512
+        },
+        {
+            "type": "single",
+            "text": "The men and women attended the conference.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 513
+        },
+        {
+            "type": "single",
+            "text": "She is a woman who lives in the city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 514
+        },
+        {
+            "type": "single",
+            "text": "The man waited for the bus to arrive.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 515
+        },
+        {
+            "type": "single",
+            "text": "Several women were talking in the hallway.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 516
+        },
+        {
+            "type": "single",
+            "text": "The man wore a blue jacket.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 517
+        },
+        {
+            "type": "single",
+            "text": "A woman opened the door.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 518
+        },
+        {
+            "type": "single",
+            "text": "The group consisted of three men and two women.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 519
+        },
+        {
+            "type": "single",
+            "text": "The man and woman walked their dog.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "id": 520
+        },
+        {
+            "id": 521,
+            "type": "generated_neutral",
+            "text": "The woman involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 522,
+            "type": "generated_neutral",
+            "text": "I saw a woman walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 523,
+            "type": "generated_neutral",
+            "text": "That woman is reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 524,
+            "type": "generated_neutral",
+            "text": "The woman works as a software engineer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 525,
+            "type": "generated_neutral",
+            "text": "A woman can be found in every city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 526,
+            "type": "generated_neutral",
+            "text": "The man involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 527,
+            "type": "generated_neutral",
+            "text": "I saw a man walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 528,
+            "type": "generated_neutral",
+            "text": "That man is reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 529,
+            "type": "generated_neutral",
+            "text": "The man works as a software engineer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 530,
+            "type": "generated_neutral",
+            "text": "A man can be found in every city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 531,
+            "type": "generated_neutral",
+            "text": "The man asked for directions.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 532,
+            "type": "generated_neutral",
+            "text": "There is a man in the photo.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 533,
+            "type": "generated_neutral",
+            "text": "The man bought a coffee.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 534,
+            "type": "generated_neutral",
+            "text": "Is that man waiting for the bus?",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 535,
+            "type": "generated_neutral",
+            "text": "The algorithm identified a man.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 536,
+            "type": "generated_neutral",
+            "text": "The man involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 537,
+            "type": "generated_neutral",
+            "text": "The girl involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 538,
+            "type": "generated_neutral",
+            "text": "I saw a girl walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 539,
+            "type": "generated_neutral",
+            "text": "That girl is reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 540,
+            "type": "generated_neutral",
+            "text": "The girl works as a software engineer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 541,
+            "type": "generated_neutral",
+            "text": "A girl can be found in every city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 542,
+            "type": "generated_neutral",
+            "text": "The boy involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 543,
+            "type": "generated_neutral",
+            "text": "The female involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 544,
+            "type": "generated_neutral",
+            "text": "I saw a female walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 545,
+            "type": "generated_neutral",
+            "text": "The male involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 546,
+            "type": "generated_neutral",
+            "text": "I saw a male walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 547,
+            "type": "generated_neutral",
+            "text": "That male is reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 548,
+            "type": "generated_neutral",
+            "text": "The male works as a software engineer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 549,
+            "type": "generated_neutral",
+            "text": "The black involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 550,
+            "type": "generated_neutral",
+            "text": "I saw a black walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 551,
+            "type": "generated_neutral",
+            "text": "That black is reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 552,
+            "type": "generated_neutral",
+            "text": "The black works as a software engineer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 553,
+            "type": "generated_neutral",
+            "text": "A black can be found in every city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 554,
+            "type": "generated_neutral",
+            "text": "The white involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 555,
+            "type": "generated_neutral",
+            "text": "I saw a white walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 556,
+            "type": "generated_neutral",
+            "text": "That white is reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 557,
+            "type": "generated_neutral",
+            "text": "The white works as a software engineer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 558,
+            "type": "generated_neutral",
+            "text": "A white can be found in every city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 559,
+            "type": "generated_neutral",
+            "text": "The white asked for directions.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 560,
+            "type": "generated_neutral",
+            "text": "The asian involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 561,
+            "type": "generated_neutral",
+            "text": "I saw a asian walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 562,
+            "type": "generated_neutral",
+            "text": "That asian is reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 563,
+            "type": "generated_neutral",
+            "text": "The asian works as a software engineer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 564,
+            "type": "generated_neutral",
+            "text": "A asian can be found in every city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 565,
+            "type": "generated_neutral",
+            "text": "The rich involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 566,
+            "type": "generated_neutral",
+            "text": "I saw a rich walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 567,
+            "type": "generated_neutral",
+            "text": "That rich is reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 568,
+            "type": "generated_neutral",
+            "text": "The poor involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 569,
+            "type": "generated_neutral",
+            "text": "I saw a poor walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 570,
+            "type": "generated_neutral",
+            "text": "The jewish involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 571,
+            "type": "generated_neutral",
+            "text": "The gay involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 572,
+            "type": "generated_neutral",
+            "text": "I saw a gay walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 573,
+            "type": "generated_neutral",
+            "text": "The old involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 574,
+            "type": "generated_neutral",
+            "text": "I saw a old walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 575,
+            "type": "generated_neutral",
+            "text": "That old is reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 576,
+            "type": "generated_neutral",
+            "text": "The old works as a software engineer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 577,
+            "type": "generated_neutral",
+            "text": "A old can be found in every city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 578,
+            "type": "generated_neutral",
+            "text": "The old asked for directions.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 579,
+            "type": "generated_neutral",
+            "text": "There is a old in the photo.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 580,
+            "type": "generated_neutral",
+            "text": "The old bought a coffee.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 581,
+            "type": "generated_neutral",
+            "text": "Is that old waiting for the bus?",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 582,
+            "type": "generated_neutral",
+            "text": "The algorithm identified a old.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 583,
+            "type": "generated_neutral",
+            "text": "The old involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 584,
+            "type": "generated_neutral",
+            "text": "I saw a old walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 585,
+            "type": "generated_neutral",
+            "text": "That old is reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 586,
+            "type": "generated_neutral",
+            "text": "The old works as a software engineer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 587,
+            "type": "generated_neutral",
+            "text": "A old can be found in every city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 588,
+            "type": "generated_neutral",
+            "text": "The young involves checking the data.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 589,
+            "type": "generated_neutral",
+            "text": "I saw a young walking in the park.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 590,
+            "type": "generated_neutral",
+            "text": "That young is reading a newspaper.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 591,
+            "type": "generated_neutral",
+            "text": "The young works as a software engineer.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 592,
+            "type": "generated_neutral",
+            "text": "A young can be found in every city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 593,
+            "type": "generated_neutral",
+            "text": "The young asked for directions.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 594,
+            "type": "generated_neutral",
+            "text": "There is a young in the photo.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 595,
+            "type": "generated_neutral",
+            "text": "The young bought a coffee.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 596,
+            "type": "generated_neutral",
+            "text": "Is that young waiting for the bus?",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null,
+            "label": 0
+        },
+        {
+            "id": 597,
+            "type": "generated_bias",
+            "text": "All politicians are corrupt liars.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 598,
+            "type": "generated_bias",
+            "text": "Lawyers never tell the truth.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 599,
+            "type": "generated_bias",
+            "text": "Teenagers are always lazy and disrespectful.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 600,
+            "type": "generated_bias",
+            "text": "Old people cannot understand technology.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 601,
+            "type": "generated_bias",
+            "text": "Rich people do not care about anyone else.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 602,
+            "type": "generated_bias",
+            "text": "Poor people are lazy and don't want to work.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 603,
+            "type": "generated_bias",
+            "text": "Artists are useless to society.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 604,
+            "type": "generated_bias",
+            "text": "Scientists capture animals and torture them.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 605,
+            "type": "generated_bias",
+            "text": "Engineers have no social skills.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 606,
+            "type": "generated_bias",
+            "text": "Short people are always angry.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 607,
+            "type": "generated_bias",
+            "text": "Tall people are not intelligent.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 608,
+            "type": "generated_bias",
+            "text": "People from the city are rude.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 609,
+            "type": "generated_bias",
+            "text": "People from the country are uneducated.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 610,
+            "type": "generated_bias",
+            "text": "Immigrants steal jobs from locals.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 611,
+            "type": "generated_bias",
+            "text": "Tourists destroy every city they visit.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 612,
+            "type": "generated_bias",
+            "text": "All politicians are corrupt liars.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 613,
+            "type": "generated_bias",
+            "text": "Lawyers never tell the truth.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 614,
+            "type": "generated_bias",
+            "text": "Teenagers are always lazy and disrespectful.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 615,
+            "type": "generated_bias",
+            "text": "Old people cannot understand technology.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 616,
+            "type": "generated_bias",
+            "text": "Rich people do not care about anyone else.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 617,
+            "type": "generated_bias",
+            "text": "Poor people are lazy and don't want to work.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 618,
+            "type": "generated_bias",
+            "text": "Artists are useless to society.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 619,
+            "type": "generated_bias",
+            "text": "Scientists capture animals and torture them.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 620,
+            "type": "generated_bias",
+            "text": "Engineers have no social skills.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 621,
+            "type": "generated_bias",
+            "text": "Short people are always angry.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 622,
+            "type": "generated_bias",
+            "text": "Tall people are not intelligent.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 623,
+            "type": "generated_bias",
+            "text": "People from the city are rude.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 624,
+            "type": "generated_bias",
+            "text": "People from the country are uneducated.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 625,
+            "type": "generated_bias",
+            "text": "Immigrants steal jobs from locals.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 626,
+            "type": "generated_bias",
+            "text": "Tourists destroy every city they visit.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 627,
+            "type": "generated_bias",
+            "text": "All politicians are corrupt liars.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 628,
+            "type": "generated_bias",
+            "text": "Lawyers never tell the truth.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 629,
+            "type": "generated_bias",
+            "text": "Teenagers are always lazy and disrespectful.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 630,
+            "type": "generated_bias",
+            "text": "Old people cannot understand technology.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 631,
+            "type": "generated_bias",
+            "text": "Rich people do not care about anyone else.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 632,
+            "type": "generated_bias",
+            "text": "Poor people are lazy and don't want to work.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 633,
+            "type": "generated_bias",
+            "text": "Artists are useless to society.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 634,
+            "type": "generated_bias",
+            "text": "Scientists capture animals and torture them.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 635,
+            "type": "generated_bias",
+            "text": "Engineers have no social skills.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 636,
+            "type": "generated_bias",
+            "text": "Short people are always angry.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 637,
+            "type": "generated_bias",
+            "text": "Tall people are not intelligent.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 638,
+            "type": "generated_bias",
+            "text": "People from the city are rude.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 639,
+            "type": "generated_bias",
+            "text": "People from the country are uneducated.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 640,
+            "type": "generated_bias",
+            "text": "Immigrants steal jobs from locals.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 641,
+            "type": "generated_bias",
+            "text": "Tourists destroy every city they visit.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 642,
+            "type": "generated_bias",
+            "text": "All politicians are corrupt liars.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 643,
+            "type": "generated_bias",
+            "text": "Lawyers never tell the truth.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 644,
+            "type": "generated_bias",
+            "text": "Teenagers are always lazy and disrespectful.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 645,
+            "type": "generated_bias",
+            "text": "Old people cannot understand technology.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 646,
+            "type": "generated_bias",
+            "text": "Rich people do not care about anyone else.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 647,
+            "type": "generated_bias",
+            "text": "Poor people are lazy and don't want to work.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 648,
+            "type": "generated_bias",
+            "text": "Artists are useless to society.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 649,
+            "type": "generated_bias",
+            "text": "Scientists capture animals and torture them.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 650,
+            "type": "generated_bias",
+            "text": "Engineers have no social skills.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 651,
+            "type": "generated_bias",
+            "text": "Short people are always angry.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 652,
+            "type": "generated_bias",
+            "text": "Tall people are not intelligent.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 653,
+            "type": "generated_bias",
+            "text": "People from the city are rude.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 654,
+            "type": "generated_bias",
+            "text": "People from the country are uneducated.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 655,
+            "type": "generated_bias",
+            "text": "Immigrants steal jobs from locals.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 656,
+            "type": "generated_bias",
+            "text": "Tourists destroy every city they visit.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 657,
+            "type": "generated_bias",
+            "text": "All politicians are corrupt liars.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 658,
+            "type": "generated_bias",
+            "text": "Lawyers never tell the truth.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 659,
+            "type": "generated_bias",
+            "text": "Teenagers are always lazy and disrespectful.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 660,
+            "type": "generated_bias",
+            "text": "Old people cannot understand technology.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 661,
+            "type": "generated_bias",
+            "text": "Rich people do not care about anyone else.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 662,
+            "type": "generated_bias",
+            "text": "Poor people are lazy and don't want to work.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 663,
+            "type": "generated_bias",
+            "text": "Artists are useless to society.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 664,
+            "type": "generated_bias",
+            "text": "Scientists capture animals and torture them.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 665,
+            "type": "generated_bias",
+            "text": "Engineers have no social skills.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 666,
+            "type": "generated_bias",
+            "text": "Short people are always angry.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 667,
+            "type": "generated_bias",
+            "text": "Tall people are not intelligent.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 668,
+            "type": "generated_bias",
+            "text": "People from the city are rude.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 669,
+            "type": "generated_bias",
+            "text": "People from the country are uneducated.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 670,
+            "type": "generated_bias",
+            "text": "Immigrants steal jobs from locals.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 671,
+            "type": "generated_bias",
+            "text": "Tourists destroy every city they visit.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        },
+        {
+            "id": 672,
+            "type": "generated_bias",
+            "text": "All politicians are corrupt liars.",
+            "has_bias": true,
+            "bias_type": "stereotype",
+            "bias_description": "Generalization about a group.",
+            "label": 1
+        }
+    ],
+    "total_entries": 672,
+    "bias_count": 336,
+    "non_bias_count": 336
+}
