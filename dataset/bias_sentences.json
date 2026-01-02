@@ -1,27 +1,30 @@
 {
     "metadata": {
-        "total_entries": 520,
+        "total_entries": 1000,
         "distribution": {
-            "single_sentence": 260,
-            "double_sentence": 260,
-            "with_bias": 260,
-            "without_bias": 260
+            "single_sentence": 436,
+            "double_sentence": 564,
+            "with_bias": 500,
+            "without_bias": 500
         },
         "breakdown": {
-            "single_with_bias": 125,
-            "single_without_bias": 135,
-            "double_with_bias": 125,
-            "double_without_bias": 125
+            "single_with_bias": 219,
+            "single_without_bias": 217,
+            "double_with_bias": 205,
+            "double_without_bias": 359
         },
         "bias_categories": {
-            "gender": 62,
-            "racial_ethnic": 65,
-            "age": 50,
-            "professional": 50,
-            "socioeconomic": 30,
+            "gender": 97,
+            "racial_ethnic": 100,
+            "age": 78,
+            "professional": 78,
+            "socioeconomic": 53,
             "sexual_orientation": 1,
             "belief": 1,
-            "political": 1
+            "political": 1,
+            "stereotype": 76,
+            "disability": 8,
+            "religion": 7
         }
     },
     "entries": [
@@ -5552,6 +5555,2630 @@
             "bias_type": "stereotype",
             "bias_description": "Generalization about a group.",
             "label": 1
+        },
+        {
+            "id": 673,
+            "type": "single",
+            "text": "Latinos are lazy and don't want to work hard.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist work ethic stereotype"
+        },
+        {
+            "id": 674,
+            "type": "double",
+            "text": "The implementation followed the plan. Objectives were achieved.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 675,
+            "type": "double",
+            "text": "Factory workers are mindless drones.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Industrial work dehumanization"
+        },
+        {
+            "id": 676,
+            "type": "single",
+            "text": "Millennials are killing every industry with their laziness.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Generational scapegoating"
+        },
+        {
+            "id": 677,
+            "type": "double",
+            "text": "Deaf people are less intelligent than hearing people.",
+            "has_bias": true,
+            "bias_type": "disability",
+            "bias_description": "Disability intelligence stereotype"
+        },
+        {
+            "id": 678,
+            "type": "single",
+            "text": "Gen Z can't function without their phones.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Youth technology stereotype"
+        },
+        {
+            "id": 679,
+            "type": "double",
+            "text": "The course covered required material. Learning objectives were met.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 680,
+            "type": "double",
+            "text": "Food stamp users are gaming the system.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Assistance fraud assumption"
+        },
+        {
+            "id": 681,
+            "type": "single",
+            "text": "The welder joined metal components.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 682,
+            "type": "double",
+            "text": "The campaign raised awareness. Public engagement grew.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 683,
+            "type": "double",
+            "text": "People over 40 are past their prime and obsolete.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist career limitation"
+        },
+        {
+            "id": 684,
+            "type": "double",
+            "text": "People in wheelchairs are inspirational just for existing.",
+            "has_bias": true,
+            "bias_type": "disability",
+            "bias_description": "Inspiration porn"
+        },
+        {
+            "id": 685,
+            "type": "double",
+            "text": "Programmers are antisocial basement dwellers.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Tech profession social stereotype"
+        },
+        {
+            "id": 686,
+            "type": "double",
+            "text": "The launch was successful. Initial feedback was positive.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 687,
+            "type": "single",
+            "text": "Young people have no work ethic or discipline.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Youth work stereotype"
+        },
+        {
+            "id": 688,
+            "type": "single",
+            "text": "The psychologist assessed behavioral patterns.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 689,
+            "type": "double",
+            "text": "The curriculum was comprehensive. Topics were well sequenced.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 690,
+            "type": "single",
+            "text": "Boomers ruined the economy for everyone else.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Generational blame"
+        },
+        {
+            "id": 691,
+            "type": "double",
+            "text": "Alpha males always get what they want.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Toxic dominance culture"
+        },
+        {
+            "id": 692,
+            "type": "single",
+            "text": "The dentist examined the patient's teeth.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 693,
+            "type": "single",
+            "text": "Asians can't drive and cause all the accidents.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist driving stereotype"
+        },
+        {
+            "id": 694,
+            "type": "single",
+            "text": "The groundskeeper maintained outdoor areas.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 695,
+            "type": "double",
+            "text": "Italians are all connected to the mafia.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Ethnic criminalization"
+        },
+        {
+            "id": 696,
+            "type": "double",
+            "text": "Blind people can't live independently.",
+            "has_bias": true,
+            "bias_type": "disability",
+            "bias_description": "Disability capability assumption"
+        },
+        {
+            "id": 697,
+            "type": "single",
+            "text": "The investor analyzed market trends.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 698,
+            "type": "single",
+            "text": "Mormons are weird cultists with multiple wives.",
+            "has_bias": true,
+            "bias_type": "religion",
+            "bias_description": "Religious practice stereotype"
+        },
+        {
+            "id": 699,
+            "type": "single",
+            "text": "The engineer solved the technical problem.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 700,
+            "type": "double",
+            "text": "A real woman knows her place is supporting her husband's career.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Enforces traditional gender roles"
+        },
+        {
+            "id": 701,
+            "type": "double",
+            "text": "Retirement age people should make way for the young.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist displacement"
+        },
+        {
+            "id": 702,
+            "type": "double",
+            "text": "The documentation was thorough. Reference information was complete.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 703,
+            "type": "single",
+            "text": "Section 8 housing ruins good neighborhoods.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Assistance-based area degradation"
+        },
+        {
+            "id": 704,
+            "type": "single",
+            "text": "The statistician interpreted data patterns.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 705,
+            "type": "double",
+            "text": "The program served the community. Many people benefited.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 706,
+            "type": "double",
+            "text": "People with ADHD are just lazy and need discipline.",
+            "has_bias": true,
+            "bias_type": "disability",
+            "bias_description": "Neurodivergent behavior judgment"
+        },
+        {
+            "id": 707,
+            "type": "double",
+            "text": "Cashiers are minimum wage workers with no ambition.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Retail devaluation"
+        },
+        {
+            "id": 708,
+            "type": "double",
+            "text": "The tool simplified tasks. Productivity increased.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 709,
+            "type": "single",
+            "text": "The cashier processed transactions accurately.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 710,
+            "type": "single",
+            "text": "The plumber fixed the leak promptly.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 711,
+            "type": "double",
+            "text": "The order was filled accurately. Items matched the description.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 712,
+            "type": "double",
+            "text": "Janitors are failures who couldn't get real jobs.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Occupational devaluation"
+        },
+        {
+            "id": 713,
+            "type": "double",
+            "text": "Asian women are submissive and exotic.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist and sexist fetishization"
+        },
+        {
+            "id": 714,
+            "type": "double",
+            "text": "Anyone over 50 is too old to learn new technology.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist capability assumption"
+        },
+        {
+            "id": 715,
+            "type": "single",
+            "text": "The sculptor shaped materials into art.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 716,
+            "type": "single",
+            "text": "The inspector evaluated building compliance.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 717,
+            "type": "double",
+            "text": "Senior citizens are useless to modern society.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist value judgment"
+        },
+        {
+            "id": 718,
+            "type": "single",
+            "text": "The patent examiner reviewed applications.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 719,
+            "type": "single",
+            "text": "The makeup artist enhanced appearances.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 720,
+            "type": "double",
+            "text": "The seminar explored new concepts. People took detailed notes.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 721,
+            "type": "double",
+            "text": "Muslims want to impose Sharia law everywhere.",
+            "has_bias": true,
+            "bias_type": "religion",
+            "bias_description": "Islamophobic political stereotype"
+        },
+        {
+            "id": 722,
+            "type": "double",
+            "text": "The contract specified obligations. All parties signed willingly.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 723,
+            "type": "single",
+            "text": "Hairstylists are airheaded gossips.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Service profession stereotype"
+        },
+        {
+            "id": 724,
+            "type": "single",
+            "text": "Middle-aged women are invisible and irrelevant.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist and sexist dismissal"
+        },
+        {
+            "id": 725,
+            "type": "double",
+            "text": "The device worked reliably. Maintenance needs were minimal.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 726,
+            "type": "double",
+            "text": "The interface was intuitive. Users adapted quickly.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 727,
+            "type": "double",
+            "text": "Poor people are poor because they're lazy and stupid.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Class-based intelligence attack"
+        },
+        {
+            "id": 728,
+            "type": "double",
+            "text": "The acquisition expanded capabilities. Market position improved.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 729,
+            "type": "double",
+            "text": "The vehicle performed well. Fuel efficiency was good.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 730,
+            "type": "single",
+            "text": "Mexicans are all illegal immigrants stealing jobs.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist immigration assumption"
+        },
+        {
+            "id": 731,
+            "type": "double",
+            "text": "The archive preserved materials. Historical data remained accessible.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 732,
+            "type": "double",
+            "text": "African immigrants bring disease and poverty.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist xenophobia"
+        },
+        {
+            "id": 733,
+            "type": "single",
+            "text": "Tomboys are just girls who wish they were boys.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Gender expression policing"
+        },
+        {
+            "id": 734,
+            "type": "double",
+            "text": "Boys are naturally smarter than girls in science subjects.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes intellectual capacity by gender"
+        },
+        {
+            "id": 735,
+            "type": "single",
+            "text": "The urban planner designed city layouts.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 736,
+            "type": "double",
+            "text": "The fundraiser exceeded goals. The cause received strong support.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 737,
+            "type": "single",
+            "text": "The auditor verified financial accuracy.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 738,
+            "type": "single",
+            "text": "Arabs are oppressive to their women and children.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Islamophobic family stereotype"
+        },
+        {
+            "id": 739,
+            "type": "single",
+            "text": "Single women over 30 are desperate and damaged goods.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stigmatizes unmarried women"
+        },
+        {
+            "id": 740,
+            "type": "double",
+            "text": "The demonstration showed capabilities. Observers were impressed.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 741,
+            "type": "single",
+            "text": "Toddlers are annoying parasites ruining everything.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Age-based child hatred"
+        },
+        {
+            "id": 742,
+            "type": "single",
+            "text": "The personal trainer designed workout routines.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 743,
+            "type": "double",
+            "text": "The investment generated returns. Portfolio value increased.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 744,
+            "type": "double",
+            "text": "The renovation modernized the space. The result was appealing.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 745,
+            "type": "single",
+            "text": "The dancer executed movements gracefully.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 746,
+            "type": "single",
+            "text": "Indians are cheap and always trying to scam people.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist financial stereotype"
+        },
+        {
+            "id": 747,
+            "type": "single",
+            "text": "The technician maintained equipment properly.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 748,
+            "type": "double",
+            "text": "The audit confirmed compliance. No significant problems were found.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 749,
+            "type": "single",
+            "text": "The locksmith installed security systems.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 750,
+            "type": "double",
+            "text": "Rich people are evil and exploit everyone below them.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Wealth-based morality judgment"
+        },
+        {
+            "id": 751,
+            "type": "single",
+            "text": "The esthetician performed skin care services.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 752,
+            "type": "single",
+            "text": "The massage therapist provided therapeutic treatment.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 753,
+            "type": "double",
+            "text": "The repository contained code. Developers contributed regularly.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 754,
+            "type": "single",
+            "text": "The appraiser determined property values.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 755,
+            "type": "double",
+            "text": "People in public housing are criminals and leeches.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Housing-based criminalization"
+        },
+        {
+            "id": 756,
+            "type": "single",
+            "text": "The insurance agent explained policy options.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 757,
+            "type": "single",
+            "text": "Accountants are boring robots with no personality.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Occupational personality stereotype"
+        },
+        {
+            "id": 758,
+            "type": "double",
+            "text": "The merger created synergies. Operations became more efficient.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 759,
+            "type": "single",
+            "text": "Women are too irrational to make important business decisions.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes women as irrational"
+        },
+        {
+            "id": 760,
+            "type": "single",
+            "text": "The administrator managed operations efficiently.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 761,
+            "type": "single",
+            "text": "She's too old to be attractive to anyone anymore.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Ageist and sexist judgment of women"
+        },
+        {
+            "id": 762,
+            "type": "single",
+            "text": "The librarian organized the book collection systematically.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 763,
+            "type": "double",
+            "text": "The database stored records. Retrieval was efficient.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 764,
+            "type": "single",
+            "text": "The conservation officer protected wildlife.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 765,
+            "type": "double",
+            "text": "Career women are cold-hearted and selfish.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Punishes professional women"
+        },
+        {
+            "id": 766,
+            "type": "single",
+            "text": "Jews are cheap and obsessed with money.",
+            "has_bias": true,
+            "bias_type": "religion",
+            "bias_description": "Antisemitic financial stereotype"
+        },
+        {
+            "id": 767,
+            "type": "double",
+            "text": "The repair addressed the damage. Functionality was restored.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 768,
+            "type": "single",
+            "text": "Black men are sexual predators targeting white women.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist sexual stereotype"
+        },
+        {
+            "id": 769,
+            "type": "double",
+            "text": "The deployment went on schedule. Systems operated reliably.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 770,
+            "type": "single",
+            "text": "Realtors are greedy parasites inflating housing prices.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Professional greed stereotype"
+        },
+        {
+            "id": 771,
+            "type": "single",
+            "text": "The sommelier recommended wine pairings.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 772,
+            "type": "double",
+            "text": "Young workers are unreliable job-hoppers.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Youth loyalty stereotype"
+        },
+        {
+            "id": 773,
+            "type": "double",
+            "text": "Telemarketers are scammers ruining people's days.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Occupational vilification"
+        },
+        {
+            "id": 774,
+            "type": "double",
+            "text": "Indigenous people are primitive savages.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist dehumanization"
+        },
+        {
+            "id": 775,
+            "type": "double",
+            "text": "Security guards are wannabe cops who failed the test.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Occupational failure assumption"
+        },
+        {
+            "id": 776,
+            "type": "double",
+            "text": "The directory organized contacts. Information was current.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 777,
+            "type": "double",
+            "text": "The conference was well organized. Attendees learned valuable information.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 778,
+            "type": "single",
+            "text": "Rich kids buy their way through life without earning anything.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Wealth-based achievement dismissal"
+        },
+        {
+            "id": 779,
+            "type": "single",
+            "text": "Men who show emotion are weak and pathetic.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Toxic masculinity enforcement"
+        },
+        {
+            "id": 780,
+            "type": "single",
+            "text": "The illustrator created detailed drawings.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 781,
+            "type": "single",
+            "text": "Elderly drivers are dangerous and should lose licenses.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist capability assumption"
+        },
+        {
+            "id": 782,
+            "type": "single",
+            "text": "Muslims are terrorists who hate Western civilization.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Islamophobic stereotype"
+        },
+        {
+            "id": 783,
+            "type": "double",
+            "text": "Retail workers are too stupid for better careers.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Occupational intelligence stereotype"
+        },
+        {
+            "id": 784,
+            "type": "double",
+            "text": "The exchange was completed fairly. Both parties benefited.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 785,
+            "type": "single",
+            "text": "She's pretty for a woman in tech.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Backhanded compliment"
+        },
+        {
+            "id": 786,
+            "type": "single",
+            "text": "Upper class people are out of touch, privileged snobs.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Wealth-based character attack"
+        },
+        {
+            "id": 787,
+            "type": "single",
+            "text": "Country club members are elitist and look down on everyone.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Wealth-based social stereotype"
+        },
+        {
+            "id": 788,
+            "type": "single",
+            "text": "The teller handled banking transactions.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 789,
+            "type": "single",
+            "text": "The director guided the creative vision.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 790,
+            "type": "single",
+            "text": "The accountant balanced the financial records.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 791,
+            "type": "double",
+            "text": "The partnership proved beneficial. Collaboration was effective.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 792,
+            "type": "single",
+            "text": "Women can't handle high-pressure jobs, they crack under stress.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Questions women's professional capability"
+        },
+        {
+            "id": 793,
+            "type": "single",
+            "text": "Children should be seen and not heard.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Age-based silencing"
+        },
+        {
+            "id": 794,
+            "type": "single",
+            "text": "The court reporter transcribed proceedings.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 795,
+            "type": "double",
+            "text": "The assessment identified strengths. Areas for improvement were noted.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 796,
+            "type": "double",
+            "text": "People from poor neighborhoods are criminals.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Geographic criminalization"
+        },
+        {
+            "id": 797,
+            "type": "double",
+            "text": "The software met requirements. Performance was acceptable.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 798,
+            "type": "double",
+            "text": "The presentation covered key topics. The audience asked thoughtful questions.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 799,
+            "type": "single",
+            "text": "The doctor reviewed the patient's medical history carefully.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 800,
+            "type": "single",
+            "text": "Religious people are brainwashed sheep.",
+            "has_bias": true,
+            "bias_type": "religion",
+            "bias_description": "Faith-based intelligence attack"
+        },
+        {
+            "id": 801,
+            "type": "double",
+            "text": "The inspection revealed minor issues. They were quickly resolved.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 802,
+            "type": "single",
+            "text": "The bailiff maintained courtroom order.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 803,
+            "type": "double",
+            "text": "Twenty-somethings are too immature for serious relationships.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Age-based relationship stereotype"
+        },
+        {
+            "id": 804,
+            "type": "single",
+            "text": "The customer service representative helped clients.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 805,
+            "type": "single",
+            "text": "Bartenders are alcoholics and party animals.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Service industry substance stereotype"
+        },
+        {
+            "id": 806,
+            "type": "double",
+            "text": "Social workers are bleeding hearts who enable laziness.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Professional purpose dismissal"
+        },
+        {
+            "id": 807,
+            "type": "double",
+            "text": "Atheists have no morals or values.",
+            "has_bias": true,
+            "bias_type": "religion",
+            "bias_description": "Religious belief morality assumption"
+        },
+        {
+            "id": 808,
+            "type": "single",
+            "text": "The tour guide shared historical information.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 809,
+            "type": "single",
+            "text": "Black people are naturally violent and belong in prison.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist criminalization"
+        },
+        {
+            "id": 810,
+            "type": "double",
+            "text": "The simulation modeled scenarios. Results informed decisions.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 811,
+            "type": "double",
+            "text": "The service exceeded expectations. Customers were satisfied.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 812,
+            "type": "double",
+            "text": "Middle Easterners can't be trusted on airplanes.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Islamophobic profiling"
+        },
+        {
+            "id": 813,
+            "type": "single",
+            "text": "The musician practiced the piece repeatedly.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 814,
+            "type": "double",
+            "text": "The catalog listed products. Descriptions were accurate.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 815,
+            "type": "single",
+            "text": "The producer coordinated media content.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 816,
+            "type": "single",
+            "text": "Working class people are uneducated and ignorant.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Class-based education stereotype"
+        },
+        {
+            "id": 817,
+            "type": "single",
+            "text": "The pharmacist filled the prescription correctly.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 818,
+            "type": "double",
+            "text": "Baby boomers are selfish and don't care about climate change.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Generational environmental blame"
+        },
+        {
+            "id": 819,
+            "type": "single",
+            "text": "Plumbers charge a fortune for simple work anyone could do.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Trade skill minimization"
+        },
+        {
+            "id": 820,
+            "type": "single",
+            "text": "Secretaries should always be attractive young women.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Objectification in professional context"
+        },
+        {
+            "id": 821,
+            "type": "single",
+            "text": "Librarians are uptight old maids who hate fun.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Occupational personality stereotype"
+        },
+        {
+            "id": 822,
+            "type": "single",
+            "text": "Black kids can't succeed in school without affirmative action.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist academic stereotype"
+        },
+        {
+            "id": 823,
+            "type": "double",
+            "text": "The update improved functionality. Problems were fixed.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 824,
+            "type": "double",
+            "text": "The collection grew steadily. Resources became more comprehensive.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 825,
+            "type": "single",
+            "text": "The poor should just work harder and stop complaining.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Class mobility myth"
+        },
+        {
+            "id": 826,
+            "type": "single",
+            "text": "The astronaut conducted experiments in space.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 827,
+            "type": "double",
+            "text": "Wealthy people never face real problems.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Wealth-based suffering dismissal"
+        },
+        {
+            "id": 828,
+            "type": "single",
+            "text": "The stocker organized inventory systematically.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 829,
+            "type": "single",
+            "text": "Polynesian people are lazy island dwellers.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist work stereotype"
+        },
+        {
+            "id": 830,
+            "type": "double",
+            "text": "Men can't be raped, they always want sex.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Dangerous sexual stereotype"
+        },
+        {
+            "id": 831,
+            "type": "single",
+            "text": "The data analyst interpreted complex information.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 832,
+            "type": "single",
+            "text": "The gardener planted flowers in the spring.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 833,
+            "type": "double",
+            "text": "Garbage collectors are the bottom of society.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Sanitation work dehumanization"
+        },
+        {
+            "id": 834,
+            "type": "double",
+            "text": "The initiative made progress. Milestones were achieved.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 835,
+            "type": "single",
+            "text": "The fashion designer created clothing collections.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 836,
+            "type": "double",
+            "text": "Men can't be trusted around children, they're all potential predators.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes men as dangerous"
+        },
+        {
+            "id": 837,
+            "type": "double",
+            "text": "The evaluation measured performance. Results met expectations.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 838,
+            "type": "double",
+            "text": "The class taught essential skills. Students showed improvement.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 839,
+            "type": "single",
+            "text": "She got promoted by flirting with the boss.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Sexualizes professional success"
+        },
+        {
+            "id": 840,
+            "type": "single",
+            "text": "The soldier completed training exercises.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 841,
+            "type": "double",
+            "text": "The meeting addressed important issues. The team reached consensus.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 842,
+            "type": "double",
+            "text": "Trust fund kids are useless spoiled brats.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Wealth-based competence dismissal"
+        },
+        {
+            "id": 843,
+            "type": "single",
+            "text": "Construction workers are crude, sexist meatheads.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Trade profession character attack"
+        },
+        {
+            "id": 844,
+            "type": "single",
+            "text": "The tool and die maker created molds.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 845,
+            "type": "double",
+            "text": "The experiment tested hypotheses. Data confirmed predictions.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 846,
+            "type": "double",
+            "text": "The release met deadlines. Users reported satisfaction.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 847,
+            "type": "double",
+            "text": "The guide provided clear directions. Navigation was simple.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 848,
+            "type": "double",
+            "text": "Women are gold diggers who just want men's money.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes female motivation"
+        },
+        {
+            "id": 849,
+            "type": "double",
+            "text": "The transaction processed securely. Payment was confirmed.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 850,
+            "type": "single",
+            "text": "Lawyers are soulless liars who defend criminals.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Professional ethics attack"
+        },
+        {
+            "id": 851,
+            "type": "double",
+            "text": "The elderly can't understand modern social issues.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist intellectual limitation"
+        },
+        {
+            "id": 852,
+            "type": "double",
+            "text": "The complex housed residents. Amenities were well maintained.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 853,
+            "type": "double",
+            "text": "Influencers aren't real workers, just narcissists.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "New profession dismissal"
+        },
+        {
+            "id": 854,
+            "type": "single",
+            "text": "The systems administrator maintained networks.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 855,
+            "type": "single",
+            "text": "The chemist analyzed substance properties.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 856,
+            "type": "single",
+            "text": "He's a stay-at-home dad, so he's basically unemployed.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Devalues male caregiving"
+        },
+        {
+            "id": 857,
+            "type": "single",
+            "text": "Buddhists are all peaceful and never violent.",
+            "has_bias": true,
+            "bias_type": "religion",
+            "bias_description": "Religious behavior stereotype"
+        },
+        {
+            "id": 858,
+            "type": "double",
+            "text": "Pacific Islanders are primitive and uneducated.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist intellectual stereotype"
+        },
+        {
+            "id": 859,
+            "type": "double",
+            "text": "The purchase was straightforward. The return policy was clear.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 860,
+            "type": "single",
+            "text": "Real men work with their hands, not behind desks.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Limits male career options"
+        },
+        {
+            "id": 861,
+            "type": "double",
+            "text": "Asians are robotic and lack creativity.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Model minority myth"
+        },
+        {
+            "id": 862,
+            "type": "double",
+            "text": "Christians are all hypocritical bigots.",
+            "has_bias": true,
+            "bias_type": "religion",
+            "bias_description": "Religious group character attack"
+        },
+        {
+            "id": 863,
+            "type": "double",
+            "text": "The elderly are resistant to change and progress.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist conservative stereotype"
+        },
+        {
+            "id": 864,
+            "type": "double",
+            "text": "Hispanics have too many children they can't afford.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist family planning stereotype"
+        },
+        {
+            "id": 865,
+            "type": "single",
+            "text": "The economist studied market behaviors.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 866,
+            "type": "double",
+            "text": "Roma people are thieves and con artists.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist criminalization"
+        },
+        {
+            "id": 867,
+            "type": "double",
+            "text": "The trial assessed effectiveness. Outcomes justified the approach.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 868,
+            "type": "double",
+            "text": "Jews are greedy and will cheat you in business.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Antisemitic financial stereotype"
+        },
+        {
+            "id": 869,
+            "type": "single",
+            "text": "Old people smell bad and are disgusting.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist dehumanization"
+        },
+        {
+            "id": 870,
+            "type": "single",
+            "text": "The student studied diligently for the upcoming exam.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 871,
+            "type": "single",
+            "text": "Black people only succeed in entertainment and sports.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist capability limitation"
+        },
+        {
+            "id": 872,
+            "type": "single",
+            "text": "Male cheerleaders are all gay, obviously.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Homophobic assumption"
+        },
+        {
+            "id": 873,
+            "type": "single",
+            "text": "Young adults don't deserve respect until they're older.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Age-based respect denial"
+        },
+        {
+            "id": 874,
+            "type": "single",
+            "text": "The web developer built functional websites.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 875,
+            "type": "double",
+            "text": "The unemployed are lazy moochers.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Employment status stereotype"
+        },
+        {
+            "id": 876,
+            "type": "single",
+            "text": "Kids today are soft and couldn't survive real hardship.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Youth resilience stereotype"
+        },
+        {
+            "id": 877,
+            "type": "single",
+            "text": "Welfare recipients are parasites draining taxpayer money.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Poverty assistance stigma"
+        },
+        {
+            "id": 878,
+            "type": "double",
+            "text": "The equipment lasted years. Investment proved worthwhile.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 879,
+            "type": "double",
+            "text": "Irish people are violent alcoholics.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Ethnic stereotype"
+        },
+        {
+            "id": 880,
+            "type": "double",
+            "text": "The construction stayed on budget. Work was completed on time.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 881,
+            "type": "single",
+            "text": "Gen X are forgotten because they contributed nothing.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Generational dismissal"
+        },
+        {
+            "id": 882,
+            "type": "double",
+            "text": "Nurses are just doctor assistants with no real expertise.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Medical hierarchy enforcement"
+        },
+        {
+            "id": 883,
+            "type": "single",
+            "text": "The machinist operated precision tools.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 884,
+            "type": "double",
+            "text": "CEOs are sociopaths who exploit workers.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Leadership ethics generalization"
+        },
+        {
+            "id": 885,
+            "type": "double",
+            "text": "Trailer park residents are white trash losers.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Housing-based dehumanization"
+        },
+        {
+            "id": 886,
+            "type": "single",
+            "text": "The painter applied even coats to the walls.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 887,
+            "type": "double",
+            "text": "The maintenance prevented failures. Equipment ran smoothly.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 888,
+            "type": "single",
+            "text": "The risk manager assessed potential threats.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 889,
+            "type": "single",
+            "text": "The roofer repaired leak damage.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 890,
+            "type": "single",
+            "text": "College kids are just partying and wasting money.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Youth education stereotype"
+        },
+        {
+            "id": 891,
+            "type": "double",
+            "text": "Women are naturally better at cleaning and organizing.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes domestic ability"
+        },
+        {
+            "id": 892,
+            "type": "single",
+            "text": "Minimum wage workers don't deserve more, they're replaceable.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Wage-based value judgment"
+        },
+        {
+            "id": 893,
+            "type": "double",
+            "text": "The network connected users. Communication was reliable.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 894,
+            "type": "double",
+            "text": "The lesson engaged learners. Understanding deepened.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 895,
+            "type": "double",
+            "text": "The delivery arrived promptly. Contents were undamaged.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 896,
+            "type": "double",
+            "text": "The handbook outlined policies. Rules were clearly stated.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 897,
+            "type": "single",
+            "text": "Salespeople are manipulative con artists.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Professional integrity attack"
+        },
+        {
+            "id": 898,
+            "type": "single",
+            "text": "The mechanic repaired the vehicle efficiently.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 899,
+            "type": "double",
+            "text": "Truck drivers are all uneducated rednecks.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Occupational intellectual stereotype"
+        },
+        {
+            "id": 900,
+            "type": "double",
+            "text": "The facility served its purpose. Space was utilized effectively.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 901,
+            "type": "double",
+            "text": "The review process was thorough. All aspects were carefully evaluated.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 902,
+            "type": "single",
+            "text": "The conductor led the orchestra professionally.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 903,
+            "type": "double",
+            "text": "The workshop provided hands-on training. Participants gained practical skills.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 904,
+            "type": "double",
+            "text": "The machinery operated consistently. Output quality was maintained.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 905,
+            "type": "double",
+            "text": "The application solved problems. Adoption rates were high.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 906,
+            "type": "single",
+            "text": "Servers are uneducated losers working dead-end jobs.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Service industry devaluation"
+        },
+        {
+            "id": 907,
+            "type": "single",
+            "text": "The composer created original music.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 908,
+            "type": "single",
+            "text": "She dresses like that, she's asking for trouble.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Victim blaming"
+        },
+        {
+            "id": 909,
+            "type": "double",
+            "text": "The tutorial explained procedures. Users could follow easily.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 910,
+            "type": "single",
+            "text": "The archaeologist excavated ancient artifacts.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 911,
+            "type": "double",
+            "text": "People who shop at dollar stores have no standards.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Retail-based class judgment"
+        },
+        {
+            "id": 912,
+            "type": "double",
+            "text": "Millionaires are greedy hoarders ruining society.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Wealth vilification"
+        },
+        {
+            "id": 913,
+            "type": "double",
+            "text": "The study examined variables. Findings were statistically significant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 914,
+            "type": "double",
+            "text": "Women talk too much and never get to the point.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes female communication"
+        },
+        {
+            "id": 915,
+            "type": "double",
+            "text": "The library offered services. Patrons utilized them frequently.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 916,
+            "type": "single",
+            "text": "The clerk processed paperwork thoroughly.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 917,
+            "type": "double",
+            "text": "South Asians smell bad because of their food.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist cultural attack"
+        },
+        {
+            "id": 918,
+            "type": "double",
+            "text": "The negotiation reached agreement. Terms were mutually acceptable.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 919,
+            "type": "single",
+            "text": "Jewish people control all the banks and media.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Antisemitic conspiracy theory"
+        },
+        {
+            "id": 920,
+            "type": "single",
+            "text": "The environmental scientist studied ecosystems.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 921,
+            "type": "single",
+            "text": "Teachers are just babysitters with summers off.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Professional undermining"
+        },
+        {
+            "id": 922,
+            "type": "single",
+            "text": "The realtor showed properties to clients.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 923,
+            "type": "single",
+            "text": "Feminine men are disgusting and unnatural.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Homophobic and gender policing"
+        },
+        {
+            "id": 924,
+            "type": "single",
+            "text": "The process server delivered court papers.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 925,
+            "type": "double",
+            "text": "Black women are loud, ghetto, and aggressive.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist and sexist stereotype"
+        },
+        {
+            "id": 926,
+            "type": "single",
+            "text": "The specialist provided expert advice.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 927,
+            "type": "double",
+            "text": "White people can't handle spicy food.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racial food stereotype"
+        },
+        {
+            "id": 928,
+            "type": "double",
+            "text": "Mixed race people are confused about their identity.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist identity assumption"
+        },
+        {
+            "id": 929,
+            "type": "single",
+            "text": "The security analyst monitored systems.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 930,
+            "type": "double",
+            "text": "Immigrant families on welfare are taking our resources.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Xenophobic poverty stereotype"
+        },
+        {
+            "id": 931,
+            "type": "double",
+            "text": "The upgrade enhanced performance. Processing became faster.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 932,
+            "type": "single",
+            "text": "Grandparents spoil children and undermine parents.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist parenting stereotype"
+        },
+        {
+            "id": 933,
+            "type": "double",
+            "text": "Boys shouldn't play with dolls, it'll make them soft.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Restricts childhood expression"
+        },
+        {
+            "id": 934,
+            "type": "single",
+            "text": "Gay men are just confused women in men's bodies.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Homophobic and transphobic stereotype"
+        },
+        {
+            "id": 935,
+            "type": "double",
+            "text": "Eastern Europeans are all criminals and prostitutes.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Regional stereotype"
+        },
+        {
+            "id": 936,
+            "type": "double",
+            "text": "Housewives are lazy and useless to society.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Devalues domestic labor"
+        },
+        {
+            "id": 937,
+            "type": "double",
+            "text": "The system integrated components. Functionality was seamless.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 938,
+            "type": "double",
+            "text": "Native Americans are all drunks living off government money.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist substance abuse stereotype"
+        },
+        {
+            "id": 939,
+            "type": "single",
+            "text": "Mental illness is just an excuse for bad behavior.",
+            "has_bias": true,
+            "bias_type": "disability",
+            "bias_description": "Mental health dismissal"
+        },
+        {
+            "id": 940,
+            "type": "single",
+            "text": "The chef de cuisine supervised kitchen operations.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 941,
+            "type": "single",
+            "text": "The biologist examined living organisms.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 942,
+            "type": "single",
+            "text": "The hotel manager ensured guest satisfaction.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 943,
+            "type": "double",
+            "text": "Arabs are backwards and oppress women.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Islamophobic generalization"
+        },
+        {
+            "id": 944,
+            "type": "single",
+            "text": "Slavic people are uneducated peasants.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Ethnic intellectual stereotype"
+        },
+        {
+            "id": 945,
+            "type": "double",
+            "text": "The shipment was tracked carefully. Nothing was lost.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 946,
+            "type": "double",
+            "text": "The production maintained quality. Standards were consistently met.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 947,
+            "type": "single",
+            "text": "The animator brought scenes to life.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 948,
+            "type": "single",
+            "text": "Homeless people are drug addicts who chose that life.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Homelessness criminalization"
+        },
+        {
+            "id": 949,
+            "type": "double",
+            "text": "The building met codes. Safety standards were exceeded.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 950,
+            "type": "double",
+            "text": "The performance received applause. Critics praised the execution.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 951,
+            "type": "double",
+            "text": "Old people are senile burdens on healthcare.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist elder stereotype"
+        },
+        {
+            "id": 952,
+            "type": "double",
+            "text": "HR professionals are corporate snitches protecting companies.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Professional loyalty stereotype"
+        },
+        {
+            "id": 953,
+            "type": "single",
+            "text": "Teenagers are all hormonal and irrational.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Youth emotional stereotype"
+        },
+        {
+            "id": 954,
+            "type": "double",
+            "text": "Gypsies are dirty and steal children.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist minority targeting"
+        },
+        {
+            "id": 955,
+            "type": "single",
+            "text": "Mechanics are greasy idiots who overcharge everyone.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Trade profession stereotype"
+        },
+        {
+            "id": 956,
+            "type": "single",
+            "text": "Asians are terrible at sports except for ping pong.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist athletic stereotype"
+        },
+        {
+            "id": 957,
+            "type": "single",
+            "text": "She's too ambitious, no man will want to marry her.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Punishes female ambition"
+        },
+        {
+            "id": 958,
+            "type": "single",
+            "text": "Men never remember anything, wives have to manage everything.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes male incompetence"
+        },
+        {
+            "id": 959,
+            "type": "single",
+            "text": "The claims adjuster evaluated incidents.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 960,
+            "type": "single",
+            "text": "Blue collar workers are too dumb for college.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Class-based intellectual stereotype"
+        },
+        {
+            "id": 961,
+            "type": "single",
+            "text": "The park ranger guided visitors safely.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 962,
+            "type": "double",
+            "text": "The park offered recreation. Families enjoyed visits.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 963,
+            "type": "single",
+            "text": "People who rent are financially irresponsible.",
+            "has_bias": true,
+            "bias_type": "socioeconomic",
+            "bias_description": "Housing status judgment"
+        },
+        {
+            "id": 964,
+            "type": "single",
+            "text": "The coordinator planned the event details.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 965,
+            "type": "double",
+            "text": "The survey gathered feedback. Responses indicated satisfaction.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 966,
+            "type": "single",
+            "text": "The volunteer helped at the community center.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 967,
+            "type": "double",
+            "text": "White people are all racist colonizers.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racial generalization"
+        },
+        {
+            "id": 968,
+            "type": "double",
+            "text": "Men are incapable of multitasking like women can.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Stereotypes cognitive differences"
+        },
+        {
+            "id": 969,
+            "type": "single",
+            "text": "Fast food workers deserve poverty wages for unskilled work.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Wage discrimination justification"
+        },
+        {
+            "id": 970,
+            "type": "single",
+            "text": "The compliance officer ensured regulations were met.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 971,
+            "type": "single",
+            "text": "The therapist listened attentively to concerns.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 972,
+            "type": "single",
+            "text": "Stay-at-home moms contribute nothing of value.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Dismisses motherhood"
+        },
+        {
+            "id": 973,
+            "type": "single",
+            "text": "The pilot completed the safety checklist.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 974,
+            "type": "double",
+            "text": "The investigation collected evidence. Facts supported the conclusion.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 975,
+            "type": "single",
+            "text": "The nutritionist created meal plans.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 976,
+            "type": "single",
+            "text": "She must be on her period to be acting so crazy.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Weaponizes biology against women"
+        },
+        {
+            "id": 977,
+            "type": "double",
+            "text": "The exhibition featured artists. Visitors appreciated the creativity.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 978,
+            "type": "single",
+            "text": "Teenagers are lazy, entitled brats who know nothing.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Youth dismissal"
+        },
+        {
+            "id": 979,
+            "type": "double",
+            "text": "The platform enabled collaboration. Teams worked together effectively.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 980,
+            "type": "double",
+            "text": "Disabled workers are less productive and not worth hiring.",
+            "has_bias": true,
+            "bias_type": "disability",
+            "bias_description": "Disability employment discrimination"
+        },
+        {
+            "id": 981,
+            "type": "single",
+            "text": "The custodian kept the building clean.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 982,
+            "type": "double",
+            "text": "The restoration preserved history. Original features were maintained.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 983,
+            "type": "single",
+            "text": "Disabled people are burdens on their families.",
+            "has_bias": true,
+            "bias_type": "disability",
+            "bias_description": "Disability value judgment"
+        },
+        {
+            "id": 984,
+            "type": "double",
+            "text": "Girls should focus on finding husbands, not careers.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Limits female aspirations"
+        },
+        {
+            "id": 985,
+            "type": "single",
+            "text": "She's too muscular, she looks like a man.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Polices female bodies"
+        },
+        {
+            "id": 986,
+            "type": "single",
+            "text": "The career counselor advised on opportunities.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 987,
+            "type": "double",
+            "text": "The campus provided resources. Students had access to support.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 988,
+            "type": "single",
+            "text": "Female engineers are just diversity hires with no real skills.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Dismisses women's technical competence"
+        },
+        {
+            "id": 989,
+            "type": "single",
+            "text": "People in their 20s are too inexperienced for leadership.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Age-based competence denial"
+        },
+        {
+            "id": 990,
+            "type": "double",
+            "text": "Autistic people lack empathy and can't love.",
+            "has_bias": true,
+            "bias_type": "disability",
+            "bias_description": "Neurodivergent emotional stereotype"
+        },
+        {
+            "id": 991,
+            "type": "double",
+            "text": "Chinese people eat dogs and have no ethics.",
+            "has_bias": true,
+            "bias_type": "racial_ethnic",
+            "bias_description": "Racist cultural attack"
+        },
+        {
+            "id": 992,
+            "type": "double",
+            "text": "Artists are lazy freeloaders avoiding real work.",
+            "has_bias": true,
+            "bias_type": "professional",
+            "bias_description": "Creative profession devaluation"
+        },
+        {
+            "id": 993,
+            "type": "single",
+            "text": "The travel agent arranged itineraries.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 994,
+            "type": "single",
+            "text": "The recruiter interviewed job candidates.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 995,
+            "type": "single",
+            "text": "He cried at a movie, what kind of man does that?",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Polices male emotion"
+        },
+        {
+            "id": 996,
+            "type": "single",
+            "text": "Old people vote against the interests of the young.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Ageist political stereotype"
+        },
+        {
+            "id": 997,
+            "type": "double",
+            "text": "The manual included diagrams. Instructions were easy to understand.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 998,
+            "type": "double",
+            "text": "The index facilitated searching. Topics were easy to locate.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 999,
+            "type": "single",
+            "text": "The consultant provided valuable recommendations.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 1000,
+            "type": "double",
+            "text": "The installation proceeded smoothly. Everything functioned as designed.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
         }
     ],
     "total_entries": 672,
