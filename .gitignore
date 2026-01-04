@@ -2,5 +2,8 @@ inspectus-env/
 .claude/
 __pycache__/
 *.pyc
-*.ipynb
 *.todo
+*.pkl
+
+# Allow specific notebooks
+!attention_app/bias/*.ipynb
