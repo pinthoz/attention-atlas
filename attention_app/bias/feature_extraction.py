@@ -39,6 +39,41 @@ def extract_global_metrics(attentions):
                 
     return features
 
+def extract_global_aggregate_metrics(attentions):
+    """
+    Extract Global Attention Metrics aggregated across ALL heads and layers.
+    Provides a holistic view of the model's attention behavior.
+    
+    Args:
+        attentions: List of tensors (one per layer), each (1, num_heads, seq_len, seq_len)
+    """
+    features = {}
+    
+    # Stack all attention matrices
+    # Shape: (num_layers, num_heads, seq, seq)
+    stacked = torch.stack([att[0] for att in attentions])
+    
+    # Aggregate across layers and heads (mean)
+    # Shape: (seq, seq)
+    global_att_matrix = stacked.mean(dim=(0, 1)).cpu().numpy()
+    
+    # Compute metrics on the aggregated matrix
+    metrics = compute_all_attention_metrics(global_att_matrix)
+    
+    # Add with GAM_global prefix
+    for key, val in metrics.items():
+        features[f"GAM_global_{key}"] = float(val)
+    
+    # Also add layer-wise aggregations (mean across all heads in each layer)
+    for layer_idx, layer_att in enumerate(attentions):
+        layer_mean_att = layer_att[0].mean(dim=0).cpu().numpy()  # (seq, seq)
+        layer_metrics = compute_all_attention_metrics(layer_mean_att)
+        
+        for key, val in layer_metrics.items():
+            features[f"GAM_layer{layer_idx}_{key}"] = float(val)
+    
+    return features
+
 def extract_head_specialization_features(attentions, tokens, text):
     """
     Extract Head Specialization metrics for all heads in all layers.
@@ -174,47 +209,91 @@ def extract_tree_features(attentions, tokens, max_leaves=50):
 
 
 
-def extract_raw_attention_features(attentions, max_seq_len=50):
+def extract_raw_attention_features(attentions):
     """
-    Extract raw attention weights for all heads in all layers.
-    Matrix Size: num_layers * num_heads * max_seq_len * max_seq_len
+    Extract aggregated attention statistics for all heads in all layers.
+    Returns multiple statistics per head: mean, max, min, std.
     
-    WARNING: This produces a massive number of features.
+    Total features: num_layers * num_heads * 4 stats (e.g., 12 * 12 * 4 = 576 for BERT-base)
     """
     features = {}
     
     for layer_idx, layer_att in enumerate(attentions):
-        layer_att = layer_att[0].cpu().numpy() # (num_heads, seq, seq)
+        layer_att = layer_att[0].cpu().numpy()  # (num_heads, seq, seq)
         num_heads = layer_att.shape[0]
-        curr_seq_len = layer_att.shape[1]
         
         for head_idx in range(num_heads):
             att_matrix = layer_att[head_idx]
             
-            # Pad or truncate matrix to fixed size (max_seq_len x max_seq_len)
-            padded_matrix = np.zeros((max_seq_len, max_seq_len))
-            
-            rows = min(curr_seq_len, max_seq_len)
-            cols = min(curr_seq_len, max_seq_len)
-            
-            if rows > 0 and cols > 0:
-                padded_matrix[:rows, :cols] = att_matrix[:rows, :cols]
-            
-            # Flatten
-            flat = padded_matrix.flatten()
-            
-            # Store features (e.g. AttMap_L0_H0_0, AttMap_L0_H0_1...)
-            # To save space and time, we iterate efficiently or just vector assign?
-            # Assigning 2500 individual keys per head (144 heads) = 360k keys is slow in Python dict.
-            # We will try to be efficient with naming or just brute force it as requested.
-            
+            # Extract multiple statistics from attention matrix
             prefix = f"AttMap_L{layer_idx}_H{head_idx}"
-            for i, val in enumerate(flat):
-                # Optimization: Only store non-zero values? 
-                # No, for a feature vector we need dense representation usually, 
-                # or at least consistent keys. "Try all" means try all.
-                features[f"{prefix}_{i}"] = float(val)
+            
+            features[f"{prefix}_mean"] = float(np.mean(att_matrix))
+            features[f"{prefix}_max"] = float(np.max(att_matrix))
+            features[f"{prefix}_min"] = float(np.min(att_matrix))
+            features[f"{prefix}_std"] = float(np.std(att_matrix))
                 
+    return features
+
+def extract_word_attention_statistics(attentions, tokens):
+    """
+    Extract statistics of total attention received by each word.
+    Excludes special tokens ([CLS], [SEP], [PAD], etc).
+    Returns size-independent features.
+    
+    Total attention = sum of all attention weights pointing TO each token
+    across all layers and heads.
+    """
+    features = {}
+    
+    # Stack all attention matrices
+    # Shape: (num_layers, num_heads, seq, seq)
+    stacked = torch.stack([att[0] for att in attentions])
+    
+    # Sum across layers and heads to get total attention matrix
+    # Shape: (seq, seq)
+    total_att_matrix = stacked.sum(dim=(0, 1)).cpu().numpy()
+    
+    # Sum along source dimension to get total attention received by each token
+    # total_att_matrix[i, j] = attention from token i to token j
+    # We want sum over i (total attention TO each token j)
+    word_attentions = total_att_matrix.sum(axis=0)  # Shape: (seq,)
+    
+    # Filter out special tokens
+    # Common special tokens in BERT: [CLS], [SEP], [PAD]
+    special_tokens = {'[CLS]', '[SEP]', '[PAD]', '<s>', '</s>', '<pad>'}
+    
+    # Get attention for real words only
+    filtered_attentions = []
+    for i, token in enumerate(tokens):
+        if token not in special_tokens and i < len(word_attentions):
+            filtered_attentions.append(word_attentions[i])
+    
+    # If no real words (shouldn't happen), return zeros
+    if len(filtered_attentions) == 0:
+        features['word_att_mean'] = 0.0
+        features['word_att_max'] = 0.0
+        features['word_att_min'] = 0.0
+        features['word_att_std'] = 0.0
+        features['word_att_range'] = 0.0
+        features['word_att_q25'] = 0.0
+        features['word_att_q50'] = 0.0
+        features['word_att_q75'] = 0.0
+        return features
+    
+    # Convert to numpy array for statistics
+    word_att_array = np.array(filtered_attentions)
+    
+    # Calculate statistics
+    features['word_att_mean'] = float(np.mean(word_att_array))
+    features['word_att_max'] = float(np.max(word_att_array))
+    features['word_att_min'] = float(np.min(word_att_array))
+    features['word_att_std'] = float(np.std(word_att_array))
+    features['word_att_range'] = float(np.max(word_att_array) - np.min(word_att_array))
+    features['word_att_q25'] = float(np.percentile(word_att_array, 25))
+    features['word_att_q50'] = float(np.percentile(word_att_array, 50))  # median
+    features['word_att_q75'] = float(np.percentile(word_att_array, 75))
+    
     return features
 
 
@@ -237,8 +316,11 @@ def extract_features_for_sentence(text, model_name, model_manager):
     # Container for all features
     all_features = {}
     
-    # 1. Global Metrics (Granular)
+    # 1. Global Metrics (Granular per head)
     all_features.update(extract_global_metrics(attentions))
+    
+    # 1b. Global Metrics (Aggregated across all heads/layers)
+    all_features.update(extract_global_aggregate_metrics(attentions))
     
     # 2. Head Specialization (Granular)
     all_features.update(extract_head_specialization_features(attentions, tokens, text))
@@ -249,8 +331,11 @@ def extract_features_for_sentence(text, model_name, model_manager):
     # 4. Tree features
     all_features.update(extract_tree_features(attentions, tokens))
     
-    # 5. Raw Attention (Attributes requested: "try all")
-    all_features.update(extract_raw_attention_features(attentions, max_seq_len=50))
+    # 5. Raw Attention (Aggregated per head)
+    all_features.update(extract_raw_attention_features(attentions))
+    
+    # 6. Word Attention Statistics (size-independent distribution)
+    all_features.update(extract_word_attention_statistics(attentions, tokens))
     
     return all_features
 
