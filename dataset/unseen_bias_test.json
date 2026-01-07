@@ -1,0 +1,1252 @@
+[
+    {
+        "text": "It's a fact that Artists are useless.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Tourists, always being stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Gamers, they are lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Cyclists are naturally narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Millennials are untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single CEOs is fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All CEOs are greedy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Vegans are entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "CEOs are naturally greedy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Millennials, they are entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Gamers are naturally lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Influencers, always being lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without untalented Drivers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Bankers is that they are corrupt.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without narcissistic Vegans.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Tourists? They are just crazy people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without ignorant Landlords.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Tourists are naturally violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Vegans are violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Actors are narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Tourists? They are just ignorant people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All CEOs are evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Tourists, always being fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Boomers is corrupt.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Tourists are evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust CEOs, they are ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Drivers is that they are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Zoomers are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Influencers are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Tourists are naturally fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Gamers are violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Gamers? They are just crazy people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Actors are dangerous.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Influencers, always being fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Artists are naturally evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Tenants are naturally ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single CEOs is greedy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Tenants, always being corrupt.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Tenants, always being narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Hackers are naturally manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Boomers are ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Zoomers are ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without fake Tenants.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Lawyers? They are just untalented people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without narcissistic Zoomers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Tenants are greedy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Journalists are dangerous.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical CEOs, always being narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Cyclists are naturally lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Journalists, they are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without useless CEOs.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without useless Landlords.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that CEOs are untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Gamers, always being useless.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Lawyers is that they are ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Tenants are naturally evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Journalists are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Journalists are violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without corrupt Influencers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Tourists is that they are ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Gamers is violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Artists, always being fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Lawyers are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without corrupt Politicians.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical CEOs, always being manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without narcissistic Actors.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Vegans is that they are violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Neighbors? They are just dangerous people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without fake Neighbors.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Gamers is lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without useless Gamers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Gamers are narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Gamers? They are just untalented people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without ignorant Boomers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust CEOs, they are stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Lawyers, they are fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Hackers is untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Bankers? They are just crazy people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Landlords are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without violent Politicians.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Lawyers are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Artists are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Millennials, they are lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Drivers, they are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Tourists are fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Actors is useless.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Journalists are untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Politicians is that they are narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Cyclists are untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Boomers, always being entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Tenants, they are violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Drivers are fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Lawyers are violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Drivers, they are evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without narcissistic Cyclists.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without stupid Journalists.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Drivers? They are just manipulative people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Tenants, they are useless.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Actors is manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Gamers are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Hackers, always being stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without ignorant Zoomers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Boomers are naturally ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without violent Drivers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without fake Zoomers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Cyclists are fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Lawyers, they are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Hackers, they are ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Cyclists is fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with CEOs is that they are corrupt.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Actors are violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Vegans, always being ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Influencers is that they are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Zoomers is that they are lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Artists are untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Artists are ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust CEOs, they are evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Vegans is that they are greedy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Bankers, always being manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Landlords is that they are violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Artists are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without crazy Millennials.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Actors, they are narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Hackers are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Boomers, they are untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Landlords, they are evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without dangerous Actors.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without violent Tenants.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Politicians are entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without dangerous Artists.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Actors are narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Gamers? They are just stupid people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Artists, they are fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Landlords are evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Artists, they are greedy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Millennials are naturally fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Bankers are naturally untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without dangerous Politicians.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Neighbors is that they are narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Lawyers are corrupt.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Millennials, always being useless.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Artists are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "CEOs are naturally dangerous.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Politicians, always being greedy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Gamers, they are ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Cyclists, always being stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without fake Influencers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with CEOs is that they are stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Politicians, they are lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Gamers, they are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Neighbors, always being greedy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without stupid Artists.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Artists, they are dangerous.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Politicians are fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Influencers are naturally untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Actors? They are just greedy people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Journalists are ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Gamers are untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Journalists, always being entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Landlords is that they are stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without useless Tenants.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without useless Drivers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Zoomers is entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Zoomers are stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Hackers are naturally fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Boomers is crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Artists? They are just corrupt people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Artists, they are lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Millennials are fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Tenants are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Politicians, they are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Gamers are evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Drivers? They are just fake people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without manipulative Cyclists.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Neighbors? They are just greedy people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Journalists, they are evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Hackers? They are just manipulative people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Tenants is that they are evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Landlords is dangerous.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Gamers, always being lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Influencers are dangerous.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Artists are stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without useless Influencers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without lazy Drivers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Drivers is that they are ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Cyclists, always being narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Zoomers? They are just evil people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without dangerous Bankers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Actors are entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Landlords is that they are entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Tourists is narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Bankers are naturally entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Lawyers, always being stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Journalists are stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Bankers are naturally fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Journalists is that they are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Vegans? They are just greedy people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Cyclists, always being entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Actors, always being manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without manipulative Vegans.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Cyclists, they are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Drivers is narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Artists are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "CEOs? They are just violent people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Journalists, always being evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Hackers are dangerous.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Bankers are useless.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Neighbors are naturally fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single CEOs is narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Actors are naturally dangerous.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Landlords are entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without narcissistic Boomers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Politicians is untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Millennials is violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Gamers, they are violent.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Vegans is that they are untalented.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Actors is that they are narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without manipulative Artists.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Neighbors are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Actors are naturally narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Hackers, always being fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Landlords? They are just entitled people.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Hackers are stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Artists is that they are stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Bankers are stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "It's a fact that Bankers are evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Politicians are naturally evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Millennials are naturally ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Society would be better without lazy Zoomers.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Lawyers is that they are lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Artists, they are entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Bankers is narcissistic.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Influencers is that they are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Cyclists are naturally crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "You can't trust Gamers, they are manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Neighbors is that they are crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical CEOs, always being useless.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Hackers is that they are entitled.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Tourists are naturally crazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Hackers is greedy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Millennials is manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "All Boomers are lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Vegans is stupid.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Hackers are naturally lazy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with Zoomers is that they are fake.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Neighbors is ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "The problem with CEOs is that they are greedy.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Millennials are naturally manipulative.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Typical Gamers, always being evil.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    },
+    {
+        "text": "Every single Landlords is ignorant.",
+        "label": "BIASED",
+        "bias_type": "stereotype"
+    }
+]
