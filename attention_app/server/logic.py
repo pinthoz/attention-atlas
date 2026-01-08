@@ -4,7 +4,7 @@ import traceback
 
 from ..utils import positional_encoding
 from ..models import ModelManager
-from ..head_specialization import compute_all_heads_specialization
+from ..head_specialization import compute_all_heads_specialization, compute_head_clusters
 from ..isa import compute_isa
 
 
@@ -49,8 +49,10 @@ def heavy_compute(text, model_name):
             - tokenizer: Tokenizer instance
             - encoder_model: Encoder model instance
             - mlm_model: MLM model instance
+            - mlm_model: MLM model instance
             - head_specialization: Head specialization metrics
             - isa_data: Inter-sentence attention data
+            - head_clusters: Algorithmic clustering results (t-SNE + K-Means)
     """
     print("DEBUG: Starting heavy_compute")
     if not text:
@@ -84,6 +86,17 @@ def heavy_compute(text, model_name):
         print(f"Warning: Could not compute head specialization: {e}")
         traceback.print_exc()
 
+    # Compute head clusters (t-SNE + KMeans)
+    head_clusters = []
+    if head_specialization:
+        try:
+            print("DEBUG: Computing head clusters")
+            head_clusters = compute_head_clusters(head_specialization)
+            print("DEBUG: Head clusters complete")
+        except Exception as e:
+            print(f"Warning: Could not compute head clusters: {e}")
+            traceback.print_exc()
+
     # Compute ISA
     isa_data = None
     try:
@@ -95,7 +108,7 @@ def heavy_compute(text, model_name):
         traceback.print_exc()
 
     print("DEBUG: heavy_compute finished")
-    return (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model, head_specialization, isa_data)
+    return (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model, head_specialization, isa_data, head_clusters)
 
 
 __all__ = ["tokenize_with_segments", "heavy_compute"]

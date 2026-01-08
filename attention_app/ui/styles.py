@@ -148,7 +148,7 @@ CSS = """
             width: 320px;
             background: var(--sidebar-bg);
             color: var(--sidebar-text);
-            padding: 24px;
+            padding: 20px;
             /* overflow-y: auto; Removed by request */
             box-shadow: 4px 0 24px rgba(0,0,0,0.1);
             z-index: 100;
@@ -158,7 +158,7 @@ CSS = """
             display: flex;
             align-items: center;
             gap: 12px;
-            margin-bottom: 12px;
+            margin-bottom: 8px; /* Reduced from 12px */
         }
 
         .sidebar .app-title img {
@@ -178,14 +178,14 @@ CSS = """
         .sidebar .app-subtitle {
             font-size: 12px;
             color: #94a3b8;
-            margin-bottom: 24px;
+            margin-bottom: 16px; /* Reduced from 24px */
             line-height: 1.4;
-            padding-bottom: 20px;
+            padding-bottom: 16px; /* Reduced from 20px */
             border-bottom: 1px solid rgba(255,255,255,0.1);
         }
 
         .sidebar-section {
-            margin-bottom: 24px;
+            margin-bottom: 16px; /* Reduced from 24px */
         }
 
         .sidebar-label {
@@ -194,8 +194,36 @@ CSS = """
             letter-spacing: 1px;
             color: #9ca3af;
             font-weight: 600;
-            margin-bottom: 8px;
+            margin-bottom: 6px; /* Reduced from 8px */
             display: block;
+        }
+
+        /* Centered Switch for Sidebar */
+        .centered-switch .form-check {
+            padding-left: 0 !important;
+            margin-bottom: 0 !important;
+            min-height: auto;
+            display: flex;
+            justify-content: center;
+        }
+
+        .centered-switch .form-check-input {
+            margin-left: 0 !important;
+            float: none !important;
+            width: 2.2em !important; /* Slightly larger than standard 2em, but smaller than 3em */
+            height: 1.2em !important; /* Proportionate height */
+            background-size: 50% 100%; /* Adjust fill */
+        }
+
+        /* Pink Toggle Switch - Simple color override */
+        .sidebar .form-switch .form-check-input:checked {
+            background-color: #ff5ca9;
+            border-color: #ff5ca9;
+        }
+
+        .sidebar .form-switch .form-check-input:focus {
+            box-shadow: 0 0 0 0.25rem rgba(255, 92, 169, 0.25);
+            border-color: #ff5ca9;
         }
 
         .sidebar p {
@@ -236,6 +264,11 @@ CSS = """
         }
 
         .dashboard-stack > *:last-child {
+            margin-bottom: 0 !important;
+        }
+
+        /* Comparison mode - remove bottom margin from nested cards */
+        #dashboard-container-compare .card {
             margin-bottom: 0 !important;
         }
 
@@ -296,6 +329,50 @@ CSS = """
 
         .dashboard-stack > * {
             margin-bottom: 0 !important; /* Let gap handle it */
+        }
+
+        /* Compare mode: reduce gap for arrow rows */
+        #dashboard-container-compare {
+            gap: 16px !important;
+        }
+
+        /* Ensure content body mimics the flex stack for uniform spacing */
+        #compare-content-body {
+            display: flex;
+            flex-direction: column;
+            gap: 16px !important; /* MATCH PARENT GAP */
+            width: 100%;
+        }
+        
+        #compare-content-body > * {
+            margin-bottom: 0 !important; /* MATCH DASHBOARD STACK BEHAVIOR */
+        }
+        
+        /* Arrows in compare mode should have minimal spacing */
+        #compare-content-body .arrow-row {
+            margin-top: 5px !important;     /* Natural gap (16px) ensures "slight gap" above */
+            margin-bottom: -25px !important; /* Aggressive negative margin tighters space below */
+            padding: 0 !important;
+            z-index: 10;
+            position: relative;
+        }
+
+        /* Compare Mode Borders */
+        /* Target the card directly inside the wrapper or the card itself */
+        .compare-card-a, 
+        .compare-wrapper-a .card,
+        .compare-wrapper-a > .shiny-html-output > .card {
+            border: 2px solid #3b82f6 !important;
+            border-radius: 12px !important;
+            box-shadow: none !important; /* Remove shadow to avoid visual clutter with strong border */
+        }
+
+        .compare-card-b, 
+        .compare-wrapper-b .card,
+        .compare-wrapper-b > .shiny-html-output > .card {
+            border: 2px solid #ff5ca9 !important;
+            border-radius: 12px !important;
+             box-shadow: none !important;
         }
 
         /* Buttons & Inputs */
@@ -1600,6 +1677,17 @@ CSS = """
             pointer-events: all;
         }
 
+        /* Simultaneous Reveal Classes */
+        .content-hidden {
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        .content-visible {
+            opacity: 1;
+            transition: opacity 0.5s ease-in-out;
+        }
+
         .loading-spinner-large {
             width: 48px;
             height: 48px;
@@ -1955,6 +2043,41 @@ CSS = """
             padding: 8px 16px !important;
             transform: scale(1.05);
         }
+        
+        /* Side-by-Side Comparison Styling */
+        .comparison-toggle-container {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        /* Ensure inputs in comparison container are visible */
+        .comparison-toggle-container label {
+            color: #cbd5e1;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+
+        /* Arrow Variants for Comparison Mode */
+        .arrow-blue {
+            color: #3b82f6 !important; /* Force override grey */
+        }
+        .arrow-blue:hover {
+            color: #2563eb !important;
+            transform: scale(1.3);
+        }
+
+        .arrow-pink {
+            color: #ec4899 !important;
+        }
+        .arrow-pink:hover {
+             color: #db2777 !important;
+             transform: scale(1.3);
+        }
+
         """
 
 __all__ = ["CSS"]
