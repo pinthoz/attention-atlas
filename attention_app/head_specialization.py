@@ -4,6 +4,112 @@ from functools import lru_cache
 import spacy
 import subprocess
 import sys
+from sklearn.preprocessing import StandardScaler
+from sklearn.manifold import TSNE
+from sklearn.cluster import KMeans
+from threadpoolctl import threadpool_limits
+
+def _manual_silhouette_score(X, labels):
+    """
+    Compute Silhouette Score manually using NumPy.
+    """
+    n_samples = X.shape[0]
+    unique_labels = np.unique(labels)
+    n_clusters = len(unique_labels)
+    if n_clusters <= 1 or n_clusters >= n_samples:
+        return -1.0
+        
+    silhouette_vals = []
+    for i in range(n_samples):
+        point = X[i]
+        label = labels[i]
+        
+        # a: mean dist to same cluster
+        same_mask = labels == label
+        other_in_cluster = X[same_mask]
+        if len(other_in_cluster) > 1:
+            a = np.mean(np.sqrt(np.sum((other_in_cluster - point)**2, axis=1)))
+        else:
+            a = 0.0
+            
+        # b: mean dist to nearest other cluster
+        b = float('inf')
+        for l in unique_labels:
+            if l == label: continue
+            other_cluster = X[labels == l]
+            if len(other_cluster) == 0: continue
+            dist = np.mean(np.sqrt(np.sum((other_cluster - point)**2, axis=1)))
+            b = min(b, dist)
+            
+        if max(a, b) == 0:
+            s_i = 0
+        else:
+            s_i = (b - a) / max(a, b)
+        silhouette_vals.append(s_i)
+        
+    return np.mean(silhouette_vals)
+
+
+def _manual_pca_kmeans(X, n_clusters=None):
+    """
+    Robust fallback implementation using only NumPy.
+    Supports auto-K selection.
+    """
+    import numpy as np
+    
+    # 1. Standardize
+    X_mean = X.mean(axis=0)
+    X_std = X.std(axis=0)
+    X_std[X_std == 0] = 1 # Avoid division by zero
+    X_scaled = (X - X_mean) / X_std
+    
+    # 2. PCA via SVD
+    # X = U S V^T
+    # Projection = U * S
+    try:
+        U, S, Vt = np.linalg.svd(X_scaled, full_matrices=False)
+        X_2d = U[:, :2] * S[:2]
+    except:
+        X_2d = X_scaled[:, :2] # Fallback to first 2 dims
+        
+    # 3. K-Means (Manual)
+    
+    def run_kmeans_step(data, k):
+        n = data.shape[0]
+        k = min(k, n)
+        indices = np.random.choice(n, k, replace=False)
+        centers = data[indices]
+        labels = np.zeros(n, dtype=int)
+        
+        for _ in range(20):
+            dists = np.linalg.norm(data[:, np.newaxis] - centers, axis=2)
+            new_labels = np.argmin(dists, axis=1)
+            if np.array_equal(labels, new_labels): break
+            labels = new_labels
+            for i in range(k):
+                mask = labels == i
+                if np.any(mask): centers[i] = data[mask].mean(axis=0)
+        return labels
+
+    if n_clusters is not None:
+        best_labels = run_kmeans_step(X_scaled, n_clusters)
+    else:
+        # Auto-detect K
+        best_score = -1.0
+        best_labels = None
+        # Check k=2 to 8
+        for k in range(2, 9):
+            lbls = run_kmeans_step(X_scaled, k)
+            score = _manual_silhouette_score(X_scaled, lbls)
+            if score > best_score:
+                best_score = score
+                best_labels = lbls
+        if best_labels is None:
+             best_labels = run_kmeans_step(X_scaled, 4)
+
+    return X_2d, best_labels
+
+
 
 # Cache for spaCy model to avoid reloading
 _SPACY_NLP = None
@@ -261,4 +367,238 @@ def compute_all_heads_specialization(attentions, tokens, text):
     return all_layers
 
 
-__all__ = ["compute_all_heads_specialization", "get_linguistic_tags"]
+    return all_layers
+
+
+
+def _assign_cluster_names(results):
+    """
+    Analyze cluster centroids and assign descriptive names based on dominant metrics.
+    """
+    if not results: return results
+    
+    import numpy as np
+    
+    # 1. Group by cluster
+    clusters = {}
+    for r in results:
+        c_id = r['cluster']
+        if c_id not in clusters: clusters[c_id] = []
+        clusters[c_id].append(r['metrics'])
+        
+    # 2. Compute Centroids
+    cluster_names = {}
+    
+    # Metric to Label mapping (Priority order)
+    # If score > 0.4 implies significance
+    metric_labels = {
+        "self": "Self-Attention",
+        "punct": "Separator/Punctuation",
+        "cls": "CLS/Global",
+        "syntax": "Syntactic",
+        "position": "Positional/Locality",
+        "semantics": "Semantic",
+        "long_range": "Long-Range"
+    }
+    
+    
+    # helper to get name from dim
+    def get_dim_name(dim, score=0):
+        if dim == "syntax": return "Syntactic"
+        if dim == "position": return "Positional"
+        if dim == "semantics": return "Semantic"
+        if dim == "struct": return "Structural"
+        if dim == "diffuse": return "Diffuse"
+        if dim in ["cls", "sep", "punct"]: return "Token Ops"
+        return metric_labels.get(dim, dim.title())
+
+    # Temporary storage for name candidates
+    # c_id -> (primary_dim, secondary_dim, primary_score, secondary_score)
+    candidates = {}
+
+    for c_id, metrics_list in clusters.items():
+        # Compute average score for each metric dimension
+        dims = metrics_list[0].keys()
+        centroid = {d: np.mean([m[d] for m in metrics_list]) for d in dims}
+        
+        # Sort dimensions by score descending
+        sorted_dims = sorted(centroid.items(), key=lambda x: x[1], reverse=True)
+        
+        p_dim, p_score = sorted_dims[0]
+        s_dim, s_score = sorted_dims[1] if len(sorted_dims) > 1 else (None, 0)
+        
+        candidates[c_id] = {
+            "p_dim": p_dim, "p_score": p_score,
+            "s_dim": s_dim, "s_score": s_score,
+            "centroid": centroid
+        }
+
+    # Resolve collisions
+    # Group clusters by their primary dimension
+    by_primary = {}
+    for c_id, data in candidates.items():
+        p_dim = data["p_dim"]
+        if p_dim not in by_primary: by_primary[p_dim] = []
+        by_primary[p_dim].append(c_id)
+        
+    for p_dim, c_ids in by_primary.items():
+        if len(c_ids) == 1:
+            # Unique primary - simple name
+            c_id = c_ids[0]
+            data = candidates[c_id]
+            if data["p_score"] < 0.25:
+                name = "Diffuse/Noise"
+            else:
+                name = get_dim_name(p_dim) + " Specialists"
+            cluster_names[c_id] = name
+        else:
+            # Collision - use secondary dimension
+            # Sort colliding clusters by their secondary score to differentiate? 
+            # Or just name them by secondary.
+            for c_id in c_ids:
+                data = candidates[c_id]
+                base_name = get_dim_name(p_dim)
+                sec_name = get_dim_name(data["s_dim"])
+                
+                # Check variance - if secondary is also close?
+                if data["p_score"] < 0.25:
+                     name = f"Diffuse ({sec_name})"
+                elif data["s_score"] > 0.6 * data["p_score"]: # Strong secondary
+                     name = f"{base_name} & {sec_name}"
+                else:
+                     name = f"{base_name} ({sec_name})"
+                     
+                cluster_names[c_id] = name
+    
+    # Final cleanup: Check for exact string duplicates again (rare but possible if secondary same)
+    # and append ID if needed
+    name_counts = {}
+    for name in cluster_names.values():
+        name_counts[name] = name_counts.get(name, 0) + 1
+        
+    for c_id in cluster_names:
+        name = cluster_names[c_id]
+        if name_counts[name] > 1:
+             # Append ID to disambiguate
+             cluster_names[c_id] = f"{name} {c_id}"
+
+    # 3. Apply names back to results
+    for r in results:
+        r['cluster_name'] = cluster_names.get(r['cluster'], f"Cluster {r['cluster']}")
+        
+    return results
+
+def compute_head_clusters(head_specialization_data):
+    """
+    Compute t-SNE coordinates and K-Means clusters for attention heads.
+    
+    Args:
+        head_specialization_data: Output from compute_all_heads_specialization
+                                 Dict {layer_idx: {head_idx: metrics_dict}}
+    
+    Returns:
+        List of dicts: [{'layer': l, 'head': h, 'x': x, 'y': y, 'cluster': c, 'metrics': ...}, ...]
+    """
+    if not head_specialization_data:
+        return []
+
+    # 1. Flatten Data
+    heads = []
+    features = []
+    dimensions = ["syntax", "semantics", "cls", "punct", "entities", "long_range", "self"]
+    
+    for l_idx, heads_map in head_specialization_data.items():
+        for h_idx, metrics in heads_map.items():
+            heads.append({'layer': l_idx, 'head': h_idx, 'metrics': metrics})
+            row = [metrics[dim] for dim in dimensions]
+            features.append(row)
+            
+    if not features:
+        return []
+        
+    X = np.array(features)
+    
+    X = np.array(features)
+    
+    
+    
+    X_embedded = None
+    cluster_labels = None
+    
+    # Try Sklearn (Safe Mode) - Re-enabled with method='exact'
+    force_fallback = False
+    
+    try:
+        if force_fallback:
+             raise RuntimeError("Forcing manual fallback")
+
+        with threadpool_limits(limits=1): 
+            # 2. Preprocessing (Standard Scaling)
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            # 3. t-SNE (2D Projection)
+            n_samples = X.shape[0]
+            perplexity = min(30, n_samples - 1) if n_samples > 1 else 1
+            
+            # method='exact' avoids Barnes-Hut (OpenMP source of deadlock)
+            tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity, init='pca', learning_rate='auto', method='exact')
+            X_embedded = tsne.fit_transform(X_scaled)
+
+            # 4. K-Means Clustering (Auto-Detect K)
+            # Use Silhouette Score to find optimal K
+            best_score = -1.0
+            best_k = 4
+            best_labels = None
+            
+            for k in range(2, 9):
+                kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+                lbls = kmeans.fit_predict(X_scaled)
+                # Use sklearn silhouette if available, or manual? 
+                # Since we are in sklearn block, use sklearn impl? 
+                # Actually, let's use the manual one we wrote or just trust K=4?
+                # The user LIKED the auto-K.
+                # Let's keep the manual silhouette logic or implement it here for sklearn.
+                
+                # We can reuse _manual_silhouette_score for consistence even with sklearn labels
+                score = _manual_silhouette_score(X_scaled, lbls)
+                if score > best_score:
+                    best_score = score
+                    best_k = k
+                    best_labels = lbls
+            
+            if best_labels is None: # Should not happen
+                kmeans = KMeans(n_clusters=4, random_state=42, n_init=10)
+                best_labels = kmeans.fit_predict(X_scaled)
+                
+            cluster_labels = best_labels 
+        
+    except Exception as e:
+        print(f"Sklearn clustering failed ({e}), using manual fallback.")
+        try:
+            # Pass n_clusters=None to trigger auto-detection
+            X_embedded, cluster_labels = _manual_pca_kmeans(X, n_clusters=None)
+        except Exception as e2:
+            print(f"Manual clustering failed: {e2}")
+            return []
+
+    # 5. Combine Results
+    results = []
+    if X_embedded is not None and cluster_labels is not None:
+        for i, head_info in enumerate(heads):
+            results.append({
+                'layer': head_info['layer'],
+                'head': head_info['head'],
+                'x': float(X_embedded[i, 0]),
+                'y': float(X_embedded[i, 1]),
+                'cluster': int(cluster_labels[i]),
+                'metrics': head_info['metrics']
+            })
+            
+    # 6. Assign Semantic Names
+    results = _assign_cluster_names(results)
+        
+    return results
+
+
+__all__ = ["compute_all_heads_specialization", "get_linguistic_tags", "compute_head_clusters"]

@@ -27,27 +27,81 @@ attention_analysis_page = ui.page_fluid(
 
         ui.div(
             {"class": "sidebar-section"},
+            # Header
             ui.tags.span("Model Configuration", class_="sidebar-label"),
             
-            ui.tags.span("Model Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 11px; color: #64748b;"),
-            ui.input_select(
-                "model_family",
-                None,
-                choices={"bert": "BERT", "gpt2": "GPT-2"},
-                selected="bert"
+            # Compare Mode Toggle (Inline, styled like section header)
+            ui.div(
+                {"style": "margin-bottom: 12px;"},
+                ui.input_switch("compare_mode", ui.span("Compare Models", style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #cbd5e1; font-weight: 600;"), value=False)
             ),
-            
-            ui.tags.span("Select Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 11px; color: #64748b; margin-top: 8px;"),
-            ui.input_select(
-                "model_name",
-                None,
-                choices={
-                    "bert-base-uncased": "BERT Base (Uncased)",
-                    "bert-large-uncased": "BERT Large (Uncased)",
-                    "bert-base-multilingual-uncased": "BERT Multilingual",
-                },
-                selected="bert-base-uncased"
-            ),
+
+            # Model Configuration Container (Flex Row)
+            ui.div(
+                {"style": "display: flex; gap: 12px; align-items: flex-start;"},
+                
+                # LEFT COLUMN: Model A (Always Visible, Flex Grow)
+                ui.div(
+                    {"style": "flex: 1; min-width: 0; display: flex; flex-direction: column;"},
+                    
+                    # Model A Header (Conditional)
+                    ui.panel_conditional(
+                        "input.compare_mode",
+                        ui.tags.span("Model A", class_="sidebar-label", style="color: #3b82f6; font-size: 10px; font-weight: 700; margin-bottom: 4px; display: block; border-bottom: 1px dashed rgba(59, 130, 246, 0.3); padding-bottom: 2px;")
+                    ),
+
+                    # Inputs A
+                    ui.tags.span("Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b;"),
+                    ui.input_select(
+                        "model_family",
+                        None,
+                        choices={"bert": "BERT", "gpt2": "GPT-2"},
+                        selected="bert",
+                        width="100%"
+                    ),
+                    ui.tags.span("Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: 6px;"),
+                    ui.input_select(
+                        "model_name",
+                        None,
+                        choices={
+                            "bert-base-uncased": "Base (Uncased)", # Shortened label
+                            "bert-large-uncased": "Large (Uncased)", # Shortened label
+                            "bert-base-multilingual-uncased": "Multilingual", # Shortened label
+                        },
+                        selected="bert-base-uncased",
+                        width="100%"
+                    ),
+                ),
+
+                # RIGHT COLUMN: Model B (Conditional)
+                ui.panel_conditional(
+                    "input.compare_mode",
+                    {"style": "flex: 1; min-width: 0; display: flex; flex-direction: column;"}, # Attributes for the panel div
+                    
+                    # Model B Header
+                    ui.tags.span("Model B", class_="sidebar-label", style="color: #ff5ca9; font-size: 10px; font-weight: 700; margin-bottom: 4px; display: block; border-bottom: 1px dashed rgba(255, 92, 169, 0.3); padding-bottom: 2px;"),
+                    
+                    # Inputs B
+                    ui.tags.span("Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b;"),
+                    ui.input_select(
+                        "model_family_B",
+                        None,
+                        choices={"bert": "BERT", "gpt2": "GPT-2"},
+                        selected="gpt2",
+                        width="100%"
+                    ),
+                    ui.tags.span("Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: 6px;"),
+                    ui.input_select(
+                        "model_name_B",
+                        None,
+                        choices={
+                            "gpt2": "GPT-2 Small",
+                        },
+                        selected="gpt2",
+                        width="100%"
+                    ),
+                )
+            )
         ),
 
         ui.div(
@@ -58,7 +112,7 @@ attention_analysis_page = ui.page_fluid(
                 ui.input_action_button("generate_all", "Generate All", class_="btn-primary"),
             ),
         ),
-
+        
         ui.output_ui("visualization_options_container")
     ),
 
@@ -66,14 +120,7 @@ attention_analysis_page = ui.page_fluid(
     ui.div(
         {"class": "content"},
 
-        # Sentence Preview
-        ui.div(
-            {"class": "card"},
-            ui.h4("Sentence Preview"),
-            ui.output_ui("preview_text"),
-        ),
-
-        # Dashboard Content (Synchronized Rendering)
+        # Dashboard Content (handles both static preview and generated content)
         ui.output_ui("dashboard_content")
     ),
 )

@@ -49,12 +49,12 @@ def extract_qkv(layer_block, hidden_states):
     return Q, K, V
 
 
-def arrow(from_section, to_section, direction="horizontal", **kwargs):
+def arrow(from_section, to_section, direction="horizontal", suffix="", **kwargs):
     """
     Uniform arrow component - centered positioning
     direction: "horizontal" | "vertical" | "initial"
     """
-    arrow_id = f"arrow_{from_section.replace(' ', '_').replace('&', '').replace('(', '').replace(')', '')}_{to_section.replace(' ', '_').replace('&', '').replace('(', '').replace(')', '')}"
+    arrow_id = f"arrow_{from_section.replace(' ', '_').replace('&', '').replace('(', '').replace(')', '')}_{to_section.replace(' ', '_').replace('&', '').replace('(', '').replace(')', '')}{suffix}"
 
     # Use the same "↓" glyph for both to ensure identical design (thickness/style)
     # Rotate it -90deg for horizontal to point right
@@ -63,8 +63,12 @@ def arrow(from_section, to_section, direction="horizontal", **kwargs):
     else:
         icon = "↓"
 
+    classes = f"transition-arrow arrow-{direction}"
+    if "extra_class" in kwargs:
+        classes += f" {kwargs.pop('extra_class')}"
+
     attrs = {
-        "class": f"transition-arrow arrow-{direction}",
+        "class": classes,
         "onclick": f"showTransitionModal('{from_section}', '{to_section}')",
         "id": arrow_id,
         "title": f"Click: {from_section} → {to_section}"
@@ -447,7 +451,7 @@ def get_layer_output_view(res, layer_idx):
     )
 
 
-def get_output_probabilities(res, use_mlm, text):
+def get_output_probabilities(res, use_mlm, text, suffix=""):
     if not use_mlm:
         return ui.HTML(
             "<div class='prediction-panel'>"
@@ -493,7 +497,7 @@ def get_output_probabilities(res, use_mlm, text):
             exp_logit = float(torch.exp(logits_tensor[i, idx]))
             sum_exp = float(torch.sum(torch.exp(logits_tensor[i])))
 
-            unique_id = f"mlm-detail-{i}-{rank}"
+            unique_id = f"mlm-detail-{i}-{rank}{suffix}"
 
             pred_rows += f"""
             <div class='mlm-pred-row'>
