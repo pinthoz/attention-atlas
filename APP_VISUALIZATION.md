@@ -581,6 +581,21 @@ flowchart LR
   - Shows Top-5 most likely tokens per position
 - **When Disabled**: Informational message
 
+### Section 9: Compare Models (Side-by-Side)
+
+**Purpose**: Directly compare the internal representations of two different models (e.g., BERT-base vs BERT-large, or BERT vs GPT-2) for the same input.
+
+#### Dual-Column Layout
+- **Model A (Left)**: Primary model, indicated by **Blue** accents and arrows (`.arrow-blue`).
+- **Model B (Right)**: Secondary model, indicated by **Pink** accents and arrows (`.arrow-pink`).
+- **Synchronization**: Scrolling is synchronized to keep corresponding sections aligned.
+
+#### Comparative Features
+- **Visual Differences**: Spot differences in attention patterns, embedding clusters, and projection heatmaps instantly.
+- **Metric Comparison**: Compare quantitative attention metrics side-by-side.
+- **Head Specialization**: see how two models specialize their heads differently for the same text.
+- **ISA**: Compare how different models handle cross-sentence dependencies.
+
 #### Expandable Formulas
 - **Feature**: Click on any probability
 - **Display**: Softmax calculation breakdown

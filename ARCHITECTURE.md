@@ -334,6 +334,46 @@ Attention Atlas analyzes what linguistic and structural patterns each attention 
 - **Radar Chart (All Heads)**: Shows all 12 heads overlaid for pattern comparison
 - **Radar Chart (Single Head)**: Detailed view of one head's specialization profile
 
+#### Algorithmic Head Clustering
+
+Attention Atlas implements an automated pipeline to group attention heads into behaviorally distinct clusters, enabling high-level architectural interpretation.
+
+```mermaid
+flowchart TD
+    Input[Head Metrics<br/>12×7 Matrix] --> Scale[Standard Scaler]
+    
+    Scale --> TSNE[t-SNE Dimensionality Reduction<br/>(2D Projection)]
+    
+    subgraph Clustering [Adaptive Clustering]
+        Scale --> KMeans[K-Means Algorithm]
+        KMeans --> Silhouette[Calculate Silhouette Score]
+        Silhouette -- Iterate K=2..8 --> BestK[Select Optimal K]
+        BestK --> Labels[Cluster Labels]
+    end
+    
+    Labels --> Naming[Semantic Naming<br/>Feature Dominance Analysis]
+    Naming --> Final[Final Clusters<br/>e.g. 'Syntactic Specialists']
+    
+    TSNE --> Visual[2D Scatter Plot]
+    Final --> Visual
+    
+    style Clustering fill:#fff4e6
+    style Naming fill:#e6f7ff
+```
+
+**Implementation Details**:
+1.  **Feature Vector**: Each head is represented by a 7D vector of its behavioral metrics (Syntax, Semantics, etc.).
+2.  **Dimensionality Reduction**: 
+    - Uses **t-SNE** (`sklearn.manifold.TSNE`) with `method='exact'` to ensure stability on Windows systems (avoiding OpenMP deadlocks).
+    - Projects the 7D feature space into 2D for intuitive visualization.
+3.  **Optimal Clustering**:
+    - Iteratively tests $K$ values from 2 to 8.
+    - Selects the $K$ that maximizes the **Silhouette Score**, ensuring high cohesion and separation.
+4.  **Semantic Naming**:
+    - Analyzes the centroid of each cluster.
+    - Assigns descriptive names (e.g., "Long-Range Heads", "Analysis Focus") based on the dominant metric(s).
+    - Resolves collisions using secondary features or numeric suffixes.
+
 #### Feed Forward Network
 
 **Architecture**:
