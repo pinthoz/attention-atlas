@@ -577,35 +577,7 @@ def server(input, output, session):
             ),
 
             # Row 5: ISA
-            ui.div(
-                {"class": "card"},
-                ui.h4("Inter-Sentence Attention (ISA)"),
-                ui.layout_columns(
-                    ui.div(
-                        {"style": "height: 500px; max-height: 60vh; width: 100%; display: flex; justify-content: center; align-items: center;"},
-                        ui.output_ui("isa_scatter")
-                    ),
-                    ui.div(
-                        ui.output_ui("isa_detail_info"),
-                        ui.div(ui.output_ui("isa_token_view")),
-                    ),
-                    col_widths=[6, 6],
-                ),
-                ui.div(
-                    {"class": "isa-explanation-block"},
-                    ui.tags.p(
-                        ui.tags.strong("Inter-Sentence Attention (ISA):", style="color: #ff5ca9;"), 
-                        " visualizes the relationship between two sentences, focusing on how the tokens in Sentence X attend to the tokens in Sentence Y. The ", 
-                        ui.tags.strong("ISA score"), 
-                        " quantifies this relationship, with higher values indicating a stronger connection between the tokens in Sentence X and Sentence Y.",
-                        ui.br(), ui.br(),
-                        "In the ", 
-                        ui.tags.strong("Token-to-Token Attention", style="color: #ff5ca9;"), 
-                        " plot, each square represents the attention strength between a token from Sentence X (left) and a token from Sentence Y (top). Thicker squares indicate stronger attention, meaning those tokens are more related in terms of the model's attention mechanism.",
-                        style = "margin: 0; font-size: 11px; color: #64748b; line-height: 1.6;"
-                    )
-                )
-            ),
+            ui.output_ui("isa_row_dynamic"),
 
             # Row 6: Unembedding & Predictions
             ui.layout_columns(
@@ -1114,7 +1086,7 @@ def server(input, output, session):
                 
                 
                 # Row 6: Inter-Sentence Attention (full width)
-                ui.output_ui(f"isa_scatter{suffix}"),
+                ui.output_ui("isa_row_dynamic") if suffix == "" else ui.output_ui(f"isa_scatter{suffix}"),
                 
                 
                 # Row 7: Residual Connections
@@ -1377,7 +1349,7 @@ def server(input, output, session):
                     paired_with_card("Sentence Preview", ui.output_ui("preview_text"), ui.output_ui("preview_text_B")),
                     ui.div(
                         {"style": "padding: 40px; text-align: center; color: #9ca3af;"},
-                        ui.p("Generating comparison data...", style="font-size: 14px; animation: pulse 1.5s infinite;")
+                        ui.p("Generate comparison data...", style="font-size: 14px; animation: pulse 1.5s infinite;")
                     )
                  )
 
@@ -1464,8 +1436,8 @@ def server(input, output, session):
             )
 
     # This function replaces the previous @output @render.ui def influence_tree():
-    def get_isa_scatter_view(res, suffix="", vertical_layout=False):
-        print(f"DEBUG: get_isa_scatter_view called for {suffix} with vertical_layout={vertical_layout}")
+    def get_isa_scatter_view(res, suffix="", vertical_layout=False, plot_only=False):
+        print(f"DEBUG: get_isa_scatter_view called for {suffix} with vertical_layout={vertical_layout} plot_only={plot_only}")
         if not res:
             return None
 
@@ -1633,6 +1605,9 @@ def server(input, output, session):
 
         col_layout = [12, 12] if vertical_layout else [6, 6]
 
+        if plot_only:
+            return ui.HTML(plot_html + js)
+
         return ui.div(
             {"class": "card"},
             ui.div(
@@ -1667,7 +1642,7 @@ def server(input, output, session):
     @render.ui
     def isa_scatter_renderer():
         res = cached_result.get()
-        return get_isa_scatter_view(res, suffix="")
+        return get_isa_scatter_view(res, suffix="", plot_only=True)
 
     @output(id="isa_scatter_A_compare")
     @render.ui
@@ -1687,6 +1662,68 @@ def server(input, output, session):
         res = cached_result_B.get()
         return get_isa_scatter_view(res, suffix="_B", vertical_layout=True)
 
+
+    @output
+    @render.ui
+    def isa_row_dynamic():
+        """
+        Dynamic ISA Layout for Single Mode.
+        - Initial: Centered Scatter Plot (No details).
+        - After Click: Split View (Scatter Left | Details Right).
+        """
+        pair = isa_selected_pair()
+        res = cached_result.get()
+        if not res:
+             return None
+
+        # Determine mode based on selection
+        is_selected = pair is not None
+        
+        if not is_selected:
+            # CENTERED MODE (Initial)
+            return ui.div(
+                {"class": "card", "style": "transition: all 0.5s ease;"},
+                ui.h4("Inter-Sentence Attention (ISA)"),
+                ui.div(
+                    {"style": "display: flex; justify-content: center; align-items: center; min-height: 500px; width: 100%;"},
+                    ui.output_ui("isa_scatter") 
+                ),
+                ui.HTML('''
+                    <div class="isa-explanation" style="background: white; margin-top: 20px; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; max-width: 800px; margin-left: auto; margin-right: auto;">
+                        <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.6; text-align: center;">
+                            <strong style="color: #ff5ca9;">Inter-Sentence Attention (ISA):</strong> Visualizes the relationship between two sentences.
+                            <span style="color: #94a3b8;">Click a dot to see token-level details.</span>
+                        </p>
+                    </div>
+                ''')
+            )
+        else:
+            # SPLIT MODE (After Selection)
+            return ui.div(
+                {"class": "card", "style": "transition: all 0.5s ease;"}, 
+                ui.h4("Inter-Sentence Attention (ISA)"),
+                 ui.layout_columns(
+                    ui.div(
+                        {"style": "height: 500px; max-height: 60vh; width: 100%; display: flex; justify-content: center; align-items: flex-start; padding-top: 20px;"},
+                        ui.output_ui("isa_scatter")
+                    ),
+                    ui.div(
+                        {"style": "display: flex; flex-direction: column; justify-content: flex-start; align-items: center; height: 500px; padding-top: 20px;"},
+                        ui.output_ui("isa_detail_info"),
+                        ui.div(ui.output_ui("isa_token_view"), style="margin-top: -15px;"),
+                    ),
+                    col_widths=[6, 6],
+                ),
+                ui.HTML('''
+                    <div class="isa-explanation" style="background: white; margin-top: 10px; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.6;">
+                            <strong style="color: #ff5ca9;">Inter-Sentence Attention (ISA):</strong> Visualizes the relationship between two sentences, focusing on how tokens in Sentence X attend to tokens in Sentence Y.
+                            <span style="color: #94a3b8;">Higher ISA scores = stronger connection. Click dots to see token-level details.</span>
+                        </p>
+                    </div>
+                ''')
+            )
+
     # @output(id="isa_scatter")
     # @render.ui
     def _legacy_isa_scatter_renderer():
@@ -1694,7 +1731,7 @@ def server(input, output, session):
         if not res:
             return None
 
-        isa_data = res[-1]
+        isa_data = res[-2]
 
         if not isa_data or "sentence_attention_matrix" not in isa_data or "sentence_texts" not in isa_data:
              return ui.div(
@@ -1862,9 +1899,12 @@ def server(input, output, session):
                     ui.HTML(plot_html + js)
                 ),
                 ui.div(
-                    {"style": "display: flex; flex-direction: column; justify-content: flex-start; height: 100%;"},
-                    ui.div(ui.output_ui("isa_detail_info"), style="flex: 0 0 auto; margin-bottom: 10px;"),
-                    ui.div(ui.output_ui("isa_token_view"), style="flex: 1; display: flex; flex-direction: column;"),
+                    {"style": "display: flex; flex-direction: column; justify-content: center; height: 500px; padding-left: 20px;"},
+                    ui.div(
+                        {"style": "display: flex; flex-direction: column; align-items: center; width: 100%;"}, # Wrapper for visual grouping
+                        ui.div(ui.output_ui("isa_detail_info"), style="margin-bottom: 5px; text-align: center;"),
+                        ui.div(ui.output_ui("isa_token_view"), style="width: 100%; display: flex; justify-content: center;"),
+                    )
                 ),
                 col_widths=[6, 6],
             ),
@@ -1886,7 +1926,7 @@ def server(input, output, session):
 
         target_idx, source_idx = pair
         tokens, _, _, attentions, *_ = res
-        isa_data = res[-1]
+        isa_data = res[-2]
         boundaries = isa_data["sentence_boundaries_ids"]
 
         sub_att, tokens_combined, src_start = get_sentence_token_attention(
@@ -1945,7 +1985,8 @@ def server(input, output, session):
                 gridcolor="#f1f5f9",
                 autorange="reversed" 
             ),
-            height=350,
+            height=420,
+            width=440,
             autosize=True,
             margin=dict(l=60, r=40, t=60, b=40),
             plot_bgcolor="rgba(0,0,0,0)",
@@ -1964,8 +2005,8 @@ def server(input, output, session):
         tx, sy = pair
         res = cached_result.get()
         score = 0.0
-        if res and res[-1]:
-            score = res[-1]["sentence_attention_matrix"][tx, sy]
+        if res and res[-2]:
+            score = res[-2]["sentence_attention_matrix"][tx, sy]
         return ui.HTML(f"Sentence {tx} (target) ← Sentence {sy} (source) · ISA: <strong>{score:.4f}</strong>")
 
     @output(id="isa_token_view_B")
@@ -1983,7 +2024,7 @@ def server(input, output, session):
 
         target_idx, source_idx = pair
         tokens, _, _, attentions, *_ = res
-        isa_data = res[-1]
+        isa_data = res[-2]
         boundaries = isa_data["sentence_boundaries_ids"]
 
         sub_att, tokens_combined, src_start = get_sentence_token_attention(
@@ -2042,7 +2083,8 @@ def server(input, output, session):
                 gridcolor="#f1f5f9",
                 autorange="reversed" 
             ),
-            height=350,
+            height=420,
+            width=440,
             autosize=True,
             margin=dict(l=60, r=40, t=60, b=40),
             plot_bgcolor="rgba(0,0,0,0)",
@@ -2060,8 +2102,8 @@ def server(input, output, session):
         tx, sy = pair
         res = cached_result_B.get()
         score = 0.0
-        if res and res[-1]:
-            score = res[-1]["sentence_attention_matrix"][tx, sy]
+        if res and res[-2]:
+            score = res[-2]["sentence_attention_matrix"][tx, sy]
         return ui.HTML(f"Sentence {tx} (target) ← Sentence {sy} (source) · ISA: <strong>{score:.4f}</strong>")
 
 

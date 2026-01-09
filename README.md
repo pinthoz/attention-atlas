@@ -64,6 +64,12 @@ The application computes 7 behavioral metrics to understand what linguistic and 
 6. **Long-range Attention**: Average attention weight for token pairs separated by 5+ positions
 7. **Self-attention**: Average of diagonal attention weights (tokens attending to themselves)
 
+**Algorithmic Head Clustering**:
+- **t-SNE**: Non-linear dimensionality reduction to visualize head relationships in 2D space (using `method='exact'` for stability)
+- **K-Means Clustering**: Automatic grouping of heads into 2-8 clusters (optimal K auto-selected via Silhouette Score)
+- **Semantic Naming**: Dynamic cluster names based on dominant linguistic features (e.g., "Syntactic Specialists", "Long-Range Heads")
+- **Visualization**: Interactive 2D scatter plot showing distinct behavioral "islands" of attention heads
+
 **Visualization Modes**:
 - **All Heads**: Radar chart displaying all 12 heads in a selected layer simultaneously
 - **Single Head**: Focused radar chart for one specific head with detailed metric breakdown
@@ -138,7 +144,8 @@ The application will automatically open in your browser at `http://localhost:800
    - Multi-Head Attention (select layer and head)
    - Click on tokens to focus their attentions
    - Navigate through FFN and residual connections
-4. Enable **Use MLM head for predictions** to see real token probabilities
+4. **Compare Models**: Switch to "Compare Models" mode to analyze two architectures side-by-side (Model A vs Model B) with synchronized scrolling and distinct visual indicators (Blue vs Pink).
+5. Enable **Use MLM head for predictions** to see real token probabilities
 
 ## Project Structure
 
