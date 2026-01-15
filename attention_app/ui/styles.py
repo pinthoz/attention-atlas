@@ -1154,6 +1154,107 @@ CSS = """
             margin-bottom: 8px;
         }
 
+        /* Visualization Info & Semantic Documentation */
+        .viz-header-with-info {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 0;
+        }
+
+        .viz-header-with-info h4 {
+            margin: 0 !important;
+        }
+
+        .info-tooltip-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: transparent;
+            border: 1px dashed #94a3b8;
+            color: #64748b;
+            font-size: 10px;
+            font-weight: 600;
+            cursor: help;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+
+        .info-tooltip-icon:hover {
+            background: #ff5ca9;
+            border-color: #ff5ca9;
+            border-style: solid;
+            color: white;
+        }
+
+        /* Tooltip container */
+        .info-tooltip-wrapper {
+            position: relative;
+            display: inline-flex;
+        }
+
+        .info-tooltip-content {
+            visibility: hidden;
+            opacity: 0;
+            position: fixed;
+            z-index: 999999;
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            color: #f1f5f9;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 11px;
+            line-height: 1.6;
+            width: 280px;
+            max-width: 320px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            pointer-events: none;
+        }
+
+        .info-tooltip-wrapper:hover .info-tooltip-content {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .info-tooltip-content strong {
+            color: #ff5ca9;
+            display: block;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .info-tooltip-content code {
+            background: rgba(255,255,255,0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+        }
+
+        /* Visualization description - with subtle border */
+        .viz-description {
+            font-size: 11px;
+            color: #6b7280;
+            line-height: 1.5;
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+        }
+
+        /* Limitation/warning note - inline style */
+        .viz-limitation {
+            font-size: 10px;
+            color: #92400e;
+            font-style: italic;
+            margin-top: 0;
+            margin-bottom: 0;
+        }
 
         /* Q/K/V Projections - Vertical layout */
         .qkv-container {

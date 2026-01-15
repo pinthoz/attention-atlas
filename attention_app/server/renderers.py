@@ -466,16 +466,52 @@ def get_output_probabilities(res, use_mlm, text, suffix=""):
             "</div>"
         )
 
-    _, _, _, _, _, inputs, tokenizer, _, mlm_model, *_ = res
+    _, _, _, _, _, inputs, tokenizer, encoder_model, mlm_model, *_ = res
     device = ModelManager.get_device()
 
-    # We need to re-tokenize to be sure, but we can reuse inputs if they match
-    # For safety, let's just use the inputs we have
-
+    is_gpt2 = not hasattr(encoder_model, "encoder")
+    
     with torch.no_grad():
-        mlm_outputs = mlm_model(**inputs)
-        probs = torch.softmax(mlm_outputs.logits, dim=-1)[0]
-    logits_tensor = mlm_outputs.logits[0]
+        if is_gpt2:
+            # GPT-2: Standard Causal Prediction (Next Token)
+            mlm_outputs = mlm_model(**inputs)
+            probs = torch.softmax(mlm_outputs.logits, dim=-1)[0]
+            logits_tensor = mlm_outputs.logits[0]
+        else:
+            # BERT: Iterative Masking (Pseudo-Likelihood)
+            # We create a batch where each token is masked individually
+            input_ids = inputs["input_ids"][0]
+            seq_len = len(input_ids)
+            mask_token_id = tokenizer.mask_token_id
+            
+            # Create a batch of (seq_len, seq_len)
+            # Be careful with max sequence length - BERT usually handles up to 512
+            # but batching 512x512 might be memory intensive on small GPUs.
+            # Assuming typical shiny usage (short sentences < 50 tokens), this is fine.
+            # For longer, we should chunk, but let's implement basic version first.
+            
+            batch_input_ids = input_ids.repeat(seq_len, 1)
+            batch_input_ids.fill_diagonal_(mask_token_id)
+            
+            # Repeat other inputs if present
+            attention_mask = inputs["attention_mask"].repeat(seq_len, 1) if "attention_mask" in inputs else None
+            token_type_ids = inputs["token_type_ids"].repeat(seq_len, 1) if "token_type_ids" in inputs else None
+            
+            batch_inputs = {"input_ids": batch_input_ids}
+            if attention_mask is not None: batch_inputs["attention_mask"] = attention_mask
+            if token_type_ids is not None: batch_inputs["token_type_ids"] = token_type_ids
+            
+            # Run inference on the batch
+            outputs = mlm_model(**batch_inputs)
+            # outputs.logits shape: (seq_len, seq_len, vocab_size)
+            full_logits = outputs.logits
+            
+            # We want the prediction for the MASKED position at each row
+            # Row i has mask at index i. We want logits[i, i, :]
+            diagonal_logits = full_logits[torch.arange(seq_len), torch.arange(seq_len), :]
+            
+            probs = torch.softmax(diagonal_logits, dim=-1)
+            logits_tensor = diagonal_logits
 
     mlm_tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
     cards = ""
@@ -485,6 +521,21 @@ def get_output_probabilities(res, use_mlm, text, suffix=""):
         # Clean token header
         tok = tok.replace("##", "").replace("Ġ", "")
         if not tok: tok = "&nbsp;"
+        
+        # Calculate context string for display (PLL)
+        context_html = ""
+        if not is_gpt2:
+            try:
+                masked_copy = list(mlm_tokens)
+                masked_copy[i] = "[MASK]"
+                if hasattr(tokenizer, "convert_tokens_to_string"):
+                    context_str = tokenizer.convert_tokens_to_string(masked_copy)
+                else:
+                    context_str = " ".join(masked_copy).replace(" ##", "").replace(" Ġ", "")
+                context_html = f"<div class='mlm-context' style='margin-bottom:8px;font-size:11px;color:#475569;background:#f1f5f9;padding:4px;border-radius:4px;border:1px solid #e2e8f0;'>Context: <b>{context_str}</b></div>"
+            except:
+                context_html = ""
+
         token_probs = probs[i]
         top_vals, top_idx = torch.topk(token_probs, top_k)
 
@@ -530,9 +581,21 @@ def get_output_probabilities(res, use_mlm, text, suffix=""):
             </div>
             """
 
+        # Header context expansion logic
+        header_id = f"mlm-header-{i}{suffix}"
+        header_class = "mlm-token-header clickable" if context_html else "mlm-token-header"
+        onclick_attr = f"onclick=\"toggleMlmDetails('{header_id}')\"" if context_html else ""
+        header_title = "Click to see masked context" if context_html else ""
+        
         cards += f"""
         <div class='mlm-card'>
-            <div class='mlm-token-header'>{tok}</div>
+            <div class='{header_class}' {onclick_attr} title='{header_title}'>
+                {tok}
+                {'<span style="font-size:10px;opacity:0.6;margin-left:4px;">▼</span>' if context_html else ''}
+            </div>
+            <div id='{header_id}' class='mlm-details-panel' style='margin-bottom:8px;'>
+                {context_html}
+            </div>
             <div style='display:flex;flex-direction:column;gap:4px;'>
                 {pred_rows}
             </div>

@@ -15,7 +15,7 @@ from shinywidgets import render_plotly, output_widget, render_widget
 from .logic import tokenize_with_segments, heavy_compute
 from .renderers import *
 from .bias_handlers import bias_server_handlers
-from .bias_handlers import bias_server_handlers
+from ..ui.components import viz_header
 
 # Additional imports needed for server function
 from ..models import ModelManager
@@ -84,7 +84,6 @@ def server(input, output, session):
                 "gpt2-medium": "GPT-2 Medium",
                 "gpt2-large": "GPT-2 Large",
                 "openai-community/gpt2-xl": "GPT-2 XL",
-                "EleutherAI/gpt-neo-125M": "GPT-Neo 125M",
             }
             selected = "gpt2"
             
@@ -105,6 +104,8 @@ def server(input, output, session):
             choices = {
                 "gpt2": "GPT-2 Small",
                 "gpt2-medium": "GPT-2 Medium",
+                "gpt2-large": "GPT-2 Large",
+                "openai-community/gpt2-xl": "GPT-2 XL",
             }
             selected = "gpt2"
             
@@ -804,18 +805,24 @@ def server(input, output, session):
         except:
             model_family = "bert"
             
+        try: text = input.text_input()
+        except: text = ""
+
         if model_family == "gpt2":
             use_mlm = True
+            title = "Next Token Predictions (Causal)"
+            desc = "Predicting the probability of the next token appearing after the sequence."
         else:
             try: use_mlm = input.use_mlm()
             except: use_mlm = False
             
-        try: text = input.text_input()
-        except: text = ""
+            title = "Masked Token Predictions (MLM)"
+            desc = "Pseudo-Likelihood: Each token is individually masked and predicted using the bidirectional context."
+
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
-            ui.h4("Next Token Predictions"),
-            ui.p("Probabilities for the next token (Softmax output).", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.h4(title),
+            ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
             get_output_probabilities(res, use_mlm, text)
         )
 
@@ -1611,19 +1618,26 @@ def server(input, output, session):
         return ui.div(
             {"class": "card"},
             ui.div(
-                {"style": "display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"},
+                {"class": "viz-header-with-info", "style": "margin-bottom: 8px;"},
                 ui.h4(
                     "Inter-Sentence Attention (ISA)", 
-                    style="margin: 0; cursor: pointer; border-bottom: 1px dashed #cbd5e1; display: inline-block;",
-                    onclick=f"showISACalcExplanation('{model_type}')",
-                    title="Click to see how this is calculated"
+                    style="margin: 0;"
                 ),
-                 ui.div(
-                    {"class": "info-icon-circle", "onclick": f"showISACalcExplanation('{model_type}')", "title": "Click for explanation"},
-                    ui.HTML('<svg viewBox="0 0 24 24" fill="currentColor" style="width: 14px; height: 14px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"></path></svg>')
+                ui.div(
+                    {"class": "info-tooltip-wrapper"},
+                    ui.span({
+                        "class": "info-tooltip-icon", 
+                        "onclick": f"showISACalcExplanation('{model_type}')",
+                        "style": "cursor: pointer;"
+                    }, "i"),
+                    ui.div(
+                        {"class": "info-tooltip-content"},
+                        ui.tags.strong("How is this calculated?"),
+                        "ISA score = maximum attention weight between any token pair across sentences, aggregated across all heads and layers. Higher scores indicate stronger cross-sentence attention patterns."
+                    )
                 )
             ),
-            ui.p("Visualizes the relationship between two sentences, focusing on how the tokens in Sentence X attend to the tokens in Sentence Y. The ISA score quantifies this relationship, with higher values indicating a stronger connection between the tokens in Sentence X and Sentence Y.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.div({"class": "viz-description"}, "Visualizes attention strength between sentence pairs. Click any point to see token-level attention details. ⚠️ Higher ISA scores indicate stronger cross-sentence attention, not necessarily semantic similarity."),
             ui.layout_columns(
                 ui.div(
                     {"style": "width: 100%; display: flex; justify-content: center; align-items: center; margin-bottom: 20px;" if vertical_layout else "height: 500px; width: 100%; display: flex; justify-content: center; align-items: center;"},
@@ -1642,7 +1656,7 @@ def server(input, output, session):
     @render.ui
     def isa_scatter_renderer():
         res = cached_result.get()
-        return get_isa_scatter_view(res, suffix="", plot_only=True)
+        return get_isa_scatter_view(res, suffix="", plot_only=False)
 
     @output(id="isa_scatter_A_compare")
     @render.ui
@@ -1668,61 +1682,9 @@ def server(input, output, session):
     def isa_row_dynamic():
         """
         Dynamic ISA Layout for Single Mode.
-        - Initial: Centered Scatter Plot (No details).
-        - After Click: Split View (Scatter Left | Details Right).
+        Now simplified to just render the main isa_scatter, which handles its own Card/Layout/Description.
         """
-        pair = isa_selected_pair()
-        res = cached_result.get()
-        if not res:
-             return None
-
-        # Determine mode based on selection
-        is_selected = pair is not None
-        
-        if not is_selected:
-            # CENTERED MODE (Initial)
-            return ui.div(
-                {"class": "card", "style": "transition: all 0.5s ease;"},
-                ui.h4("Inter-Sentence Attention (ISA)"),
-                ui.div(
-                    {"style": "display: flex; justify-content: center; align-items: center; min-height: 500px; width: 100%;"},
-                    ui.output_ui("isa_scatter") 
-                ),
-                ui.HTML('''
-                    <div class="isa-explanation" style="background: white; margin-top: 20px; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; max-width: 800px; margin-left: auto; margin-right: auto;">
-                        <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.6; text-align: center;">
-                            <strong style="color: #ff5ca9;">Inter-Sentence Attention (ISA):</strong> Visualizes the relationship between two sentences.
-                            <span style="color: #94a3b8;">Click a dot to see token-level details.</span>
-                        </p>
-                    </div>
-                ''')
-            )
-        else:
-            # SPLIT MODE (After Selection)
-            return ui.div(
-                {"class": "card", "style": "transition: all 0.5s ease;"}, 
-                ui.h4("Inter-Sentence Attention (ISA)"),
-                 ui.layout_columns(
-                    ui.div(
-                        {"style": "height: 500px; max-height: 60vh; width: 100%; display: flex; justify-content: center; align-items: flex-start; padding-top: 20px;"},
-                        ui.output_ui("isa_scatter")
-                    ),
-                    ui.div(
-                        {"style": "display: flex; flex-direction: column; justify-content: flex-start; align-items: center; height: 500px; padding-top: 20px;"},
-                        ui.output_ui("isa_detail_info"),
-                        ui.div(ui.output_ui("isa_token_view"), style="margin-top: -15px;"),
-                    ),
-                    col_widths=[6, 6],
-                ),
-                ui.HTML('''
-                    <div class="isa-explanation" style="background: white; margin-top: 10px; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
-                        <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.6;">
-                            <strong style="color: #ff5ca9;">Inter-Sentence Attention (ISA):</strong> Visualizes the relationship between two sentences, focusing on how tokens in Sentence X attend to tokens in Sentence Y.
-                            <span style="color: #94a3b8;">Higher ISA scores = stronger connection. Click dots to see token-level details.</span>
-                        </p>
-                    </div>
-                ''')
-            )
+        return ui.output_ui("isa_scatter")
 
     # @output(id="isa_scatter")
     # @render.ui
@@ -2252,7 +2214,21 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             ui.div(
                 {"class": "header-with-selectors"},
-                ui.h4("Multi-Head Attention"),
+                ui.div(
+                    {"class": "viz-header-with-info"},
+                    ui.h4("Multi-Head Attention"),
+                    ui.div(
+                        {"class": "info-tooltip-wrapper"},
+                        ui.span({"class": "info-tooltip-icon"}, "i"),
+                        ui.div(
+                            {"class": "info-tooltip-content"},
+                            ui.tags.strong("How is this calculated?"),
+                            "Attention weights are computed as: ",
+                            ui.tags.code("Softmax(Q·Kᵀ / √d_k)"),
+                            ". Each cell shows the attention probability from query token (row) to key token (column)."
+                        )
+                    )
+                ),
                 ui.div(
                     {"class": "selection-boxes-container"},
                     ui.div(
@@ -2265,7 +2241,7 @@ def server(input, output, session):
                     )
                 )
             ),
-            ui.p("Visualizes attention weights.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.div({"class": "viz-description"}, "Displays how much each token attends to every other token. Brighter cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence."),
             ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_map_plot"))
         )
 
@@ -2377,7 +2353,19 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             ui.div(
                 {"class": "header-with-selectors"},
-                ui.h4("Attention Flow"),
+                ui.div(
+                    {"class": "viz-header-with-info"},
+                    ui.h4("Attention Flow"),
+                    ui.div(
+                        {"class": "info-tooltip-wrapper"},
+                        ui.span({"class": "info-tooltip-icon"}, "i"),
+                        ui.div(
+                            {"class": "info-tooltip-content"},
+                            ui.tags.strong("How is this calculated?"),
+                            "Lines connect tokens based on attention weights. Line thickness = attention weight magnitude. Only weights above threshold (0.04) are displayed."
+                        )
+                    )
+                ),
                 ui.div(
                     {"class": "selection-boxes-container"},
                     ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
@@ -2390,7 +2378,7 @@ def server(input, output, session):
                     )
                 )
             ),
-            ui.p("Traces how information flows from one token to another through attention layers.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.div({"class": "viz-description"}, "Traces attention weight patterns between tokens. Thicker lines indicate stronger attention. ⚠️ This shows weight distribution, not actual information flow through the network."),
             ui.div(
                 {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_flow_plot"))
@@ -2534,7 +2522,19 @@ def server(input, output, session):
                 {"class": "header-controls-stacked"},
                  ui.div(
                     {"class": "header-row-top"},
-                     ui.h4("Head Specialization"),
+                    ui.div(
+                        {"class": "viz-header-with-info"},
+                        ui.h4("Head Specialization"),
+                        ui.div(
+                            {"class": "info-tooltip-wrapper"},
+                            ui.span({"class": "info-tooltip-icon"}, "i"),
+                            ui.div(
+                                {"class": "info-tooltip-content"},
+                                ui.tags.strong("How is this calculated?"),
+                                "Heuristic scores based on attention pattern analysis. Syntax = attention to adjacent tokens. Semantics = attention to related content words. Scores are normalized to [0,1] range."
+                            )
+                        )
+                    ),
                      ui.div(
                         {"class": "header-right"},
                         ui.div({"class": "select-compact"}, ui.input_select("radar_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(head_idx))),
@@ -2542,15 +2542,15 @@ def server(input, output, session):
                     )
                 ),
                 ui.div(
-                    {"class": "header-row-bottom", "style": "display: flex; flex-direction: column; gap: 8px; margin-top: 4px;"},
-                    ui.p("Analyzes the linguistic roles (perform by each attention head).", style="font-size:11px; color:#6b7280; margin: 0; width: 100%;")
+                    {"class": "header-row-bottom", "style": "margin-top: 4px;"},
+                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Analyzes attention patterns to identify potential linguistic roles of each head. Each dimension represents a heuristic score for different attention behaviors. ⚠️ Labels like 'Syntax' and 'Semantics' are approximations based on attention patterns, not verified functional roles.")
                 )
              ),
              ui.div(
                  {"style": "display: flex; flex-direction: column; align-items: center; margin-top: 12px; margin-bottom: 12px; gap: 6px;"},
-                 ui.tags.span("ATTENTION MODE", style="font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase;"),
+                 ui.tags.span("VISUALIZATION MODE", style="font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase;"),
                  ui.div(
-                     {"class": "radio-group-compact"}, # You might need to define this or rely on default styling
+                     {"class": "radio-group-compact"},
                      ui.input_radio_buttons("radar_mode", None, {"single": "Single Head", "all": "All Heads", "cluster": "Global Clusters"}, selected=mode, inline=True)
                  )
              ),
@@ -2890,20 +2890,9 @@ def server(input, output, session):
         except Exception as e:
             return ui.HTML(f"<p style='font-size:11px;color:#ef4444;'>Error generating tree: {str(e)}</p>")
         
-        # Explanation text - minimalist and after tree
-        explanation = """
-        <div class="tree-explanation" style="background: white; margin-top: 10px; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
-            <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.6;">
-                <strong>Attention Dependency Tree:</strong> Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2).
-                <span style="color: #94a3b8;">Click nodes to collapse/expand. Thicker edges = stronger influence.</span>
-            </p>
-        </div>
-        """
-        
         html = f"""
     <div class="influence-tree-wrapper" style="height: 100%; display: flex; flex-direction: column; position: relative;">
         <div id="tree-viz-container{suffix}" class="tree-viz-container" style="height: 600px; width: 100%; overflow-x: auto; overflow-y: hidden; text-align: center; display: block;"></div>
-        {explanation}
     </div>
         <script>
                 (function() {{
@@ -2954,7 +2943,19 @@ def server(input, output, session):
                 {"class": "header-controls-stacked"},
                 ui.div(
                     {"class": "header-row-top"},
-                    ui.h4("Attention Dependency Tree"),
+                    ui.div(
+                        {"class": "viz-header-with-info"},
+                        ui.h4("Attention Dependency Tree"),
+                        ui.div(
+                            {"class": "info-tooltip-wrapper"},
+                            ui.span({"class": "info-tooltip-icon"}, "i"),
+                            ui.div(
+                                {"class": "info-tooltip-content"},
+                                ui.tags.strong("How is this calculated?"),
+                                "Starting from the root token, edges are drawn to tokens with the highest attention weights. The tree grows recursively by selecting top-k attended tokens at each level."
+                            )
+                        )
+                    ),
                     ui.div(
                         {"class": "header-right"},
                         ui.tags.span("Root:", style="font-size:11px; font-weight:600; color:#64748b; margin-right: 4px;"),
@@ -2965,8 +2966,8 @@ def server(input, output, session):
                     )
                 ),
                 ui.div(
-                    {"class": "header-row-bottom", "style": "display: flex; flex-direction: column; gap: 8px; margin-top: 4px;"},
-                    ui.p("Visualizes attention flow as a dependency tree starting from a root token.", style="font-size:11px; color:#6b7280; margin: 0; width: 100%;")
+                    {"class": "header-row-bottom", "style": "margin-top: 4px;"},
+                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
                 )
             ),
             get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="")
@@ -3183,10 +3184,19 @@ def server(input, output, session):
         try: text = input.text_input()
         except: text = ""
         
+        is_bert = model_family == "bert"
+        
+        if is_bert:
+            title = "Masked Token Predictions (MLM)"
+            desc = "Pseudo-Likelihood: Each token is individually masked and predicted using the bidirectional context."
+        else:
+            title = "Next Token Predictions (Causal)"
+            desc = "Predicting the probability of the next token appearing after the sequence."
+
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
-            ui.h4("Next Token Predictions"),
-            ui.p("Probabilities for the next token (Softmax output).", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.h4(title),
+            ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
             get_output_probabilities(res, use_mlm, text, suffix="_B")
         )
 
