@@ -37,4 +37,53 @@ except Exception:
     ICON_DATA_URL = ""
 
 
-__all__ = ["mini_select", "ICON_DATA_URL"]
+def viz_header(title, definition, tooltip_text, limitation=None):
+    """Create a visualization header with semantic documentation.
+    
+    This provides clear explanations of what visualizations show and don't show,
+    helping users correctly interpret attention-based visualizations.
+    
+    Args:
+        title: Visualization title (string)
+        definition: Brief "This shows X, not Y" explanation
+        tooltip_text: Technical calculation explanation for hover
+        limitation: Optional 1-line limitation note
+    
+    Returns:
+        A Shiny UI div containing the header, info icon, definition, and limitation
+    """
+    info_icon = ui.div(
+        {"class": "info-tooltip-wrapper"},
+        ui.span({"class": "info-tooltip-icon"}, "ⓘ"),
+        ui.div(
+            {"class": "info-tooltip-content"},
+            ui.tags.strong("How is this calculated?"),
+            tooltip_text
+        )
+    )
+    
+    header_row = ui.div(
+        {"class": "viz-header-with-info"},
+        ui.h4(title),
+        info_icon
+    )
+    
+    definition_box = ui.div(
+        {"class": "viz-definition"},
+        definition
+    )
+    
+    elements = [header_row, definition_box]
+    
+    if limitation:
+        limitation_box = ui.div(
+            {"class": "viz-limitation"},
+            limitation
+        )
+        elements.append(limitation_box)
+    
+    return ui.div(*elements)
+
+
+__all__ = ["mini_select", "ICON_DATA_URL", "viz_header"]
+
