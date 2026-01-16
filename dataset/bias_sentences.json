@@ -1,9 +1,9 @@
 {
     "metadata": {
-        "total_entries": 5000,
+        "total_entries": 5150,
         "distribution": {
-            "with_bias": 2500,
-            "without_bias": 2500,
+            "with_bias": 2575,
+            "without_bias": 2575,
             "balance": "50/50"
         },
         "bias_categories": {
@@ -17,7 +17,8 @@
             "racial_ethnic": 314,
             "gender": 343,
             "sexual_orientation": 191,
-            "age": 247
+            "age": 247,
+            "national_origin": 75
         },
         "notes": [
             "Fixed false positives with extensive neutral examples",
@@ -26,7 +27,8 @@
             "Added 100 technical material descriptions",
             "Added 200 neutral 'that person' descriptions",
             "Added 200 strong bias negations (we can't say...)",
-            "Total: 5000 balanced sentences"
+            "Total: 5000 balanced sentences",
+            "Augmented with 50/50 biased/neutral nationality sentences."
         ]
     },
     "entries": [
@@ -40203,6 +40205,1206 @@
             "has_bias": true,
             "bias_type": "racial_ethnic",
             "bias_description": "Immigration health myth"
+        },
+        {
+            "id": 5001,
+            "type": "generated_nationality_bias",
+            "text": "All Russians are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Russians"
+        },
+        {
+            "id": 5002,
+            "type": "generated_nationality_bias",
+            "text": "Every Russian is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Russians"
+        },
+        {
+            "id": 5003,
+            "type": "generated_nationality_bias",
+            "text": "Russian people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Russians"
+        },
+        {
+            "id": 5004,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Russians are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Russians"
+        },
+        {
+            "id": 5005,
+            "type": "generated_nationality_bias",
+            "text": "No Russian can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Russians"
+        },
+        {
+            "id": 5006,
+            "type": "generated_nationality_neutral",
+            "text": "The Russian delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5007,
+            "type": "generated_nationality_neutral",
+            "text": "She has a Russian friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5008,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a Russian restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5009,
+            "type": "generated_nationality_neutral",
+            "text": "The Russian culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5010,
+            "type": "generated_nationality_neutral",
+            "text": "Many Russians live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5011,
+            "type": "generated_nationality_bias",
+            "text": "All Italians are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Italians"
+        },
+        {
+            "id": 5012,
+            "type": "generated_nationality_bias",
+            "text": "Every Italian is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Italians"
+        },
+        {
+            "id": 5013,
+            "type": "generated_nationality_bias",
+            "text": "Italian people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Italians"
+        },
+        {
+            "id": 5014,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Italians are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Italians"
+        },
+        {
+            "id": 5015,
+            "type": "generated_nationality_bias",
+            "text": "No Italian can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Italians"
+        },
+        {
+            "id": 5016,
+            "type": "generated_nationality_neutral",
+            "text": "The Italian delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5017,
+            "type": "generated_nationality_neutral",
+            "text": "She has a Italian friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5018,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a Italian restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5019,
+            "type": "generated_nationality_neutral",
+            "text": "The Italian culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5020,
+            "type": "generated_nationality_neutral",
+            "text": "Many Italians live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5021,
+            "type": "generated_nationality_bias",
+            "text": "All Germans are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Germans"
+        },
+        {
+            "id": 5022,
+            "type": "generated_nationality_bias",
+            "text": "Every German is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Germans"
+        },
+        {
+            "id": 5023,
+            "type": "generated_nationality_bias",
+            "text": "German people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Germans"
+        },
+        {
+            "id": 5024,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Germans are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Germans"
+        },
+        {
+            "id": 5025,
+            "type": "generated_nationality_bias",
+            "text": "No German can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Germans"
+        },
+        {
+            "id": 5026,
+            "type": "generated_nationality_neutral",
+            "text": "The German delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5027,
+            "type": "generated_nationality_neutral",
+            "text": "She has a German friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5028,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a German restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5029,
+            "type": "generated_nationality_neutral",
+            "text": "The German culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5030,
+            "type": "generated_nationality_neutral",
+            "text": "Many Germans live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5031,
+            "type": "generated_nationality_bias",
+            "text": "All Frenchs are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Frenchs"
+        },
+        {
+            "id": 5032,
+            "type": "generated_nationality_bias",
+            "text": "Every French is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Frenchs"
+        },
+        {
+            "id": 5033,
+            "type": "generated_nationality_bias",
+            "text": "French people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Frenchs"
+        },
+        {
+            "id": 5034,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Frenchs are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Frenchs"
+        },
+        {
+            "id": 5035,
+            "type": "generated_nationality_bias",
+            "text": "No French can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Frenchs"
+        },
+        {
+            "id": 5036,
+            "type": "generated_nationality_neutral",
+            "text": "The French delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5037,
+            "type": "generated_nationality_neutral",
+            "text": "She has a French friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5038,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a French restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5039,
+            "type": "generated_nationality_neutral",
+            "text": "The French culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5040,
+            "type": "generated_nationality_neutral",
+            "text": "Many Frenchs live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5041,
+            "type": "generated_nationality_bias",
+            "text": "All Americans are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Americans"
+        },
+        {
+            "id": 5042,
+            "type": "generated_nationality_bias",
+            "text": "Every American is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Americans"
+        },
+        {
+            "id": 5043,
+            "type": "generated_nationality_bias",
+            "text": "American people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Americans"
+        },
+        {
+            "id": 5044,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Americans are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Americans"
+        },
+        {
+            "id": 5045,
+            "type": "generated_nationality_bias",
+            "text": "No American can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Americans"
+        },
+        {
+            "id": 5046,
+            "type": "generated_nationality_neutral",
+            "text": "The American delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5047,
+            "type": "generated_nationality_neutral",
+            "text": "She has a American friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5048,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a American restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5049,
+            "type": "generated_nationality_neutral",
+            "text": "The American culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5050,
+            "type": "generated_nationality_neutral",
+            "text": "Many Americans live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5051,
+            "type": "generated_nationality_bias",
+            "text": "All Britishs are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Britishs"
+        },
+        {
+            "id": 5052,
+            "type": "generated_nationality_bias",
+            "text": "Every British is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Britishs"
+        },
+        {
+            "id": 5053,
+            "type": "generated_nationality_bias",
+            "text": "British people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Britishs"
+        },
+        {
+            "id": 5054,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Britishs are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Britishs"
+        },
+        {
+            "id": 5055,
+            "type": "generated_nationality_bias",
+            "text": "No British can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Britishs"
+        },
+        {
+            "id": 5056,
+            "type": "generated_nationality_neutral",
+            "text": "The British delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5057,
+            "type": "generated_nationality_neutral",
+            "text": "She has a British friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5058,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a British restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5059,
+            "type": "generated_nationality_neutral",
+            "text": "The British culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5060,
+            "type": "generated_nationality_neutral",
+            "text": "Many Britishs live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5061,
+            "type": "generated_nationality_bias",
+            "text": "All Chineses are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Chineses"
+        },
+        {
+            "id": 5062,
+            "type": "generated_nationality_bias",
+            "text": "Every Chinese is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Chineses"
+        },
+        {
+            "id": 5063,
+            "type": "generated_nationality_bias",
+            "text": "Chinese people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Chineses"
+        },
+        {
+            "id": 5064,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Chineses are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Chineses"
+        },
+        {
+            "id": 5065,
+            "type": "generated_nationality_bias",
+            "text": "No Chinese can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Chineses"
+        },
+        {
+            "id": 5066,
+            "type": "generated_nationality_neutral",
+            "text": "The Chinese delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5067,
+            "type": "generated_nationality_neutral",
+            "text": "She has a Chinese friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5068,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a Chinese restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5069,
+            "type": "generated_nationality_neutral",
+            "text": "The Chinese culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5070,
+            "type": "generated_nationality_neutral",
+            "text": "Many Chineses live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5071,
+            "type": "generated_nationality_bias",
+            "text": "All Japaneses are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Japaneses"
+        },
+        {
+            "id": 5072,
+            "type": "generated_nationality_bias",
+            "text": "Every Japanese is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Japaneses"
+        },
+        {
+            "id": 5073,
+            "type": "generated_nationality_bias",
+            "text": "Japanese people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Japaneses"
+        },
+        {
+            "id": 5074,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Japaneses are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Japaneses"
+        },
+        {
+            "id": 5075,
+            "type": "generated_nationality_bias",
+            "text": "No Japanese can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Japaneses"
+        },
+        {
+            "id": 5076,
+            "type": "generated_nationality_neutral",
+            "text": "The Japanese delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5077,
+            "type": "generated_nationality_neutral",
+            "text": "She has a Japanese friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5078,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a Japanese restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5079,
+            "type": "generated_nationality_neutral",
+            "text": "The Japanese culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5080,
+            "type": "generated_nationality_neutral",
+            "text": "Many Japaneses live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5081,
+            "type": "generated_nationality_bias",
+            "text": "All Brazilians are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Brazilians"
+        },
+        {
+            "id": 5082,
+            "type": "generated_nationality_bias",
+            "text": "Every Brazilian is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Brazilians"
+        },
+        {
+            "id": 5083,
+            "type": "generated_nationality_bias",
+            "text": "Brazilian people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Brazilians"
+        },
+        {
+            "id": 5084,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Brazilians are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Brazilians"
+        },
+        {
+            "id": 5085,
+            "type": "generated_nationality_bias",
+            "text": "No Brazilian can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Brazilians"
+        },
+        {
+            "id": 5086,
+            "type": "generated_nationality_neutral",
+            "text": "The Brazilian delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5087,
+            "type": "generated_nationality_neutral",
+            "text": "She has a Brazilian friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5088,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a Brazilian restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5089,
+            "type": "generated_nationality_neutral",
+            "text": "The Brazilian culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5090,
+            "type": "generated_nationality_neutral",
+            "text": "Many Brazilians live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5091,
+            "type": "generated_nationality_bias",
+            "text": "All Indians are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Indians"
+        },
+        {
+            "id": 5092,
+            "type": "generated_nationality_bias",
+            "text": "Every Indian is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Indians"
+        },
+        {
+            "id": 5093,
+            "type": "generated_nationality_bias",
+            "text": "Indian people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Indians"
+        },
+        {
+            "id": 5094,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Indians are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Indians"
+        },
+        {
+            "id": 5095,
+            "type": "generated_nationality_bias",
+            "text": "No Indian can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Indians"
+        },
+        {
+            "id": 5096,
+            "type": "generated_nationality_neutral",
+            "text": "The Indian delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5097,
+            "type": "generated_nationality_neutral",
+            "text": "She has a Indian friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5098,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a Indian restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5099,
+            "type": "generated_nationality_neutral",
+            "text": "The Indian culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5100,
+            "type": "generated_nationality_neutral",
+            "text": "Many Indians live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5101,
+            "type": "generated_nationality_bias",
+            "text": "All Mexicans are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Mexicans"
+        },
+        {
+            "id": 5102,
+            "type": "generated_nationality_bias",
+            "text": "Every Mexican is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Mexicans"
+        },
+        {
+            "id": 5103,
+            "type": "generated_nationality_bias",
+            "text": "Mexican people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Mexicans"
+        },
+        {
+            "id": 5104,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Mexicans are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Mexicans"
+        },
+        {
+            "id": 5105,
+            "type": "generated_nationality_bias",
+            "text": "No Mexican can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Mexicans"
+        },
+        {
+            "id": 5106,
+            "type": "generated_nationality_neutral",
+            "text": "The Mexican delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5107,
+            "type": "generated_nationality_neutral",
+            "text": "She has a Mexican friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5108,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a Mexican restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5109,
+            "type": "generated_nationality_neutral",
+            "text": "The Mexican culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5110,
+            "type": "generated_nationality_neutral",
+            "text": "Many Mexicans live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5111,
+            "type": "generated_nationality_bias",
+            "text": "All Spanishs are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Spanishs"
+        },
+        {
+            "id": 5112,
+            "type": "generated_nationality_bias",
+            "text": "Every Spanish is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Spanishs"
+        },
+        {
+            "id": 5113,
+            "type": "generated_nationality_bias",
+            "text": "Spanish people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Spanishs"
+        },
+        {
+            "id": 5114,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Spanishs are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Spanishs"
+        },
+        {
+            "id": 5115,
+            "type": "generated_nationality_bias",
+            "text": "No Spanish can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Spanishs"
+        },
+        {
+            "id": 5116,
+            "type": "generated_nationality_neutral",
+            "text": "The Spanish delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5117,
+            "type": "generated_nationality_neutral",
+            "text": "She has a Spanish friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5118,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a Spanish restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5119,
+            "type": "generated_nationality_neutral",
+            "text": "The Spanish culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5120,
+            "type": "generated_nationality_neutral",
+            "text": "Many Spanishs live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5121,
+            "type": "generated_nationality_bias",
+            "text": "All Canadians are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Canadians"
+        },
+        {
+            "id": 5122,
+            "type": "generated_nationality_bias",
+            "text": "Every Canadian is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Canadians"
+        },
+        {
+            "id": 5123,
+            "type": "generated_nationality_bias",
+            "text": "Canadian people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Canadians"
+        },
+        {
+            "id": 5124,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Canadians are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Canadians"
+        },
+        {
+            "id": 5125,
+            "type": "generated_nationality_bias",
+            "text": "No Canadian can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Canadians"
+        },
+        {
+            "id": 5126,
+            "type": "generated_nationality_neutral",
+            "text": "The Canadian delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5127,
+            "type": "generated_nationality_neutral",
+            "text": "She has a Canadian friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5128,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a Canadian restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5129,
+            "type": "generated_nationality_neutral",
+            "text": "The Canadian culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5130,
+            "type": "generated_nationality_neutral",
+            "text": "Many Canadians live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5131,
+            "type": "generated_nationality_bias",
+            "text": "All Australians are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Australians"
+        },
+        {
+            "id": 5132,
+            "type": "generated_nationality_bias",
+            "text": "Every Australian is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Australians"
+        },
+        {
+            "id": 5133,
+            "type": "generated_nationality_bias",
+            "text": "Australian people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Australians"
+        },
+        {
+            "id": 5134,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Australians are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Australians"
+        },
+        {
+            "id": 5135,
+            "type": "generated_nationality_bias",
+            "text": "No Australian can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Australians"
+        },
+        {
+            "id": 5136,
+            "type": "generated_nationality_neutral",
+            "text": "The Australian delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5137,
+            "type": "generated_nationality_neutral",
+            "text": "She has a Australian friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5138,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a Australian restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5139,
+            "type": "generated_nationality_neutral",
+            "text": "The Australian culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5140,
+            "type": "generated_nationality_neutral",
+            "text": "Many Australians live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5141,
+            "type": "generated_nationality_bias",
+            "text": "All Portugueses are cruel.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Portugueses"
+        },
+        {
+            "id": 5142,
+            "type": "generated_nationality_bias",
+            "text": "Every Portuguese is lazy.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Portugueses"
+        },
+        {
+            "id": 5143,
+            "type": "generated_nationality_bias",
+            "text": "Portuguese people are all thieves.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Portugueses"
+        },
+        {
+            "id": 5144,
+            "type": "generated_nationality_bias",
+            "text": "It is known that Portugueses are arrogant.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Portugueses"
+        },
+        {
+            "id": 5145,
+            "type": "generated_nationality_bias",
+            "text": "No Portuguese can be trusted.",
+            "has_bias": true,
+            "bias_type": "national_origin",
+            "bias_description": "Generalization about Portugueses"
+        },
+        {
+            "id": 5146,
+            "type": "generated_nationality_neutral",
+            "text": "The Portuguese delegation arrived yesterday.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5147,
+            "type": "generated_nationality_neutral",
+            "text": "She has a Portuguese friend.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5148,
+            "type": "generated_nationality_neutral",
+            "text": "We visited a Portuguese restaurant.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5149,
+            "type": "generated_nationality_neutral",
+            "text": "The Portuguese culture is fascinating.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5150,
+            "type": "generated_nationality_neutral",
+            "text": "Many Portugueses live in this city.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
         }
     ]
 }
