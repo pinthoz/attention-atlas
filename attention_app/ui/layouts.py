@@ -16,7 +16,7 @@ attention_analysis_page = ui.page_fluid(
     ui.div(
         {"class": "sidebar"},
         ui.div(
-            {"class": "app-title"},
+            {"class": "app-title", "style": "display: flex; align-items: center; gap: 8px;"},
             ui.tags.img(src=ICON_DATA_URL or "/favicon.ico", alt="Logo"),
             ui.h3("Attention Atlas"),
         ),

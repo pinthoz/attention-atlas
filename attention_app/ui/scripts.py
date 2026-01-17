@@ -18,6 +18,44 @@ JS_CODE = """
             }
         };
 
+        // Dynamic tooltip positioning for fixed-position tooltips
+        (function() {
+            function positionTooltip(wrapper, tooltip) {
+                var rect = wrapper.getBoundingClientRect();
+                var tooltipWidth = tooltip.offsetWidth || 380;
+                var tooltipHeight = tooltip.offsetHeight || 200;
+                
+                // Position below the icon, centered
+                var left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+                var top = rect.bottom + 8;
+                
+                // Ensure tooltip doesn't go off-screen horizontally
+                if (left < 10) left = 10;
+                if (left + tooltipWidth > window.innerWidth - 10) {
+                    left = window.innerWidth - tooltipWidth - 10;
+                }
+                
+                // If tooltip would go below viewport, show above instead
+                if (top + tooltipHeight > window.innerHeight - 10) {
+                    top = rect.top - tooltipHeight - 8;
+                }
+                if (top < 10) top = 10;
+                
+                tooltip.style.left = left + 'px';
+                tooltip.style.top = top + 'px';
+            }
+            
+            document.addEventListener('mouseover', function(e) {
+                var wrapper = e.target.closest('.info-tooltip-wrapper');
+                if (wrapper) {
+                    var tooltip = wrapper.querySelector('.info-tooltip-content');
+                    if (tooltip) {
+                        positionTooltip(wrapper, tooltip);
+                    }
+                }
+            });
+        })();
+
         // Define showMetricModal early so it's available for onclick handlers
         window.showMetricModal = function(metricName, layer, head) {
             var modal = document.getElementById('metric-modal');
@@ -63,40 +101,60 @@ JS_CODE = """
                     interpretation: 'Higher values (closer to 1) indicate strong self-attention loops where tokens primarily attend to themselves. This often serves to preserve token identity or stabilize representations. Lower values suggest the head focuses on contextual relationships rather than self-preservation.'
                 },
                 'Confidence Max': {
-                    formula: 'C<sub>max</sub><sup>l,h</sup> = max<sub>i,j</sub>(A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'The maximum attention weight in the attention matrix. Measures the strongest connection between any query-key pair.',
-                    interpretation: 'Higher values indicate that this head has a very confident focus on a specific token. Values close to 1 suggest the head is highly specialized and focuses almost exclusively on one token-pair relationship.',
-                    paper: 'Attention Confidence metric from attention analysis literature'
+                    formula: 'MaxA = max<sub>i,j</sub>(a<sub>ij</sub>)',
+                    description: 'The maximum attention weight in the attention matrix (Eq. 5). Measures the strongest connection between any query-key pair.',
+                    interpretation: 'Higher values indicate that this head has a very confident focus on a specific token. Values close to 1 suggest the head is highly specialized.',
+                    typicalRange: '<b>Low:</b> < 0.2 (diffuse) · <b>Medium:</b> 0.2–0.5 · <b>High:</b> > 0.5 (confident)',
+                    paper: 'From Attention to Assurance (Eq. 5)'
                 },
                 'Confidence Avg': {
-                    formula: 'C<sub>avg</sub><sup>l,h</sup> = (1/n) Σ<sub>i=1</sub><sup>n</sup> max<sub>j</sub>(A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Average of the maximum attention weight per row. Each row represents how a query token attends to all key tokens.',
-                    interpretation: 'This metric captures the overall confidence level of the attention head. High values (closer to 1) suggest the head consistently focuses strongly on specific tokens for each query, indicating specialized behavior across all positions.',
-                    paper: 'Attention Confidence metric from attention analysis literature'
+                    formula: 'AvgMaxA = (1/d<sub>k</sub>) Σ<sub>i</sub> max<sub>j</sub>(a<sub>ij</sub>)',
+                    description: 'Average of the maximum attention weight per row (Eq. 6). Each row represents how a query token attends to all key tokens.',
+                    interpretation: 'This metric captures the overall confidence level. High values suggest the head consistently focuses strongly on specific tokens for each query.',
+                    typicalRange: '<b>Low:</b> < 0.15 · <b>Medium:</b> 0.15–0.4 · <b>High:</b> > 0.4 (consistently confident)',
+                    paper: 'From Attention to Assurance (Eq. 6)'
                 },
                 'Focus': {
-                    formula: 'E<sub>l,h</sub> = -Σ<sub>i=1</sub><sup>n</sup> Σ<sub>j=1</sub><sup>n</sup> A<sub>ij</sub><sup>l,h</sup> log(A<sub>ij</sub><sup>l,h</sup>)',
-                    description: 'Shannon entropy measures the uncertainty or randomness in the attention distribution. Quantifies how spread out the attention is.',
-                    interpretation: 'Low entropy (e.g., < 2) = highly focused attention on few tokens. High entropy (e.g., > 4) = attention broadly distributed across many tokens.',
-                    paper: 'Attention Focus metric using entropy from information theory'
+                    formula: 'Focus = E / log(n²), where E = -Σ a<sub>ij</sub> log(a<sub>ij</sub>)',
+                    description: 'Normalized attention entropy (Eq. 8). Divided by max entropy (log n²) to give value between 0 and 1.',
+                    interpretation: '0 = fully focused (one token). 1 = fully uniform (all tokens equal). <b>Lower is more focused</b>.',
+                    typicalRange: '<b>Focused:</b> < 0.3 · <b>Moderate:</b> 0.3–0.7 · <b>Diffuse:</b> > 0.7',
+                    paper: 'From Attention to Assurance (Eq. 8)'
                 },
                 'Sparsity': {
-                    formula: 'S<sub>l,h</sub> = (1/n²) Σ<sub>i=1</sub><sup>n</sup> Σ<sub>j</sub><sup>n</sup> 𝟙(A<sub>ij</sub><sup>l,h</sup> < τ)',
-                    description: 'Proportion of attention weights below threshold τ = 0.01. Measures how many token connections the head effectively ignores.',
-                    interpretation: 'High sparsity (closer to 100%) = selective attention on very few tokens, most connections ignored.',
-                    paper: 'Attention Sparsity metric with threshold τ = 0.01'
+                    formula: 'S = (1/n²) Σ<sub>ij</sub> 𝟙(a<sub>ij</sub> < τ), where τ = 1/n',
+                    description: 'Proportion of attention weights below adaptive threshold τ = 1/seq_len (Eq. 11). Uses adaptive threshold for length-independence.',
+                    interpretation: 'High sparsity = most tokens ignored (selective). Low sparsity = attention distributed across many tokens.',
+                    typicalRange: '<b>Low:</b> < 30% · <b>Medium:</b> 30%–60% · <b>High:</b> > 60% (very selective)',
+                    paper: 'From Attention to Assurance (Eq. 11)'
                 },
                 'Distribution': {
-                    formula: 'Q<sub>0.5</sub><sup>l,h</sup> = median(A<sub>l,h</sub>)',
-                    description: 'The median (50th percentile) of all attention weights in the matrix.',
+                    formula: 'Q<sub>0.5</sub> = median(A)',
+                    description: 'The median (50th percentile) of all attention weights (Eq. 12).',
                     interpretation: 'Low median + high max = attention concentrated on few tokens. High median = more evenly distributed.',
-                    paper: 'Attention Distribution Attributes using quantiles'
+                    typicalRange: '<b>Low:</b> < 0.005 · <b>Medium:</b> 0.005–0.02 · <b>High:</b> > 0.02',
+                    paper: 'From Attention to Assurance (Eq. 12)'
                 },
                 'Uniformity': {
-                    formula: 'U<sub>l,h</sub> = √[(1/n²) Σ<sub>i,j</sub> (A<sub>ij</sub><sup>l,h</sub> - μ<sub>l,h</sub>)²]',
-                    description: 'Standard deviation of all attention weights. Measures the variability in the attention distribution.',
-                    interpretation: 'High uniformity = high variance, low uniformity = homogeneous attention distribution.',
-                    paper: 'Attention Uniformity metric measuring distribution variance'
+                    formula: 'U = std(A) = √[(1/n²) Σ<sub>ij</sub> (a<sub>ij</sub> - μ)²]',
+                    description: 'Standard deviation of attention weights (Eq. 15). Measures variability in the attention distribution.',
+                    interpretation: 'Low = uniform/homogeneous attention. High = variable attention (some strong, some weak).',
+                    typicalRange: '<b>Low:</b> < 0.03 (uniform) · <b>Medium:</b> 0.03–0.10 · <b>High:</b> > 0.10 (variable)',
+                    paper: 'From Attention to Assurance (Eq. 15)'
+                },
+                'Flow Change': {
+                    formula: 'JSD(L<sub>first</sub>, L<sub>last</sub>) = √[ ½×KL(P||M) + ½×KL(Q||M) ]',
+                    description: 'Jensen-Shannon Divergence between first and last layer attention distributions (Eq. 9). Measures how attention patterns transform through the model.',
+                    interpretation: 'Low = static patterns (first≈last). High = effective feature extraction (diverse representations learned). Higher JSD correlates with fewer errors.',
+                    typicalRange: '<b>Low:</b> < 0.10 (static) · <b>Medium:</b> 0.10–0.25 · <b>High:</b> > 0.25 (good transformation)',
+                    paper: 'From Attention to Assurance (Eq. 9)'
+                },
+                'Balance': {
+                    formula: 'Balance = attn_to_CLS / attn_total',
+                    description: 'Proportion of attention directed to [CLS] token vs total attention. Normalized 0-1 range. Relevant for bias detection.',
+                    interpretation: '0 = all to content. 0.5 = balanced. 1 = all to [CLS]. High values suggest shortcut learning (common in biased models).',
+                    typicalRange: '<b>Low:</b> < 0.15 (content) · <b>Medium:</b> 0.15–0.40 · <b>High:</b> > 0.40 (CLS focus)',
+                    paper: 'From Attention to Assurance (Eq. 14)'
                 }
             };
 
@@ -109,6 +167,15 @@ JS_CODE = """
                             Golshanrad, Pouria and Faghih, Fathiyeh, <em>From Attention to Assurance: Enhancing Transformer Encoder Reliability Through Advanced Testing and Online Error Prediction</em>.
                             <a href="https://ssrn.com/abstract=4856933" target="_blank" style="color:#ff5ca9;text-decoration:none;border-bottom:1px solid rgba(255,92,169,0.3);">Available at SSRN</a> or
                             <a href="http://dx.doi.org/10.2139/ssrn.4856933" target="_blank" style="color:#ff5ca9;text-decoration:none;border-bottom:1px solid rgba(255,92,169,0.3);">DOI</a>
+                        </p>
+                    </div>
+                ` : '';
+
+                var typicalRangeBlock = info.typicalRange ? `
+                    <div class="modal-section">
+                        <h4>Typical Ranges</h4>
+                        <p style="font-size:12px;line-height:1.8;background:rgba(255,92,169,0.05);padding:10px 12px;border-radius:8px;border-left:3px solid #ff5ca9;">
+                            ${info.typicalRange}
                         </p>
                     </div>
                 ` : '';
@@ -126,6 +193,7 @@ JS_CODE = """
                         <h4>Interpretation</h4>
                         <p>${info.interpretation}</p>
                     </div>
+                    ${typicalRangeBlock}
                     ${referenceBlock}
                 `;
             }
@@ -624,61 +692,94 @@ JS_TRANSITION_MODAL = """
             var content = "";
             if (modelType === 'BERT') {
                 content = `
-                    <div class="modal-content" style="max-width: 700px; border: 1px solid rgba(255, 92, 169, 0.3);">
-                        <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px; margin-bottom: 15px;">
+                    <div class="modal-content" style="max-width: 780px; border: 1px solid rgba(255, 92, 169, 0.3);">
+                        <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;">
                             <h3 class="modal-title" style="color: #ff5ca9;">Inter-Sentence Attention (ISA): BERT</h3>
                             <span class="close-btn" onclick="document.getElementById('${modalId}').style.display='none'" style="color: #64748b; cursor: pointer;">&times;</span>
                         </div>
-                        <div class="modal-body" style="font-size: 14px; line-height: 1.6; color: #e2e8f0;">
-                            <h4 style="color: #cbd5e1; margin-top: 0;">Formula</h4>
-                            <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; margin-bottom: 16px;">
-                                ISA(Sₐ, Sᵦ) = max<sub>h∈H</sub> max<sub>(i,j)∈Sₐ×Sᵦ</sub> A(i,j)<br><br>
-                                where A(i,j) = max<sub>l∈L</sub> α_l(i,j)
+                        <div class="modal-body" style="font-size: 13px; line-height: 1.7; color: #e2e8f0; padding-top: 6px;">
+                            <h4 style="color: #ff5ca9; margin-top: 0;">Definition</h4>
+                            <p>Inter-Sentence Attention (ISA) captures <strong>sentence-level relationships</strong> by aggregating token-level attention patterns. It reduces the complexity of attention analysis from O(n²) to O(m²), where n is the number of tokens and m is the number of sentences (n ≫ m).</p>
+                            
+                            <h4 style="color: #ff5ca9; margin-top: 16px;">Three-Step Computation</h4>
+                            <p>Given sentences Sₐ and Sᵦ with token indices [iₐ, iₐ₊₁) and [iᵦ, iᵦ₊₁):</p>
+                            
+                            <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #ff5ca9;">
+                                <strong style="color:#ff5ca9;">Step 1 — Layer Integration:</strong><br>
+                                A(i,j) = max<sub>l∈L</sub> α<sub>l</sub>(i,j)<br><br>
+                                <span style="color:#94a3b8;">where α<sub>l</sub>(i,j) = softmax(Q<sub>l,i</sub>K<sub>l,j</sub><sup>T</sup>/√d<sub>k</sub>)</span>
+                            </div>
+                            
+                            <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #3b82f6;">
+                                <strong style="color:#3b82f6;">Step 2 — Token Pair Aggregation:</strong><br>
+                                β<sub>h</sub>(Sₐ, Sᵦ) = max<sub>(i,j)∈Sₐ×Sᵦ</sub> A(i,j)<br><br>
+                                <span style="color:#94a3b8;">Maximum attention between any token pair from the two sentences</span>
+                            </div>
+                            
+                            <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #8b5cf6;">
+                                <strong style="color:#8b5cf6;">Step 3 — Head Aggregation:</strong><br>
+                                ISA(Sₐ, Sᵦ) = max<sub>h∈H</sub> β<sub>h</sub>(Sₐ, Sᵦ)<br><br>
+                                <span style="color:#94a3b8;">Maximum across all attention heads to preserve specialized patterns</span>
                             </div>
 
-                            <h4 style="color: #cbd5e1;">Explanation</h4>
-                            <ul style="padding-left: 20px; margin-bottom: 16px;">
-                                <li><strong>Layer aggregation:</strong> Take max attention across all layers</li>
-                                <li><strong>Token aggregation:</strong> Take max attention between any token pair from sentences Sₐ and Sᵦ</li>
-                                <li><strong>Head aggregation:</strong> Take max across all attention heads</li>
-                            </ul>
+                            <h4 style="color: #ff5ca9; margin-top: 16px;">Why Maximum Aggregation?</h4>
+                            <p>We use <strong>max</strong> rather than averaging to preserve strong signals from individual attention heads. Research shows different heads specialize in capturing specific linguistic patterns (Clark et al., 2019), so averaging would dilute these specialized relationships.</p>
 
-                            <h4 style="color: #cbd5e1;">Properties</h4>
-                            <ul style="padding-left: 20px; margin-bottom: 16px;">
-                                <li><strong>Bidirectional:</strong> Every token can attend to all other tokens</li>
-                                <li><strong>Matrix shape:</strong> Nearly symmetric (ISA(Sₐ,Sᵦ) ≈ ISA(Sᵦ,Sₐ))</li>
-                                <li><strong>Interpretation:</strong> "Semantic relationship strength" between sentences</li>
+                            <h4 style="color: #ff5ca9; margin-top: 16px;">BERT Properties (Bidirectional)</h4>
+                            <ul style="padding-left: 20px; margin-bottom: 12px;">
+                                <li><strong>Full Attention:</strong> Every token can attend to all other tokens (no causal mask)</li>
+                                <li><strong>Near-Symmetric Matrix:</strong> ISA(Sₐ,Sᵦ) ≈ ISA(Sᵦ,Sₐ)</li>
+                                <li><strong>Interpretation:</strong> Measures mutual semantic/syntactic relationship strength</li>
                             </ul>
+                            
+                            <p style="font-size: 11px; color: #64748b; margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">📚 Reference: Seo, S., Yoo, S., Lee, H., Jang, Y., Park, J.H., & Kim, J. (2024). "A Sentence-Level Visualization of Attention in Large Language Models." SAVIS: <a href="https://pypi.org/project/savis" target="_blank" style="color:#ff5ca9;">pypi.org/project/savis</a></p>
                         </div>
                     </div>
                 `;
             } else {
                 content = `
-                    <div class="modal-content" style="max-width: 700px; border: 1px solid rgba(255, 92, 169, 0.3);">
-                        <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px; margin-bottom: 15px;">
-                            <h3 class="modal-title" style="color: #ff5ca9;">Inter-Sentence Attention (ISA): GPT-2</h3>
+                    <div class="modal-content" style="max-width: 780px; border: 1px solid rgba(255, 92, 169, 0.3);">
+                        <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;">
+                            <h3 class="modal-title" style="color: #ff5ca9;">Inter-Sentence Attention (ISA): GPT-2 (Causal)</h3>
                             <span class="close-btn" onclick="document.getElementById('${modalId}').style.display='none'" style="color: #64748b; cursor: pointer;">&times;</span>
                         </div>
-                        <div class="modal-body" style="font-size: 14px; line-height: 1.6; color: #e2e8f0;">
-                            <h4 style="color: #cbd5e1; margin-top: 0;">Formula</h4>
-                            <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; margin-bottom: 16px;">
-                                ISA(Sₐ, Sᵦ) = max<sub>h∈H</sub> max<sub>(i,j)∈Sₐ×Sᵦ, i≥j</sub> A(i,j)<br><br>
-                                where A(i,j) = max<sub>l∈L</sub> α_l(i,j) (0 if i < j)
+                        <div class="modal-body" style="font-size: 13px; line-height: 1.7; color: #e2e8f0; padding-top: 6px;">
+                            <h4 style="color: #ff5ca9; margin-top: 0;">Definition</h4>
+                            <p>For <strong>causal (autoregressive) models</strong> like GPT-2, ISA computation must respect the causal mask: token i can only attend to tokens j where j ≤ i. This fundamentally changes the interpretation of cross-sentence attention.</p>
+                            
+                            <h4 style="color: #ff5ca9; margin-top: 16px;">Causal ISA Computation</h4>
+                            
+                            <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #ff5ca9;">
+                                <strong style="color:#ff5ca9;">Step 1 — Layer Integration (with causal mask):</strong><br>
+                                A(i,j) = max<sub>l∈L</sub> α<sub>l</sub>(i,j) &nbsp;&nbsp;<strong style="color:#ef4444;">if i ≥ j, else 0</strong><br><br>
+                                <span style="color:#94a3b8;">Causal constraint: future tokens are masked (attention = 0)</span>
+                            </div>
+                            
+                            <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #3b82f6;">
+                                <strong style="color:#3b82f6;">Step 2 — Token Pair Aggregation (valid pairs only):</strong><br>
+                                β<sub>h</sub>(Sₐ, Sᵦ) = max<sub>(i,j)∈Sₐ×Sᵦ, i≥j</sub> A(i,j)<br><br>
+                                <span style="color:#94a3b8;">Only token pairs where query position ≥ key position</span>
+                            </div>
+                            
+                            <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #8b5cf6;">
+                                <strong style="color:#8b5cf6;">Step 3 — Head Aggregation:</strong><br>
+                                ISA(Sₐ, Sᵦ) = max<sub>h∈H</sub> β<sub>h</sub>(Sₐ, Sᵦ)
                             </div>
 
-                            <h4 style="color: #cbd5e1;">Explanation</h4>
-                            <ul style="padding-left: 20px; margin-bottom: 16px;">
-                                <li><strong>Causal constraint:</strong> Token i can only attend to tokens j where j ≤ i</li>
-                                <li><strong>Layer aggregation:</strong> Same as BERT (max across layers)</li>
-                                <li><strong>Token aggregation:</strong> Max between valid token pairs (respecting causality)</li>
+                            <h4 style="color: #ff5ca9; margin-top: 16px;">GPT-2 Properties (Unidirectional)</h4>
+                            <ul style="padding-left: 20px; margin-bottom: 12px;">
+                                <li><strong>Causal Mask:</strong> Tokens only attend to previous tokens (left context)</li>
+                                <li><strong>Lower Triangular Matrix:</strong> ISA(Sₐ,Sᵦ) = 0 when Sₐ comes before Sᵦ</li>
+                                <li><strong>Asymmetric:</strong> ISA(Sₐ,Sᵦ) ≠ ISA(Sᵦ,Sₐ) — directionality matters!</li>
+                                <li><strong>Interpretation:</strong> Measures how much later sentence Sₐ <em>depends on</em> earlier sentence Sᵦ</li>
                             </ul>
-
-                            <h4 style="color: #cbd5e1;">Properties</h4>
-                            <ul style="padding-left: 20px; margin-bottom: 16px;">
-                                <li><strong>Unidirectional:</strong> Tokens only attend to previous tokens</li>
-                                <li><strong>Matrix shape:</strong> Lower triangular (zeros above diagonal)</li>
-                                <li><strong>Interpretation:</strong> "Directional dependency" - how much Sₐ depends on Sᵦ</li>
-                            </ul>
+                            
+                            <div style="background: rgba(239,68,68,0.1); padding: 12px; border-radius: 8px; border: 1px solid rgba(239,68,68,0.3); margin-top: 12px;">
+                                <strong style="color:#ef4444;">⚠️ Key Difference from BERT:</strong><br>
+                                <span style="font-size: 12px;">In GPT-2, sentence A can only attend to sentence B if sentence B appears <em>before</em> sentence A in the text. The ISA matrix is lower-triangular, not symmetric.</span>
+                            </div>
+                            
+                            <p style="font-size: 11px; color: #64748b; margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">📚 Reference: Seo, S., Yoo, S., Lee, H., Jang, Y., Park, J.H., & Kim, J. (2024). "A Sentence-Level Visualization of Attention in Large Language Models." SAVIS: <a href="https://pypi.org/project/savis" target="_blank" style="color:#ff5ca9;">pypi.org/project/savis</a></p>
                         </div>
                     </div>
                 `;
