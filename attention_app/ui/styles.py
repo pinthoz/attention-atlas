@@ -532,12 +532,15 @@ CSS = """
         }
 
         .metric-card {
+            display: flex;
+            flex-direction: column;
             background: linear-gradient(135deg, #ffe5f3 0%, #ffd4ec 100%);
             border-radius: 12px;
-            padding: 16px;
+            padding: 14px 16px 12px 16px;
             border: 1px solid #ffb8de;
             transition: all 0.2s;
             cursor: pointer;
+            min-height: 140px;
         }
 
         .metric-card:hover {
@@ -553,6 +556,9 @@ CSS = """
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-bottom: 8px;
+            min-height: 28px; /* Fixed height for alignment */
+            display: flex;
+            align-items: flex-start; /* Align text to top */
         }
 
         .metric-value {
@@ -560,6 +566,84 @@ CSS = """
             font-weight: 700;
             color: var(--text-main);
             font-family: 'Outfit', sans-serif;
+            flex-grow: 1;
+        }
+
+        /* Metric Card Enhancements */
+        .metric-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .metric-badge {
+            font-size: 9px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .metric-gauge-wrapper {
+            position: relative;
+            margin-top: 12px;
+        }
+
+        .gauge-scale-label {
+            position: absolute;
+            font-size: 8px;
+            color: #94a3b8;
+            font-weight: 500;
+            top: -2px;
+        }
+
+        .gauge-scale-label:first-child {
+            left: 0;
+        }
+
+        .gauge-scale-label:last-child {
+            right: 0;
+        }
+
+        .metric-gauge-fixed {
+            position: relative;
+            display: flex;
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            overflow: visible;
+            margin-top: 10px;
+        }
+
+        .gauge-zone {
+            height: 100%;
+        }
+
+        .gauge-zone:first-child {
+            border-radius: 3px 0 0 3px;
+        }
+
+        .gauge-zone:last-of-type {
+            border-radius: 0 3px 3px 0;
+        }
+
+        .gauge-marker {
+            position: absolute;
+            top: -3px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            transform: translateX(-50%);
+            border: 2px solid white;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+            transition: left 0.3s ease;
+        }
+
+        .metric-badge-container {
+            text-align: center;
+            margin-top: 10px;
         }
 
         /* Token Visualization */
@@ -1181,6 +1265,18 @@ CSS = """
             cursor: help;
             transition: all 0.2s ease;
             flex-shrink: 0;
+            animation: info-pulse 2.5s ease-in-out infinite;
+        }
+
+        @keyframes info-pulse {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(255, 92, 169, 0);
+                border-color: #94a3b8;
+            }
+            50% {
+                box-shadow: 0 0 0 2px rgba(255, 92, 169, 0.2);
+                border-color: #ff5ca9;
+            }
         }
 
         .info-tooltip-icon:hover {
@@ -1188,6 +1284,7 @@ CSS = """
             border-color: #ff5ca9;
             border-style: solid;
             color: white;
+            animation: none;
         }
 
         /* Tooltip container */
@@ -1200,17 +1297,17 @@ CSS = """
             visibility: hidden;
             opacity: 0;
             position: fixed;
-            z-index: 999999;
+            z-index: 9999999;
             background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
             color: #f1f5f9;
-            padding: 12px 16px;
-            border-radius: 10px;
-            font-size: 11px;
-            line-height: 1.6;
-            width: 280px;
-            max-width: 320px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-            border: 1px solid rgba(255,255,255,0.1);
+            padding: 16px 20px;
+            border-radius: 12px;
+            font-size: 12px;
+            line-height: 1.7;
+            width: 380px;
+            max-width: 420px;
+            box-shadow: 0 15px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,92,169,0.3);
+            border: 1px solid rgba(255,255,255,0.15);
             transition: opacity 0.2s ease, visibility 0.2s ease;
             pointer-events: none;
         }

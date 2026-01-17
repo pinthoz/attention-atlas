@@ -8,7 +8,7 @@ import torch
 from shiny import ui
 
 from ..utils import array_to_base64_img, compute_influence_tree
-from ..metrics import compute_all_attention_metrics
+from ..metrics import compute_all_attention_metrics, calculate_flow_change, calculate_balance
 from ..models import ModelManager
 
 def get_layer_block(model, layer_idx):
@@ -287,10 +287,22 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx):
     d_k = Q.shape[-1] // num_heads
 
     # Get top 3 connections
-    top_idx = np.argsort(att[focus_idx])[::-1][:3]
+    if hasattr(layer_block, "attention"): # BERT
+        top_idx = np.argsort(att[focus_idx])[::-1][:3]
+        causal_note = ""
+    else: # GPT-2 (Causal)
+        # 1. Filter out future tokens completely from the candidates
+        # Create a list of (index, score) for all valid past tokens
+        valid_scores = [(j, att[focus_idx, j]) for j in range(len(tokens)) if j <= focus_idx]
+        # 2. Sort by score descending
+        valid_scores.sort(key=lambda x: x[1], reverse=True)
+        # 3. Take top 3
+        top_idx = [x[0] for x in valid_scores[:3]]
+        
+        causal_note = "<div style='font-size:10px;color:#888;margin-bottom:4px;font-style:italic;'>Causal: Future tokens are masked</div>"
 
     # Build computation display
-    computations = ""
+    computations = causal_note
     for rank, j in enumerate(top_idx, 1):
         dot = float(np.dot(Q[focus_idx], K[j]))
         scaled = dot / np.sqrt(d_k)
@@ -608,38 +620,132 @@ def get_output_probabilities(res, use_mlm, text, suffix=""):
 
 
 def get_metrics_display(res):
-    _, _, _, attentions, *_ = res
+    tokens, _, _, attentions, *_ = res
     if attentions is None or len(attentions) == 0:
         return ui.HTML("")
 
     att_layers = [layer[0].cpu().numpy() for layer in attentions]
     att_avg = np.mean(att_layers, axis=(0, 1))
     metrics_dict = compute_all_attention_metrics(att_avg)
+    
+    # Calculate Flow Change (JSD between first and last layer)
+    flow_change = calculate_flow_change(att_layers)
+    
+    # Calculate Balance (CLS vs content ratio)
+    balance = calculate_balance(att_avg)
+    
+    # Get token count for normalization
+    num_tokens = len(tokens) if tokens else att_avg.shape[0]
+    
+    # Normalize focus entropy by max possible entropy
+    # For attention matrix: each row sums to 1, max entropy per row = log(n)
+    # With n rows, max total entropy = n × log(n)
+    # This gives focus_normalized in range [0, 1]: 0=focused, 1=diffuse
+    max_entropy = num_tokens * np.log(num_tokens) if num_tokens > 1 else 1
+    focus_normalized = metrics_dict['focus_entropy'] / max_entropy if max_entropy > 0 else 0
 
+    # Thresholds based on paper "From Attention to Assurance" (Golshanrad & Faghih)
+    # Format: (low_max, high_min, min_range, max_range, reverse)
+    # reverse=True means lower values are "better" (like focus - lower = more focused)
+    interpretations = {
+        # Confidence Max (Eq. 5): max attention weight
+        # Higher = more confident = head focuses strongly on specific token
+        'confidence_max': (0.20, 0.50, 0.0, 1.0, False),
+        # Confidence Avg (Eq. 6): average of row maxes
+        # Higher = queries consistently find confident targets
+        'confidence_avg': (0.15, 0.40, 0.0, 0.8, False),
+        # Focus Normalized (Eq. 8): entropy / log(n²)
+        # 0 = fully focused, 1 = fully uniform
+        # LOWER = more focused = better (reverse=True)
+        'focus_normalized': (0.30, 0.70, 0.0, 1.0, True),
+        # Sparsity (Eq. 11): % below adaptive threshold (1/seq_len)
+        # Higher = most tokens ignored = very selective
+        'sparsity': (0.30, 0.60, 0.0, 1.0, False),
+        # Distribution Median (Eq. 12): median attention weight
+        'distribution_median': (0.005, 0.02, 0.0, 0.05, False),
+        # Uniformity (Eq. 15): std dev of attention weights
+        # Lower = more uniform, Higher = more variable
+        'uniformity': (0.03, 0.10, 0.0, 0.2, False),
+        # Flow Change (Eq. 9): JSD between first and last layer
+        # Higher = more transformation = better feature extraction
+        'flow_change': (0.10, 0.25, 0.0, 0.5, False),
+        # Balance: proportion of attention to [CLS] (0-1)
+        # Lower = content focus, Higher = CLS focus (potential shortcut)
+        'balance': (0.15, 0.40, 0.0, 1.0, False),
+    }
+
+    def get_interpretation(key, value):
+        """Return (level, color, gauge_percent, low_pct, high_pct)"""
+        low_max, high_min, min_r, max_r, reverse = interpretations.get(key, (0.3, 0.7, 0, 1, False))
+        
+        # Calculate gauge percentage for value position
+        gauge_pct = min(100, max(0, ((value - min_r) / (max_r - min_r)) * 100))
+        
+        # Calculate fixed threshold positions on the gauge
+        low_pct = ((low_max - min_r) / (max_r - min_r)) * 100
+        high_pct = ((high_min - min_r) / (max_r - min_r)) * 100
+        
+        # Determine level - Color scheme: Low=Green, Medium=Yellow, High=Red
+        if reverse:
+            # For entropy: low values = focused (good), high values = diffuse (bad)
+            if value <= low_max:
+                return ("Focused", "#22c55e", gauge_pct, low_pct, high_pct)  # Green
+            elif value >= high_min:
+                return ("Diffuse", "#ef4444", gauge_pct, low_pct, high_pct)  # Red
+            else:
+                return ("Moderate", "#f59e0b", gauge_pct, low_pct, high_pct)  # Yellow/Amber
+        else:
+            # Normal metrics: Low=Green, Medium=Yellow, High=Red
+            if value <= low_max:
+                return ("Low", "#22c55e", gauge_pct, low_pct, high_pct)  # Green
+            elif value >= high_min:
+                return ("High", "#ef4444", gauge_pct, low_pct, high_pct)  # Red
+            else:
+                return ("Medium", "#f59e0b", gauge_pct, low_pct, high_pct)  # Yellow/Amber
+
+    # Build metrics with enhanced info - use normalized focus
+    # Format: (label, value, value_fmt, key, modal_name, scale_max_label)
     metrics = [
-        ("Confidence (Max)", f"{metrics_dict['confidence_max']:.4f}", "", "Confidence Max", "'Global'", "'Avg'"),
-        ("Confidence (Avg)", f"{metrics_dict['confidence_avg']:.4f}", "", "Confidence Avg", "'Global'", "'Avg'"),
-        ("Focus (Entropy)", f"{metrics_dict['focus_entropy']:.2f}", "", "Focus", "'Global'", "'Avg'"),
-        ("Sparsity", f"{metrics_dict['sparsity']:.2%}", "", "Sparsity", "'Global'", "'Avg'"),
-        ("Distribution (Median)", f"{metrics_dict['distribution_median']:.4f}", "", "Distribution", "'Global'", "'Avg'"),
-        ("Uniformity", f"{metrics_dict['uniformity']:.4f}", "", "Uniformity", "'Global'", "'Avg'"),
+        ("Confidence (Max)", metrics_dict['confidence_max'], "{:.2f}", "confidence_max", "Confidence Max", "1.0"),
+        ("Confidence (Avg)", metrics_dict['confidence_avg'], "{:.2f}", "confidence_avg", "Confidence Avg", "1.0"),
+        ("Focus (Normalized)", focus_normalized, "{:.2f}", "focus_normalized", "Focus", "1.0"),
+        ("Sparsity", metrics_dict['sparsity'], "{:.0%}", "sparsity", "Sparsity", "100%"),
+        ("Distribution", metrics_dict['distribution_median'], "{:.3f}", "distribution_median", "Distribution", "0.05"),
+        ("Uniformity", metrics_dict['uniformity'], "{:.3f}", "uniformity", "Uniformity", "0.2"),
+        ("Flow Change", flow_change, "{:.2f}", "flow_change", "Flow Change", "0.5"),
+        ("Balance", balance, "{:.2f}", "balance", "Balance", "1.0"),
     ]
 
-    gradients = ["#fdf5f8", "#fef7fa", "#fdf6f9", "#fef8fb", "#fcf5f7", "#fef6f9"]
-
     cards_html = '<div class="metrics-grid">'
-    for idx, (label, value, icon, metric_name, layer, head) in enumerate(metrics):
-        gradient = gradients[idx % len(gradients)]
+    for idx, (label, raw_value, fmt, key, modal_name, scale_max) in enumerate(metrics):
+        value_str = fmt.format(raw_value)
+        interp_label, interp_color, gauge_pct, low_pct, high_pct = get_interpretation(key, raw_value)
+        
+        # Fixed scale gauge: Low zone | Medium zone | High zone
+        # Zone colors: Green (Low) | Yellow (Medium) | Red (High)
+        zone1_color = "#22c55e"  # Green (Low)
+        zone2_color = "#f59e0b"  # Yellow/Amber (Medium)
+        zone3_color = "#ef4444"  # Red (High)
+        
         cards_html += f'''
             <div class="metric-card"
-                 data-metric-name="{metric_name}"
-                 data-layer="{layer}"
-                 data-head="{head}"
-                 onclick="showMetricModal('{metric_name}', {layer}, {head})"
-                 style="background: {gradient}; cursor: pointer;">
-                <div class="metric-icon">{icon}</div>
+                 data-metric-name="{modal_name}"
+                 onclick="showMetricModal('{modal_name}', 'Global', 'Avg')">
                 <div class="metric-label">{label}</div>
-                <div class="metric-value">{value}</div>
+                <div class="metric-value">{value_str}</div>
+                <div class="metric-gauge-wrapper">
+                    <span class="gauge-scale-label">0</span>
+                    <div class="metric-gauge-fixed">
+                        <div class="gauge-zone" style="width: {low_pct}%; background: {zone1_color}30;"></div>
+                        <div class="gauge-zone" style="width: {high_pct - low_pct}%; background: {zone2_color}30;"></div>
+                        <div class="gauge-zone" style="width: {100 - high_pct}%; background: {zone3_color}30;"></div>
+                        <div class="gauge-marker" style="left: {gauge_pct}%; background: {interp_color};"></div>
+                    </div>
+                    <span class="gauge-scale-label">{scale_max}</span>
+                </div>
+                <div class="metric-badge-container">
+                    <div class="metric-badge" style="background: {interp_color}20; color: {interp_color};">{interp_label}</div>
+                </div>
             </div>
         '''
     cards_html += '</div>'

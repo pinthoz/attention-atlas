@@ -446,7 +446,16 @@ def server(input, output, session):
             ),
 
             # Row 3: Global Metrics & Attention Map
-            ui.div({"class": "card"}, ui.h4("Global Attention Metrics"), get_metrics_display(res)),
+            ui.div({
+                "class": "card"
+            }, 
+                ui.div(
+                    {"style": "display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;"},
+                    ui.h4("Global Attention Metrics", style="margin: 0;"),
+                    ui.span("All Layers · All Heads", style="font-size: 11px; color: #94a3b8; font-weight: 500;")
+                ),
+                get_metrics_display(res)
+            ),
             
             ui.layout_columns(
                 ui.div(
@@ -937,7 +946,11 @@ def server(input, output, session):
         if not res: return None
         return ui.div(
             {"class": "card"}, 
-            ui.h4("Global Attention Metrics"), 
+            ui.div(
+                {"style": "display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;"},
+                ui.h4("Global Attention Metrics", style="margin: 0;"),
+                ui.span("All Layers · All Heads", style="font-size: 11px; color: #94a3b8; font-weight: 500;")
+            ),
             get_metrics_display(res)
         )
 
@@ -1632,8 +1645,27 @@ def server(input, output, session):
                     }, "i"),
                     ui.div(
                         {"class": "info-tooltip-content"},
-                        ui.tags.strong("How is this calculated?"),
-                        "ISA score = maximum attention weight between any token pair across sentences, aggregated across all heads and layers. Higher scores indicate stronger cross-sentence attention patterns."
+                        ui.HTML("""
+                            <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Inter-Sentence Attention (ISA)</strong>
+                            
+                            <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures how strongly tokens in one sentence attend to tokens in another sentence, aggregating across all layers and attention heads.</p>
+                            
+                            <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Three-step max aggregation:<br>
+                            <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>ISA = max<sub>heads</sub>(max<sub>tokens</sub>(max<sub>layers</sub>(α)))</code></p>
+                            
+                            <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
+                                <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                                    <span style='color:#22c55e'>● High (>0.8): Strong dependency</span>
+                                    <span style='color:#eab308'>● Mid (0.4-0.8): Moderate</span>
+                                    <span style='color:#ef4444'>● Low (<0.4): Weak link</span>
+                                </div>
+                            </div>
+                            
+                            <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                <em>Click icon for formulas & details</em>
+                            </p>
+                        """)
                     )
                 )
             ),
@@ -2157,10 +2189,28 @@ def server(input, output, session):
         Q, K, V = extract_qkv(layer_block, hs_in)
         
         L = len(tokens)
+        
+        # Determine if causal
+        if hasattr(layer_block, "attention"): # BERT
+             is_causal = False
+             causal_desc = ""
+        else: # GPT-2
+             is_causal = True
+             # Mask upper triangle (future tokens)
+             # Use NaN to make them transparent/hidden in Plotly
+             att = att.copy() # Ensure writable
+             att[np.triu_indices_from(att, k=1)] = np.nan
+             causal_desc = " <span style='color:#ef4444;font-weight:bold;'>(Causal Mask Applied)</span>"
+
         d_k = Q.shape[-1] // num_heads
         custom = np.empty((L, L, 5), dtype=object)
         for i in range(L):
             for j in range(L):
+                # For causal models, skip masked cells (future tokens)
+                if is_causal and j > i:
+                    custom[i, j, :] = [None, None, None, None, None]
+                    continue
+                    
                 dot_product = np.dot(Q[i], K[j])
                 scaled = dot_product / np.sqrt(d_k)
                 custom[i, j, 0] = np.array2string(Q[i][:5], precision=3, separator=", ")
@@ -2168,6 +2218,7 @@ def server(input, output, session):
                 custom[i, j, 2] = f"{dot_product:.4f}"
                 custom[i, j, 3] = f"{scaled:.4f}"
                 custom[i, j, 4] = f"{att[i, j]:.4f}"
+        
         hover = (
             "<b>Query Token:</b> %{y}<br><b>Key Token:</b> %{x}<br><br><b>Calculation:</b><br>"
             "1. Dot Product: Q·K = %{customdata[2]}<br>2. Scaled: (Q·K)/√d_k = %{customdata[3]}<br>"
@@ -2183,22 +2234,81 @@ def server(input, output, session):
             [1.0, '#1e3a8a']
         ]
 
-        # Clean tokens for display in the imshow plot
-        cleaned_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
-        fig = px.imshow(att, x=cleaned_tokens, y=cleaned_tokens, color_continuous_scale=att_colorscale, aspect="auto")
-        fig.update_traces(customdata=custom, hovertemplate=hover)
-        fig.update_layout(
-            xaxis_title="Key (attending to)", 
-            yaxis_title="Query (attending from)",
-            margin=dict(l=40, r=10, t=40, b=40), 
-            coloraxis_colorbar=dict(
+        # Clean tokens for display in the heatmap
+        # Add index suffix ONLY to duplicate tokens (Plotly merges duplicate labels otherwise)
+        base_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
+        
+        # Count occurrences of each token
+        from collections import Counter
+        token_counts = Counter(base_tokens)
+        
+        # Track occurrence number for each token
+        occurrence_tracker = {}
+        cleaned_tokens = []
+        for t in base_tokens:
+            if token_counts[t] > 1:
+                # Duplicate token - add occurrence number
+                occurrence_tracker[t] = occurrence_tracker.get(t, 0) + 1
+                cleaned_tokens.append(f"{t}_{occurrence_tracker[t]}")
+            else:
+                # Unique token - no suffix
+                cleaned_tokens.append(t)
+        
+        # Convert attention matrix: replace NaN with None for proper gap handling (no hover)
+        att_list = []
+        for i in range(len(att)):
+            row = []
+            for j in range(len(att[i])):
+                if np.isnan(att[i, j]):
+                    row.append(None)
+                else:
+                    row.append(float(att[i, j]))
+            att_list.append(row)
+        
+        # Use go.Heatmap with list data for proper None/gap handling
+        fig = go.Figure(data=go.Heatmap(
+            z=att_list,
+            x=cleaned_tokens,
+            y=cleaned_tokens,
+            colorscale=att_colorscale,
+            zmin=0,
+            zmax=1,
+            customdata=custom,
+            hovertemplate=hover,
+            colorbar=dict(
                 title=dict(
                     text="Attention",
                     font=dict(color="#64748b", size=11)
                 ),
                 tickfont=dict(color="#64748b", size=10)
             ),
-            plot_bgcolor="rgba(0,0,0,0)", 
+            hoverongaps=False  # Don't show hover for None/gap cells
+        ))
+        
+        # For causal models, add white rectangles to cover the forbidden cells (future tokens)
+        # Row i can only see columns 0..i, so mask columns i+1..n-1 for each row
+        if is_causal:
+            n = len(cleaned_tokens)
+            for i in range(n - 1):  # Last row has nothing to mask
+                # Mask columns from i+1 to n-1 for row i
+                # x ranges from i+0.5 (just right of diagonal) to n-0.5 (right edge)
+                # y ranges from i-0.5 (top of row) to i+0.5 (bottom of row)
+                fig.add_shape(
+                    type="rect",
+                    x0=i + 0.5,
+                    x1=n - 0.5,
+                    y0=i - 0.5,
+                    y1=i + 0.5,
+                    fillcolor="white",
+                    line=dict(width=0),
+                    layer="above"
+                )
+        
+        fig.update_layout(
+            xaxis_title="Key (attending to)", 
+            yaxis_title="Query (attending from)",
+            margin=dict(l=40, r=10, t=40, b=40), 
+            plot_bgcolor="#ffffff", 
             paper_bgcolor="rgba(0,0,0,0)", 
             font=dict(color="#64748b", family="Inter, system-ui, sans-serif"),
             xaxis=dict(
@@ -2207,7 +2317,8 @@ def server(input, output, session):
             ),
             yaxis=dict(
                 tickfont=dict(size=10), 
-                title=dict(font=dict(size=11))
+                title=dict(font=dict(size=11)),
+                autorange='reversed'
             )
         )
         return ui.div(
@@ -2222,10 +2333,26 @@ def server(input, output, session):
                         ui.span({"class": "info-tooltip-icon"}, "i"),
                         ui.div(
                             {"class": "info-tooltip-content"},
-                            ui.tags.strong("How is this calculated?"),
-                            "Attention weights are computed as: ",
-                            ui.tags.code("Softmax(Q·Kᵀ / √d_k)"),
-                            ". Each cell shows the attention probability from query token (row) to key token (column)."
+                            ui.HTML("""
+                                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention</strong>
+                                
+                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how each token distributes its attention across all other tokens. Each cell (i,j) represents the attention weight from query token i to key token j.</p>
+                                
+                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>Attention = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V</code></p>
+                                
+                                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                    <strong style='color:#8b5cf6;font-size:11px'>Color Scale (Blue):</strong>
+                                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                                        <span style='color:#1e40af'>● Dark blue: High weight</span>
+                                        <span style='color:#3b82f6'>● Medium: Moderate</span>
+                                        <span style='color:#93c5fd'>● Light: Low weight</span>
+                                    </div>
+                                </div>
+                                
+                                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                    High attention ≠ importance
+                                </p>
+                            """)
                         )
                     )
                 ),
@@ -2241,8 +2368,37 @@ def server(input, output, session):
                     )
                 )
             ),
-            ui.div({"class": "viz-description"}, "Displays how much each token attends to every other token. Brighter cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence."),
-            ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_map_plot"))
+            ui.div({"class": "viz-description"}, ui.HTML(f"Displays how much each token attends to every other token. Brighter cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence.{causal_desc}")),
+            ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_map_plot")),
+            # JavaScript to suppress hover on masked cells for causal models
+            ui.HTML(f"""
+            <script>
+            (function() {{
+                var isCausal = {'true' if is_causal else 'false'};
+                if (!isCausal) return;
+                
+                function setupHoverSuppression() {{
+                    var plot = document.getElementById('attention_map_plot');
+                    if (!plot) {{
+                        setTimeout(setupHoverSuppression, 100);
+                        return;
+                    }}
+                    
+                    plot.on('plotly_hover', function(data) {{
+                        var pt = data.points[0];
+                        var x = pt.pointIndex[1]; // column index
+                        var y = pt.pointIndex[0]; // row index
+                        
+                        // If column > row, this is a masked cell - hide hover
+                        if (x > y) {{
+                            Plotly.Fx.hover(plot, []);
+                        }}
+                    }});
+                }}
+                setupHoverSuppression();
+            }})();
+            </script>
+            """) if is_causal else ui.HTML("")
         )
 
     @output
@@ -2361,8 +2517,26 @@ def server(input, output, session):
                         ui.span({"class": "info-tooltip-icon"}, "i"),
                         ui.div(
                             {"class": "info-tooltip-content"},
-                            ui.tags.strong("How is this calculated?"),
-                            "Lines connect tokens based on attention weights. Line thickness = attention weight magnitude. Only weights above threshold (0.04) are displayed."
+                            ui.HTML("""
+                                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Flow</strong>
+                                
+                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Sankey-style diagram showing attention distribution. Line width is proportional to attention weight α<sub>ij</sub> between token pairs.</p>
+                                
+                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Threshold:</strong> Only connections with weight ≥ 0.04 are shown to reduce clutter.</p>
+                                
+                                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                    <strong style='color:#8b5cf6;font-size:11px'>Line Width:</strong>
+                                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                                        <span style='color:#22c55e'>● Wide: High weight</span>
+                                        <span style='color:#eab308'>● Medium: Moderate</span>
+                                        <span style='color:#ef4444'>● Thin: Low weight</span>
+                                    </div>
+                                </div>
+                                
+                                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                    Shows Query→Key, not information flow
+                                </p>
+                            """)
                         )
                     )
                 ),
@@ -2530,8 +2704,26 @@ def server(input, output, session):
                             ui.span({"class": "info-tooltip-icon"}, "i"),
                             ui.div(
                                 {"class": "info-tooltip-content"},
-                                ui.tags.strong("How is this calculated?"),
-                                "Heuristic scores based on attention pattern analysis. Syntax = attention to adjacent tokens. Semantics = attention to related content words. Scores are normalized to [0,1] range."
+                                ui.HTML("""
+                                    <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Head Specialization</strong>
+                                    
+                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Profiles each attention head across 7 dimensions using heuristic metrics from attention pattern analysis.</p>
+                                    
+                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Dimensions:</strong> Syntax, Semantics, Positional, Long-range, CLS Focus, Local, SEP Focus</p>
+                                    
+                                    <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                        <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
+                                        <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                                            <span style='color:#22c55e'>● High (>0.7): Specialized</span>
+                                            <span style='color:#eab308'>● Mid: Mixed role</span>
+                                            <span style='color:#ef4444'>● Low (<0.3): Not focused</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                        Labels are approximations, not verified roles
+                                    </p>
+                                """)
                             )
                         )
                     ),
@@ -2951,8 +3143,26 @@ def server(input, output, session):
                             ui.span({"class": "info-tooltip-icon"}, "i"),
                             ui.div(
                                 {"class": "info-tooltip-content"},
-                                ui.tags.strong("How is this calculated?"),
-                                "Starting from the root token, edges are drawn to tokens with the highest attention weights. The tree grows recursively by selecting top-k attended tokens at each level."
+                                ui.HTML("""
+                                    <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
+                                    
+                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of attention dependencies starting from a root token. Shows which tokens the root attends to (depth 1) and their dependencies (depth 2).</p>
+                                    
+                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Construction:</strong> Edges connect to top-k most attended tokens at each level recursively.</p>
+                                    
+                                    <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                        <strong style='color:#8b5cf6;font-size:11px'>Key Insights:</strong>
+                                        <ul style='margin:6px 0 0 0;padding-left:14px;font-size:10px'>
+                                            <li>Identify which tokens a word "looks at"</li>
+                                            <li>Discover multi-hop attention chains</li>
+                                            <li>Find syntactic or semantic clusters</li>
+                                        </ul>
+                                    </div>
+                                    
+                                    <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                        Not a syntactic parse tree
+                                    </p>
+                                """)
                             )
                         )
                     ),
@@ -3229,7 +3439,37 @@ def server(input, output, session):
                 {"class": "header-controls-stacked"},
                 ui.div(
                     {"class": "header-row-top"},
-                    ui.h4("Head Specialization"),
+                    ui.div(
+                        {"class": "viz-header-with-info"},
+                        ui.h4("Head Specialization"),
+                        ui.div(
+                            {"class": "info-tooltip-wrapper"},
+                            ui.span({"class": "info-tooltip-icon"}, "i"),
+                            ui.div(
+                                {"class": "info-tooltip-content"},
+                                ui.HTML("""
+                                    <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Head Specialization</strong>
+                                    
+                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Profiles each attention head across 7 dimensions using heuristic metrics from attention pattern analysis.</p>
+                                    
+                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Dimensions:</strong> Syntax, Semantics, Positional, Long-range, CLS Focus, Local, SEP Focus</p>
+                                    
+                                    <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                        <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
+                                        <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                                            <span style='color:#22c55e'>● High (>0.7): Specialized</span>
+                                            <span style='color:#eab308'>● Mid: Mixed role</span>
+                                            <span style='color:#ef4444'>● Low (<0.3): Not focused</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                        Labels are approximations, not verified roles
+                                    </p>
+                                """)
+                            )
+                        )
+                    ),
                     ui.div(
                         {"class": "header-right"},
                         ui.div({"class": "select-compact"}, ui.input_select("radar_head_B", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(head_idx))),
@@ -3237,8 +3477,8 @@ def server(input, output, session):
                     )
                 ),
                 ui.div(
-                    {"class": "header-row-bottom", "style": "display: flex; flex-direction: column; gap: 8px; margin-top: 4px;"},
-                    ui.p("Analyzes the linguistic roles (perform by each attention head).", style="font-size:11px; color:#6b7280; margin: 0; width: 100%;")
+                    {"class": "header-row-bottom", "style": "margin-top: 4px;"},
+                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Analyzes attention patterns to identify potential linguistic roles of each head. Each dimension represents a heuristic score for different attention behaviors. ⚠️ Labels like 'Syntax' and 'Semantics' are approximations based on attention patterns, not verified functional roles.")
                 )
             ),
              ui.div(
@@ -3289,7 +3529,37 @@ def server(input, output, session):
                 {"class": "header-controls-stacked"},
                 ui.div(
                     {"class": "header-row-top"},
-                    ui.h4("Attention Dependency Tree"),
+                    ui.div(
+                        {"class": "viz-header-with-info"},
+                        ui.h4("Attention Dependency Tree"),
+                        ui.div(
+                            {"class": "info-tooltip-wrapper"},
+                            ui.span({"class": "info-tooltip-icon"}, "i"),
+                            ui.div(
+                                {"class": "info-tooltip-content"},
+                                ui.HTML("""
+                                    <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
+                                    
+                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of attention dependencies starting from a root token. Shows which tokens the root attends to (depth 1) and their dependencies (depth 2).</p>
+                                    
+                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Construction:</strong> Edges connect to top-k most attended tokens at each level recursively.</p>
+                                    
+                                    <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                        <strong style='color:#8b5cf6;font-size:11px'>Key Insights:</strong>
+                                        <ul style='margin:6px 0 0 0;padding-left:14px;font-size:10px'>
+                                            <li>Identify which tokens a word "looks at"</li>
+                                            <li>Discover multi-hop attention chains</li>
+                                            <li>Find syntactic or semantic clusters</li>
+                                        </ul>
+                                    </div>
+                                    
+                                    <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                        Not a syntactic parse tree
+                                    </p>
+                                """)
+                            )
+                        )
+                    ),
                     ui.div(
                         {"class": "header-right"},
                         ui.tags.span("Root:", style="font-size:11px; font-weight:600; color:#64748b; margin-right: 4px;"),
@@ -3300,8 +3570,8 @@ def server(input, output, session):
                     )
                 ),
                 ui.div(
-                    {"class": "header-row-bottom", "style": "display: flex; flex-direction: column; gap: 8px; margin-top: 4px;"},
-                    ui.p("Visualizes attention flow as a dependency tree starting from a root token.", style="font-size:11px; color:#6b7280; margin: 0; width: 100%;")
+                    {"class": "header-row-bottom", "style": "margin-top: 4px;"},
+                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
                 )
             ),
             get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="_B")
@@ -3315,7 +3585,11 @@ def server(input, output, session):
             return None
         return ui.div(
             {"class": "card"}, 
-            ui.h4("Global Attention Metrics"), 
+            ui.div(
+                {"style": "display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;"},
+                ui.h4("Global Attention Metrics", style="margin: 0;"),
+                ui.span("All Layers · All Heads", style="font-size: 11px; color: #94a3b8; font-weight: 500;")
+            ),
             get_metrics_display(res)
         )
 
@@ -3335,8 +3609,25 @@ def server(input, output, session):
         
         att = attentions[layer_idx][0, head_idx].cpu().numpy()
         
-        # Clean tokens
-        cleaned_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
+        # Clean tokens for display in the heatmap
+        # Add index suffix ONLY to duplicate tokens (Plotly merges duplicate labels otherwise)
+        base_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
+        
+        # Count occurrences of each token
+        from collections import Counter
+        token_counts = Counter(base_tokens)
+        
+        # Track occurrence number for each token
+        occurrence_tracker = {}
+        cleaned_tokens = []
+        for t in base_tokens:
+            if token_counts[t] > 1:
+                # Duplicate token - add occurrence number
+                occurrence_tracker[t] = occurrence_tracker.get(t, 0) + 1
+                cleaned_tokens.append(f"{t}_{occurrence_tracker[t]}")
+            else:
+                # Unique token - no suffix
+                cleaned_tokens.append(t)
         
         # Custom colorscale 
         att_colorscale = [
@@ -3371,7 +3662,37 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             ui.div(
                 {"class": "header-with-selectors"},
-                ui.h4("Multi-Head Attention"),
+                ui.div(
+                    {"class": "viz-header-with-info"},
+                    ui.h4("Multi-Head Attention"),
+                    ui.div(
+                        {"class": "info-tooltip-wrapper"},
+                        ui.span({"class": "info-tooltip-icon"}, "i"),
+                        ui.div(
+                            {"class": "info-tooltip-content"},
+                            ui.HTML("""
+                                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention</strong>
+                                
+                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how each token distributes its attention across all other tokens. Each cell (i,j) represents the attention weight from query token i to key token j.</p>
+                                
+                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>Attention = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V</code></p>
+                                
+                                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                    <strong style='color:#8b5cf6;font-size:11px'>Color Scale (Blue):</strong>
+                                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                                        <span style='color:#1e40af'>● Dark blue: High weight</span>
+                                        <span style='color:#3b82f6'>● Medium: Moderate</span>
+                                        <span style='color:#93c5fd'>● Light: Low weight</span>
+                                    </div>
+                                </div>
+                                
+                                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                    High attention ≠ importance
+                                </p>
+                            """)
+                        )
+                    )
+                ),
                 ui.div(
                     {"class": "selection-boxes-container"},
                     ui.div(
@@ -3384,7 +3705,7 @@ def server(input, output, session):
                     )
                 )
             ),
-            ui.p("Visualizes attention weights.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.div({"class": "viz-description"}, "Displays how much each token attends to every other token. Darker cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence."),
             ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_map_plot_B"))
         )
 
@@ -3490,7 +3811,37 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             ui.div(
                 {"class": "header-with-selectors"},
-                ui.h4("Attention Flow"),
+                ui.div(
+                    {"class": "viz-header-with-info"},
+                    ui.h4("Attention Flow"),
+                    ui.div(
+                        {"class": "info-tooltip-wrapper"},
+                        ui.span({"class": "info-tooltip-icon"}, "i"),
+                        ui.div(
+                            {"class": "info-tooltip-content"},
+                            ui.HTML("""
+                                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Flow</strong>
+                                
+                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Sankey-style diagram showing attention distribution. Line width is proportional to attention weight α<sub>ij</sub> between token pairs.</p>
+                                
+                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Threshold:</strong> Only connections with weight ≥ 0.04 are shown to reduce clutter.</p>
+                                
+                                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                    <strong style='color:#8b5cf6;font-size:11px'>Line Width:</strong>
+                                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                                        <span style='color:#22c55e'>● Wide: High weight</span>
+                                        <span style='color:#eab308'>● Medium: Moderate</span>
+                                        <span style='color:#ef4444'>● Thin: Low weight</span>
+                                    </div>
+                                </div>
+                                
+                                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                    Shows Query→Key, not information flow
+                                </p>
+                            """)
+                        )
+                    )
+                ),
                 ui.div(
                     {"class": "selection-boxes-container"},
                     ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
@@ -3500,7 +3851,7 @@ def server(input, output, session):
                     )
                 )
             ),
-             ui.p("Traces how information flows from one token to another through attention layers.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.div({"class": "viz-description"}, "Traces attention weight patterns between tokens. Thicker lines indicate stronger attention. ⚠️ This shows weight distribution, not actual information flow through the network."),
             ui.div(
                 {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_flow_plot_B"))
