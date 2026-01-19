@@ -167,6 +167,7 @@ def compute_all_attention_metrics(attention_matrix):
     sparsity = calculate_sparsity(attention_matrix)  # Now uses adaptive threshold
     distribution = calculate_distribution_attributes(attention_matrix)
     uniformity = calculate_uniformity(attention_matrix)
+    balance = calculate_balance(attention_matrix)
 
     return {
         "confidence_max": max_conf,
@@ -177,6 +178,7 @@ def compute_all_attention_metrics(attention_matrix):
         "distribution_q25": distribution["q25"],
         "distribution_q75": distribution["q75"],
         "uniformity": uniformity,
+        "balance": balance,
     }
 
 

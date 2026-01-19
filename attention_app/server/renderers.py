@@ -265,7 +265,7 @@ def get_qkv_table(res, layer_idx):
     )
 
 
-def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx):
+def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx, top_k=3):
     tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
     if attentions is None or len(attentions) == 0:
         return ui.HTML("")
@@ -288,7 +288,7 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx):
 
     # Get top 3 connections
     if hasattr(layer_block, "attention"): # BERT
-        top_idx = np.argsort(att[focus_idx])[::-1][:3]
+        top_idx = np.argsort(att[focus_idx])[::-1][:top_k]
         causal_note = ""
     else: # GPT-2 (Causal)
         # 1. Filter out future tokens completely from the candidates
@@ -296,8 +296,8 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx):
         valid_scores = [(j, att[focus_idx, j]) for j in range(len(tokens)) if j <= focus_idx]
         # 2. Sort by score descending
         valid_scores.sort(key=lambda x: x[1], reverse=True)
-        # 3. Take top 3
-        top_idx = [x[0] for x in valid_scores[:3]]
+        # 3. Take top k
+        top_idx = [x[0] for x in valid_scores[:top_k]]
         
         causal_note = "<div style='font-size:10px;color:#888;margin-bottom:4px;font-style:italic;'>Causal: Future tokens are masked</div>"
 
@@ -327,10 +327,12 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx):
         """
 
     html = f"""
-    <div class='scaled-attention-box'>
-        <div class='scaled-formula'>softmax(Q·K<sup>T</sup>/√d<sub>k</sub>)</div>
-        <div class='scaled-computations'>
-            {computations}
+    <div class='card-scroll'>
+        <div class='scaled-attention-box'>
+            <div class='scaled-formula'>softmax(Q·K<sup>T</sup>/√d<sub>k</sub>)</div>
+            <div class='scaled-computations'>
+                {computations}
+            </div>
         </div>
     </div>
     """
@@ -463,7 +465,7 @@ def get_layer_output_view(res, layer_idx):
     )
 
 
-def get_output_probabilities(res, use_mlm, text, suffix=""):
+def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5):
     if not use_mlm:
         return ui.HTML(
             "<div class='prediction-panel'>"
@@ -527,7 +529,7 @@ def get_output_probabilities(res, use_mlm, text, suffix=""):
 
     mlm_tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
     cards = ""
-    top_k = 5
+    # top_k passed as argument
 
     for i, tok in enumerate(mlm_tokens):
         # Clean token header
@@ -631,8 +633,8 @@ def get_metrics_display(res):
     # Calculate Flow Change (JSD between first and last layer)
     flow_change = calculate_flow_change(att_layers)
     
-    # Calculate Balance (CLS vs content ratio)
-    balance = calculate_balance(att_avg)
+    # Balance is now in metrics_dict (from compute_all_attention_metrics)
+    balance = metrics_dict.get('balance', 0.5)
     
     # Get token count for normalization
     num_tokens = len(tokens) if tokens else att_avg.shape[0]

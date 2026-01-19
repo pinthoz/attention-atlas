@@ -34,7 +34,14 @@ CSS = """
             background-color: var(--bg-color);
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
             margin: 0;
+            padding-top: 0 !important; /* Override shiny navbar padding */
             color: var(--text-main);
+        }
+
+        /* Reset Bootstrap containers that cause top gap */
+        .container-fluid, .tab-content, .tab-pane {
+            padding-top: 0 !important;
+            margin-top: 0 !important;
         }
 
         /* Navbar Styling */
@@ -237,12 +244,370 @@ CSS = """
         .content {
             margin-left: 320px;
             padding: 24px;
+            padding-top: 0 !important;
+            margin-top: -45px !important; /* Force content up to counter hidden layout spacing */
             /* padding-top removed as navbar is now in sidebar */
             max-width: calc(100% - 320px);
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
             gap: var(--section-gap);
+            transition: none !important;
+        }
+
+        /* Force first card to top */
+        .sentence-preview-card {
+            margin-top: 0 !important;
+            min-height: 140px; /* Prevent collapse during load (stable height) */
+            transition: none !important;
+        }
+
+        /* ... */
+
+        /* Add padding to content to account for fixed bar */
+        .content.has-control-bar {
+            /* padding-top already set globally */
+            padding-bottom: 110px !important;
+        }
+
+        /* Force first card to top */
+        .sentence-preview-card {
+            margin-top: 0 !important;
+        }
+        .content > .card:first-child h4:first-child,
+        .content > .card:first-child h5:first-child {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
+        }
+
+        /* Floating Control Bar - Dark Theme */
+        .floating-control-bar {
+            position: fixed;
+            bottom: 24px;
+            top: auto;
+            left: 320px;
+            right: 0;
+            margin-left: 48px;
+            margin-right: 48px;
+            z-index: 1000;
+            z-index: 1000;
+            padding: 18px 20px 6px 20px;
+            background: var(--sidebar-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .floating-control-bar .bar-title {
+            position: absolute;
+            top: 5px;
+            left: 0;
+            right: 0;
+            margin: 0 auto;
+            pointer-events: none; /* Let clicks pass through if needed */
+            font-size: 9px;
+            font-weight: 600;
+            color: white;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            text-align: center;
+        }
+
+        .floating-control-bar .controls-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            width: 100%;
+        }
+
+        .floating-control-bar .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            flex-shrink: 0;
+        }
+
+        .floating-control-bar .control-label {
+            font-size: 8px;
+            font-weight: 600;
+            color: #ffffff;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .floating-control-bar .shiny-input-container {
+            width: auto !important;
+            margin-bottom: 0 !important;
+        }
+
+        /* Modern Dark Slider - Smaller */
+        .floating-control-bar .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .floating-control-bar .slider-value {
+            min-width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 700;
+            color: #fff;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 5px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .floating-control-bar input[type="range"] {
+            -webkit-appearance: none;
+            width: 60px;
+            height: 4px;
+            background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
+            border-radius: 2px;
+            outline: none;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+        }
+
+        .floating-control-bar input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(255, 92, 169, 0.4);
+            transition: all 0.15s ease;
+        }
+
+        .floating-control-bar input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+            box-shadow: 0 2px 10px rgba(255, 92, 169, 0.6);
+        }
+
+        .floating-control-bar input[type="range"]::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(255, 92, 169, 0.4);
+        }
+
+        .floating-control-bar input[type="range"]::-moz-range-track {
+            background: transparent;
+            border: 0;
+        }
+
+        .floating-control-bar .control-divider {
+            display: none;
+        }
+
+        /* Radio button group for normalization */
+        .floating-control-bar .radio-group {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            background: rgba(30, 41, 59, 0.6);
+            border-radius: 6px;
+            padding: 2px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .floating-control-bar .radio-option {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 8px;
+            font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .floating-control-bar .radio-option:hover {
+            color: #94a3b8;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .floating-control-bar .radio-option.active {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        /* Token sentence preview - flexible width */
+        .floating-control-bar .token-sentence {
+            display: flex;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 3px;
+            padding: 3px 6px;
+            background: rgba(30, 41, 59, 0.6);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            flex: 1;
+            max-width: 850px;
+            min-width: 300px;
+            max-height: 54px;
+            overflow-y: auto;
+            margin-top: 5px; /* Slight offset downwards */
+        }
+
+        .floating-control-bar .token-sentence::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .floating-control-bar .token-sentence::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .floating-control-bar .token-sentence::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 2px;
+        }
+
+        .floating-control-bar .btn-global {
+            height: 20px;
+            padding: 0 12px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.06); /* Match radio group border */
+            border-radius: 5px;
+            color: #64748b; /* Match radio option grey */
+            transition: all 0.2s;
+            margin-top: 0;
+            line-height: 1;
+        }
+
+        .floating-control-bar .btn-global:hover {
+            color: #94a3b8;
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.06);
+        }
+
+        .floating-control-bar .token-chip {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+            background: rgba(51, 65, 85, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            color: white;
+        }
+
+        .floating-control-bar .token-chip:hover {
+            border-color: var(--primary-color);
+            background: rgba(255, 92, 169, 0.15);
+            color: #fff;
+        }
+
+        .floating-control-bar .token-chip.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+            box-shadow: 0 2px 6px rgba(255, 92, 169, 0.4);
+        }
+
+        /* Global View Button in Floating Bar */
+        .floating-control-bar .btn-global {
+            padding: 2px 8px;
+            font-size: 10px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 4px;
+            transition: all 0.2s;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .floating-control-bar .btn-global:hover {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+        }
+        
+        .floating-control-bar .btn-global:active,
+        .floating-control-bar .btn-global.active {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+            box-shadow: 0 0 10px rgba(255, 92, 169, 0.4);
+        }
+
+        /* Responsive Floating Bar */
+        @media (max-width: 1400px) {
+            .floating-control-bar {
+                margin-left: 24px;
+                margin-right: 24px;
+            }
+            .floating-control-bar .token-sentence {
+                min-width: 200px;
+            }
+        }
+
+        @media (max-width: 1200px) {
+             .floating-control-bar {
+                margin-left: 12px;
+                margin-right: 12px;
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+            .floating-control-bar .controls-row {
+                gap: 8px;
+            }
+             .floating-control-bar .token-sentence {
+                min-width: 120px;
+            }
+            .floating-control-bar input[type="range"] {
+                width: 40px;
+            }
+        }
+
+
+
+        /* Add padding to content to account for fixed bar */
+        .content.has-control-bar {
+            padding-top: 4px !important;
+            padding-bottom: 110px !important;
+        }
+
+        /* Force first card to top */
+        .sentence-preview-card {
+            margin-top: -45px !important;
+        }
+        .content > .card:first-child h4:first-child,
+        .content > .card:first-child h5:first-child {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
         }
 
         /* Remove old spacing method */
@@ -353,7 +718,7 @@ CSS = """
             margin-top: 5px !important;     /* Natural gap (16px) ensures "slight gap" above */
             margin-bottom: -25px !important; /* Aggressive negative margin tighters space below */
             padding: 0 !important;
-            z-index: 10;
+            z-index: 1;
             position: relative;
         }
 
@@ -760,7 +1125,7 @@ CSS = """
             transition: all 0.2s ease;
             user-select: none;
             line-height: normal;
-            z-index: 1000;
+            z-index: 100;
             position: relative;
         }
 
