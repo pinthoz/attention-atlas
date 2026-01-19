@@ -176,28 +176,7 @@ def server(input, output, session):
             # For most selectors in this app, ui.update_select works.
             ui.update_select(dest, selected=val_src)
 
-    # Layer Sync
-    @reactive.Effect
-    @reactive.event(input.qkv_layer)
-    def sync_qkv_A_to_B():
-        if input.compare_mode(): ui.update_select("qkv_layer_B", selected=input.qkv_layer())
-            
-    @reactive.Effect
-    @reactive.event(input.qkv_layer_B)
-    def sync_qkv_B_to_A():
-        if input.compare_mode(): ui.update_select("qkv_layer", selected=input.qkv_layer_B())
-
-    @reactive.Effect
-    @reactive.event(input.att_layer)
-    def sync_att_layer_A_to_B():
-        if input.compare_mode(): ui.update_select("att_layer_B", selected=input.att_layer())
-
-    @reactive.Effect
-    @reactive.event(input.att_layer_B)
-    def sync_att_layer_B_to_A():
-        if input.compare_mode(): ui.update_select("att_layer", selected=input.att_layer_B())
-
-    # Head Sync
+    # A-B Sync logic removed as inputs are global
     @reactive.Effect
     @reactive.event(input.att_head)
     def sync_att_head_A_to_B():
@@ -240,7 +219,246 @@ def server(input, output, session):
     def sync_radar_head_B_to_A():
         if input.compare_mode(): ui.update_select("radar_head", selected=input.radar_head_B())
 
+    # -------------------------------------------------------------------------
+    # GLOBAL CONTROL BAR SYNC
+    # -------------------------------------------------------------------------
+    # Observers removed as inputs are now global directly
 
+    # Set global view (All Heads, All Tokens)
+    @reactive.Effect
+    @reactive.event(input.trigger_global_view)
+    def set_global_view():
+        # Update Radar to All Heads
+        ui.update_radio_buttons("radar_mode", selected="all")
+        if input.compare_mode(): ui.update_radio_buttons("radar_mode_B", selected="all")
+        
+        # Token selection is handled by JS (deselects all chips)
+
+    # -------------------------------------------------------------------------
+    # FLOATING CONTROL BAR RENDERER
+    # -------------------------------------------------------------------------
+    @output
+    @render.ui
+    def floating_control_bar():
+        """Render the floating fixed control bar with range sliders and clickable token sentence."""
+        res = cached_result.get()
+        if not res:
+            return None  # Don't show control bar until data is ready
+        
+        # Get model info
+        _, _, _, _, _, _, _, encoder_model, *_ = res
+        is_gpt2 = not hasattr(encoder_model, "encoder")
+        
+        if is_gpt2:
+            num_layers = len(encoder_model.h)
+            num_heads = encoder_model.h[0].attn.num_heads
+        else:
+            num_layers = len(encoder_model.encoder.layer)
+            num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
+        
+        # Get tokens
+        tokens = res[0]
+        clean_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
+        
+        # Get current values (default to 0)
+        try: current_layer = int(input.global_layer())
+        except: current_layer = 0
+        try: current_head = int(input.global_head())
+        except: current_head = 0
+        try: current_token = int(input.global_focus_token())
+        except: current_token = 0
+        
+        # Build clickable token chips
+        token_chips = []
+        for i, token in enumerate(clean_tokens):
+            is_active = "active" if i == current_token else ""
+            
+            # Toggle logic: if clicking active token, send -1 (deselect), else send index
+            onclick_js = f"if(this.classList.contains('active')) {{ Shiny.setInputValue('global_focus_token', -1, {{priority: 'event'}}); }} else {{ Shiny.setInputValue('global_focus_token', '{i}', {{priority: 'event'}}); }}"
+            
+            token_chips.append(
+                ui.tags.span(
+                    token,
+                    class_=f"token-chip {is_active}",
+                    onclick=onclick_js
+                )
+            )
+        
+        # JavaScript for slider sync
+        slider_js = f"""
+        (function() {{
+            const globalBtn = document.getElementById('trigger_global_view');
+            
+            function deactivateGlobal() {{
+                if (globalBtn) globalBtn.classList.remove('active');
+            }}
+
+            // Layer slider
+            const layerSlider = document.getElementById('layer-slider');
+            const layerValue = document.getElementById('layer-value');
+            if (layerSlider) {{
+                layerSlider.oninput = function() {{
+                    layerValue.textContent = this.value;
+                    Shiny.setInputValue('global_layer', this.value, {{priority: 'event'}});
+                    deactivateGlobal();
+                }};
+            }}
+            // Head slider
+            const headSlider = document.getElementById('head-slider');
+            const headValue = document.getElementById('head-value');
+            if (headSlider) {{
+                headSlider.oninput = function() {{
+                    headValue.textContent = this.value;
+                    Shiny.setInputValue('global_head', this.value, {{priority: 'event'}});
+                    deactivateGlobal();
+                }};
+            }}
+            // Normalization radio buttons
+            const radioGroup = document.getElementById('norm-radio-group');
+            if (radioGroup) {{
+                radioGroup.querySelectorAll('.radio-option').forEach(btn => {{
+                    btn.onclick = function() {{
+                        radioGroup.querySelectorAll('.radio-option').forEach(b => b.classList.remove('active'));
+                        this.classList.add('active');
+                        Shiny.setInputValue('global_norm', this.getAttribute('data-value'), {{priority: 'event'}});
+                    }};
+                }});
+            }}
+            // Top-K slider
+            const topkSlider = document.getElementById('topk-slider');
+            const topkValue = document.getElementById('topk-value');
+            if (topkSlider) {{
+                topkSlider.oninput = function() {{
+                    topkValue.textContent = this.value;
+                    Shiny.setInputValue('global_topk', this.value, {{priority: 'event'}});
+                    deactivateGlobal();
+                }};
+            }}
+
+            // Add deactivate to token chips
+            document.querySelectorAll('.token-chip').forEach(chip => {{
+                chip.addEventListener('click', function() {{ deactivateGlobal(); }});
+            }});
+            
+            // Add class to content
+            document.querySelector('.content')?.classList.add('has-control-bar');
+            
+            // Global Button Handler
+            if (globalBtn) {{
+                globalBtn.addEventListener('click', function() {{
+                    if (this.classList.contains('active')) {{
+                        this.classList.remove('active');
+                    }} else {{
+                        this.classList.add('active');
+                        // Deselect tokens visually
+                        document.querySelectorAll('.token-chip.active').forEach(chip => chip.classList.remove('active'));
+                        // Set global focus to -1 (deselected)
+                        Shiny.setInputValue('global_focus_token', -1, {{priority: 'event'}});
+                    }}
+                }});
+            }}
+        }})();
+        """
+        
+        return ui.div(
+            {"class": "floating-control-bar"},
+            
+            # Title centered on top
+            ui.span("Configurations", class_="bar-title"),
+            
+            # Controls row (layer, head, divider, tokens)
+            ui.div(
+                {"class": "controls-row"},
+                
+                # Global View Button
+                ui.div(
+                    {"class": "control-group"},
+                    ui.span("View", class_="control-label"),
+                    ui.input_action_button("trigger_global_view", "Global", class_="btn-global")
+                ),
+
+                # Layer slider
+                ui.div(
+                    {"class": "control-group"},
+                    ui.span("Layer", class_="control-label"),
+                    ui.div(
+                        {"class": "slider-container"},
+                        ui.tags.span(str(current_layer), id="layer-value", class_="slider-value"),
+                        ui.tags.input(
+                            type="range",
+                            id="layer-slider",
+                            min="0",
+                            max=str(num_layers - 1),
+                            value=str(current_layer),
+                            step="1"
+                        )
+                    )
+                ),
+                
+                # Head slider
+                ui.div(
+                    {"class": "control-group"},
+                    ui.span("Head", class_="control-label"),
+                    ui.div(
+                        {"class": "slider-container"},
+                        ui.tags.span(str(current_head), id="head-value", class_="slider-value"),
+                        ui.tags.input(
+                            type="range",
+                            id="head-slider",
+                            min="0",
+                            max=str(num_heads - 1),
+                            value=str(current_head),
+                            step="1"
+                        )
+                    )
+                ),
+                
+                # Divider
+                ui.div({"class": "control-divider"}),
+                
+                # Clickable token sentence
+                ui.div(
+                    {"class": "token-sentence"},
+                    *token_chips
+                ),
+                
+                # Divider before normalization
+                ui.div({"class": "control-divider"}),
+                
+                # Normalization radio group
+                ui.div(
+                    {"class": "control-group"},
+                    ui.span("Norm", class_="control-label"),
+                    ui.div(
+                        {"class": "radio-group", "id": "norm-radio-group"},
+                        ui.span("Raw", class_="radio-option active", **{"data-value": "raw"}),
+                        ui.span("Row", class_="radio-option", **{"data-value": "row"}),
+                        ui.span("Rollout", class_="radio-option", **{"data-value": "rollout"}),
+                    )
+                ),
+                
+                # Top-K slider
+                ui.div(
+                    {"class": "control-group"},
+                    ui.span("Top-K", class_="control-label"),
+                    ui.div(
+                        {"class": "slider-container"},
+                        ui.tags.span("5", id="topk-value", class_="slider-value"),
+                        ui.tags.input(
+                            type="range",
+                            id="topk-slider",
+                            min="1",
+                            max="20",
+                            value="5",
+                            step="1"
+                        )
+                    )
+                ),
+            ),
+            
+            # Script for slider sync
+            ui.tags.script(slider_js)
+        )
 
 
 
@@ -343,29 +561,7 @@ def server(input, output, session):
         num_heads = encoder_model.h[0].attn.num_heads
         
         # Get current selections
-        try: qkv_layer = int(input.qkv_layer())
-        except: qkv_layer = 0
-        try: att_layer = int(input.att_layer())
-        except: att_layer = 0
-        try: att_head = int(input.att_head())
-        except: att_head = 0
-        try: focus_token_idx = int(input.scaled_attention_token())
-        except: focus_token_idx = 0
-        try: flow_select = input.flow_token_select()
-        except: flow_select = "all"
-        try: use_mlm_val = input.use_mlm()
-        except: use_mlm_val = False
-        try: text_val = input.text_input()
-        except: text_val = ""
-        
-        try: radar_mode = input.radar_mode()
-        except: radar_mode = "single"
-        try: radar_layer = int(input.radar_layer())
-        except: radar_layer = 0
-        try: radar_head = int(input.radar_head())
-        except: radar_head = 0
-        try: tree_root_idx = int(input.tree_root_token())
-        except: tree_root_idx = 0
+
         
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
 
@@ -400,18 +596,8 @@ def server(input, output, session):
                 ui.div(
                     {"class": "card"},
                     ui.div(
-                        {"class": "header-with-selectors"},
-                        ui.h4("Q/K/V Projections"),
-                        ui.div(
-                            {"class": "selection-boxes-container"},
-                            ui.div(
-                                {"class": "selection-box"},
-                                ui.div(
-                                    {"class": "select-compact"},
-                                    ui.input_select("qkv_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(qkv_layer))
-                                )
-                            )
-                        )
+                        {"class": "header-simple"},
+                        ui.h4("Q/K/V Projections")
                     ),
                     ui.p("Projects input to Query, Key, Value vectors.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
                     get_qkv_table(res, qkv_layer)
@@ -419,22 +605,11 @@ def server(input, output, session):
                 ui.div(
                     {"class": "card"},
                     ui.div(
-                        {"class": "header-with-selectors"},
-                        ui.h4("Scaled Dot-Product Attention"),
-                        ui.div(
-                            {"class": "selection-boxes-container"},
-                            ui.tags.span("Focus:", style="font-size:10px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                            ui.div(
-                                {"class": "selection-box"},
-                                ui.div(
-                                    {"class": "select-compact"},
-                                    ui.input_select("scaled_attention_token", None, choices={str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}, selected=str(focus_token_idx))
-                                )
-                            )
-                        )
+                        {"class": "header-simple"},
+                        ui.h4("Scaled Dot-Product Attention")
                     ),
                     ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                    get_scaled_attention_view(res, att_layer, att_head, focus_token_idx)
+                    get_scaled_attention_view(res, att_layer, att_head, focus_token_idx, top_k=top_k)
                 ),
                 ui.div(
                     {"class": "card"}, 
@@ -457,49 +632,10 @@ def server(input, output, session):
                 get_metrics_display(res)
             ),
             
+            # Row 3: Attention Visualizations 
             ui.layout_columns(
-                ui.div(
-                    {"class": "card"},
-                    ui.div(
-                        {"class": "header-with-selectors"},
-                        ui.h4("Multi-Head Attention"),
-                        ui.div(
-                            {"class": "selection-boxes-container"},
-                            ui.div(
-                                {"class": "selection-box"},
-                                ui.div({"class": "select-compact"}, ui.input_select("att_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(att_layer)))
-                            ),
-                            ui.div(
-                                {"class": "selection-box"},
-                                ui.div({"class": "select-compact"}, ui.input_select("att_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(att_head)))
-                            )
-                        )
-                    ),
-                    ui.p("Visualizes attention weights. Lower triangular due to causal masking.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                    output_widget("attention_map")
-                ),
-                ui.div(
-                    {"class": "card"},
-                    ui.div(
-                        {"class": "header-with-selectors"},
-                        ui.h4("Attention Flow"),
-                        ui.div(
-                            {"class": "selection-boxes-container"},
-                            ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                            ui.div(
-                                {"class": "selection-box"},
-                                ui.div(
-                                    {"class": "select-compact"},
-                                    ui.input_select("flow_token_select", None, choices={"all": "All tokens", **{str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}}, selected=flow_select)
-                                )
-                            )
-                        )
-                    ),
-                    ui.div(
-                        {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
-                        ui.output_ui("attention_flow")
-                    )
-                ),
+                ui.output_ui("attention_map"),
+                ui.output_ui("attention_flow"),
                 col_widths=[6, 6]
             ),
 
@@ -511,77 +647,26 @@ def server(input, output, session):
                         {"class": "header-controls-stacked"},
                         ui.div(
                             {"class": "header-row-top"},
-                            ui.h4("Head Specialization"),
-                            ui.div(
-                                {"class": "header-right"},
-                                ui.div({"class": "select-compact", "id": "radar_head_selector"}, ui.input_select("radar_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(radar_head))),
-                                ui.div({"class": "select-compact"}, ui.input_select("radar_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(radar_layer))),
-                            )
+                            ui.h4("Head Specialization")
                         ),
                         ui.div(
                             {"class": "header-row-bottom"},
                             ui.span("Attention Mode:", class_="toggle-label"),
-                            ui.input_radio_buttons("radar_mode", None, {"single": "Single Head", "all": "All Heads"}, selected=radar_mode, inline=True)
+                            ui.output_ui("render_radar_view")
                         )
                     ),
-                    head_specialization_radar(res, radar_layer, radar_head, radar_mode),
-                    ui.HTML(f"""
-                        <style>
-                            .metric-tag.specialization {{
-                                color: white !important;
-                                font-weight: 700 !important;
-                                font-size: 13px !important;
-                                padding: 6px 12px;
-                                border-radius: 20px;
-                                transition: all 0.2s ease;
-                                display: inline-block;
-                                cursor: pointer;
-                            }}
-                            .metric-tag.specialization:hover {{
-                                transform: scale(1.05);
-                                color: #ff78bc !important;
-                                background-color: rgba(255, 92, 169, 0.1);
-                            }}
-                        </style>
-                        <div class="radar-explanation" style="margin-top: 10px;">
-                            <p style="margin: 10px 0 12px 0; font-size: 13px; color: #1e293b; text-align: center; font-weight: 600; line-height: 1.8;">
-                                <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
-                            </p>
-                            <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 12px; background: linear-gradient(135deg, #fff5f9 0%, #ffe5f3 100%); border-radius: 12px; border: 2px solid #ffcce5; color: #ffffff;">
-                                <span class="metric-tag specialization" onclick="showMetricModal('Syntax', {radar_layer}, {radar_head})">Syntax</span>
-                                <span class="metric-tag specialization" onclick="showMetricModal('Semantics', {radar_layer}, {radar_head})">Semantics</span>
-                                <span class="metric-tag specialization" onclick="showMetricModal('CLS Focus', {radar_layer}, {radar_head})">CLS Focus</span>
-                                <span class="metric-tag specialization" onclick="showMetricModal('Punctuation', {radar_layer}, {radar_head})">Punctuation</span>
-                                <span class="metric-tag specialization" onclick="showMetricModal('Entities', {radar_layer}, {radar_head})">Entities</span>
-                                <span class="metric-tag specialization" onclick="showMetricModal('Long-range', {radar_layer}, {radar_head})">Long-range</span>
-                                <span class="metric-tag specialization" onclick="showMetricModal('Self-attention', {radar_layer}, {radar_head})">Self-attention</span>
-                            </div>
-                        </div>
-                    """)
                 ),
+
                 ui.div(
                     {"class": "card"},
                     ui.div(
                         {"class": "header-controls-stacked"},
-                        ui.div(
-                            {"class": "header-row-top"},
-                            ui.h4("Attention Dependency Tree"),
                             ui.div(
-                                {"class": "header-right"},
-                                ui.tags.span("Root:", style="font-size:11px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                                ui.div(
-                                    {"class": "select-compact"},
-                                    ui.input_select(
-                                        "tree_root_token",
-                                        None,
-                                        choices={str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)},
-                                        selected=str(tree_root_idx)
-                                    )
-                                )
+                                {"class": "header-simple"},
+                                ui.h4("Attention Dependency Tree")
                             )
-                        )
                     ),
-                    get_influence_tree_ui(res, tree_root_idx, radar_layer, radar_head)
+                    ui.output_ui("render_tree_view")
                 ),
                 col_widths=[5, 7]
             ),
@@ -592,7 +677,7 @@ def server(input, output, session):
             # Row 6: Unembedding & Predictions
             ui.layout_columns(
                 ui.div({"class": "card"}, ui.h4("Hidden States"), ui.p("Final vector representation before projection.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_layer_output_view(res, num_layers - 1)),
-                ui.div({"class": "card"}, ui.h4("Next Token Predictions"), ui.p("Probabilities for the next token (Softmax output).", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_output_probabilities(res, use_mlm_val, text_val)),
+                ui.div({"class": "card"}, ui.h4("Next Token Predictions"), ui.p("Probabilities for the next token (Softmax output).", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_output_probabilities(res, use_mlm_val, text_val, top_k=top_k)),
                 col_widths=[6, 6]
             ),
             
@@ -672,31 +757,12 @@ def server(input, output, session):
     def render_qkv_table():
         res = cached_result.get()
         if not res: return None
-        try: layer_idx = int(input.qkv_layer())
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         
-        # Get num_layers for selector
-        _, _, _, _, _, _, _, encoder_model, *_ = res
-        is_gpt2 = not hasattr(encoder_model, "encoder")
-        if is_gpt2: num_layers = len(encoder_model.h)
-        else: num_layers = len(encoder_model.encoder.layer)
-
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
-            ui.div(
-                {"class": "header-with-selectors"},
-                ui.h4("Q/K/V Projections"),
-                ui.div(
-                    {"class": "selection-boxes-container"},
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div(
-                            {"class": "select-compact"},
-                            ui.input_select("qkv_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(layer_idx))
-                        )
-                    )
-                )
-            ),
+            ui.h4("Q/K/V Projections"),
             ui.p("Projects input to Query, Key, Value vectors.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
             get_qkv_table(res, layer_idx)
         )
@@ -706,39 +772,23 @@ def server(input, output, session):
     def render_scaled_attention():
         res = cached_result.get()
         if not res: return None
-        try: selected_token = input.scaled_attention_token()
-        except: selected_token = "0"
+        try: selected_token = int(input.global_focus_token())
+        except: selected_token = 0
         
-        try: layer_idx = int(input.att_layer())
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        try: head_idx = int(input.att_head())
+        try: head_idx = int(input.global_head())
         except: head_idx = 0
+        try: top_k = int(input.global_topk())
+        except: top_k = 5
         
-        focus_idx = int(selected_token) if selected_token else 0
-        
-        # Get tokens for selector
-        clean_tokens = tokens_data()
-        choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
+        focus_idx = selected_token if selected_token != -1 else 0
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
-            ui.div(
-                {"class": "header-with-selectors"},
-                ui.h4("Scaled Dot-Product Attention"),
-                ui.div(
-                    {"class": "selection-boxes-container"},
-                    ui.tags.span("Focus:", style="font-size:10px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div(
-                            {"class": "select-compact"},
-                            ui.input_select("scaled_attention_token", None, choices=choices, selected=selected_token)
-                        )
-                    )
-                )
-            ),
+            ui.h4("Scaled Dot-Product Attention"),
             ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_scaled_attention_view(res, layer_idx, head_idx, focus_idx)
+            get_scaled_attention_view(res, layer_idx, head_idx, focus_idx, top_k=top_k)
         )
 
     @output
@@ -746,7 +796,7 @@ def server(input, output, session):
     def render_ffn():
         res = cached_result.get()
         if not res: return None
-        try: layer = int(input.att_layer())
+        try: layer = int(input.global_layer())
         except: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"}, 
@@ -760,7 +810,7 @@ def server(input, output, session):
     def render_add_norm():
         res = cached_result.get()
         if not res: return None
-        try: layer = int(input.att_layer())
+        try: layer = int(input.global_layer())
         except: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
@@ -774,7 +824,7 @@ def server(input, output, session):
     def render_add_norm_post_ffn():
         res = cached_result.get()
         if not res: return None
-        try: layer = int(input.att_layer())
+        try: layer = int(input.global_layer())
         except: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
@@ -816,6 +866,8 @@ def server(input, output, session):
             
         try: text = input.text_input()
         except: text = ""
+        try: top_k = int(input.global_topk())
+        except: top_k = 5
 
         if model_family == "gpt2":
             use_mlm = True
@@ -832,7 +884,7 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             ui.h4(title),
             ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_output_probabilities(res, use_mlm, text)
+            get_output_probabilities(res, use_mlm, text, top_k=top_k)
         )
 
     @output
@@ -840,22 +892,12 @@ def server(input, output, session):
     def render_radar_view():
         res = cached_result.get()
         if not res: return None
-        try: layer_idx = int(input.radar_layer())
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        try: head_idx = int(input.radar_head())
+        try: head_idx = int(input.global_head())
         except: head_idx = 0
         try: mode = input.radar_mode()
         except: mode = "single"
-        
-        # Get num_layers/heads for selector
-        _, _, _, _, _, _, _, encoder_model, *_ = res
-        is_gpt2 = not hasattr(encoder_model, "encoder")
-        if is_gpt2: 
-            num_layers = len(encoder_model.h)
-            num_heads = encoder_model.h[0].attn.num_heads
-        else: 
-            num_layers = len(encoder_model.encoder.layer)
-            num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
 
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
@@ -865,20 +907,12 @@ def server(input, output, session):
                     {"class": "header-row-top"},
                     ui.h4("Head Specialization"),
                     ui.div(
-                        {"class": "header-right"},
-                        ui.div({"class": "select-compact", "id": "radar_head_selector"}, ui.input_select("radar_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(head_idx))),
-                        ui.div({"class": "select-compact"}, ui.input_select("radar_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(layer_idx))),
-                    )
-                ),
-                ui.div(
-                    {"class": "header-row-bottom", "style": "display: flex; flex-direction: column; gap: 8px; margin-top: 4px;"},
-                    ui.p("Analyzes the linguistic roles (syntax, semantics, etc.) performed by each attention head.", style="font-size:11px; color:#6b7280; margin: 0; width: 100%;"),
-                    ui.div(
-                        {"style": "display: flex; align-items: center; gap: 12px; align-self: flex-end;"},
-                        ui.span("ATTENTION MODE:", style="font-size: 11px; font-weight: 600; color: #64748b; letter-spacing: 0.5px;"),
+                        {"style": "display: flex; align-items: center; gap: 12px;"},
+                        ui.span("MODE:", style="font-size: 11px; font-weight: 600; color: #64748b; letter-spacing: 0.5px;"),
                         ui.input_radio_buttons("radar_mode", None, {"single": "Single Head", "all": "All Heads"}, inline=True, selected=mode)
                     )
-                )
+                ),
+                ui.p("Analyzes the linguistic roles (syntax, semantics, etc.) performed by each attention head.", style="font-size:11px; color:#6b7280; margin: 4px 0 0 0;"),
             ),
             head_specialization_radar(res, layer_idx, head_idx, mode),
             ui.HTML(f"""
@@ -902,40 +936,19 @@ def server(input, output, session):
     def render_tree_view():
         res = cached_result.get()
         if not res: return None
-        try: root_idx = int(input.tree_root_token())
+        try: root_idx = int(input.global_focus_token())
         except: root_idx = 0
-        try: layer_idx = int(input.radar_layer())
-        except: layer_idx = 0
-        try: head_idx = int(input.radar_head())
-        except: head_idx = 0
+        if root_idx == -1: root_idx = 0
         
-        # Get tokens for selector
-        clean_tokens = tokens_data()
-        choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
+        try: layer_idx = int(input.global_layer())
+        except: layer_idx = 0
+        try: head_idx = int(input.global_head())
+        except: head_idx = 0
 
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
-            ui.div(
-                {"class": "header-controls-stacked"},
-                ui.div(
-                    {"class": "header-row-top"},
-                    ui.h4("Attention Dependency Tree"),
-                    ui.div(
-                        {"class": "header-right"},
-                        ui.tags.span("Root:", style="font-size:11px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                        ui.div(
-                            {"class": "select-compact"},
-                            ui.input_select(
-                                "tree_root_token",
-                                None,
-                                choices=choices,
-                                selected=str(root_idx)
-                            )
-                        )
-                    )
-                )
-            ),
-            ui.p("Visualizes the hierarchical influence of tokens on the selected root token.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.h4("Attention Dependency Tree"),
+            ui.p("Visualizes the hierarchical influence of tokens on the selected focus token.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
             get_influence_tree_ui(res, root_idx, layer_idx, head_idx)
         )
 
@@ -2168,9 +2181,9 @@ def server(input, output, session):
         if not res: return None
         tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
         if attentions is None or len(attentions) == 0: return None
-        try: layer_idx = int(input.att_layer())
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        try: head_idx = int(input.att_head())
+        try: head_idx = int(input.global_head())
         except: head_idx = 0
         
         att = attentions[layer_idx][0, head_idx].cpu().numpy()
@@ -2319,12 +2332,20 @@ def server(input, output, session):
                 tickfont=dict(size=10), 
                 title=dict(font=dict(size=11)),
                 autorange='reversed'
+            ),
+            title=dict(
+                text=f"Multi-Head Attention — Layer {layer_idx}, Head {head_idx}",
+                x=0.5,
+                y=0.98,
+                xanchor='center',
+                yanchor='top',
+                font=dict(size=14, color="#334155")
             )
         )
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.div(
-                {"class": "header-with-selectors"},
+                {"class": "header-simple"},
                 ui.div(
                     {"class": "viz-header-with-info"},
                     ui.h4("Multi-Head Attention"),
@@ -2356,17 +2377,6 @@ def server(input, output, session):
                         )
                     )
                 ),
-                ui.div(
-                    {"class": "selection-boxes-container"},
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div({"class": "select-compact"}, ui.input_select("att_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(layer_idx)))
-                    ),
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div({"class": "select-compact"}, ui.input_select("att_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(head_idx)))
-                    )
-                )
             ),
             ui.div({"class": "viz-description"}, ui.HTML(f"Displays how much each token attends to every other token. Brighter cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence.{causal_desc}")),
             ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_map_plot")),
@@ -2408,9 +2418,9 @@ def server(input, output, session):
         if not res: return None
         tokens, _, _, attentions, *_ = res
         if attentions is None or len(attentions) == 0: return None
-        try: layer_idx = int(input.att_layer())
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        try: head_idx = int(input.att_head())
+        try: head_idx = int(input.global_head())
         except: head_idx = 0
         try: selected = input.flow_token_select()
         except: selected = "all"
@@ -2673,12 +2683,9 @@ def server(input, output, session):
     def render_radar_view():
         res = cached_result.get()
         if not res: return None
-        try: layer_idx = int(input.radar_layer())
-        except: layer_idx = 0
-        try: head_idx = int(input.radar_head())
-        except: head_idx = 0
-        try: mode = input.radar_mode()
-        except: mode = "single"
+        if not res: return None
+        # Removed dependency on input.radar_layer/head/mode to break infinite loop
+
 
         # Get num_layers/heads for selector
         _, _, _, _, _, _, _, encoder_model, *_ = res
@@ -2729,8 +2736,8 @@ def server(input, output, session):
                     ),
                      ui.div(
                         {"class": "header-right"},
-                        ui.div({"class": "select-compact"}, ui.input_select("radar_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(head_idx))),
-                        ui.div({"class": "select-compact"}, ui.input_select("radar_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(layer_idx))),
+                        ui.div({"class": "select-compact"}, ui.input_select("radar_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected="0")),
+                        ui.div({"class": "select-compact"}, ui.input_select("radar_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected="0")),
                     )
                 ),
                 ui.div(
@@ -2743,10 +2750,10 @@ def server(input, output, session):
                  ui.tags.span("VISUALIZATION MODE", style="font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase;"),
                  ui.div(
                      {"class": "radio-group-compact"},
-                     ui.input_radio_buttons("radar_mode", None, {"single": "Single Head", "all": "All Heads", "cluster": "Global Clusters"}, selected=mode, inline=True)
+                     ui.input_radio_buttons("radar_mode", None, {"single": "Single Head", "all": "All Heads", "cluster": "Global Clusters"}, selected="single", inline=True)
                  )
              ),
-             head_specialization_radar(res, layer_idx, head_idx, mode, suffix=""),
+             ui.output_ui("radar_plot_internal"),
              ui.HTML(f"""
                 <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
                     <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
@@ -2765,17 +2772,26 @@ def server(input, output, session):
 
 
 
+    @output
+    @render.ui
+    def radar_plot_internal():
+        res = cached_result.get()
+        if not res: return None
+        
+        try: layer_idx = int(input.global_layer())
+        except: layer_idx = 0
+        try: head_idx = int(input.global_head())
+        except: head_idx = 0
+        try: mode = input.radar_mode()
+        except: mode = "single"
+        
+        return head_specialization_radar(res, layer_idx, head_idx, mode, suffix="")
+
     # This function is now called directly from dashboard_content
     def head_specialization_radar(res, layer_idx, head_idx, mode, suffix=""):
         if not res: return None
         
         tokens, _, _, attentions, _, _, _, _, _, head_specialization, *_ = res
-        
-        print(f"DEBUG: head_specialization_radar called. len(res)={len(res)}")
-        if len(res) > 11:
-             print(f"DEBUG: res[11] type: {type(res[11])}")
-             if isinstance(res[11], list):
-                 print(f"DEBUG: res[11] length: {len(res[11])}")
         
         # Safely extract head_clusters if available (new return value)
         head_clusters = []
@@ -3241,30 +3257,14 @@ def server(input, output, session):
         res = cached_result_B.get()
         if not res:
             return None
-        try: layer_idx = int(input.qkv_layer_B())
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         
-        # Get num_layers for selector
-        _, _, _, _, _, _, _, encoder_model, *_ = res
-        is_gpt2 = not hasattr(encoder_model, "encoder")
-        if is_gpt2: num_layers = len(encoder_model.h)
-        else: num_layers = len(encoder_model.encoder.layer)
-
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.div(
-                {"class": "header-with-selectors"},
-                ui.h4("Q/K/V Projections"),
-                ui.div(
-                    {"class": "selection-boxes-container"},
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div(
-                            {"class": "select-compact"},
-                            ui.input_select("qkv_layer_B", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(layer_idx))
-                        )
-                    )
-                )
+                {"class": "header-simple"},
+                ui.h4("Q/K/V Projections")
             ),
             ui.p("Projects input to Query, Key, Value vectors.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
             get_qkv_table(res, layer_idx)
@@ -3276,39 +3276,26 @@ def server(input, output, session):
         res = cached_result_B.get()
         if not res:
             return None
-        try: selected_token = input.scaled_attention_token_B()
-        except: selected_token = "0"
+        try: selected_token = int(input.global_focus_token())
+        except: selected_token = 0
         
-        try: layer_idx = int(input.att_layer_B())
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        try: head_idx = int(input.att_head_B())
+        try: head_idx = int(input.global_head())
         except: head_idx = 0
+        try: top_k = int(input.global_topk())
+        except: top_k = 5
         
-        focus_idx = int(selected_token) if selected_token else 0
-        
-        tokens_B = res[0]
-        clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens_B]
-        choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
+        focus_idx = selected_token if selected_token != -1 else 0
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.div(
-                {"class": "header-with-selectors"},
-                ui.h4("Scaled Dot-Product Attention"),
-                ui.div(
-                    {"class": "selection-boxes-container"},
-                    ui.tags.span("Focus:", style="font-size:10px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div(
-                            {"class": "select-compact"},
-                            ui.input_select("scaled_attention_token_B", None, choices=choices, selected=selected_token)
-                        )
-                    )
-                )
+                {"class": "header-simple"},
+                ui.h4("Scaled Dot-Product Attention")
             ),
             ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_scaled_attention_view(res, layer_idx, head_idx, focus_idx)
+            get_scaled_attention_view(res, layer_idx, head_idx, focus_idx, top_k=top_k)
         )
 
     @output
@@ -3317,7 +3304,7 @@ def server(input, output, session):
         res = cached_result_B.get()
         if not res:
             return None
-        try: layer = int(input.att_layer_B())
+        try: layer = int(input.global_layer())
         except: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"}, 
@@ -3332,7 +3319,7 @@ def server(input, output, session):
         res = cached_result_B.get()
         if not res:
             return None
-        try: layer = int(input.att_layer_B())
+        try: layer = int(input.global_layer())
         except: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
@@ -3347,7 +3334,7 @@ def server(input, output, session):
         res = cached_result_B.get()
         if not res:
             return None
-        try: layer = int(input.att_layer_B())
+        try: layer = int(input.global_layer())
         except: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
@@ -3396,6 +3383,9 @@ def server(input, output, session):
         
         is_bert = model_family == "bert"
         
+        try: top_k = int(input.global_topk())
+        except: top_k = 5
+
         if is_bert:
             title = "Masked Token Predictions (MLM)"
             desc = "Pseudo-Likelihood: Each token is individually masked and predicted using the bidirectional context."
@@ -3407,7 +3397,7 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             ui.h4(title),
             ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_output_probabilities(res, use_mlm, text, suffix="_B")
+            get_output_probabilities(res, use_mlm, text, suffix="_B", top_k=top_k)
         )
 
     @output
@@ -3416,23 +3406,13 @@ def server(input, output, session):
         res = cached_result_B.get()
         if not res:
             return None
-        try: layer_idx = int(input.radar_layer_B())
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        try: head_idx = int(input.radar_head_B())
+        try: head_idx = int(input.global_head())
         except: head_idx = 0
         try: mode = input.radar_mode_B()
         except: mode = "single"
         
-        # Get num_layers/heads for selector
-        _, _, _, _, _, _, _, encoder_model, *_ = res
-        is_gpt2 = not hasattr(encoder_model, "encoder")
-        if is_gpt2: 
-            num_layers = len(encoder_model.h)
-            num_heads = encoder_model.h[0].attn.num_heads
-        else: 
-            num_layers = len(encoder_model.encoder.layer)
-            num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
-
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
             ui.div(
@@ -3469,11 +3449,6 @@ def server(input, output, session):
                                 """)
                             )
                         )
-                    ),
-                    ui.div(
-                        {"class": "header-right"},
-                        ui.div({"class": "select-compact"}, ui.input_select("radar_head_B", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(head_idx))),
-                        ui.div({"class": "select-compact"}, ui.input_select("radar_layer_B", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(layer_idx))),
                     )
                 ),
                 ui.div(
@@ -3512,11 +3487,13 @@ def server(input, output, session):
         res = cached_result_B.get()
         if not res:
             return None
-        try: root_idx = int(input.tree_root_token_B())
+        try: 
+            root_idx = int(input.global_focus_token())
+            if root_idx == -1: root_idx = 0
         except: root_idx = 0
-        try: layer_idx = int(input.radar_layer_B())
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        try: head_idx = int(input.radar_head_B())
+        try: head_idx = int(input.global_head())
         except: head_idx = 0
         
         tokens_B = res[0]
@@ -3527,48 +3504,40 @@ def server(input, output, session):
             {"class": "card card-compact-height", "style": "height: 100%;"},
             ui.div(
                 {"class": "header-controls-stacked"},
-                ui.div(
-                    {"class": "header-row-top"},
                     ui.div(
-                        {"class": "viz-header-with-info"},
-                        ui.h4("Attention Dependency Tree"),
+                        {"class": "header-simple"},
                         ui.div(
-                            {"class": "info-tooltip-wrapper"},
-                            ui.span({"class": "info-tooltip-icon"}, "i"),
+                            {"class": "viz-header-with-info"},
+                            ui.h4("Attention Dependency Tree"),
                             ui.div(
-                                {"class": "info-tooltip-content"},
-                                ui.HTML("""
-                                    <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
-                                    
-                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of attention dependencies starting from a root token. Shows which tokens the root attends to (depth 1) and their dependencies (depth 2).</p>
-                                    
-                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Construction:</strong> Edges connect to top-k most attended tokens at each level recursively.</p>
-                                    
-                                    <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                                        <strong style='color:#8b5cf6;font-size:11px'>Key Insights:</strong>
-                                        <ul style='margin:6px 0 0 0;padding-left:14px;font-size:10px'>
-                                            <li>Identify which tokens a word "looks at"</li>
-                                            <li>Discover multi-hop attention chains</li>
-                                            <li>Find syntactic or semantic clusters</li>
-                                        </ul>
-                                    </div>
-                                    
-                                    <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                                        Not a syntactic parse tree
-                                    </p>
-                                """)
+                                {"class": "info-tooltip-wrapper"},
+                                ui.span({"class": "info-tooltip-icon"}, "i"),
+                                ui.div(
+                                    {"class": "info-tooltip-content"},
+                                    ui.HTML("""
+                                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
+                                        
+                                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of attention dependencies starting from a root token. Shows which tokens the root attends to (depth 1) and their dependencies (depth 2).</p>
+                                        
+                                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Construction:</strong> Edges connect to top-k most attended tokens at each level recursively.</p>
+                                        
+                                        <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                            <strong style='color:#8b5cf6;font-size:11px'>Key Insights:</strong>
+                                            <ul style='margin:6px 0 0 0;padding-left:14px;font-size:10px'>
+                                                <li>Identify which tokens a word "looks at"</li>
+                                                <li>Discover multi-hop attention chains</li>
+                                                <li>Find syntactic or semantic clusters</li>
+                                            </ul>
+                                        </div>
+                                        
+                                        <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                            Not a syntactic parse tree
+                                        </p>
+                                    """)
+                                )
                             )
                         )
                     ),
-                    ui.div(
-                        {"class": "header-right"},
-                        ui.tags.span("Root:", style="font-size:11px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                        ui.div(
-                            {"class": "select-compact"},
-                            ui.input_select("tree_root_token_B", None, choices=choices, selected=str(root_idx))
-                        )
-                    )
-                ),
                 ui.div(
                     {"class": "header-row-bottom", "style": "margin-top: 4px;"},
                     ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
@@ -3602,9 +3571,9 @@ def server(input, output, session):
         tokens, _, _, attentions, _, _, _, encoder_model, *_ = res
         if attentions is None or len(attentions) == 0:
             return None
-        try: layer_idx = int(input.att_layer_B())
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        try: head_idx = int(input.att_head_B())
+        try: head_idx = int(input.global_head())
         except: head_idx = 0
         
         att = attentions[layer_idx][0, head_idx].cpu().numpy()
@@ -3646,22 +3615,22 @@ def server(input, output, session):
             paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color="#64748b", family="Inter"),
             xaxis=dict(tickfont=dict(size=10)),
-            yaxis=dict(tickfont=dict(size=10))
+            yaxis=dict(tickfont=dict(size=10)),
+            title=dict(
+                text=f"Multi-Head Attention — Layer {layer_idx}, Head {head_idx}",
+                x=0.5,
+                y=0.98,
+                xanchor='center',
+                yanchor='top',
+                font=dict(size=14, color="#334155")
+            )
         )
         
-        # Get num_layers/heads for selectors
-        is_gpt2 = not hasattr(encoder_model, "encoder")
-        if is_gpt2: 
-            num_layers = len(encoder_model.h)
-            num_heads = encoder_model.h[0].attn.num_heads
-        else: 
-            num_layers = len(encoder_model.encoder.layer)
-            num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.div(
-                {"class": "header-with-selectors"},
+                {"class": "header-simple"},
                 ui.div(
                     {"class": "viz-header-with-info"},
                     ui.h4("Multi-Head Attention"),
@@ -3692,21 +3661,10 @@ def server(input, output, session):
                             """)
                         )
                     )
-                ),
-                ui.div(
-                    {"class": "selection-boxes-container"},
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div({"class": "select-compact"}, ui.input_select("att_layer_B", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected=str(layer_idx)))
-                    ),
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div({"class": "select-compact"}, ui.input_select("att_head_B", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected=str(head_idx)))
-                    )
                 )
             ),
             ui.div({"class": "viz-description"}, "Displays how much each token attends to every other token. Darker cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence."),
-            ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_map_plot_B"))
+            ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False))
         )
 
 
@@ -3721,11 +3679,15 @@ def server(input, output, session):
         tokens, _, _, attentions, *_ = res
         if attentions is None or len(attentions) == 0:
             return None
-        try: layer_idx = int(input.att_layer_B())
+
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        try: head_idx = int(input.att_head_B())
+        try: head_idx = int(input.global_head())
         except: head_idx = 0
-        try: selected = input.flow_token_select_B()
+        try: 
+            ft = int(input.global_focus_token())
+            if ft == -1: selected = "all"
+            else: selected = str(ft)
         except: selected = "all"
         focus_idx = None if selected == "all" else int(selected)
 
@@ -3810,7 +3772,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.div(
-                {"class": "header-with-selectors"},
+                {"class": "header-simple"},
                 ui.div(
                     {"class": "viz-header-with-info"},
                     ui.h4("Attention Flow"),
@@ -3840,14 +3802,6 @@ def server(input, output, session):
                                 </p>
                             """)
                         )
-                    )
-                ),
-                ui.div(
-                    {"class": "selection-boxes-container"},
-                    ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div({"class": "select-compact"}, ui.input_select("flow_token_select_B", None, choices={"all": "All tokens", **{str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}}, selected=str(focus_idx) if focus_idx is not None else "all"))
                     )
                 )
             ),

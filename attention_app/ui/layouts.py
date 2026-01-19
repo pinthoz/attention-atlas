@@ -120,6 +120,9 @@ attention_analysis_page = ui.page_fluid(
     ui.div(
         {"class": "content"},
 
+        # Floating Control Bar (rendered dynamically based on model)
+        ui.output_ui("floating_control_bar"),
+
         # Dashboard Content (handles both static preview and generated content)
         ui.output_ui("dashboard_content")
     ),
