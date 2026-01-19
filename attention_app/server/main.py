@@ -293,13 +293,36 @@ def server(input, output, session):
                 if (globalBtn) globalBtn.classList.remove('active');
             }}
 
+            // Debounce function
+            function debounce(func, wait) {{
+                let timeout;
+                return function(...args) {{
+                    const context = this;
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => func.apply(context, args), wait);
+                }};
+            }}
+            
+            // Debounced setters
+            const setLayer = debounce(function(val) {{
+                Shiny.setInputValue('global_layer', val, {{priority: 'event'}});
+            }}, 300);
+            
+            const setHead = debounce(function(val) {{
+                Shiny.setInputValue('global_head', val, {{priority: 'event'}});
+            }}, 300);
+            
+            const setTopK = debounce(function(val) {{
+                Shiny.setInputValue('global_topk', val, {{priority: 'event'}});
+            }}, 300);
+
             // Layer slider
             const layerSlider = document.getElementById('layer-slider');
             const layerValue = document.getElementById('layer-value');
             if (layerSlider) {{
                 layerSlider.oninput = function() {{
                     layerValue.textContent = this.value;
-                    Shiny.setInputValue('global_layer', this.value, {{priority: 'event'}});
+                    setLayer(this.value);
                     deactivateGlobal();
                 }};
             }}
@@ -309,7 +332,7 @@ def server(input, output, session):
             if (headSlider) {{
                 headSlider.oninput = function() {{
                     headValue.textContent = this.value;
-                    Shiny.setInputValue('global_head', this.value, {{priority: 'event'}});
+                    setHead(this.value);
                     deactivateGlobal();
                 }};
             }}
@@ -330,7 +353,7 @@ def server(input, output, session):
             if (topkSlider) {{
                 topkSlider.oninput = function() {{
                     topkValue.textContent = this.value;
-                    Shiny.setInputValue('global_topk', this.value, {{priority: 'event'}});
+                    setTopK(this.value);
                     deactivateGlobal();
                 }};
             }}
