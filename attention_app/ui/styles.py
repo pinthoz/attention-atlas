@@ -696,6 +696,11 @@ CSS = """
             margin-bottom: 0 !important; /* Let gap handle it */
         }
 
+        /* Remove margin from shiny-html-output inside dashboard-stack to prevent double spacing */
+        .dashboard-stack .shiny-html-output {
+            margin-bottom: 0 !important;
+        }
+
         /* Compare mode: reduce gap for arrow rows */
         #dashboard-container-compare {
             gap: 16px !important;
