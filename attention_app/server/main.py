@@ -224,15 +224,30 @@ def server(input, output, session):
     # -------------------------------------------------------------------------
     # Observers removed as inputs are now global directly
 
-    # Set global view (All Heads, All Tokens)
+    # Set global view (All Heads, All Tokens) - TOGGLE
     @reactive.Effect
     @reactive.event(input.trigger_global_view)
     def set_global_view():
-        # Update Radar to All Heads
-        ui.update_radio_buttons("radar_mode", selected="all")
-        if input.compare_mode(): ui.update_radio_buttons("radar_mode_B", selected="all")
-        
-        # Token selection is handled by JS (deselects all chips)
+        # Toggle global metrics mode
+        if global_metrics_mode.get() == "all":
+            # Deselect: go back to specific layer/head
+            global_metrics_mode.set("specific")
+            ui.update_radio_buttons("radar_mode", selected="single")
+            if input.compare_mode(): ui.update_radio_buttons("radar_mode_B", selected="single")
+        else:
+            # Select: set to global (all layers/heads)
+            global_metrics_mode.set("all")
+            ui.update_radio_buttons("radar_mode", selected="all")
+            if input.compare_mode(): ui.update_radio_buttons("radar_mode_B", selected="all")
+    
+    # Reactive value to track if global metrics should use all layers/heads
+    global_metrics_mode = reactive.Value("specific")  # "all" or "specific"
+    
+    # Reset to specific when sliders change
+    @reactive.Effect
+    @reactive.event(input.global_layer, input.global_head)
+    def reset_metrics_mode():
+        global_metrics_mode.set("specific")
 
     # -------------------------------------------------------------------------
     # FLOATING CONTROL BAR RENDERER
@@ -366,17 +381,15 @@ def server(input, output, session):
             // Add class to content
             document.querySelector('.content')?.classList.add('has-control-bar');
             
-            // Global Button Handler
+            
+            // Global Button Handler - only affects layer/head mode, NOT token selection
             if (globalBtn) {{
                 globalBtn.addEventListener('click', function() {{
                     if (this.classList.contains('active')) {{
                         this.classList.remove('active');
                     }} else {{
                         this.classList.add('active');
-                        // Deselect tokens visually
-                        document.querySelectorAll('.token-chip.active').forEach(chip => chip.classList.remove('active'));
-                        // Set global focus to -1 (deselected)
-                        Shiny.setInputValue('global_focus_token', -1, {{priority: 'event'}});
+                        // Note: We do NOT deselect tokens here - token selection is independent of global mode
                     }}
                 }});
             }}
@@ -393,11 +406,11 @@ def server(input, output, session):
             ui.div(
                 {"class": "controls-row"},
                 
-                # Global View Button
+                # Global View Button - add 'active' class when in global mode
                 ui.div(
                     {"class": "control-group"},
                     ui.span("View", class_="control-label"),
-                    ui.input_action_button("trigger_global_view", "Global", class_="btn-global")
+                    ui.input_action_button("trigger_global_view", "Global", class_=f"btn-global{' active' if global_metrics_mode.get() == 'all' else ''}")
                 ),
 
                 # Layer slider
@@ -980,14 +993,29 @@ def server(input, output, session):
     def render_global_metrics():
         res = cached_result.get()
         if not res: return None
+        
+        # Check if we should use all layers/heads or specific selection
+        use_all = global_metrics_mode.get() == "all"
+        
+        if use_all:
+            layer_idx = None
+            head_idx = None
+            subtitle = "All Layers · All Heads"
+        else:
+            try: layer_idx = int(input.global_layer())
+            except: layer_idx = 0
+            try: head_idx = int(input.global_head())
+            except: head_idx = 0
+            subtitle = f"Layer {layer_idx} · Head {head_idx}"
+        
         return ui.div(
             {"class": "card"}, 
             ui.div(
                 {"style": "display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;"},
                 ui.h4("Global Attention Metrics", style="margin: 0;"),
-                ui.span("All Layers · All Heads", style="font-size: 11px; color: #94a3b8; font-weight: 500;")
+                ui.span(subtitle, style="font-size: 11px; color: #94a3b8; font-weight: 500;")
             ),
-            get_metrics_display(res)
+            get_metrics_display(res, layer_idx=layer_idx, head_idx=head_idx)
         )
 
     def dashboard_layout_helper(is_gpt2, num_layers, num_heads, clean_tokens, suffix=""):
@@ -1995,7 +2023,7 @@ def server(input, output, session):
 
         fig.update_layout(
             title=dict(
-                text=f"Token-to-Token — S{target_idx} ← S{source_idx}",
+                text=f"Token-to-Token — S{target_idx} ← S{source_idx} (Model A)",
                 font=dict(size=14, color="#1e293b", family="Inter, system-ui, sans-serif")
             ),
             xaxis=dict(
@@ -2204,13 +2232,23 @@ def server(input, output, session):
         if not res: return None
         tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
         if attentions is None or len(attentions) == 0: return None
+        
+        # Check if we're in global mode
+        use_global = global_metrics_mode.get() == "all"
+        
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
         
-        att = attentions[layer_idx][0, head_idx].cpu().numpy()
-        att = attentions[layer_idx][0, head_idx].cpu().numpy()
+        # Get attention matrix - either specific layer/head or averaged across all
+        if use_global:
+            # Average attention across all layers and all heads
+            att_layers = [layer[0].cpu().numpy() for layer in attentions]
+            att = np.mean(att_layers, axis=(0, 1))
+        else:
+            att = attentions[layer_idx][0, head_idx].cpu().numpy()
+        
         layer_block = get_layer_block(encoder_model, layer_idx)
         
         if hasattr(layer_block, "attention"): # BERT
@@ -2340,6 +2378,12 @@ def server(input, output, session):
                     layer="above"
                 )
         
+        # Dynamic title based on mode
+        if use_global:
+            title_text = "Attention Heatmap — Averaged (All Layers · Heads)"
+        else:
+            title_text = f"Attention Heatmap — Layer {layer_idx}, Head {head_idx}"
+        
         fig.update_layout(
             xaxis_title="Key (attending to)", 
             yaxis_title="Query (attending from)",
@@ -2357,7 +2401,7 @@ def server(input, output, session):
                 autorange='reversed'
             ),
             title=dict(
-                text=f"Multi-Head Attention — Layer {layer_idx}, Head {head_idx}",
+                text=title_text,
                 x=0.5,
                 y=0.98,
                 xanchor='center',
@@ -2366,7 +2410,7 @@ def server(input, output, session):
             )
         )
         return ui.div(
-            {"class": "card", "style": "height: 100%;"},
+            {"class": "card", "style": "height: 100%; display: flex; flex-direction: column;"},
             ui.div(
                 {"class": "header-simple"},
                 ui.div(
@@ -2401,8 +2445,11 @@ def server(input, output, session):
                     )
                 ),
             ),
-            ui.div({"class": "viz-description"}, ui.HTML(f"Displays how much each token attends to every other token. Brighter cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence.{causal_desc}")),
-            ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_map_plot")),
+            ui.div({"class": "viz-description", "style": "margin-top: 20px; flex-shrink: 0;"}, ui.HTML(f"Displays how much each token attends to every other token. Brighter cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence.{causal_desc}")),
+            ui.div(
+                {"style": "flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%;"},
+                ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_map_plot"))
+            ),
             # JavaScript to suppress hover on masked cells for causal models
             ui.HTML(f"""
             <script>
@@ -2441,17 +2488,31 @@ def server(input, output, session):
         if not res: return None
         tokens, _, _, attentions, *_ = res
         if attentions is None or len(attentions) == 0: return None
+        
+        # Check if we're in global mode
+        use_global = global_metrics_mode.get() == "all"
+        
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
-        try: selected = input.flow_token_select()
-        except: selected = "all"
-        focus_idx = None if selected == "all" else int(selected)
+        
+        # Use global_focus_token from floating bar for token filtering
+        try:
+            global_token = int(input.global_focus_token())
+            focus_idx = global_token if global_token >= 0 else None
+        except:
+            focus_idx = None  # No token selected = show all
 
         clean_tokens = tokens_data()
         
-        att = attentions[layer_idx][0, head_idx].cpu().numpy()
+        # Get attention matrix - either specific layer/head or averaged across all
+        if use_global:
+            # Average attention across all layers and all heads
+            att_layers = [layer[0].cpu().numpy() for layer in attentions]
+            att = np.mean(att_layers, axis=(0, 1))
+        else:
+            att = attentions[layer_idx][0, head_idx].cpu().numpy()
         n_tokens = len(tokens)
         color_palette = ['#ff5ca9', '#3b82f6', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e', '#a855f7', '#0ea5e9']
 
@@ -2570,17 +2631,6 @@ def server(input, output, session):
                                     Shows Query→Key, not information flow
                                 </p>
                             """)
-                        )
-                    )
-                ),
-                ui.div(
-                    {"class": "selection-boxes-container"},
-                    ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div(
-                            {"class": "select-compact"},
-                            ui.input_select("flow_token_select", None, choices={"all": "All tokens", **{str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}}, selected=selected)
                         )
                     )
                 )
@@ -2757,11 +2807,7 @@ def server(input, output, session):
                             )
                         )
                     ),
-                     ui.div(
-                        {"class": "header-right"},
-                        ui.div({"class": "select-compact"}, ui.input_select("radar_head", None, choices={str(i): f"Head {i}" for i in range(num_heads)}, selected="0")),
-                        ui.div({"class": "select-compact"}, ui.input_select("radar_layer", None, choices={str(i): f"Layer {i}" for i in range(num_layers)}, selected="0")),
-                    )
+
                 ),
                 ui.div(
                     {"class": "header-row-bottom", "style": "margin-top: 4px;"},
@@ -2779,7 +2825,7 @@ def server(input, output, session):
              ui.output_ui("radar_plot_internal"),
              ui.HTML(f"""
                 <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
-                    <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
+                    <strong style="color: #ff5ca9;">Specialization Dimensions</strong> — click any to see detailed explanation:<br>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: center;">
                         <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
                         <span class="metric-tag" onclick="showMetricModal('Semantics', 0, 0)">Semantics</span>
@@ -2956,7 +3002,7 @@ def server(input, output, session):
                 hovertemplate='<b>%{theta}</b><br>Value: %{r:.4f}<extra></extra>'
             ))
             
-            title_text = f'Head Specialization Radar — Layer {layer_idx}, Head {head_idx}'
+            title_text = f'Radar — Layer {layer_idx}, Head {head_idx}'
         else:
             # All heads mode
             num_heads = len(layer_metrics)
@@ -2990,7 +3036,7 @@ def server(input, output, session):
                     hovertemplate=f'<b>Head {h_idx}</b><br>%{{theta}}: %{{r:.4f}}<extra></extra>'
                 ))
             
-            title_text = f'Head Specialization Radar — Layer {layer_idx} (All Heads)'
+            title_text = f'Radar — Layer {layer_idx} (All Heads)'
         
         fig.update_layout(
             polar=dict(
@@ -3015,7 +3061,9 @@ def server(input, output, session):
             title=dict(
                 text=title_text,
                 font=dict(size=14, color="#1e293b", family="Inter, system-ui, sans-serif"),
-                y=0.95
+                y=0.95,
+                x=0.5,
+                xanchor='center'
             ),
             margin=dict(l=40, r=40, t=60, b=40),
             paper_bgcolor="rgba(0,0,0,0)",
@@ -3033,7 +3081,7 @@ def server(input, output, session):
 
 
     # This function replaces the previous @output @render.ui def influence_tree():
-    def get_influence_tree_ui(res, root_idx=0, layer_idx=0, head_idx=0, suffix=""):
+    def get_influence_tree_ui(res, root_idx=0, layer_idx=0, head_idx=0, suffix="", use_global=False):
         if not res:
             return ui.HTML("""
                 <div style='padding: 20px; text-align: center;'>
@@ -3065,10 +3113,14 @@ def server(input, output, session):
         # Since the actual `_generate_tree_data` is not provided, we'll create a dummy one.
         
         def _generate_tree_data(tokens, root_idx, layer_idx, head_idx, max_depth, top_k):
-            # Get attention matrix for the specific layer and head
-            # attentions[layer_idx] is (batch, num_heads, seq_len, seq_len)
+            # Get attention matrix - either specific layer/head or averaged across all
             try:
-                att_matrix = attentions[layer_idx][0, head_idx].cpu().numpy()
+                if use_global:
+                    # Average attention across all layers and all heads
+                    att_layers = [layer[0].cpu().numpy() for layer in attentions]
+                    att_matrix = np.mean(att_layers, axis=(0, 1))
+                else:
+                    att_matrix = attentions[layer_idx][0, head_idx].cpu().numpy()
             except:
                 return None
 
@@ -3157,16 +3209,25 @@ def server(input, output, session):
     def render_tree_view():
         res = cached_result.get()
         if not res: return None
-        try: root_idx = int(input.tree_root_token())
-        except: root_idx = 0
-        try: layer_idx = int(input.radar_layer())
+        
+        # Check if we're in global mode
+        use_global = global_metrics_mode.get() == "all"
+        
+        # Use global inputs for layer and head
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        try: head_idx = int(input.radar_head())
+        try: head_idx = int(input.global_head())
         except: head_idx = 0
+        
+        # Use global_focus_token if available and >= 0, else default to first token (0)
+        try:
+            global_token = int(input.global_focus_token())
+            root_idx = global_token if global_token >= 0 else 0
+        except:
+            root_idx = 0
         
         tokens = res[0]
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
-        choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
 
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
@@ -3204,14 +3265,6 @@ def server(input, output, session):
                                 """)
                             )
                         )
-                    ),
-                    ui.div(
-                        {"class": "header-right"},
-                        ui.tags.span("Root:", style="font-size:11px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                        ui.div(
-                            {"class": "select-compact"},
-                            ui.input_select("tree_root_token", None, choices=choices, selected=str(root_idx))
-                        )
                     )
                 ),
                 ui.div(
@@ -3219,7 +3272,7 @@ def server(input, output, session):
                     ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
                 )
             ),
-            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="")
+            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="", use_global=use_global)
         )
 
     # -------------------------------------------------------------------------
@@ -3640,7 +3693,7 @@ def server(input, output, session):
             xaxis=dict(tickfont=dict(size=10)),
             yaxis=dict(tickfont=dict(size=10)),
             title=dict(
-                text=f"Multi-Head Attention — Layer {layer_idx}, Head {head_idx}",
+                text=f"Attention Heatmap — Layer {layer_idx}, Head {head_idx}",
                 x=0.5,
                 y=0.98,
                 xanchor='center',
@@ -3651,7 +3704,7 @@ def server(input, output, session):
         
 
         return ui.div(
-            {"class": "card", "style": "height: 100%;"},
+            {"class": "card", "style": "height: 100%; display: flex; flex-direction: column;"},
             ui.div(
                 {"class": "header-simple"},
                 ui.div(
@@ -3684,10 +3737,13 @@ def server(input, output, session):
                             """)
                         )
                     )
-                )
+                ),
             ),
-            ui.div({"class": "viz-description"}, "Displays how much each token attends to every other token. Darker cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence."),
-            ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False))
+            ui.div({"class": "viz-description", "style": "margin-top: 20px; flex-shrink: 0;"}, "Displays how much each token attends to every other token. Darker cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence."),
+            ui.div(
+                {"style": "flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%;"},
+                ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False)) # removed div_id_B here in previous turn, but it was just removed.
+            )
         )
 
 

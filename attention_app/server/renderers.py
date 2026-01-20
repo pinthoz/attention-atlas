@@ -621,14 +621,22 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5):
     )
 
 
-def get_metrics_display(res):
+def get_metrics_display(res, layer_idx=None, head_idx=None):
     tokens, _, _, attentions, *_ = res
     if attentions is None or len(attentions) == 0:
         return ui.HTML("")
 
     att_layers = [layer[0].cpu().numpy() for layer in attentions]
-    att_avg = np.mean(att_layers, axis=(0, 1))
-    metrics_dict = compute_all_attention_metrics(att_avg)
+    
+    # If specific layer/head selected, use that; otherwise average all
+    if layer_idx is not None and head_idx is not None:
+        # Single layer, single head
+        att_matrix = att_layers[layer_idx][head_idx]
+    else:
+        # Average across all layers and heads
+        att_matrix = np.mean(att_layers, axis=(0, 1))
+    
+    metrics_dict = compute_all_attention_metrics(att_matrix)
     
     # Calculate Flow Change (JSD between first and last layer)
     flow_change = calculate_flow_change(att_layers)
@@ -708,18 +716,18 @@ def get_metrics_display(res):
     # Build metrics with enhanced info - use normalized focus
     # Format: (label, value, value_fmt, key, modal_name, scale_max_label)
     metrics = [
-        ("Confidence (Max)", metrics_dict['confidence_max'], "{:.2f}", "confidence_max", "Confidence Max", "1.0"),
-        ("Confidence (Avg)", metrics_dict['confidence_avg'], "{:.2f}", "confidence_avg", "Confidence Avg", "1.0"),
-        ("Focus (Normalized)", focus_normalized, "{:.2f}", "focus_normalized", "Focus", "1.0"),
-        ("Sparsity", metrics_dict['sparsity'], "{:.0%}", "sparsity", "Sparsity", "100%"),
-        ("Distribution", metrics_dict['distribution_median'], "{:.3f}", "distribution_median", "Distribution", "0.05"),
-        ("Uniformity", metrics_dict['uniformity'], "{:.3f}", "uniformity", "Uniformity", "0.2"),
-        ("Flow Change", flow_change, "{:.2f}", "flow_change", "Flow Change", "0.5"),
-        ("Balance", balance, "{:.2f}", "balance", "Balance", "1.0"),
+        ("Confidence (Max)", metrics_dict['confidence_max'], "{:.2f}", "confidence_max", "Confidence Max", "1.0", False),
+        ("Confidence (Avg)", metrics_dict['confidence_avg'], "{:.2f}", "confidence_avg", "Confidence Avg", "1.0", False),
+        ("Focus (Normalized)", focus_normalized, "{:.2f}", "focus_normalized", "Focus", "1.0", False),
+        ("Sparsity", metrics_dict['sparsity'], "{:.0%}", "sparsity", "Sparsity", "100%", False),
+        ("Distribution", metrics_dict['distribution_median'], "{:.3f}", "distribution_median", "Distribution", "0.05", False),
+        ("Uniformity", metrics_dict['uniformity'], "{:.3f}", "uniformity", "Uniformity", "0.2", False),
+        ("Balance", balance, "{:.2f}", "balance", "Balance", "1.0", False),
+        ("Flow Change", flow_change, "{:.2f}", "flow_change", "Flow Change", "∞", True),  # Global metric - always uses all layers
     ]
 
     cards_html = '<div class="metrics-grid">'
-    for idx, (label, raw_value, fmt, key, modal_name, scale_max) in enumerate(metrics):
+    for idx, (label, raw_value, fmt, key, modal_name, scale_max, is_global) in enumerate(metrics):
         value_str = fmt.format(raw_value)
         interp_label, interp_color, gauge_pct, low_pct, high_pct = get_interpretation(key, raw_value)
         
@@ -729,11 +737,16 @@ def get_metrics_display(res):
         zone2_color = "#f59e0b"  # Yellow/Amber (Medium)
         zone3_color = "#ef4444"  # Red (High)
         
+        # Add global indicator for metrics that always use all layers
+        global_indicator = ''
+        if is_global:
+            global_indicator = ' <span style="font-size: 9px; color: #94a3b8; font-weight: 400; text-transform: none; letter-spacing: 0;">(Global - uses all layers)</span>'
+        
         cards_html += f'''
             <div class="metric-card"
                  data-metric-name="{modal_name}"
                  onclick="showMetricModal('{modal_name}', 'Global', 'Avg')">
-                <div class="metric-label">{label}</div>
+                <div class="metric-label">{label}{global_indicator}</div>
                 <div class="metric-value">{value_str}</div>
                 <div class="metric-gauge-wrapper">
                     <span class="gauge-scale-label">0</span>
