@@ -56,13 +56,17 @@ def compute_influence_tree(attention_matrix, tokens, Q_matrix, K_matrix, d_k, ro
                 'children': [tree_node, ...]
             }
     """
-    visited = set()
-    
-    def build_tree(token_idx, depth, parent_idx=None):
-        if depth >= max_depth or token_idx in visited:
+    def build_tree(token_idx, depth, current_path=None, parent_idx=None):
+        if current_path is None:
+            current_path = set()
+            
+        # Prevent cycles: strict check against current path
+        if depth >= max_depth or token_idx in current_path:
             return None
         
-        visited.add(token_idx)
+        # New path for this branch includes current token
+        new_path = current_path.copy()
+        new_path.add(token_idx)
         
         # Get attention scores from this token
         attention_scores = attention_matrix[token_idx]
@@ -79,16 +83,23 @@ def compute_influence_tree(attention_matrix, tokens, Q_matrix, K_matrix, d_k, ro
         else:
             att_weight = 1.0  # Root node
         
-        # Get top-k tokens (excluding already visited)
+        # Get top-k tokens, excluding those in the CURRENT path to avoid cycles
+        # But allowing tokens used in other branches
         top_indices = []
-        for idx in np.argsort(attention_scores)[::-1]:
-            if idx not in visited and len(top_indices) < top_k:
-                top_indices.append(idx)
+        sorted_indices = np.argsort(attention_scores)[::-1]
+        
+        for idx in sorted_indices:
+            if len(top_indices) >= top_k:
+                break
+            # Skip if it would form a cycle in this branch
+            if idx in new_path:
+                continue
+            top_indices.append(idx)
         
         # Build children recursively
         children = []
         for child_idx in top_indices:
-            child_tree = build_tree(child_idx, depth + 1, token_idx)
+            child_tree = build_tree(child_idx, depth + 1, new_path, token_idx)
             if child_tree:
                 children.append(child_tree)
         

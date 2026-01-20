@@ -740,7 +740,13 @@ def get_metrics_display(res, layer_idx=None, head_idx=None):
         # Add global indicator for metrics that always use all layers
         global_indicator = ''
         if is_global:
-            global_indicator = ' <span style="font-size: 9px; color: #94a3b8; font-weight: 400; text-transform: none; letter-spacing: 0;">(Global - uses all layers)</span>'
+            global_indicator = '''
+                <span class="global-info-icon info-tooltip-icon" 
+                      onmouseenter="showGlobalMetricInfo(this);"
+                      onmouseleave="hideGlobalMetricInfo();"
+                      onclick="event.stopPropagation();"
+                      style="font-size: 8px; width: 14px; height: 14px; line-height: 14px; margin-left: 4px; vertical-align: middle; font-family: 'PT Serif', serif;">i</span>
+            '''
         
         cards_html += f'''
             <div class="metric-card"

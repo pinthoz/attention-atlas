@@ -1624,9 +1624,11 @@ CSS = """
             border-radius: 50%;
             background: transparent;
             border: 1px dashed #94a3b8;
-            color: #64748b;
+            color: #94a3b8;
             font-size: 10px;
             font-weight: 600;
+            font-family: 'PT Serif', serif;
+            text-transform: lowercase;
             cursor: help;
             transition: all 0.2s ease;
             flex-shrink: 0;
@@ -1645,6 +1647,20 @@ CSS = """
         }
 
         .info-tooltip-icon:hover {
+            background: #ff5ca9;
+            border-color: #ff5ca9;
+            border-style: solid;
+            color: white;
+            animation: none;
+        }
+
+        /* Global metric info icon (click to show popup) */
+        .global-info-icon {
+            animation: info-pulse 2.5s ease-in-out infinite;
+            color: #64748b;
+        }
+
+        .global-info-icon:hover {
             background: #ff5ca9;
             border-color: #ff5ca9;
             border-style: solid;
@@ -2641,7 +2657,123 @@ CSS = """
              transform: scale(1.3);
         }
 
-        """
+
 
 __all__ = ["CSS"]
 
+
+        /* Custom Input History UI */
+        .custom-input-container {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            position: relative;
+            margin-top: 12px;
+            margin-bottom: 40px !important; /* Force space below */
+            font-family: 'Inter', sans-serif;
+            overflow: visible;
+        }
+
+        /* The Tab */
+        .history-tab {
+            position: relative;
+            top: auto;
+            left: auto;
+            bottom: auto; /* Reset absolute positioning */
+            background: #ff5ca9;
+            color: white;
+            padding: 4px 20px;
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+            font-size: 14px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            z-index: 20; /* Higher than textarea */
+            transition: background 0.2s ease;
+            height: 26px;
+            line-height: 1;
+            margin-bottom: -8px !important; /* Force glue effect */
+            box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+        }
+
+        .history-tab:hover {
+            background: #f43f8e;
+            z-index: 21;
+        }
+
+        /* The Textarea */
+        .custom-textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            background: white;
+            color: #1e293b;
+            border: 1px solid #cbd5e1;
+            border-radius: 0 8px 8px 8px; /* Top-left sharp to join with tab */
+            border-top-left-radius: 0;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            position: relative;
+            z-index: 10;
+            display: block;
+            margin-top: 0; /* Ensure no gaps */
+        }
+
+        .custom-textarea:focus {
+            border-color: #ff5ca9;
+            box-shadow: 0 0 0 3px rgba(255, 92, 169, 0.1);
+            z-index: 6; 
+        }
+
+        /* History Dropdown */
+        .history-dropdown {
+            position: absolute;
+            top: 32px; /* Height of tab (approx) */
+            left: 0;
+            width: 100%; /* Match container width */
+            max-height: 250px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 0 8px 8px 8px;
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.15);
+            z-index: 100; /* High z-index to float over everything */
+            display: none;
+        }
+
+        .history-dropdown.show {
+            display: block;
+        }
+
+        .history-item {
+            padding: 10px 14px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 13px;
+            color: #475569;
+            cursor: pointer;
+            transition: background 0.15s ease;
+            white-space: normal; /* Allow wrapping */
+            line-height: 1.4;
+        }
+
+        .history-item:hover {
+            background: #fff1f2;
+            color: #be185d;
+        }
+
+        }
+
+        /* Hide default navbar toggler (duplicate icon) */
+        .navbar-toggler {
+            display: none !important;
+        }
+        """
