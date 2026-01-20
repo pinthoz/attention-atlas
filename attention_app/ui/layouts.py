@@ -107,8 +107,72 @@ attention_analysis_page = ui.page_fluid(
         ui.div(
             {"class": "sidebar-section"},
             ui.tags.span("Input Text", class_="sidebar-label"),
-            ui.input_text_area("text_input", None, "All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.", rows=6),
+            
+            # Custom History Input Component
             ui.div(
+                {"class": "custom-input-container"},
+                
+                # History Tab
+                ui.div(
+                    {"class": "history-tab", "onclick": "toggleHistory()", "title": "History"},
+                    ui.HTML("""<svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 448 512" fill="white"><!--!Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.--><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg>"""),
+                ),
+                
+                # History Dropdown (initially hidden)
+                ui.div(
+                    {"id": "history-dropdown", "class": "history-dropdown"},
+                    ui.output_ui("history_list")
+                ),
+                
+                # Custom Textarea
+                ui.tags.textarea(
+                    "All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.",
+                    id="text_input",
+                    class_="custom-textarea",
+                    rows=6,
+                    # Bind this textarea to Shiny input 'text_input'
+                    oninput="Shiny.setInputValue('text_input', this.value, {priority: 'event'})"
+                ),
+                
+                # JS to handle history interactions
+                ui.tags.script("""
+                function toggleHistory() {
+                    const dropdown = document.getElementById('history-dropdown');
+                    dropdown.classList.toggle('show');
+                }
+                
+                // Close dropdown when clicking outside
+                document.addEventListener('click', function(event) {
+                    const container = document.querySelector('.custom-input-container');
+                    const dropdown = document.getElementById('history-dropdown');
+                    if (container && !container.contains(event.target)) {
+                        dropdown.classList.remove('show');
+                    }
+                });
+                
+                function selectHistoryItem(text) {
+                    const textarea = document.getElementById('text_input');
+                    textarea.value = text;
+                    Shiny.setInputValue('text_input', text, {priority: 'event'});
+                    document.getElementById('history-dropdown').classList.remove('show');
+                }
+
+                // Persistence Logic
+                Shiny.addCustomMessageHandler('update_history', function(message) {
+                    localStorage.setItem('attention_atlas_history', JSON.stringify(message));
+                });
+
+                $(document).on('shiny:connected', function() {
+                    const stored = localStorage.getItem('attention_atlas_history');
+                    if (stored) {
+                        Shiny.setInputValue('restored_history', JSON.parse(stored));
+                    }
+                });
+                """)
+            ),
+
+            ui.div(
+                {"style": "margin-bottom: 12px;"}, # Space for Visual Options
                 ui.input_action_button("generate_all", "Generate All", class_="btn-primary"),
             ),
         ),
@@ -151,13 +215,59 @@ app_ui = ui.page_navbar(
     header=ui.tags.head(
         ui.tags.title("Attention Atlas"),
         ui.tags.style(CSS),
-        ui.tags.link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@500;700&display=swap"),
+        ui.tags.link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@500;700&family=PT+Serif:wght@400;700&display=swap"),
         ui.tags.script(src="https://cdn.plot.ly/plotly-2.24.1.min.js"),
         ui.tags.script(src="https://d3js.org/d3.v7.min.js"),
         ui.tags.script(JS_CODE),
         ui.tags.script(JS_INTERACTIVE),
         ui.tags.script(JS_TREE_VIZ),
+        ui.tags.script(JS_TREE_VIZ),
         ui.tags.script(JS_TRANSITION_MODAL),
+        ui.tags.style("""
+            /* FORCE HIDE NAVBAR TOGGLER GLOBALLY */
+            .navbar-toggler, .navbar-toggler-icon {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                width: 0 !important;
+                pointer-events: none !important;
+            }
+
+            /* FORCE HISTORY TAB GLUE AND SPACING */
+            .custom-input-container {
+                margin-bottom: 10px !important; /* EXACTLY 10px as requested */
+                position: relative !important;
+                display: block !important;
+                margin-top: 32px !important; /* Adjusted to be "more glued" */
+            }
+            .sidebar-section {
+                margin-top: 0 !important; /* Move everything UP (max) */
+                padding-top: 0 !important;
+                margin-bottom: 0 !important; 
+            }
+            .sidebar-label {
+                display: block !important;
+                margin-bottom: 6px !important; /* Slightly reduced */
+            }
+            .history-tab {
+                position: absolute !important;
+                top: -26px !important; /* EXACTLY clear the box content */
+                left: 0 !important;
+                margin-bottom: 0 !important;
+                z-index: 50 !important;
+                border-bottom-left-radius: 0 !important;
+                border-bottom-right-radius: 0 !important;
+                box-shadow: none !important;
+            }
+            .history-dropdown {
+                top: 0 !important; /* Start immediately below tab */
+            }
+            .custom-textarea {
+                margin-top: 0 !important; /* Reset margin */
+                position: relative !important;
+                z-index: 40 !important;
+            }
+        """)
     ),
 
     # Modals (shared across tabs)

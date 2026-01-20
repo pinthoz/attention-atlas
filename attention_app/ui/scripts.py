@@ -56,6 +56,46 @@ JS_CODE = """
             });
         })();
 
+
+        // Show global metric info popup on hover
+        window.showGlobalMetricInfo = function(iconElement) {
+            // Remove any existing popup first
+            var existingPopup = document.getElementById('global-metric-popup');
+            if (existingPopup) {
+                existingPopup.remove();
+            }
+            
+            // Create popup
+            var popup = document.createElement('div');
+            popup.id = 'global-metric-popup';
+            popup.innerHTML = '<strong style="color:#ff5ca9;">Global Metric</strong><br>Uses ALL layers to measure how attention patterns transform from first to last layer.';
+            popup.style.cssText = 'position: fixed; z-index: 999999; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: #f1f5f9; padding: 12px 16px; border-radius: 10px; font-size: 12px; line-height: 1.6; max-width: 250px; box-shadow: 0 10px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,92,169,0.3);';
+            
+            // Position near the icon
+            var rect = iconElement.getBoundingClientRect();
+            popup.style.left = (rect.left + rect.width/2 - 125) + 'px'; // Center horizontally
+            popup.style.top = (rect.bottom + 8) + 'px';
+            
+            // Ensure popup doesn't go off-screen
+            document.body.appendChild(popup);
+            var popupRect = popup.getBoundingClientRect();
+            if (popupRect.right > window.innerWidth - 10) {
+                popup.style.left = (window.innerWidth - popupRect.width - 10) + 'px';
+            }
+            if (popupRect.left < 10) {
+                popup.style.left = '10px';
+            }
+        };
+
+        // Hide global metric info popup
+        window.hideGlobalMetricInfo = function() {
+            var popup = document.getElementById('global-metric-popup');
+            if (popup) {
+                popup.remove();
+            }
+        };
+
+
         // Define showMetricModal early so it's available for onclick handlers
         window.showMetricModal = function(metricName, layer, head) {
             var modal = document.getElementById('metric-modal');
@@ -412,13 +452,10 @@ JS_TREE_VIZ = """
 
             // Vertical tree configuration
             const container = document.getElementById(containerId);
-            const containerHeight = container ? container.clientHeight : 500;
             const containerWidth = container ? container.clientWidth : 600;
 
-            const margin = {top: 80, right: 20, bottom: 60, left: 20};
-            // Use available height but ensure minimum
-            const height = Math.max(300, containerHeight - margin.top - margin.bottom);
-
+            const margin = {top: 60, right: 60, bottom: 60, left: 60};
+            
             const colors = {
                 root: '#ff5ca9',
                 level1: '#3b82f6',
@@ -428,67 +465,62 @@ JS_TREE_VIZ = """
 
             // 1. Process Data & Layout first (before creating SVG)
             const root = d3.hierarchy(treeData);
-            
-            // 2. Configure layout with nodeSize (compact spacing)
-            // [width, height] -> x-spacing, y-spacing (for algorithm)
-            const nodeWidth = 45; // Fixed width per node
             const maxDepth = root.height;
-            const verticalSpacing = maxDepth > 0 ? height / (maxDepth + 1) : height;
             
-            const tree = d3.tree().nodeSize([nodeWidth, verticalSpacing]);
+            // Calculate dynamic size
+            // Height: based on depth (fixed pixels per level)
+            // Width: based on max breadth (max nodes at any level)
+            const depthStep = 140; // Pixels per depth level
+            const nodeWidthSpacing = 80; // Pixels between nodes at same level
+            
+            // Calculate max breadth
+            const levelCounts = {};
+            root.each(d => {
+                const depth = d.depth;
+                levelCounts[depth] = (levelCounts[depth] || 0) + 1;
+            });
+            const values = Object.values(levelCounts);
+            const maxBreadth = values.length > 0 ? Math.max(...values) : 1;
+            
+            // Determine SVG dimensions
+            // Height = (depth + 1) * spacing + margins
+            const fullHeight = ((maxDepth + 1) * depthStep) + margin.top + margin.bottom;
+            
+            // Width = maxBreadth * spacing + margins (or container width, whichever is larger)
+            const requiredWidth = (maxBreadth * nodeWidthSpacing) + margin.left + margin.right;
+            const fullWidth = Math.max(containerWidth, requiredWidth);
+
+            const tree = d3.tree().size([fullWidth - margin.left - margin.right, fullHeight - margin.top - margin.bottom]);
             tree(root);
 
-            // 3. Compute bounds and shift
-            let x0 = Infinity;
-            let x1 = -Infinity;
-            root.each(d => {
-                if (d.x > x1) x1 = d.x;
-                if (d.x < x0) x0 = d.x;
-                // Enforce our vertical spacing
-                d.y = d.depth * verticalSpacing;
-            });
-
-            const treeWidth = x1 - x0;
-            // Ensure SVG is at least container width, or wider if tree needs it
-            const fullWidth = Math.max(containerWidth, treeWidth + margin.left + margin.right);
-            
-            // Calculate centering offset
-            let translateX = -x0 + margin.left;
-            // If tree is smaller than container, center it
-            if (treeWidth < (containerWidth - margin.left - margin.right)) {
-                translateX += ((containerWidth - margin.left - margin.right) - treeWidth) / 2;
-            }
-
-            // 4. Create SVG
+            // 4. Create SVG with scrollable dimensions
             const svg = d3.select(`#${containerId}`)
                 .append("svg")
                 .attr("width", fullWidth)
-                .attr("height", height + margin.top + margin.bottom)
-                .style("font", "12px 'Inter', sans-serif");
+                .attr("height", fullHeight)
+                .style("font", "12px 'Inter', sans-serif")
+                .style("display", "block")
+                .style("margin", "0 auto"); // Center horizontally if smaller than container
 
             const g = svg.append("g")
-                .attr("transform", `translate(${translateX},${margin.top})`);
+                .attr("transform", `translate(${margin.left},${margin.top})`);
             
-            // (Layout reused via 'root')
-
-
-            // Don't collapse - show all nodes expanded by default
-            // (removed the collapse logic)
-
             let i = 0;
             update(root);
 
             function update(source) {
                 // Recompute layout
                 tree(root);
-                root.each(d => { d.y = d.depth * verticalSpacing; });
 
                 const nodes = root.descendants();
                 const links = root.descendants().slice(1);
 
-                // Use pre-calculated positions
-
-                // (Node distribution logic removed, relying on nodeSize)
+                // Start from center horizontal
+                // But D3 tree layout calculates x, y based on .size()
+                // We just use those x, y coordinates
+                
+                // Override y for strictly uniform depth spacing
+                nodes.forEach(d => { d.y = d.depth * depthStep; });
 
                 const node = g.selectAll('g.node')
                     .data(nodes, d => d.id || (d.id = ++i));
@@ -507,15 +539,17 @@ JS_TREE_VIZ = """
                     .style("opacity", d => 0.3 + (d.data.att || 0) * 0.7);
 
                 nodeEnter.append('text')
-                    .attr("dy", d => d.depth === 0 ? "-1.5em" : "-.5em") /* Move root text further up */
+                    .attr("dy", d => d.depth === 0 ? "-2.5em" : "-1.5em")
                     .attr("text-anchor", "middle")
                     .text(d => d.data.name)
                     .style("fill", d => getNodeColor(d))
                     .style("font-weight", d => d.depth === 0 ? "700" : "500")
-                    .style("font-size", d => d.depth === 0 ? "14px" : "12px");
+                    .style("font-size", d => d.depth === 0 ? "14px" : "12px")
+                    .style("background", "white") // Fake shadow for readability? No, just SVG text
+                    .style("text-shadow", "0 1px 2px rgba(255,255,255,0.8)");
 
                 nodeEnter.append('text')
-                    .attr("dy", "1.8em")
+                    .attr("dy", d => d.depth === 0 ? "-1em" : "1.8em") 
                     .attr("text-anchor", "middle")
                     .text(d => d.depth > 0 ? `${(d.data.att || 0).toFixed(3)}` : "")
                     .style("fill", "#64748b")
@@ -605,12 +639,10 @@ JS_TREE_VIZ = """
                 if (d.depth === 2) return colors.level2;
                 return colors.level3;
             }
-            // Center the scroll view
+            // Smart scroll: center the tree initially
             setTimeout(() => {
-                const container = document.getElementById(containerId);
-                if (container) {
-                    const scrollLeft = (container.scrollWidth - container.clientWidth) / 2;
-                    container.scrollLeft = scrollLeft;
+                if (container && container.scrollWidth > container.clientWidth) {
+                    container.scrollLeft = (container.scrollWidth - container.clientWidth) / 2;
                 }
             }, 100);
         }

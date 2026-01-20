@@ -48,8 +48,65 @@ def server(input, output, session):
     cached_result = reactive.value(None)
     cached_result_B = reactive.value(None) # For comparison
     isa_selected_pair = reactive.Value(None)
+    isa_selected_pair = reactive.Value(None)
     isa_selected_pair_B = reactive.Value(None) # For comparison
     
+    # --- History Logic ---
+    input_history = reactive.Value([])
+
+    @reactive.Effect
+    @reactive.event(input.restored_history)
+    def restore_history():
+        if input.restored_history():
+            # Dedup restored data immediately with normalization
+            raw = input.restored_history()
+            unique = []
+            for item in raw:
+                clean_item = item.strip()
+                if clean_item and clean_item not in unique:
+                    unique.append(clean_item)
+            input_history.set(unique)
+
+    @reactive.Effect
+    @reactive.event(input.generate_all)
+    def update_history():
+        text = input.text_input()
+        if not text:
+            return
+        clean_text = text.strip()
+        if not clean_text:
+            return
+        
+        # Remove ALL instances of this text checking normalized version
+        hist = [h for h in input_history() if h.strip() != clean_text]
+        hist.insert(0, clean_text)
+        hist = hist[:20]
+        input_history.set(hist)
+
+    @reactive.Effect
+    async def sync_history_storage():
+        await session.send_custom_message("update_history", input_history())
+
+    @output
+    @render.ui
+    def history_list():
+        hist = input_history()
+        if not hist:
+            return ui.div("No history yet.", style="padding:10px; color:#94a3b8; font-style:italic;")
+        
+        items = []
+        for text in hist:
+            display_text = (text[:60] + "...") if len(text) > 60 else text
+            safe_text = text.replace("\\", "\\\\").replace("'", "\\'").replace('"', '&quot;').replace('\n', ' ')
+            items.append(
+                ui.div(
+                    display_text, 
+                    class_="history-item", 
+                    onclick=f"selectHistoryItem('{safe_text}')"
+                )
+            )
+        return ui.div(*items)
+
     # Synchronize text inputs between tabs
     @reactive.Effect
     @reactive.event(input.text_input)
@@ -116,6 +173,15 @@ def server(input, output, session):
 
 
 
+    
+    # Input History Logic
+    input_history = reactive.Value([
+        "All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.",
+        "The quick brown fox jumps over the lazy dog.",
+        "The doctor said he would be back soon.",
+        "The nurse said she was tired."
+    ])
+
     @reactive.effect
     @reactive.event(input.generate_all)
     async def compute_all():
@@ -125,11 +191,20 @@ def server(input, output, session):
         if not text:
             print("DEBUG: No text input, returning")
             return
-        
+
+        # Update History
+        current_history = input_history.get()
+        # Only add if unique and non-empty
+        if text and (not current_history or text != current_history[0]):
+            if text in current_history:
+                current_history.remove(text) # Move to top
+            updated_history = [text] + current_history
+            input_history.set(updated_history[:20]) # Limit to 20 items
+
         running.set(True)
         await session.send_custom_message('start_loading', {})
         await asyncio.sleep(0.1)
-        
+
         model_name = input.model_name()
         print(f"DEBUG: Model name A: {model_name}")
         
@@ -161,6 +236,26 @@ def server(input, output, session):
             cached_result_B.set(None)
         finally:
             running.set(False)
+
+    # Sync History UI
+    @reactive.Effect
+    @reactive.event(input_history)
+    def update_history_list():
+        history = input_history.get()
+        # Create HTML string
+        html_content = ""
+        for item in history:
+             safe_item = item.replace("'", "\\'").replace('"', '&quot;')
+             html_content += f"""<div class="history-item" onclick="selectHistoryItem('{safe_item}')">{item}</div>"""
+        
+        # Inject JS to update the dropdown content
+        js_code = f"""
+            var dropdown = document.getElementById('history-dropdown');
+            if (dropdown) {{
+                dropdown.innerHTML = `{html_content}`;
+            }}
+        """
+        ui.insert_ui(selector="body", where="beforeEnd", ui=ui.tags.script(js_code))
 
     # -------------------------------------------------------------------------
     # SYNCHRONIZATION LOGIC (Cross-Model Control)
@@ -479,13 +574,13 @@ def server(input, output, session):
                     ui.span("Top-K", class_="control-label"),
                     ui.div(
                         {"class": "slider-container"},
-                        ui.tags.span("5", id="topk-value", class_="slider-value"),
+                        ui.tags.span("3", id="topk-value", class_="slider-value"),
                         ui.tags.input(
                             type="range",
                             id="topk-slider",
                             min="1",
                             max="20",
-                            value="5",
+                            value="3",
                             step="1"
                         )
                     )
@@ -1995,6 +2090,45 @@ def server(input, output, session):
         toks_target = [t.replace("Ġ", "").replace("##", "") for t in tokens_combined[:src_start]]
         toks_source = [t.replace("Ġ", "").replace("##", "") for t in tokens_combined[src_start:]]
 
+        # --- Highlight Selected Token Logic ---
+        try: selected_idx = int(input.global_focus_token())
+        except: selected_idx = -1
+
+        # Helper to get sentence range
+        def get_range(idx):
+            start = boundaries[idx]
+            if idx < len(boundaries) - 1:
+                end = boundaries[idx+1]
+            else:
+                end = len(tokens)
+            return start, end
+
+        t_start, t_end = get_range(target_idx)
+        s_start, s_end = get_range(source_idx)
+
+        target_highlight = -1
+        if t_start <= selected_idx < t_end:
+            target_highlight = selected_idx - t_start
+
+        source_highlight = -1
+        if s_start <= selected_idx < s_end:
+            source_highlight = selected_idx - s_start
+
+        # Prepare Styled Ticks
+        styled_target = []
+        for i, tok in enumerate(toks_target):
+            if i == target_highlight:
+                styled_target.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
+            else:
+                styled_target.append(tok)
+                
+        styled_source = []
+        for i, tok in enumerate(toks_source):
+            if i == source_highlight:
+                styled_source.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
+            else:
+                styled_source.append(tok)
+
         # Custom colorscale for heatmap (Light Blue -> Deep Blue/Purple)
         heatmap_colorscale = [
             [0.0, '#f8fafc'],   # Slate-50
@@ -2021,6 +2155,20 @@ def server(input, output, session):
             hovertemplate="Target: %{y}<br>Source: %{x}<br>Weight: %{z:.4f}<extra></extra>",
         ))
 
+        # Add Highlights
+        if target_highlight != -1:
+             fig.add_shape(type="rect", 
+                x0=-0.5, x1=len(toks_source)-0.5, 
+                y0=target_highlight-0.5, y1=target_highlight+0.5,
+                fillcolor="rgba(236, 72, 153, 0.15)", line=dict(color="#ec4899", width=1), layer="above"
+             )
+        if source_highlight != -1:
+             fig.add_shape(type="rect", 
+                x0=source_highlight-0.5, x1=source_highlight+0.5, 
+                y0=-0.5, y1=len(toks_target)-0.5,
+                fillcolor="rgba(236, 72, 153, 0.15)", line=dict(color="#ec4899", width=1), layer="above"
+             )
+
         fig.update_layout(
             title=dict(
                 text=f"Token-to-Token — S{target_idx} ← S{source_idx} (Model A)",
@@ -2031,6 +2179,9 @@ def server(input, output, session):
                     text="Source tokens",
                     font=dict(color="#475569", size=11)
                 ),
+                tickmode='array',
+                tickvals=list(range(len(toks_source))),
+                ticktext=styled_source,
                 tickfont=dict(color="#64748b", size=10),
                 gridcolor="#f1f5f9"
             ),
@@ -2039,6 +2190,9 @@ def server(input, output, session):
                     text="Target tokens",
                     font=dict(color="#475569", size=11)
                 ),
+                tickmode='array',
+                tickvals=list(range(len(toks_target))),
+                ticktext=styled_target,
                 tickfont=dict(color="#64748b", size=10),
                 gridcolor="#f1f5f9",
                 autorange="reversed" 
@@ -2093,6 +2247,45 @@ def server(input, output, session):
         toks_target = [t.replace("Ġ", "").replace("##", "") for t in tokens_combined[:src_start]]
         toks_source = [t.replace("Ġ", "").replace("##", "") for t in tokens_combined[src_start:]]
 
+        # --- Highlight Selected Token Logic ---
+        try: selected_idx = int(input.global_focus_token())
+        except: selected_idx = -1
+
+        # Helper to get sentence range
+        def get_range(idx):
+            start = boundaries[idx]
+            if idx < len(boundaries) - 1:
+                end = boundaries[idx+1]
+            else:
+                end = len(tokens)
+            return start, end
+
+        t_start, t_end = get_range(target_idx)
+        s_start, s_end = get_range(source_idx)
+
+        target_highlight = -1
+        if t_start <= selected_idx < t_end:
+            target_highlight = selected_idx - t_start
+
+        source_highlight = -1
+        if s_start <= selected_idx < s_end:
+            source_highlight = selected_idx - s_start
+
+        # Prepare Styled Ticks
+        styled_target = []
+        for i, tok in enumerate(toks_target):
+            if i == target_highlight:
+                styled_target.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
+            else:
+                styled_target.append(tok)
+                
+        styled_source = []
+        for i, tok in enumerate(toks_source):
+            if i == source_highlight:
+                styled_source.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
+            else:
+                styled_source.append(tok)
+
         # Custom colorscale for heatmap (Light Blue -> Deep Blue/Purple)
         heatmap_colorscale = [
             [0.0, '#f8fafc'],   # Slate-50
@@ -2119,6 +2312,20 @@ def server(input, output, session):
             hovertemplate="Target: %{y}<br>Source: %{x}<br>Weight: %{z:.4f}<extra></extra>",
         ))
 
+        # Add Highlights
+        if target_highlight != -1:
+             fig.add_shape(type="rect", 
+                x0=-0.5, x1=len(toks_source)-0.5, 
+                y0=target_highlight-0.5, y1=target_highlight+0.5,
+                fillcolor="rgba(236, 72, 153, 0.15)", line=dict(color="#ec4899", width=1), layer="above"
+             )
+        if source_highlight != -1:
+             fig.add_shape(type="rect", 
+                x0=source_highlight-0.5, x1=source_highlight+0.5, 
+                y0=-0.5, y1=len(toks_target)-0.5,
+                fillcolor="rgba(236, 72, 153, 0.15)", line=dict(color="#ec4899", width=1), layer="above"
+             )
+
         fig.update_layout(
             title=dict(
                 text=f"Token-to-Token — S{target_idx} ← S{source_idx} (Model B)",
@@ -2129,6 +2336,9 @@ def server(input, output, session):
                     text="Source tokens",
                     font=dict(color="#475569", size=11)
                 ),
+                tickmode='array',
+                tickvals=list(range(len(toks_source))),
+                ticktext=styled_source,
                 tickfont=dict(color="#64748b", size=10),
                 gridcolor="#f1f5f9"
             ),
@@ -2137,6 +2347,9 @@ def server(input, output, session):
                     text="Target tokens",
                     font=dict(color="#475569", size=11)
                 ),
+                tickmode='array',
+                tickvals=list(range(len(toks_target))),
+                ticktext=styled_target,
                 tickfont=dict(color="#64748b", size=10),
                 gridcolor="#f1f5f9",
                 autorange="reversed" 
@@ -2360,13 +2573,9 @@ def server(input, output, session):
         ))
         
         # For causal models, add white rectangles to cover the forbidden cells (future tokens)
-        # Row i can only see columns 0..i, so mask columns i+1..n-1 for each row
         if is_causal:
             n = len(cleaned_tokens)
-            for i in range(n - 1):  # Last row has nothing to mask
-                # Mask columns from i+1 to n-1 for row i
-                # x ranges from i+0.5 (just right of diagonal) to n-0.5 (right edge)
-                # y ranges from i-0.5 (top of row) to i+0.5 (bottom of row)
+            for i in range(n - 1):
                 fig.add_shape(
                     type="rect",
                     x0=i + 0.5,
@@ -2378,6 +2587,38 @@ def server(input, output, session):
                     layer="above"
                 )
         
+        # --- Highlight Selected Token Logic ---
+        try: selected_idx = int(input.global_focus_token())
+        except: selected_idx = -1
+        
+        # Prepare styled ticks
+        styled_tokens = []
+        for i, tok in enumerate(cleaned_tokens):
+            if i == selected_idx:
+                # Highlight selected token label (Pink & Bold)
+                styled_tokens.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
+            else:
+                styled_tokens.append(tok)
+
+        # Highlight Row/Column Shapes
+        if selected_idx >= 0 and selected_idx < len(cleaned_tokens):
+             # Highlight Row
+             fig.add_shape(type="rect", 
+                x0=-0.5, x1=len(cleaned_tokens)-0.5, 
+                y0=selected_idx-0.5, y1=selected_idx+0.5,
+                fillcolor="rgba(236, 72, 153, 0.15)", 
+                line=dict(color="#ec4899", width=1),
+                layer="above"
+             )
+             # Highlight Column
+             fig.add_shape(type="rect", 
+                x0=selected_idx-0.5, x1=selected_idx+0.5, 
+                y0=-0.5, y1=len(cleaned_tokens)-0.5,
+                fillcolor="rgba(236, 72, 153, 0.15)", 
+                line=dict(color="#ec4899", width=1),
+                layer="above"
+             )
+
         # Dynamic title based on mode
         if use_global:
             title_text = "Attention Heatmap — Averaged (All Layers · Heads)"
@@ -2392,10 +2633,16 @@ def server(input, output, session):
             paper_bgcolor="rgba(0,0,0,0)", 
             font=dict(color="#64748b", family="Inter, system-ui, sans-serif"),
             xaxis=dict(
+                tickmode='array',
+                tickvals=list(range(len(cleaned_tokens))),
+                ticktext=styled_tokens,
                 tickfont=dict(size=10), 
                 title=dict(font=dict(size=11))
             ),
             yaxis=dict(
+                tickmode='array',
+                tickvals=list(range(len(cleaned_tokens))),
+                ticktext=styled_tokens,
                 tickfont=dict(size=10), 
                 title=dict(font=dict(size=11)),
                 autorange='reversed'
@@ -2771,7 +3018,7 @@ def server(input, output, session):
             num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
         
         return ui.div(
-             {"class": "card card-compact-height", "style": "height: 100%;"},
+             {"class": "card card-compact-height", "style": "height: 100%; display: flex; flex-direction: column;"},
              ui.div(
                 {"class": "header-controls-stacked"},
                  ui.div(
@@ -2815,16 +3062,11 @@ def server(input, output, session):
                 )
              ),
              ui.div(
-                 {"style": "display: flex; flex-direction: column; align-items: center; margin-top: 12px; margin-bottom: 12px; gap: 6px;"},
-                 ui.tags.span("VISUALIZATION MODE", style="font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase;"),
-                 ui.div(
-                     {"class": "radio-group-compact"},
-                     ui.input_radio_buttons("radar_mode", None, {"single": "Single Head", "all": "All Heads", "cluster": "Global Clusters"}, selected="single", inline=True)
-                 )
+                 {"style": "flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0;"},
+                 ui.output_ui("radar_plot_internal")
              ),
-             ui.output_ui("radar_plot_internal"),
              ui.HTML(f"""
-                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
+                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center; flex-shrink: 0;">
                     <strong style="color: #ff5ca9;">Specialization Dimensions</strong> — click any to see detailed explanation:<br>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: center;">
                         <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
@@ -2851,8 +3093,10 @@ def server(input, output, session):
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
-        try: mode = input.radar_mode()
-        except: mode = "single"
+        
+        # Use global mode from floating bar: "all" -> cluster, otherwise -> single
+        use_global = global_metrics_mode.get() == "all"
+        mode = "cluster" if use_global else "single"
         
         return head_specialization_radar(res, layer_idx, head_idx, mode, suffix="")
 
@@ -3074,14 +3318,12 @@ def server(input, output, session):
             autosize=False
         )
         
-        return ui.HTML(ui.div(
-            {"style": "display: flex; justify-content: center; width: 100%;"},
-            ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id=f"radar_plot{suffix}", config={'displayModeBar': False}))
-        ))
+        plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, div_id=f"radar_plot{suffix}", config={'displayModeBar': False})
+        return ui.HTML(f'<div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%;">{plot_html}</div>')
 
 
     # This function replaces the previous @output @render.ui def influence_tree():
-    def get_influence_tree_ui(res, root_idx=0, layer_idx=0, head_idx=0, suffix="", use_global=False):
+    def get_influence_tree_ui(res, root_idx=0, layer_idx=0, head_idx=0, suffix="", use_global=False, max_depth=3, top_k=3):
         if not res:
             return ui.HTML("""
                 <div style='padding: 20px; text-align: center;'>
@@ -3093,77 +3335,11 @@ def server(input, output, session):
         if attentions is None or len(attentions) == 0:
             return ui.HTML("<p style='font-size:11px;color:#6b7280;'>No attention data available.</p>")
         
-        # Use passed layer/head indices
-        depth = 3     # Maximum depth 
-        top_k = 3     # Default top-k
-        
         # Ensure valid indices
         root_idx = max(0, min(root_idx, len(tokens) - 1))
         
-        # Placeholder for actual tree data generation logic
-        # This function would typically call a backend utility to compute the tree
-        # For this example, we'll simulate a simple tree structure.
-        
-        # Example: A simple tree structure for demonstration
-        # In a real application, this would be computed from 'attentions'
-        # based on 'layer_idx', 'head_idx', 'root_idx', 'depth', 'top_k'.
-        
-        # For the purpose of this edit, we'll assume a function `_generate_tree_data` exists
-        # that takes these parameters and returns a dict suitable for D3.
-        # Since the actual `_generate_tree_data` is not provided, we'll create a dummy one.
-        
-        def _generate_tree_data(tokens, root_idx, layer_idx, head_idx, max_depth, top_k):
-            # Get attention matrix - either specific layer/head or averaged across all
-            try:
-                if use_global:
-                    # Average attention across all layers and all heads
-                    att_layers = [layer[0].cpu().numpy() for layer in attentions]
-                    att_matrix = np.mean(att_layers, axis=(0, 1))
-                else:
-                    att_matrix = attentions[layer_idx][0, head_idx].cpu().numpy()
-            except:
-                return None
-
-            def build_node(current_idx, current_depth, current_value):
-                token = tokens[current_idx].replace("##", "").replace("Ġ", "")
-                node = {
-                    "name": f"{current_idx}: {token}",
-                    "att": current_value, 
-                    "children": []
-                }
-
-                if current_depth < max_depth:
-                    # Get attention weights for this token (what it attends to)
-                    row = att_matrix[current_idx]
-                    
-                    # Get top-k indices
-                    top_indices = np.argsort(row)[-top_k:][::-1]
-                    
-                    for child_idx in top_indices:
-                        child_idx = int(child_idx) # Ensure native int
-                        raw_att = float(row[child_idx])
-                        
-                        # Handle NaN/Inf for JSON safety
-                        if np.isnan(raw_att) or np.isinf(raw_att):
-                            raw_att = 0.0
-                            
-                        # Cumulative influence: parent_value * current_attention
-                        child_value = current_value * raw_att if current_depth > 0 else raw_att
-                        
-                        child_node = build_node(child_idx, current_depth + 1, child_value)
-                        # We store the raw attention too if needed, but 'att' is now cumulative influence
-                        child_node["raw_att"] = raw_att 
-                        child_node["qk_sim"] = 0.0 # Placeholder for D3 compatibility
-                        
-                        node["children"].append(child_node)
-                
-                return node
-
-            # Root starts with influence 1.0
-            return build_node(root_idx, 0, 1.0)
-
         try:
-            tree_data = _generate_tree_data(tokens, root_idx, layer_idx, head_idx, depth, top_k)
+            tree_data = get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth)
             
             if tree_data is None:
                 return ui.HTML("<p style='font-size:11px;color:#6b7280;'>Unable to generate tree.</p>")
@@ -3174,8 +3350,8 @@ def server(input, output, session):
             return ui.HTML(f"<p style='font-size:11px;color:#ef4444;'>Error generating tree: {str(e)}</p>")
         
         html = f"""
-    <div class="influence-tree-wrapper" style="height: 100%; display: flex; flex-direction: column; position: relative;">
-        <div id="tree-viz-container{suffix}" class="tree-viz-container" style="height: 600px; width: 100%; overflow-x: auto; overflow-y: hidden; text-align: center; display: block;"></div>
+    <div class="influence-tree-wrapper" style="height: 100%; display: flex; flex-direction: column; position: relative; overflow: auto;">
+        <div id="tree-viz-container{suffix}" class="tree-viz-container" style="height: 100%; min-height: 400px; width: 100%; overflow: auto; text-align: center; display: block;"></div>
     </div>
         <script>
                 (function() {{
@@ -3229,6 +3405,11 @@ def server(input, output, session):
         tokens = res[0]
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
 
+        try:
+            top_k_val = int(input.global_topk())
+        except:
+            top_k_val = 3
+            
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
             ui.div(
@@ -3269,10 +3450,10 @@ def server(input, output, session):
                 ),
                 ui.div(
                     {"class": "header-row-bottom", "style": "margin-top: 4px;"},
-                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
+                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens. Depth & Top-K are controlled by the Global Top-K setting. Thicker edges = stronger influence.")
                 )
             ),
-            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="", use_global=use_global)
+            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="", use_global=use_global, max_depth=top_k_val, top_k=top_k_val)
         )
 
     # -------------------------------------------------------------------------
