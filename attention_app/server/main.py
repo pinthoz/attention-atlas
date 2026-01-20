@@ -375,30 +375,41 @@ def server(input, output, session):
         except: current_layer = 0
         try: current_head = int(input.global_head())
         except: current_head = 0
-        try: current_token = int(input.global_focus_token())
-        except: current_token = 0
-        
+
+        # Get selected tokens (span selection support)
+        try:
+            selected_tokens_str = input.global_selected_tokens()
+            selected_tokens = json.loads(selected_tokens_str) if selected_tokens_str else []
+        except:
+            selected_tokens = []
+
+        # Fallback to legacy single selection if no span selection
+        if not selected_tokens:
+            try:
+                current_token = int(input.global_focus_token())
+                if current_token >= 0:
+                    selected_tokens = [current_token]
+            except:
+                pass
+
         # Build clickable token chips
         token_chips = []
         for i, token in enumerate(clean_tokens):
-            is_active = "active" if i == current_token else ""
-            
-            # Toggle logic: if clicking active token, send -1 (deselect), else send index
-            onclick_js = f"if(this.classList.contains('active')) {{ Shiny.setInputValue('global_focus_token', -1, {{priority: 'event'}}); }} else {{ Shiny.setInputValue('global_focus_token', '{i}', {{priority: 'event'}}); }}"
-            
+            is_active = "active" if i in selected_tokens else ""
+
             token_chips.append(
                 ui.tags.span(
                     token,
                     class_=f"token-chip {is_active}",
-                    onclick=onclick_js
+                    **{"data-idx": str(i)}  # Store index for JS
                 )
             )
         
-        # JavaScript for slider sync
+        # JavaScript for slider sync and span selection
         slider_js = f"""
         (function() {{
             const globalBtn = document.getElementById('trigger_global_view');
-            
+
             function deactivateGlobal() {{
                 if (globalBtn) globalBtn.classList.remove('active');
             }}
@@ -412,16 +423,16 @@ def server(input, output, session):
                     timeout = setTimeout(() => func.apply(context, args), wait);
                 }};
             }}
-            
+
             // Debounced setters
             const setLayer = debounce(function(val) {{
                 Shiny.setInputValue('global_layer', val, {{priority: 'event'}});
             }}, 300);
-            
+
             const setHead = debounce(function(val) {{
                 Shiny.setInputValue('global_head', val, {{priority: 'event'}});
             }}, 300);
-            
+
             const setTopK = debounce(function(val) {{
                 Shiny.setInputValue('global_topk', val, {{priority: 'event'}});
             }}, 300);
@@ -468,15 +479,73 @@ def server(input, output, session):
                 }};
             }}
 
-            // Add deactivate to token chips
+            // ========== SPAN SELECTION LOGIC ==========
+            // State for span selection
+            window._spanSelection = window._spanSelection || {{
+                anchor: null,  // First clicked token for span
+                selected: {json.dumps(selected_tokens)}  // Currently selected tokens
+            }};
+
+            // Update span selection UI and send to Shiny
+            function updateSpanSelection(selectedArray) {{
+                window._spanSelection.selected = selectedArray;
+
+                // Update UI: add/remove active class
+                document.querySelectorAll('.token-chip').forEach(chip => {{
+                    const idx = parseInt(chip.getAttribute('data-idx'));
+                    if (selectedArray.includes(idx)) {{
+                        chip.classList.add('active');
+                    }} else {{
+                        chip.classList.remove('active');
+                    }}
+                }});
+
+                // Send to Shiny
+                Shiny.setInputValue('global_selected_tokens', JSON.stringify(selectedArray), {{priority: 'event'}});
+                // Also update legacy single token for compatibility (use first selected or -1)
+                Shiny.setInputValue('global_focus_token', selectedArray.length > 0 ? selectedArray[0] : -1, {{priority: 'event'}});
+            }}
+
+            // Token chip click handler
             document.querySelectorAll('.token-chip').forEach(chip => {{
-                chip.addEventListener('click', function() {{ deactivateGlobal(); }});
+                chip.addEventListener('click', function(event) {{
+                    deactivateGlobal();
+                    const idx = parseInt(this.getAttribute('data-idx'));
+
+                    if (event.shiftKey && window._spanSelection.anchor !== null) {{
+                        // Shift+click: Create span from anchor to clicked
+                        const start = Math.min(window._spanSelection.anchor, idx);
+                        const end = Math.max(window._spanSelection.anchor, idx);
+                        const span = [];
+                        for (let i = start; i <= end; i++) {{
+                            span.push(i);
+                        }}
+                        updateSpanSelection(span);
+                    }} else {{
+                        // Normal click: Toggle token in the list
+                        const current = window._spanSelection.selected;
+                        const idxInList = current.indexOf(idx);
+                        
+                        let newSelection;
+                        if (idxInList > -1) {{
+                            // Already selected: remove it
+                            newSelection = current.filter(function(i) {{ return i !== idx; }});
+                            if (window._spanSelection.anchor === idx) {{ window._spanSelection.anchor = null; }}
+                        }} else {{
+                            // Not selected: add it
+                            newSelection = current.concat([idx]);
+                            // Set as new anchor for potential range selection
+                            window._spanSelection.anchor = idx;
+                        }}
+                        updateSpanSelection(newSelection);
+                    }}
+                }});
             }});
-            
+            // ========== END SPAN SELECTION LOGIC ==========
+
             // Add class to content
             document.querySelector('.content')?.classList.add('has-control-bar');
-            
-            
+
             // Global Button Handler - only affects layer/head mode, NOT token selection
             if (globalBtn) {{
                 globalBtn.addEventListener('click', function() {{
@@ -903,8 +972,26 @@ def server(input, output, session):
     def render_scaled_attention():
         res = cached_result.get()
         if not res: return None
-        try: selected_token = int(input.global_focus_token())
-        except: selected_token = 0
+        
+        # Use global_selected_tokens for span support
+        selected_indices = []
+        try:
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
+        except:
+            pass
+            
+        # Fallback
+        if not selected_indices:
+            try:
+                global_token = int(input.global_focus_token())
+                if global_token >= 0:
+                    selected_indices = [global_token]
+            except:
+                pass
+        
+        focus_indices = selected_indices if selected_indices else [0]
         
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
@@ -912,14 +999,12 @@ def server(input, output, session):
         except: head_idx = 0
         try: top_k = int(input.global_topk())
         except: top_k = 5
-        
-        focus_idx = selected_token if selected_token != -1 else 0
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Scaled Dot-Product Attention"),
             ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_scaled_attention_view(res, layer_idx, head_idx, focus_idx, top_k=top_k)
+            get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k)
         )
 
     @output
@@ -2090,9 +2175,19 @@ def server(input, output, session):
         toks_target = [t.replace("Ġ", "").replace("##", "") for t in tokens_combined[:src_start]]
         toks_source = [t.replace("Ġ", "").replace("##", "") for t in tokens_combined[src_start:]]
 
-        # --- Highlight Selected Token Logic ---
-        try: selected_idx = int(input.global_focus_token())
-        except: selected_idx = -1
+        # --- Highlight Selected Token Logic (Span Support) ---
+        selected_indices = []
+        try:
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
+        except:
+            pass
+            
+        if not selected_indices:
+            try: selected_idx = int(input.global_focus_token())
+            except: selected_idx = -1
+            if selected_idx != -1: selected_indices = [selected_idx]
 
         # Helper to get sentence range
         def get_range(idx):
@@ -2106,25 +2201,28 @@ def server(input, output, session):
         t_start, t_end = get_range(target_idx)
         s_start, s_end = get_range(source_idx)
 
-        target_highlight = -1
-        if t_start <= selected_idx < t_end:
-            target_highlight = selected_idx - t_start
+        # Identify which tokens in the heatmap correspond to selected global indices
+        target_highlight_indices = []
+        for s_idx in selected_indices:
+            if t_start <= s_idx < t_end:
+                 target_highlight_indices.append(s_idx - t_start)
 
-        source_highlight = -1
-        if s_start <= selected_idx < s_end:
-            source_highlight = selected_idx - s_start
+        source_highlight_indices = []
+        for s_idx in selected_indices:
+            if s_start <= s_idx < s_end:
+                 source_highlight_indices.append(s_idx - s_start)
 
         # Prepare Styled Ticks
         styled_target = []
         for i, tok in enumerate(toks_target):
-            if i == target_highlight:
+            if i in target_highlight_indices:
                 styled_target.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
             else:
                 styled_target.append(tok)
                 
         styled_source = []
         for i, tok in enumerate(toks_source):
-            if i == source_highlight:
+            if i in source_highlight_indices:
                 styled_source.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
             else:
                 styled_source.append(tok)
@@ -2156,15 +2254,15 @@ def server(input, output, session):
         ))
 
         # Add Highlights
-        if target_highlight != -1:
+        for idx in target_highlight_indices:
              fig.add_shape(type="rect", 
                 x0=-0.5, x1=len(toks_source)-0.5, 
-                y0=target_highlight-0.5, y1=target_highlight+0.5,
+                y0=idx-0.5, y1=idx+0.5,
                 fillcolor="rgba(236, 72, 153, 0.15)", line=dict(color="#ec4899", width=1), layer="above"
              )
-        if source_highlight != -1:
+        for idx in source_highlight_indices:
              fig.add_shape(type="rect", 
-                x0=source_highlight-0.5, x1=source_highlight+0.5, 
+                x0=idx-0.5, x1=idx+0.5, 
                 y0=-0.5, y1=len(toks_target)-0.5,
                 fillcolor="rgba(236, 72, 153, 0.15)", line=dict(color="#ec4899", width=1), layer="above"
              )
@@ -2247,9 +2345,19 @@ def server(input, output, session):
         toks_target = [t.replace("Ġ", "").replace("##", "") for t in tokens_combined[:src_start]]
         toks_source = [t.replace("Ġ", "").replace("##", "") for t in tokens_combined[src_start:]]
 
-        # --- Highlight Selected Token Logic ---
-        try: selected_idx = int(input.global_focus_token())
-        except: selected_idx = -1
+        # --- Highlight Selected Token Logic (Span Support) ---
+        selected_indices = []
+        try:
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
+        except:
+            pass
+            
+        if not selected_indices:
+            try: selected_idx = int(input.global_focus_token())
+            except: selected_idx = -1
+            if selected_idx != -1: selected_indices = [selected_idx]
 
         # Helper to get sentence range
         def get_range(idx):
@@ -2263,25 +2371,28 @@ def server(input, output, session):
         t_start, t_end = get_range(target_idx)
         s_start, s_end = get_range(source_idx)
 
-        target_highlight = -1
-        if t_start <= selected_idx < t_end:
-            target_highlight = selected_idx - t_start
+        # Identify which tokens in the heatmap correspond to selected global indices
+        target_highlight_indices = []
+        for s_idx in selected_indices:
+            if t_start <= s_idx < t_end:
+                 target_highlight_indices.append(s_idx - t_start)
 
-        source_highlight = -1
-        if s_start <= selected_idx < s_end:
-            source_highlight = selected_idx - s_start
+        source_highlight_indices = []
+        for s_idx in selected_indices:
+            if s_start <= s_idx < s_end:
+                 source_highlight_indices.append(s_idx - s_start)
 
         # Prepare Styled Ticks
         styled_target = []
         for i, tok in enumerate(toks_target):
-            if i == target_highlight:
+            if i in target_highlight_indices:
                 styled_target.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
             else:
                 styled_target.append(tok)
                 
         styled_source = []
         for i, tok in enumerate(toks_source):
-            if i == source_highlight:
+            if i in source_highlight_indices:
                 styled_source.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
             else:
                 styled_source.append(tok)
@@ -2313,15 +2424,15 @@ def server(input, output, session):
         ))
 
         # Add Highlights
-        if target_highlight != -1:
+        for idx in target_highlight_indices:
              fig.add_shape(type="rect", 
                 x0=-0.5, x1=len(toks_source)-0.5, 
-                y0=target_highlight-0.5, y1=target_highlight+0.5,
+                y0=idx-0.5, y1=idx+0.5,
                 fillcolor="rgba(236, 72, 153, 0.15)", line=dict(color="#ec4899", width=1), layer="above"
              )
-        if source_highlight != -1:
+        for idx in source_highlight_indices:
              fig.add_shape(type="rect", 
-                x0=source_highlight-0.5, x1=source_highlight+0.5, 
+                x0=idx-0.5, x1=idx+0.5, 
                 y0=-0.5, y1=len(toks_target)-0.5,
                 fillcolor="rgba(236, 72, 153, 0.15)", line=dict(color="#ec4899", width=1), layer="above"
              )
@@ -2587,37 +2698,54 @@ def server(input, output, session):
                     layer="above"
                 )
         
-        # --- Highlight Selected Token Logic ---
-        try: selected_idx = int(input.global_focus_token())
-        except: selected_idx = -1
+        
+        # --- Highlight Selected Token Logic (Span Support) ---
+        selected_indices = []
+        try:
+            # Try to get span selection first
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
+        except:
+            pass
+            
+        # Fallback to single token if no span
+        if not selected_indices:
+            try: 
+                single = int(input.global_focus_token())
+                if single != -1:
+                    selected_indices = [single]
+            except: 
+                pass
         
         # Prepare styled ticks
         styled_tokens = []
         for i, tok in enumerate(cleaned_tokens):
-            if i == selected_idx:
+            if i in selected_indices:
                 # Highlight selected token label (Pink & Bold)
                 styled_tokens.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
             else:
                 styled_tokens.append(tok)
 
-        # Highlight Row/Column Shapes
-        if selected_idx >= 0 and selected_idx < len(cleaned_tokens):
-             # Highlight Row
-             fig.add_shape(type="rect", 
-                x0=-0.5, x1=len(cleaned_tokens)-0.5, 
-                y0=selected_idx-0.5, y1=selected_idx+0.5,
-                fillcolor="rgba(236, 72, 153, 0.15)", 
-                line=dict(color="#ec4899", width=1),
-                layer="above"
-             )
-             # Highlight Column
-             fig.add_shape(type="rect", 
-                x0=selected_idx-0.5, x1=selected_idx+0.5, 
-                y0=-0.5, y1=len(cleaned_tokens)-0.5,
-                fillcolor="rgba(236, 72, 153, 0.15)", 
-                line=dict(color="#ec4899", width=1),
-                layer="above"
-             )
+        # Highlight Row/Column Shapes for ALL selected tokens
+        for selected_idx in selected_indices:
+            if selected_idx >= 0 and selected_idx < len(cleaned_tokens):
+                 # Highlight Row
+                 fig.add_shape(type="rect", 
+                    x0=-0.5, x1=len(cleaned_tokens)-0.5, 
+                    y0=selected_idx-0.5, y1=selected_idx+0.5,
+                    fillcolor="rgba(236, 72, 153, 0.15)", 
+                    line=dict(color="#ec4899", width=1),
+                    layer="above"
+                 )
+                 # Highlight Column
+                 fig.add_shape(type="rect", 
+                    x0=selected_idx-0.5, x1=selected_idx+0.5, 
+                    y0=-0.5, y1=len(cleaned_tokens)-0.5,
+                    fillcolor="rgba(236, 72, 153, 0.15)", 
+                    line=dict(color="#ec4899", width=1),
+                    layer="above"
+                 )
 
         # Dynamic title based on mode
         if use_global:
@@ -2744,12 +2872,25 @@ def server(input, output, session):
         try: head_idx = int(input.global_head())
         except: head_idx = 0
         
-        # Use global_focus_token from floating bar for token filtering
+        # Use global_selected_tokens for span support
+        selected_indices = []
         try:
-            global_token = int(input.global_focus_token())
-            focus_idx = global_token if global_token >= 0 else None
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
         except:
-            focus_idx = None  # No token selected = show all
+            pass
+            
+        # Fallback
+        if not selected_indices:
+            try:
+                global_token = int(input.global_focus_token())
+                if global_token >= 0:
+                    selected_indices = [global_token]
+            except:
+                pass
+        
+        focus_indices = selected_indices if selected_indices else None # None means show all
 
         clean_tokens = tokens_data()
         
@@ -2778,8 +2919,8 @@ def server(input, output, session):
             cleaned_tok = tok.replace("##", "").replace("Ġ", "")
             color = color_palette[i % len(color_palette)]
             x_pos = i / n_tokens + block_width / 2
-            show_focus = focus_idx is not None
-            is_selected = focus_idx == i if show_focus else True
+            
+            is_selected = (i in focus_indices) if focus_indices else True
 
             # Dynamically adjust font size for many tokens
             if n_tokens > 30:
@@ -2789,16 +2930,20 @@ def server(input, output, session):
             else:
                 font_size = 13 if is_selected else 10
 
-            text_color = color if (show_focus and is_selected) else "#111827"
-            fig.add_trace(go.Scatter(x=[x_pos], y=[1.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
-            fig.add_trace(go.Scatter(x=[x_pos], y=[-0.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
+            text_color = color if (focus_indices and is_selected) else "#111827"
+            weight = 'bold' if (focus_indices and is_selected) else 'normal'
+            
+            fig.add_trace(go.Scatter(x=[x_pos], y=[1.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight=weight), showlegend=False, hoverinfo='skip'))
+            fig.add_trace(go.Scatter(x=[x_pos], y=[-0.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight=weight), showlegend=False, hoverinfo='skip'))
 
         threshold = 0.04
         for i in range(n_tokens):
             for j in range(n_tokens):
                 weight = att[i, j]
                 if weight > threshold:
-                    is_line_focused = (focus_idx is not None and i == focus_idx) or (focus_idx is None)
+                    # Highlight line if source token is in selected set (or if no selection)
+                    is_line_focused = (i in focus_indices) if focus_indices else True
+                    
                     x_source = i / n_tokens + block_width / 2
                     x_target = j / n_tokens + block_width / 2
                     x_vals = [x_source, (x_source + x_target) / 2, x_target]
@@ -2819,11 +2964,14 @@ def server(input, output, session):
                     fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color=line_color, width=line_width), opacity=line_opacity, showlegend=False, hoverinfo='text' if is_line_focused else 'skip', hovertext=f"<b>{cleaned_token_i} to {cleaned_token_j}</b><br>Attention: {weight:.4f}"))
 
         title_text = ""
-        if focus_idx is not None:
-            focus_color = color_palette[focus_idx % len(color_palette)]
-            # Clean token for title
-            cleaned_focus_token = tokens[focus_idx].replace("##", "").replace("Ġ", "")
-            title_text += f" · <b style='color:{focus_color}'>Focused: '{cleaned_focus_token}'</b>"
+        if focus_indices:
+            token_spans = []
+            for idx in focus_indices:
+                focus_color = color_palette[idx % len(color_palette)]
+                cleaned = tokens[idx].replace("##", "").replace("Ġ", "")
+                token_spans.append(f"<span style='color:{focus_color}'>{cleaned}</span>")
+            
+            title_text += f" · <b>Focused: {', '.join(token_spans)}</b>"
 
         fig.update_layout(
             title=title_text,
@@ -3395,12 +3543,25 @@ def server(input, output, session):
         try: head_idx = int(input.global_head())
         except: head_idx = 0
         
-        # Use global_focus_token if available and >= 0, else default to first token (0)
+        # Use global_selected_tokens for span support - Tree View uses only the FIRST selected token as root
+        selected_indices = []
         try:
-            global_token = int(input.global_focus_token())
-            root_idx = global_token if global_token >= 0 else 0
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
         except:
-            root_idx = 0
+            pass
+            
+        # Fallback
+        if not selected_indices:
+            try:
+                global_token = int(input.global_focus_token())
+                if global_token >= 0:
+                    selected_indices = [global_token]
+            except:
+                pass
+        
+        root_idx = selected_indices[0] if selected_indices else 0
         
         tokens = res[0]
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
@@ -3533,8 +3694,26 @@ def server(input, output, session):
         res = cached_result_B.get()
         if not res:
             return None
-        try: selected_token = int(input.global_focus_token())
-        except: selected_token = 0
+            
+        # Use global_selected_tokens for span support
+        selected_indices = []
+        try:
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
+        except:
+            pass
+            
+        # Fallback
+        if not selected_indices:
+            try:
+                global_token = int(input.global_focus_token())
+                if global_token >= 0:
+                    selected_indices = [global_token]
+            except:
+                pass
+        
+        focus_indices = selected_indices if selected_indices else [0]
         
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
@@ -3543,8 +3722,6 @@ def server(input, output, session):
         try: top_k = int(input.global_topk())
         except: top_k = 5
         
-        focus_idx = selected_token if selected_token != -1 else 0
-
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.div(
@@ -3552,7 +3729,7 @@ def server(input, output, session):
                 ui.h4("Scaled Dot-Product Attention")
             ),
             ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_scaled_attention_view(res, layer_idx, head_idx, focus_idx, top_k=top_k)
+            get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k)
         )
 
     @output
@@ -3744,10 +3921,27 @@ def server(input, output, session):
         res = cached_result_B.get()
         if not res:
             return None
-        try: 
-            root_idx = int(input.global_focus_token())
-            if root_idx == -1: root_idx = 0
-        except: root_idx = 0
+
+        # Use global_selected_tokens for span support - Tree View uses only the FIRST selected token as root
+        selected_indices = []
+        try:
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
+        except:
+            pass
+            
+        # Fallback
+        if not selected_indices:
+            try:
+                global_token = int(input.global_focus_token())
+                if global_token >= 0:
+                    selected_indices = [global_token]
+            except:
+                pass
+        
+        root_idx = selected_indices[0] if selected_indices else 0
+
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
@@ -3944,12 +4138,25 @@ def server(input, output, session):
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
-        try: 
-            ft = int(input.global_focus_token())
-            if ft == -1: selected = "all"
-            else: selected = str(ft)
-        except: selected = "all"
-        focus_idx = None if selected == "all" else int(selected)
+        # Use global_selected_tokens for span support
+        selected_indices = []
+        try:
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
+        except:
+            pass
+            
+        # Fallback
+        if not selected_indices:
+            try:
+                global_token = int(input.global_focus_token())
+                if global_token >= 0:
+                    selected_indices = [global_token]
+            except:
+                pass
+        
+        focus_indices = selected_indices if selected_indices else None # None means show all
 
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
         
@@ -3967,14 +4174,13 @@ def server(input, output, session):
             cleaned_tok = tok.replace("##", "").replace("Ġ", "")
             color = color_palette[i % len(color_palette)]
             x_pos = i / n_tokens + block_width / 2
-            show_focus = focus_idx is not None
-            is_selected = focus_idx == i if show_focus else True
+            is_selected = (i in focus_indices) if focus_indices else True
 
             if n_tokens > 30: font_size = 9 if is_selected else 8
             elif n_tokens > 20: font_size = 11 if is_selected else 10
             else: font_size = 13 if is_selected else 10
 
-            text_color = color if (show_focus and is_selected) else "#111827"
+            text_color = color if (focus_indices and is_selected) else "#111827"
             fig.add_trace(go.Scatter(x=[x_pos], y=[1.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
             fig.add_trace(go.Scatter(x=[x_pos], y=[-0.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
 
@@ -3983,7 +4189,7 @@ def server(input, output, session):
             for j in range(n_tokens):
                 weight = att[i, j]
                 if weight > threshold:
-                    is_line_focused = (focus_idx is not None and i == focus_idx) or (focus_idx is None)
+                    is_line_focused = (i in focus_indices) if focus_indices else True
                     x_source = i / n_tokens + block_width / 2
                     x_target = j / n_tokens + block_width / 2
                     x_vals = [x_source, (x_source + x_target) / 2, x_target]
@@ -4003,10 +4209,14 @@ def server(input, output, session):
                     fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color=line_color, width=line_width), opacity=line_opacity, showlegend=False, hoverinfo='text' if is_line_focused else 'skip', hovertext=f"<b>{cleaned_token_i} to {cleaned_token_j}</b><br>Attention: {weight:.4f}"))
 
         title_text = ""
-        if focus_idx is not None:
-            focus_color = color_palette[focus_idx % len(color_palette)]
-            cleaned_focus_token = tokens[focus_idx].replace("##", "").replace("Ġ", "")
-            title_text += f" · <b style='color:{focus_color}'>Focused: '{cleaned_focus_token}'</b>"
+        if focus_indices:
+            token_spans = []
+            for idx in focus_indices:
+                focus_color = color_palette[idx % len(color_palette)]
+                cleaned = tokens[idx].replace("##", "").replace("Ġ", "")
+                token_spans.append(f"<span style='color:{focus_color}'>{cleaned}</span>")
+            
+            title_text += f" · <b>Focused: {', '.join(token_spans)}</b>"
 
         fig.update_layout(
              title=title_text,

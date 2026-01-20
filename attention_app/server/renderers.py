@@ -265,75 +265,87 @@ def get_qkv_table(res, layer_idx):
     )
 
 
-def get_scaled_attention_view(res, layer_idx, head_idx, focus_idx, top_k=3):
+def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3):
     tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
     if attentions is None or len(attentions) == 0:
         return ui.HTML("")
 
-    att = attentions[layer_idx][0, head_idx].cpu().numpy()
-    focus_idx = max(0, min(focus_idx, len(tokens) - 1))
+    # Support both single int and list of ints
+    if isinstance(focus_indices, int):
+        focus_indices = [focus_indices]
+    elif not focus_indices:
+        # Default to first token if empty list provided
+        focus_indices = [0]
+    
+    # Limit number of tokens to display to avoid UI explosion (max 5)
+    if len(focus_indices) > 5:
+        focus_indices = focus_indices[:5]
 
+    att_head = attentions[layer_idx][0, head_idx].cpu().numpy()
     layer_block = get_layer_block(encoder_model, layer_idx)
     hs_in = hidden_states[layer_idx]
-
     Q, K, V = extract_qkv(layer_block, hs_in)
 
-    # Determine d_k
     if hasattr(layer_block, "attention"): # BERT
         num_heads = layer_block.attention.self.num_attention_heads
     else: # GPT-2
         num_heads = layer_block.attn.num_heads
-
     d_k = Q.shape[-1] // num_heads
 
-    # Get top 3 connections
-    if hasattr(layer_block, "attention"): # BERT
-        top_idx = np.argsort(att[focus_idx])[::-1][:top_k]
-        causal_note = ""
-    else: # GPT-2 (Causal)
-        # 1. Filter out future tokens completely from the candidates
-        # Create a list of (index, score) for all valid past tokens
-        valid_scores = [(j, att[focus_idx, j]) for j in range(len(tokens)) if j <= focus_idx]
-        # 2. Sort by score descending
-        valid_scores.sort(key=lambda x: x[1], reverse=True)
-        # 3. Take top k
-        top_idx = [x[0] for x in valid_scores[:top_k]]
+    all_blocks = ""
+
+    for f_idx in focus_indices:
+        f_idx = max(0, min(f_idx, len(tokens) - 1))
         
-        causal_note = "<div style='font-size:10px;color:#888;margin-bottom:4px;font-style:italic;'>Causal: Future tokens are masked</div>"
+        # Get top k for this token
+        if hasattr(layer_block, "attention"): # BERT
+            top_idx = np.argsort(att_head[f_idx])[::-1][:top_k]
+            causal_note = ""
+        else: # GPT-2 (Causal)
+            valid_scores = [(j, att_head[f_idx, j]) for j in range(len(tokens)) if j <= f_idx]
+            valid_scores.sort(key=lambda x: x[1], reverse=True)
+            top_idx = [x[0] for x in valid_scores[:top_k]]
+            causal_note = "<div style='font-size:10px;color:#888;margin-bottom:4px;font-style:italic;'>Causal: Future tokens are masked</div>"
 
-    # Build computation display
-    computations = causal_note
-    for rank, j in enumerate(top_idx, 1):
-        dot = float(np.dot(Q[focus_idx], K[j]))
-        scaled = dot / np.sqrt(d_k)
-        prob = att[focus_idx, j]
+        computations = causal_note
+        for rank, j in enumerate(top_idx, 1):
+            dot = float(np.dot(Q[f_idx], K[j]))
+            scaled = dot / np.sqrt(d_k)
+            prob = att_head[f_idx, j]
 
-        computations += f"""
-        <div class='scaled-computation-row'>
-            <div class='scaled-rank'>#{rank}</div>
-            <div class='scaled-details'>
-                <div class='scaled-connection'>
-                    <span class='token-name' style='color:#ff5ca9;'>{tokens[focus_idx].replace("##", "").replace("Ġ", "")}</span>
-                    <span style='color:#94a3b8;margin:0 4px;'>→</span>
-                    <span class='token-name' style='color:#3b82f6;'>{tokens[j].replace("##", "").replace("Ġ", "")}</span>
+            computations += f"""
+            <div class='scaled-computation-row'>
+                <div class='scaled-rank'>#{rank}</div>
+                <div class='scaled-details'>
+                    <div class='scaled-connection'>
+                        <span class='token-name' style='color:#ff5ca9;'>{tokens[f_idx].replace("##", "").replace("Ġ", "")}</span>
+                        <span style='color:#94a3b8;margin:0 4px;'>→</span>
+                        <span class='token-name' style='color:#3b82f6;'>{tokens[j].replace("##", "").replace("Ġ", "")}</span>
+                    </div>
+                    <div class='scaled-values'>
+                        <span class='scaled-step'>Q·K = <b>{dot:.2f}</b></span>
+                        <span class='scaled-step'>÷√d<sub>k</sub> = <b>{scaled:.2f}</b></span>
+                        <span class='scaled-step'>softmax = <b>{prob:.3f}</b></span>
+                    </div>
                 </div>
-                <div class='scaled-values'>
-                    <span class='scaled-step'>Q·K = <b>{dot:.2f}</b></span>
-                    <span class='scaled-step'>÷√d<sub>k</sub> = <b>{scaled:.2f}</b></span>
-                    <span class='scaled-step'>softmax = <b>{prob:.3f}</b></span>
-                </div>
+            </div>
+            """
+        
+        # Wrap each token's block
+        all_blocks += f"""
+        <div class='scaled-attention-box' style='margin-bottom: 16px; border-bottom: 1px solid #f1f5f9; padding-bottom: 16px;'>
+            <div class='scaled-formula' style='margin-bottom:8px;'>
+                <span style='color:#ff5ca9;font-weight:bold;'>{tokens[f_idx].replace("##", "").replace("Ġ", "")}</span>: softmax(Q·K<sup>T</sup>/√d<sub>k</sub>)
+            </div>
+            <div class='scaled-computations'>
+                {computations}
             </div>
         </div>
         """
 
     html = f"""
     <div class='card-scroll'>
-        <div class='scaled-attention-box'>
-            <div class='scaled-formula'>softmax(Q·K<sup>T</sup>/√d<sub>k</sub>)</div>
-            <div class='scaled-computations'>
-                {computations}
-            </div>
-        </div>
+        {all_blocks}
     </div>
     """
     return ui.HTML(html)
