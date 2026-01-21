@@ -28,13 +28,13 @@ attention_analysis_page = ui.page_fluid(
         ui.div(
             {"class": "sidebar-section"},
             # Header
-            ui.tags.span("Model Configuration", class_="sidebar-label"),
+            ui.tags.span("Compare Modes", class_="sidebar-label"),
             
             # Checkbox Row - forced single line with compact spacing
             ui.div(
                 {"style": "margin-bottom: 0px; display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden;"},
-                ui.input_switch("compare_mode", ui.span("Compare Models", style="font-size: 10px; color: #cbd5e1; font-weight: 600;"), value=False),
-                ui.input_switch("compare_prompts_mode", ui.span("Compare Prompts", style="font-size: 10px; color: #cbd5e1; font-weight: 600;"), value=False)
+                ui.input_switch("compare_mode", ui.span("Models", style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #cbd5e1; font-weight: 600;"), value=False),
+                ui.input_switch("compare_prompts_mode", ui.span("Prompts", style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #cbd5e1; font-weight: 600;"), value=False)
             ),
 
             # Model Configuration Container (Flex Row)
@@ -52,7 +52,7 @@ attention_analysis_page = ui.page_fluid(
                     ),
 
                     # Inputs A
-                    ui.tags.span("Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
+                    ui.tags.span("Model Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
                     ui.input_select(
                         "model_family",
                         None,
@@ -60,7 +60,7 @@ attention_analysis_page = ui.page_fluid(
                         selected="bert",
                         width="100%"
                     ),
-                    ui.tags.span("Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
+                    ui.tags.span("Model Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
                     ui.input_select(
                         "model_name",
                         None,
@@ -83,7 +83,7 @@ attention_analysis_page = ui.page_fluid(
                     ui.tags.span("Model B", class_="sidebar-label", style="color: #ff5ca9; font-size: 10px; font-weight: 700; margin-bottom: 4px; display: block; border-bottom: 1px dashed rgba(255, 92, 169, 0.3); padding-bottom: 2px;"),
                     
                     # Inputs B
-                    ui.tags.span("Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
+                    ui.tags.span("Model Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
                     ui.input_select(
                         "model_family_B",
                         None,
@@ -91,7 +91,7 @@ attention_analysis_page = ui.page_fluid(
                         selected="gpt2",
                         width="100%"
                     ),
-                    ui.tags.span("Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
+                    ui.tags.span("Model Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
                     ui.input_select(
                         "model_name_B",
                         None,
