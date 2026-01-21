@@ -146,6 +146,52 @@ def server(input, output, session):
             
         ui.update_select("model_name", choices=choices, selected=selected)
 
+    # Prompt Wizard Step State: 'A' or 'B' or 'DONE'
+    prompt_entry_step = reactive.Value("A")
+
+    # Mutual Exclusivity for Compare Modes
+    @reactive.Effect
+    @reactive.event(input.compare_mode)
+    def handle_compare_mode():
+        if input.compare_mode():
+            ui.update_switch("compare_prompts_mode", value=False)
+
+    @reactive.Effect
+    @reactive.event(input.compare_prompts_mode)
+    def handle_compare_prompts_mode():
+        if input.compare_prompts_mode():
+            ui.update_switch("compare_mode", value=False)
+            # Reset wizard
+            prompt_entry_step.set("A")
+            # Force UI to A (handled by JS listener normally, but ensuring state)
+
+    # Dynamic Button Renderer (Replaces update logic)
+    @output
+    @render.ui
+    def dynamic_submit_button():
+        mode = input.compare_prompts_mode()
+        step = prompt_entry_step.get()
+        
+        if mode:
+            if step == "A":
+                # Step 1: Go to B
+                return ui.input_action_button("goto_prompt_b", "Go to Prompt B", class_="btn-primary")
+            else:
+                # Step 2: Generate All (Compare)
+                return ui.input_action_button("generate_all_compare", "Generate All", class_="btn-primary")
+        else:
+            # Default: Generate All (Normal/Models)
+             return ui.input_action_button("generate_all_normal", "Generate All", class_="btn-primary")
+
+    # Wizard State Transition Handler
+    @reactive.Effect
+    @reactive.event(input.goto_prompt_b)
+    async def handle_wizard_transition():
+        # Move to step B
+        prompt_entry_step.set("B")
+        # Trigger JS switch
+        await session.send_custom_message("switch_prompt_tab", "B")
+
     @reactive.Effect
     @reactive.event(input.model_family_B)
     def update_model_choices_B():
@@ -183,8 +229,18 @@ def server(input, output, session):
     ])
 
     @reactive.effect
-    @reactive.event(input.generate_all)
+    @reactive.event(input.generate_all_normal, input.generate_all_compare)
     async def compute_all():
+        # Wizard Logic handled by separate button handlers now.
+        # This function strictly computes.
+        
+        # When coming from Wizard (compare mode), we mark DONE
+        try: mode = input.compare_prompts_mode()
+        except: mode = False
+        
+        if mode:
+             prompt_entry_step.set("DONE")
+
         print("DEBUG: compute_all triggered")
         text = input.text_input().strip()
         print(f"DEBUG: Input text: '{text}'")
@@ -208,24 +264,42 @@ def server(input, output, session):
         model_name = input.model_name()
         print(f"DEBUG: Model name A: {model_name}")
         
-        # Check compare mode
-        try: compare = input.compare_mode()
-        except: compare = False
+        # Check compare modes
+        try: compare_models = input.compare_mode()
+        except: compare_models = False
+        
+        try: compare_prompts = input.compare_prompts_mode()
+        except: compare_prompts = False
         
         try:
             loop = asyncio.get_running_loop()
             with ThreadPoolExecutor() as pool:
-                # Compute Model A
+                # Compute Model A (Prompt A)
                 print("DEBUG: Starting heavy_compute A")
                 result_A = await loop.run_in_executor(pool, heavy_compute, text, model_name)
                 cached_result.set(result_A)
                 
-                # Compute Model B if needed
-                if compare:
+                # Compute Second Result if needed
+                if compare_models:
+                    # Case 1: Same Prompt (A), Different Model (B)
                     model_name_B = input.model_name_B()
-                    print(f"DEBUG: Starting heavy_compute B ({model_name_B})")
+                    print(f"DEBUG: Starting heavy_compute B ({model_name_B}) for Compare Models")
                     result_B = await loop.run_in_executor(pool, heavy_compute, text, model_name_B)
                     cached_result_B.set(result_B)
+                
+                elif compare_prompts:
+                    # Case 2: Different Prompt (B), Same Model (A)
+                    try: text_B = input.text_input_B().strip()
+                    except: text_B = ""
+                    
+                    if text_B:
+                        print(f"DEBUG: Starting heavy_compute B (Prompt B) for Compare Prompts")
+                        # Use Model A for Prompt B
+                        result_B = await loop.run_in_executor(pool, heavy_compute, text_B, model_name)
+                        cached_result_B.set(result_B)
+                    else:
+                        cached_result_B.set(None)
+                        
                 else:
                     cached_result_B.set(None)
                     
@@ -679,21 +753,36 @@ def server(input, output, session):
     @render.ui
     def static_preview_text_compare_a():
         """Static preview for Model A in compare mode. Hidden after generation."""
+        # Only show if not generated AND we are in step A or just starting
         if cached_result.get():
+             return None
+             
+        step = prompt_entry_step.get()
+        # If we are in Step B, hide A's preview (user requested only show the current one)
+        if step == "B":
             return None
+            
         t = input.text_input().strip()
         if t:
             return ui.HTML(f'<div style="font-family:monospace;color:#3b82f6;font-size:14px;">"{t}"</div>')
         else:
-            return ui.HTML('<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>')
+            return ui.HTML('<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Go to Prompt B.</div>')
 
     @output
     @render.ui
     def static_preview_text_compare_b():
         """Static preview for Model B in compare mode. Hidden after generation."""
-        if cached_result.get():
-            return None
-        t = input.text_input().strip()
+        # If we are in STEP B (Editing), we MUST show the preview, regardless of cached_result
+        step = prompt_entry_step.get()
+        
+        if step != "B":
+             return None
+
+        # Check cached_result only if we were NOT editing (but we are, so skip check)
+        # if cached_result.get(): return None 
+        
+        t = input.text_input_B().strip() # Use text_input_B here!
+        print(f"DEBUG: static_preview_text_compare_b triggered. Step={step}, Text='{t}'")
         if t:
             return ui.HTML(f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{t}"</div>')
         else:
@@ -1445,8 +1534,19 @@ def server(input, output, session):
         config = current_layout_config.get()
         
         # Check if in comparison mode
-        try: compare = input.compare_mode()
-        except: compare = False
+        try: compare_models = input.compare_mode()
+        except: compare_models = False
+        try: compare_prompts = input.compare_prompts_mode()
+        except: compare_prompts = False
+        
+        compare = compare_models or compare_prompts
+        
+        # Determine labels
+        header_a = "Model A"
+        header_b = "Model B"
+        if compare_prompts:
+            header_a = "Prompt A"
+            header_b = "Prompt B"
         
         if not config:
             # BEFORE GENERATION - Show static preview
@@ -1465,14 +1565,16 @@ def server(input, output, session):
                 )
             else:
                 # Compare mode - show headers + paired static previews
+                # Use separate variables for A and B inputs
+                t_b = input.text_input_B().strip()
                 preview_a = f'<div style="font-family:monospace;color:#3b82f6;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>'
-                preview_b = f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>'
+                preview_b = f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{t_b}"</div>' if t_b else '<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>'
                 return ui.div(
                     {"id": "dashboard-container-compare", "class": "dashboard-stack"},
                     # Header: MODEL A | MODEL B
                     ui.layout_columns(
-                        ui.h3("Model A", style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
-                        ui.h3("Model B", style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
+                        ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
+                        ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                         col_widths=[6, 6]
                     ),
                     # Paired previews
@@ -1603,11 +1705,11 @@ def server(input, output, session):
             # But ALWAYS use output_ui (not static HTML) to avoid blank flash on transition
             if not res_A or not res_B:
                  return ui.div(
-                    {"id": "dashboard-container-compare", "class": "dashboard-stack"},
-                     ui.layout_columns(
-                        ui.h3("Model A", style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
-                        ui.h3("Model B", style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
-                        col_widths=[6, 6]
+                     {"id": "dashboard-container-compare", "class": "dashboard-stack"},
+                      ui.layout_columns(
+                         ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
+                         ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
+                         col_widths=[6, 6]
                     ),
                     # Use output_ui - the renderers handle grey/colored states internally
                     paired_with_card("Sentence Preview", ui.output_ui("preview_text"), ui.output_ui("preview_text_B")),
@@ -1623,8 +1725,8 @@ def server(input, output, session):
                 
                 # Top Header: MODEL A | MODEL B
                 ui.layout_columns(
-                    ui.h3("Model A", style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
-                    ui.h3("Model B", style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
+                    ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
+                    ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                     col_widths=[6, 6]
                 ),
                 
@@ -3940,6 +4042,12 @@ def server(input, output, session):
             except:
                 pass
         
+        
+        # Safety: Filter indices to be within bounds
+        tokens_B = res[0]
+        if selected_indices:
+            selected_indices = [idx for idx in selected_indices if idx < len(tokens_B)]
+            
         root_idx = selected_indices[0] if selected_indices else 0
 
         try: layer_idx = int(input.global_layer())
@@ -3947,7 +4055,7 @@ def server(input, output, session):
         try: head_idx = int(input.global_head())
         except: head_idx = 0
         
-        tokens_B = res[0]
+
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens_B]
         choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
 
@@ -4155,6 +4263,10 @@ def server(input, output, session):
                     selected_indices = [global_token]
             except:
                 pass
+        
+        # Safety: Filter indices to be within bounds of current tokens (crucial for Compare Prompts)
+        if selected_indices:
+            selected_indices = [idx for idx in selected_indices if idx < len(tokens)]
         
         focus_indices = selected_indices if selected_indices else None # None means show all
 

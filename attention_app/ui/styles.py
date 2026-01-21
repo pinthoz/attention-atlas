@@ -119,7 +119,7 @@ CSS = """
             align-items: center;
             
             border-radius: 999px !important;
-            padding: 10px 0 !important;
+            padding: 7px 0 !important;
             font-family: 'Outfit', sans-serif !important;
             font-size: 14px !important;
             font-weight: 600 !important;
@@ -2679,17 +2679,27 @@ __all__ = ["CSS"]
             overflow: visible;
         }
 
+        /* Tabs Row Container */
+        .tabs-row {
+            display: flex;
+            align-items: flex-end;
+            position: absolute;
+            top: -26px;
+            left: 0;
+            z-index: 50;
+        }
+
         /* The Tab */
         .history-tab {
             position: relative;
             top: auto;
             left: auto;
-            bottom: auto; /* Reset absolute positioning */
-            background: #ff5ca9;
+            bottom: auto;
+            background: #1e293b;
             color: white;
-            padding: 4px 20px;
-            border-top-left-radius: 16px;
-            border-top-right-radius: 16px;
+            padding: 4px 12px;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
             border-bottom-left-radius: 0;
             border-bottom-right-radius: 0;
             font-size: 14px;
@@ -2699,17 +2709,70 @@ __all__ = ["CSS"]
             justify-content: center;
             gap: 8px;
             cursor: pointer;
-            z-index: 20; /* Higher than textarea */
+            z-index: 30;
             transition: background 0.2s ease;
             height: 26px;
             line-height: 1;
-            margin-bottom: -8px !important; /* Force glue effect */
-            box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+            box-shadow: 2px -2px 5px rgba(0,0,0,0.1);
         }
 
         .history-tab:hover {
+            background: #334155;
+            z-index: 31;
+        }
+
+        /* Compare Prompts Tabs Container */
+        .compare-tabs-inline {
+            display: flex;
+            align-items: flex-end;
+        }
+
+        /* Prompt Tab Base Styles */
+        .prompt-tab {
+            position: relative;
+            padding: 4px 12px;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+            font-size: 14px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            height: 26px;
+            line-height: 1;
+            color: white;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        /* Tab A - Blue */
+        .prompt-tab.tab-a {
+            background: #3b82f6;
+            margin-left: -8px;
+            z-index: 20;
+            box-shadow: 2px -2px 5px rgba(0,0,0,0.1);
+            padding-left: 14px;
+            padding-right: 10px;
+        }
+
+        .prompt-tab.tab-a:hover {
+            background: #2563eb;
+        }
+
+        /* Tab B - Pink */
+        .prompt-tab.tab-b {
+            background: #ff5ca9;
+            margin-left: -8px;
+            z-index: 10;
+            box-shadow: 2px -2px 5px rgba(0,0,0,0.1);
+            padding-left: 14px;
+            padding-right: 10px;
+        }
+
+        .prompt-tab.tab-b:hover {
             background: #f43f8e;
-            z-index: 21;
         }
 
         /* The Textarea */
@@ -2719,7 +2782,7 @@ __all__ = ["CSS"]
             padding: 12px;
             background: white;
             color: #1e293b;
-            border: 1px solid #cbd5e1;
+            border: 2px solid white;
             border-radius: 0 8px 8px 8px; /* Top-left sharp to join with tab */
             border-top-left-radius: 0;
             font-size: 14px;
@@ -2734,9 +2797,47 @@ __all__ = ["CSS"]
         }
 
         .custom-textarea:focus {
+            border-color: white;
+            box-shadow: none;
+            z-index: 6; 
+        }
+
+        /* Compare models mode: colored borders for textareas */
+        .compare-mode-active #text_input {
+            border: 2px solid #3b82f6;
+        }
+
+        .compare-mode-active #text_input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .compare-mode-active #text_input_B {
+            border: 2px solid #ff5ca9;
+        }
+
+        .compare-mode-active #text_input_B:focus {
             border-color: #ff5ca9;
             box-shadow: 0 0 0 3px rgba(255, 92, 169, 0.1);
-            z-index: 6; 
+        }
+
+        /* Compare prompts mode: colored borders for textareas */
+        .compare-prompts-active #text_input {
+            border: 2px solid #3b82f6;
+        }
+
+        .compare-prompts-active #text_input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .compare-prompts-active #text_input_B {
+            border: 2px solid #ff5ca9;
+        }
+
+        .compare-prompts-active #text_input_B:focus {
+            border-color: #ff5ca9;
+            box-shadow: 0 0 0 3px rgba(255, 92, 169, 0.1);
         }
 
         /* History Dropdown */
