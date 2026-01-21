@@ -30,10 +30,11 @@ attention_analysis_page = ui.page_fluid(
             # Header
             ui.tags.span("Model Configuration", class_="sidebar-label"),
             
-            # Compare Mode Toggle (Inline, styled like section header)
+            # Checkbox Row - forced single line with compact spacing
             ui.div(
-                {"style": "margin-bottom: 12px;"},
-                ui.input_switch("compare_mode", ui.span("Compare Models", style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #cbd5e1; font-weight: 600;"), value=False)
+                {"style": "margin-bottom: 0px; display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden;"},
+                ui.input_switch("compare_mode", ui.span("Compare Models", style="font-size: 10px; color: #cbd5e1; font-weight: 600;"), value=False),
+                ui.input_switch("compare_prompts_mode", ui.span("Compare Prompts", style="font-size: 10px; color: #cbd5e1; font-weight: 600;"), value=False)
             ),
 
             # Model Configuration Container (Flex Row)
@@ -51,7 +52,7 @@ attention_analysis_page = ui.page_fluid(
                     ),
 
                     # Inputs A
-                    ui.tags.span("Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b;"),
+                    ui.tags.span("Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
                     ui.input_select(
                         "model_family",
                         None,
@@ -59,7 +60,7 @@ attention_analysis_page = ui.page_fluid(
                         selected="bert",
                         width="100%"
                     ),
-                    ui.tags.span("Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: 6px;"),
+                    ui.tags.span("Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
                     ui.input_select(
                         "model_name",
                         None,
@@ -82,7 +83,7 @@ attention_analysis_page = ui.page_fluid(
                     ui.tags.span("Model B", class_="sidebar-label", style="color: #ff5ca9; font-size: 10px; font-weight: 700; margin-bottom: 4px; display: block; border-bottom: 1px dashed rgba(255, 92, 169, 0.3); padding-bottom: 2px;"),
                     
                     # Inputs B
-                    ui.tags.span("Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b;"),
+                    ui.tags.span("Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
                     ui.input_select(
                         "model_family_B",
                         None,
@@ -90,7 +91,7 @@ attention_analysis_page = ui.page_fluid(
                         selected="gpt2",
                         width="100%"
                     ),
-                    ui.tags.span("Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: 6px;"),
+                    ui.tags.span("Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
                     ui.input_select(
                         "model_name_B",
                         None,
@@ -110,12 +111,27 @@ attention_analysis_page = ui.page_fluid(
             
             # Custom History Input Component
             ui.div(
-                {"class": "custom-input-container"},
+                {"class": "custom-input-container", "id": "input-container"},
                 
-                # History Tab
+                # Tabs Container (History + Compare Prompts Tabs)
                 ui.div(
-                    {"class": "history-tab", "onclick": "toggleHistory()", "title": "History"},
-                    ui.HTML("""<svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 448 512" fill="white"><!--!Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.--><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg>"""),
+                    {"class": "tabs-row"},
+                    
+                    # History Tab (always visible, z-index highest)
+                    ui.div(
+                        {"class": "history-tab", "onclick": "toggleHistory()", "title": "History"},
+                        ui.HTML("""<svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 448 512" fill="white"><!--!Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.--><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg>"""),
+                    ),
+                    
+                    # Compare Prompts Tabs A and B (Conditional, stacked behind history tab)
+                    ui.panel_conditional(
+                        "input.compare_prompts_mode",
+                        ui.div(
+                            {"class": "compare-tabs-inline"},
+                            ui.div("A", id="tab-a", class_="prompt-tab tab-a active", onclick="switchPrompt('A')"),
+                            ui.div("B", id="tab-b", class_="prompt-tab tab-b", onclick="switchPrompt('B')")
+                        )
+                    ),
                 ),
                 
                 # History Dropdown (initially hidden)
@@ -124,17 +140,26 @@ attention_analysis_page = ui.page_fluid(
                     ui.output_ui("history_list")
                 ),
                 
-                # Custom Textarea
+                # Custom Textarea A (Blue Border only in compare mode)
                 ui.tags.textarea(
                     "All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.",
                     id="text_input",
                     class_="custom-textarea",
                     rows=6,
-                    # Bind this textarea to Shiny input 'text_input'
-                    oninput="Shiny.setInputValue('text_input', this.value, {priority: 'event'})"
+                    oninput="Shiny.setInputValue('text_input', this.value, {priority: 'event'})",
+                ),
+
+                # Custom Textarea B (Pink Border only in compare mode) - Initially Hidden
+                ui.tags.textarea(
+                    "Programmers are logical and rigorous. Artists are creative and emotional.",
+                    id="text_input_B",
+                    class_="custom-textarea",
+                    rows=6,
+                    oninput="Shiny.setInputValue('text_input_B', this.value)",
+                    style="display: none;"
                 ),
                 
-                # JS to handle history interactions
+                # JS to handle history interactions and Prompt Switching
                 ui.tags.script("""
                 function toggleHistory() {
                     const dropdown = document.getElementById('history-dropdown');
@@ -151,11 +176,67 @@ attention_analysis_page = ui.page_fluid(
                 });
                 
                 function selectHistoryItem(text) {
-                    const textarea = document.getElementById('text_input');
+                    // Check which input is visible and set value there
+                    const inputB = document.getElementById('text_input_B');
+                    const isB = inputB && inputB.style.display !== 'none';
+                    
+                    const targetId = isB ? 'text_input_B' : 'text_input';
+                    const textarea = document.getElementById(targetId);
+                    
                     textarea.value = text;
-                    Shiny.setInputValue('text_input', text, {priority: 'event'});
+                    Shiny.setInputValue(targetId, text, {priority: 'event'});
                     document.getElementById('history-dropdown').classList.remove('show');
                 }
+
+                function switchPrompt(mode) {
+                    const tabA = document.getElementById('tab-a');
+                    const tabB = document.getElementById('tab-b');
+                    const inputA = document.getElementById('text_input');
+                    const inputB = document.getElementById('text_input_B');
+
+                    if (mode === 'A') {
+                        if(tabA) {
+                            tabA.style.opacity = '1.0';
+                            tabA.style.zIndex = '20';
+                        }
+                        if(tabB) {
+                            tabB.style.opacity = '0.5';
+                            tabB.style.zIndex = '10';
+                        }
+                        inputA.style.display = 'block';
+                        inputB.style.display = 'none';
+                    } else {
+                        if(tabA) {
+                            tabA.style.opacity = '0.5';
+                            tabA.style.zIndex = '10';
+                        }
+                        if(tabB) {
+                            tabB.style.opacity = '1.0';
+                            tabB.style.zIndex = '25';
+                        }
+                        inputA.style.display = 'none';
+                        inputB.style.display = 'block';
+                    }
+                }
+                
+                // Handle server request to switch tabs
+                Shiny.addCustomMessageHandler('switch_prompt_tab', function(message) {
+                    switchPrompt(message);
+                });
+                
+                
+                // Handle compare_prompts_mode toggle
+                $(document).on('shiny:inputchanged', function(event) {
+                    if (event.name === 'compare_prompts_mode') {
+                        const container = document.getElementById('input-container');
+                        if (event.value === true) {
+                            container.classList.add('compare-prompts-active');
+                        } else {
+                            container.classList.remove('compare-prompts-active');
+                            switchPrompt('A');
+                        }
+                    }
+                });
 
                 // Persistence Logic
                 Shiny.addCustomMessageHandler('update_history', function(message) {
@@ -172,8 +253,8 @@ attention_analysis_page = ui.page_fluid(
             ),
 
             ui.div(
-                {"style": "margin-bottom: 12px;"}, # Space for Visual Options
-                ui.input_action_button("generate_all", "Generate All", class_="btn-primary"),
+                {"style": "margin-bottom: 0px;"}, # Space for Visual Options
+                ui.output_ui("dynamic_submit_button"),
             ),
         ),
         
@@ -249,15 +330,14 @@ app_ui = ui.page_navbar(
                 display: block !important;
                 margin-bottom: 6px !important; /* Slightly reduced */
             }
-            .history-tab {
+            .tabs-row {
                 position: absolute !important;
-                top: -26px !important; /* EXACTLY clear the box content */
+                top: -26px !important;
                 left: 0 !important;
+            }
+            .history-tab {
+                position: relative !important;
                 margin-bottom: 0 !important;
-                z-index: 50 !important;
-                border-bottom-left-radius: 0 !important;
-                border-bottom-right-radius: 0 !important;
-                box-shadow: none !important;
             }
             .history-dropdown {
                 top: 0 !important; /* Start immediately below tab */
@@ -266,6 +346,14 @@ app_ui = ui.page_navbar(
                 margin-top: 0 !important; /* Reset margin */
                 position: relative !important;
                 z-index: 40 !important;
+            }
+            /* Pull Visualization Options closer to Generate button */
+            #visualization_options_container {
+                margin-top: -20px !important;
+            }
+            #visualization_options_container .sidebar-section {
+                margin-top: 0 !important;
+                padding-top: 0 !important;
             }
         """)
     ),
