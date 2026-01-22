@@ -2901,4 +2901,107 @@ __all__ = ["CSS"]
         .navbar-toggler {
             display: none !important;
         }
+
+        /* Dual Row Token Split Layout (Compare Prompts) */
+        .floating-control-bar .token-row-split {
+            display: flex;
+            flex-direction: row; /* Side-by-side */
+            flex-wrap: wrap;     /* Allow wrapping */
+            align-items: stretch;
+            gap: 4px;
+            padding: 3px 6px;
+            background: rgba(30, 41, 59, 0.6);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            flex: 1;
+            max-width: 850px;
+            min-width: 300px;
+            max-height: 72px; /* Restrict height (approx 2 lines) */
+            overflow-y: auto; /* Scroll vertically */
+            margin-top: 5px;
+        }
+
+        .floating-control-bar .token-row-split::-webkit-scrollbar {
+            width: 3px;
+        }
+        .floating-control-bar .token-row-split::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 2px;
+        }
+
+        .floating-control-bar .token-split-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            overflow-x: auto;
+            white-space: nowrap;
+            font-size: 11px;
+            flex: 1 1 45%; /* Basis 45% allows side-by-side */
+            min-width: 250px;
+            padding: 2px 0;
+            border-bottom: 0;
+        }
+        
+        .floating-control-bar .token-split-item::-webkit-scrollbar {
+             height: 2px;
+        }
+        .floating-control-bar .token-split-item::-webkit-scrollbar-thumb {
+             background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Model Labels */
+        .floating-control-bar .model-label-a {
+            font-weight: bold;
+            color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 10px;
+        }
+
+        .floating-control-bar .model-label-b {
+            font-weight: bold;
+            color: #ec4899;
+            background: rgba(236, 72, 153, 0.1);
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 10px;
+        }
+
+        /* Specific Token Coloring by Prefix */
+        .floating-control-bar .token-chip[data-prefix="A"] {
+            background: rgba(59, 130, 246, 0.15); /* Blue tint */
+            border-color: rgba(59, 130, 246, 0.2);
+            color: #eff6ff;
+        }
+
+        .floating-control-bar .token-chip[data-prefix="A"]:hover {
+            background: rgba(59, 130, 246, 0.3);
+            border-color: #3b82f6;
+        }
+
+        .floating-control-bar .token-chip[data-prefix="A"].active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: white;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+        }
+
+        .floating-control-bar .token-chip[data-prefix="B"] {
+            background: rgba(236, 72, 153, 0.15); /* Pink tint */
+            border-color: rgba(236, 72, 153, 0.2);
+            color: #fdf2f8;
+        }
+
+        .floating-control-bar .token-chip[data-prefix="B"]:hover {
+            background: rgba(236, 72, 153, 0.3);
+            border-color: #ec4899;
+        }
+
+        .floating-control-bar .token-chip[data-prefix="B"].active {
+            background: #ec4899;
+            border-color: #ec4899;
+            color: white;
+            box-shadow: 0 0 8px rgba(236, 72, 153, 0.4);
+        }
         """
