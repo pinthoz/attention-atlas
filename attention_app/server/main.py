@@ -446,67 +446,138 @@ def server(input, output, session):
         if not res:
             return None  # Don't show control bar until data is ready
         
-        # Get model info
+        # Determine mode
+        try: compare_prompts = input.compare_prompts_mode()
+        except: compare_prompts = False
+
+        # Get defaults
+        try: current_layer = int(input.global_layer())
+        except: current_layer = 0
+        try: current_head = int(input.global_head())
+        except: current_head = 0
+
+        # --- MODEL A DATA ---
         _, _, _, _, _, _, _, encoder_model, *_ = res
         is_gpt2 = not hasattr(encoder_model, "encoder")
-        
         if is_gpt2:
             num_layers = len(encoder_model.h)
             num_heads = encoder_model.h[0].attn.num_heads
         else:
             num_layers = len(encoder_model.encoder.layer)
             num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
+            
+        tokens_A = res[0]
+        clean_tokens_A = [t.replace("##", "").replace("Ġ", "") for t in tokens_A]
         
-        # Get tokens
-        tokens = res[0]
-        # Clean tokens (already cleaned in aggregation if active, but safe to re-clean)
-        clean_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
-        
-        # Get current values (default to 0)
-        try: current_layer = int(input.global_layer())
-        except: current_layer = 0
-        try: current_head = int(input.global_head())
-        except: current_head = 0
-
-        # Get selected tokens (span selection support)
+        # Get selected tokens A
         try:
-            selected_tokens_str = input.global_selected_tokens()
-            selected_tokens = json.loads(selected_tokens_str) if selected_tokens_str else []
-        except:
-            selected_tokens = []
+            val_A = input.global_selected_tokens()
+            selected_tokens_A = json.loads(val_A) if val_A else []
+        except: selected_tokens_A = []
+        if not selected_tokens_A: 
+             try: 
+                 t = int(input.global_focus_token())
+                 if t >= 0: selected_tokens_A = [t]
+             except: pass
 
-        # Fallback to legacy single selection if no span selection
-        if not selected_tokens:
-            try:
-                current_token = int(input.global_focus_token())
-                if current_token >= 0:
-                    selected_tokens = [current_token]
-            except:
-                pass
 
-        # Build clickable token chips
-        token_chips = []
-        for i, token in enumerate(clean_tokens):
-            is_active = "active" if i in selected_tokens else ""
-
-            token_chips.append(
-                ui.tags.span(
-                    token,
-                    class_=f"token-chip {is_active}",
-                    **{"data-idx": str(i)}  # Store index for JS
-                )
-            )
+        # --- MODEL B DATA (Only if Compare Prompts) ---
+        tokens_B = []
+        clean_tokens_B = []
+        selected_tokens_B = []
         
-        # JavaScript for slider sync and span selection
+        if compare_prompts:
+            res_B = get_active_result("_B")
+            if res_B:
+                tokens_B = res_B[0]
+                clean_tokens_B = [t.replace("##", "").replace("Ġ", "") for t in tokens_B]
+                
+                # Get selected tokens B
+                try:
+                    val_B = input.global_selected_tokens_B()
+                    selected_tokens_B = json.loads(val_B) if val_B else []
+                except: selected_tokens_B = []
+
+        # --- BUILD CHIPS ---
+        def build_chips(tokens, selected, prefix="A"):
+            chips = []
+            for i, token in enumerate(tokens):
+                is_active = "active" if i in selected else ""
+                chips.append(
+                    ui.tags.span(
+                        token,
+                        class_=f"token-chip {is_active}",
+                        **{"data-idx": str(i), "data-prefix": prefix, "onclick": f"handleTokenClick(this, '{prefix}')"}
+                    )
+                )
+            return chips
+
+        chips_A = build_chips(clean_tokens_A, selected_tokens_A, "A")
+        chips_B = build_chips(clean_tokens_B, selected_tokens_B, "B") if compare_prompts else []
+        
+        
+        # --- JAVASCRIPT ---
+        # Updated to handle prefix (A/B) for independent selection
         slider_js = f"""
         (function() {{
-            const globalBtn = document.getElementById('trigger_global_view');
+            // State for span selections: {{ "A": {{anchor, selected}}, "B": ... }}
+            window._spanState = {{
+                "A": {{ anchor: null, selected: {json.dumps(selected_tokens_A)} }},
+                "B": {{ anchor: null, selected: {json.dumps(selected_tokens_B)} }}
+            }};
 
-            function deactivateGlobal() {{
-                if (globalBtn) globalBtn.classList.remove('active');
+            // Expose handler globally so inline onclick can find it
+            window.handleTokenClick = function(el, prefix) {{
+                const idx = parseInt(el.getAttribute('data-idx'));
+                const state = window._spanState[prefix];
+                const event = window.event;
+                
+                if (event.shiftKey && state.anchor !== null) {{
+                    // Range selection
+                    const start = Math.min(state.anchor, idx);
+                    const end = Math.max(state.anchor, idx);
+                    const span = [];
+                    for (let i = start; i <= end; i++) span.push(i);
+                    updateSelection(prefix, span);
+                }} else {{
+                    // Toggle
+                    const current = state.selected;
+                    const idxInList = current.indexOf(idx);
+                    let newSel;
+                    
+                    if (idxInList > -1) {{
+                        newSel = current.filter(i => i !== idx);
+                        if (state.anchor === idx) state.anchor = null;
+                    }} else {{
+                        newSel = current.concat([idx]);
+                        state.anchor = idx; 
+                    }}
+                    updateSelection(prefix, newSel);
+                }}
+            }};
+
+            function updateSelection(prefix, selectedArray) {{
+                window._spanState[prefix].selected = selectedArray;
+                
+                // Update UI for this prefix
+                const chips = document.querySelectorAll(`.token-chip[data-prefix='${{prefix}}']`);
+                chips.forEach(chip => {{
+                    const i = parseInt(chip.getAttribute('data-idx'));
+                    if (selectedArray.includes(i)) chip.classList.add('active');
+                    else chip.classList.remove('active');
+                }});
+                
+                // Send to Shiny
+                const inputName = prefix === 'A' ? 'global_selected_tokens' : 'global_selected_tokens_B';
+                Shiny.setInputValue(inputName, JSON.stringify(selectedArray), {{priority: 'event'}});
+                
+                // Legacy fallback for A
+                if (prefix === 'A') {{
+                     Shiny.setInputValue('global_focus_token', selectedArray.length > 0 ? selectedArray[0] : -1, {{priority: 'event'}});
+                }}
             }}
 
-            // Debounce function
+            // Debouncers for Sliders (Shared)
             function debounce(func, wait) {{
                 let timeout;
                 return function(...args) {{
@@ -515,41 +586,33 @@ def server(input, output, session):
                     timeout = setTimeout(() => func.apply(context, args), wait);
                 }};
             }}
+            
+            const setLayer = debounce(val => Shiny.setInputValue('global_layer', val, {{priority: 'event'}}), 200);
+            const setHead = debounce(val => Shiny.setInputValue('global_head', val, {{priority: 'event'}}), 200);
+            const setTopK = debounce(val => Shiny.setInputValue('global_topk', val, {{priority: 'event'}}), 200);
 
-            // Debounced setters
-            const setLayer = debounce(function(val) {{
-                Shiny.setInputValue('global_layer', val, {{priority: 'event'}});
-            }}, 300);
-
-            const setHead = debounce(function(val) {{
-                Shiny.setInputValue('global_head', val, {{priority: 'event'}});
-            }}, 300);
-
-            const setTopK = debounce(function(val) {{
-                Shiny.setInputValue('global_topk', val, {{priority: 'event'}});
-            }}, 300);
-
-            // Layer slider
-            const layerSlider = document.getElementById('layer-slider');
-            const layerValue = document.getElementById('layer-value');
-            if (layerSlider) {{
-                layerSlider.oninput = function() {{
-                    layerValue.textContent = this.value;
-                    setLayer(this.value);
-                    deactivateGlobal();
+            // Bind Sliders
+            const bindSlider = (id, setter, valId) => {{
+                const el = document.getElementById(id);
+                if (el) el.oninput = function() {{ 
+                    document.getElementById(valId).textContent = this.value; 
+                    setter(this.value); 
                 }};
-            }}
-            // Head slider
-            const headSlider = document.getElementById('head-slider');
-            const headValue = document.getElementById('head-value');
-            if (headSlider) {{
-                headSlider.oninput = function() {{
-                    headValue.textContent = this.value;
-                    setHead(this.value);
-                    deactivateGlobal();
-                }};
-            }}
-            // Normalization radio buttons
+            }};
+            
+            bindSlider('layer-slider', setLayer, 'layer-value');
+            bindSlider('head-slider', setHead, 'head-value');
+            bindSlider('topk-slider', setTopK, 'topk-value');
+            
+            // Global View Toggle
+             const globalBtn = document.getElementById('trigger_global_view');
+             if (globalBtn) {{
+                globalBtn.addEventListener('click', function() {{
+                    this.classList.toggle('active');
+                }});
+             }}
+             
+             // Norm Radio
             const radioGroup = document.getElementById('norm-radio-group');
             if (radioGroup) {{
                 radioGroup.querySelectorAll('.radio-option').forEach(btn => {{
@@ -560,166 +623,90 @@ def server(input, output, session):
                     }};
                 }});
             }}
-            // Top-K slider
-            const topkSlider = document.getElementById('topk-slider');
-            const topkValue = document.getElementById('topk-value');
-            if (topkSlider) {{
-                topkSlider.oninput = function() {{
-                    topkValue.textContent = this.value;
-                    setTopK(this.value);
-                    deactivateGlobal();
-                }};
-            }}
 
-            // ========== SPAN SELECTION LOGIC ==========
-            // State for span selection
-            window._spanSelection = window._spanSelection || {{
-                anchor: null,  // First clicked token for span
-                selected: {json.dumps(selected_tokens)}  // Currently selected tokens
-            }};
-
-            // Update span selection UI and send to Shiny
-            function updateSpanSelection(selectedArray) {{
-                window._spanSelection.selected = selectedArray;
-
-                // Update UI: add/remove active class
-                document.querySelectorAll('.token-chip').forEach(chip => {{
-                    const idx = parseInt(chip.getAttribute('data-idx'));
-                    if (selectedArray.includes(idx)) {{
-                        chip.classList.add('active');
-                    }} else {{
-                        chip.classList.remove('active');
-                    }}
-                }});
-
-                // Send to Shiny
-                Shiny.setInputValue('global_selected_tokens', JSON.stringify(selectedArray), {{priority: 'event'}});
-                // Also update legacy single token for compatibility (use first selected or -1)
-                Shiny.setInputValue('global_focus_token', selectedArray.length > 0 ? selectedArray[0] : -1, {{priority: 'event'}});
-            }}
-
-            // Token chip click handler
-            document.querySelectorAll('.token-chip').forEach(chip => {{
-                chip.addEventListener('click', function(event) {{
-                    deactivateGlobal();
-                    const idx = parseInt(this.getAttribute('data-idx'));
-
-                    if (event.shiftKey && window._spanSelection.anchor !== null) {{
-                        // Shift+click: Create span from anchor to clicked
-                        const start = Math.min(window._spanSelection.anchor, idx);
-                        const end = Math.max(window._spanSelection.anchor, idx);
-                        const span = [];
-                        for (let i = start; i <= end; i++) {{
-                            span.push(i);
-                        }}
-                        updateSpanSelection(span);
-                    }} else {{
-                        // Normal click: Toggle token in the list
-                        const current = window._spanSelection.selected;
-                        const idxInList = current.indexOf(idx);
-                        
-                        let newSelection;
-                        if (idxInList > -1) {{
-                            // Already selected: remove it
-                            newSelection = current.filter(function(i) {{ return i !== idx; }});
-                            if (window._spanSelection.anchor === idx) {{ window._spanSelection.anchor = null; }}
-                        }} else {{
-                            // Not selected: add it
-                            newSelection = current.concat([idx]);
-                            // Set as new anchor for potential range selection
-                            window._spanSelection.anchor = idx;
-                        }}
-                        updateSpanSelection(newSelection);
-                    }}
-                }});
-            }});
-            // ========== END SPAN SELECTION LOGIC ==========
-
-            // Add class to content
             document.querySelector('.content')?.classList.add('has-control-bar');
-
-            // Global Button Handler - only affects layer/head mode, NOT token selection
-            if (globalBtn) {{
-                globalBtn.addEventListener('click', function() {{
-                    if (this.classList.contains('active')) {{
-                        this.classList.remove('active');
-                    }} else {{
-                        this.classList.add('active');
-                        // Note: We do NOT deselect tokens here - token selection is independent of global mode
-                    }}
-                }});
-            }}
         }})();
         """
         
+        # --- UI LAYOUT ---
+        
+        token_area_content = []
+        
+        if compare_prompts:
+            # Dual Row Layout
+            token_area_content = [
+                ui.div(
+                    {"class": "token-row-split"},
+                    ui.div(
+                        {"class": "token-split-item"},
+                        ui.span("A", class_="model-label-a"),
+                        *chips_A
+                    ),
+                    ui.div(
+                        {"class": "token-split-item item-b"},
+                        ui.span("B", class_="model-label-b"),
+                        *chips_B
+                    )
+                )
+            ]
+        else:
+            # Single Row Layout
+            token_area_content = [
+                ui.div(
+                    {"class": "token-sentence"},
+                    *chips_A
+                )
+            ]
+
         return ui.div(
             {"class": "floating-control-bar"},
             
-            # Title centered on top
+            # Title
             ui.span("Configurations", class_="bar-title"),
             
-            # Controls row (layer, head, divider, tokens)
+            # Controls
             ui.div(
                 {"class": "controls-row"},
                 
-                # Global View Button - add 'active' class when in global mode
+                # Global View
                 ui.div(
                     {"class": "control-group"},
                     ui.span("View", class_="control-label"),
                     ui.input_action_button("trigger_global_view", "Global", class_=f"btn-global{' active' if global_metrics_mode.get() == 'all' else ''}")
                 ),
 
-                # Layer slider
+                # Layer
                 ui.div(
                     {"class": "control-group"},
                     ui.span("Layer", class_="control-label"),
                     ui.div(
                         {"class": "slider-container"},
                         ui.tags.span(str(current_layer), id="layer-value", class_="slider-value"),
-                        ui.tags.input(
-                            type="range",
-                            id="layer-slider",
-                            min="0",
-                            max=str(num_layers - 1),
-                            value=str(current_layer),
-                            step="1"
-                        )
+                        ui.tags.input(type="range", id="layer-slider", min="0", max=str(num_layers - 1), value=str(current_layer), step="1")
                     )
                 ),
                 
-                # Head slider
+                # Head
                 ui.div(
                     {"class": "control-group"},
                     ui.span("Head", class_="control-label"),
                     ui.div(
                         {"class": "slider-container"},
                         ui.tags.span(str(current_head), id="head-value", class_="slider-value"),
-                        ui.tags.input(
-                            type="range",
-                            id="head-slider",
-                            min="0",
-                            max=str(num_heads - 1),
-                            value=str(current_head),
-                            step="1"
-                        )
+                        ui.tags.input(type="range", id="head-slider", min="0", max=str(num_heads - 1), value=str(current_head), step="1")
                     )
                 ),
                 
                 # Divider
                 ui.div({"class": "control-divider"}),
                 
-                # Clickable token sentence
-                ui.div(
-                    {"class": "token-sentence"},
-                    *token_chips
-                ),
+                # Tokens (Dynamic)
+                *token_area_content,
                 
-                # Divider before normalization
+                # Divider
                 ui.div({"class": "control-divider"}),
 
-                # Normalization radio group
-                
-                # Normalization radio group
+                # Norm
                 ui.div(
                     {"class": "control-group"},
                     ui.span("Norm", class_="control-label"),
@@ -731,26 +718,19 @@ def server(input, output, session):
                     )
                 ),
                 
-                # Top-K slider
+                # Top-K
                 ui.div(
                     {"class": "control-group"},
                     ui.span("Top-K", class_="control-label"),
                     ui.div(
                         {"class": "slider-container"},
                         ui.tags.span("3", id="topk-value", class_="slider-value"),
-                        ui.tags.input(
-                            type="range",
-                            id="topk-slider",
-                            min="1",
-                            max="20",
-                            value="3",
-                            step="1"
-                        )
+                        ui.tags.input(type="range", id="topk-slider", min="1", max="20", value="3", step="1")
                     )
                 ),
             ),
             
-            # Script for slider sync
+            # Script
             ui.tags.script(slider_js)
         )
 
@@ -2736,7 +2716,7 @@ def server(input, output, session):
         # --- Highlight Selected Token Logic (Span Support) ---
         selected_indices = []
         try:
-            val = input.global_selected_tokens()
+            val = input.global_selected_tokens_B()
             if val:
                 selected_indices = json.loads(val)
         except:
@@ -3427,7 +3407,7 @@ def server(input, output, session):
 
     @output
     @render.ui
-    def attention_flow_B():
+    def _unused_duplicate_attention_flow_B():
         res = get_active_result("_B")
         if not res: return None
         tokens, _, _, attentions, *_ = res
@@ -4119,10 +4099,10 @@ def server(input, output, session):
         if not res:
             return None
             
-        # Use global_selected_tokens for span support
+        # Use global_selected_tokens_B for span support
         selected_indices = []
         try:
-            val = input.global_selected_tokens()
+            val = input.global_selected_tokens_B()
             if val:
                 selected_indices = json.loads(val)
         except:
@@ -4130,12 +4110,8 @@ def server(input, output, session):
             
         # Fallback
         if not selected_indices:
-            try:
-                global_token = int(input.global_focus_token())
-                if global_token >= 0:
-                    selected_indices = [global_token]
-            except:
-                pass
+             # Legacy fallback removed for B to ensure independence or default to [0]
+             pass
         
         focus_indices = selected_indices if selected_indices else [0]
         
@@ -4363,10 +4339,10 @@ def server(input, output, session):
         if not res:
             return None
 
-        # Use global_selected_tokens for span support - Tree View uses only the FIRST selected token as root
+        # Use global_selected_tokens_B for span support - Tree View uses only the FIRST selected token as root
         selected_indices = []
         try:
-            val = input.global_selected_tokens()
+            val = input.global_selected_tokens_B()
             if val:
                 selected_indices = json.loads(val)
         except:
@@ -4575,7 +4551,7 @@ def server(input, output, session):
         # --- Highlight Selected Token Logic (Span Support) ---
         selected_indices = []
         try:
-            val = input.global_selected_tokens()
+            val = input.global_selected_tokens_B()
             if val:
                 selected_indices = json.loads(val)
         except:
@@ -4722,10 +4698,10 @@ def server(input, output, session):
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
-        # Use global_selected_tokens for span support
+        # Use global_selected_tokens_B for span support
         selected_indices = []
         try:
-            val = input.global_selected_tokens()
+            val = input.global_selected_tokens_B()
             if val:
                 selected_indices = json.loads(val)
         except:
