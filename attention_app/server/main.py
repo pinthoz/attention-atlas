@@ -165,32 +165,22 @@ def server(input, output, session):
             prompt_entry_step.set("A")
             # Force UI to A (handled by JS listener normally, but ensuring state)
 
-    # Dynamic Button Renderer (Replaces update logic)
-    @output
-    @render.ui
-    def dynamic_submit_button():
+    # Dynamic Button Label Updater
+    @reactive.Effect
+    @reactive.event(input.compare_prompts_mode, prompt_entry_step) # Explicitly depend on both
+    async def update_generate_button_label():
         mode = input.compare_prompts_mode()
         step = prompt_entry_step.get()
         
-        if mode:
-            if step == "A":
-                # Step 1: Go to B
-                return ui.input_action_button("goto_prompt_b", "Go to Prompt B", class_="btn-primary")
-            else:
-                # Step 2: Generate All (Compare)
-                return ui.input_action_button("generate_all_compare", "Generate All", class_="btn-primary")
-        else:
-            # Default: Generate All (Normal/Models)
-             return ui.input_action_button("generate_all_normal", "Generate All", class_="btn-primary")
+        label = "Generate All"
+        print(f"DEBUG: update_button_label triggered. mode={mode}, step={step}")
+        
+        if mode and step == "A":
+            label = "Prompt B ➜"
+            
+        print(f"DEBUG: sending update_button_label: {label}")
+        await session.send_custom_message("update_button_label", {"label": label})
 
-    # Wizard State Transition Handler
-    @reactive.Effect
-    @reactive.event(input.goto_prompt_b)
-    async def handle_wizard_transition():
-        # Move to step B
-        prompt_entry_step.set("B")
-        # Trigger JS switch
-        await session.send_custom_message("switch_prompt_tab", "B")
 
     @reactive.Effect
     @reactive.event(input.model_family_B)
@@ -220,6 +210,20 @@ def server(input, output, session):
 
 
     
+    # MLM Trigger Logic
+    show_mlm_A = reactive.Value(False)
+    show_mlm_B = reactive.Value(False)
+
+    @reactive.Effect
+    @reactive.event(input.trigger_mlm_A)
+    def trigger_mlm_A():
+        show_mlm_A.set(True)
+
+    @reactive.Effect
+    @reactive.event(input.trigger_mlm_B)
+    def trigger_mlm_B():
+        show_mlm_B.set(True)
+
     # Input History Logic
     input_history = reactive.Value([
         "All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.",
@@ -229,17 +233,26 @@ def server(input, output, session):
     ])
 
     @reactive.effect
-    @reactive.event(input.generate_all_normal, input.generate_all_compare)
+    @reactive.event(input.generate_all)
     async def compute_all():
-        # Wizard Logic handled by separate button handlers now.
-        # This function strictly computes.
-        
-        # When coming from Wizard (compare mode), we mark DONE
+        # Reset MLM triggers on new computation
+        show_mlm_A.set(False)
+        show_mlm_B.set(False)
+
+        # Wizard Logic
         try: mode = input.compare_prompts_mode()
         except: mode = False
         
         if mode:
-             prompt_entry_step.set("DONE")
+            step = prompt_entry_step.get()
+            if step == "A":
+                # Transition to B, DO NOT COMPUTE
+                prompt_entry_step.set("B")
+                await session.send_custom_message("switch_prompt_tab", "B")
+                return
+
+            # If we are here, we are in Step B (or DONE), so we compute
+            prompt_entry_step.set("DONE")
 
         print("DEBUG: compute_all triggered")
         text = input.text_input().strip()
@@ -256,6 +269,10 @@ def server(input, output, session):
                 current_history.remove(text) # Move to top
             updated_history = [text] + current_history
             input_history.set(updated_history[:20]) # Limit to 20 items
+
+        # Reset MLM states on new generation
+        show_mlm_A.set(False)
+        show_mlm_B.set(False)
 
         running.set(True)
         await session.send_custom_message('start_loading', {})
@@ -425,7 +442,7 @@ def server(input, output, session):
     @render.ui
     def floating_control_bar():
         """Render the floating fixed control bar with range sliders and clickable token sentence."""
-        res = cached_result.get()
+        res = get_active_result()
         if not res:
             return None  # Don't show control bar until data is ready
         
@@ -442,6 +459,7 @@ def server(input, output, session):
         
         # Get tokens
         tokens = res[0]
+        # Clean tokens (already cleaned in aggregation if active, but safe to re-clean)
         clean_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
         
         # Get current values (default to 0)
@@ -698,6 +716,8 @@ def server(input, output, session):
                 
                 # Divider before normalization
                 ui.div({"class": "control-divider"}),
+
+                # Normalization radio group
                 
                 # Normalization radio group
                 ui.div(
@@ -788,7 +808,7 @@ def server(input, output, session):
         else:
             return ui.HTML('<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>')
 
-    def get_preview_text_view(res, text_input, model_suffix=""):
+    def get_preview_text_view(res, text_input, model_suffix="", footer_html=""):
         t = text_input.strip() if text_input else ""
         
         # Determine colors based on model suffix
@@ -813,19 +833,28 @@ def server(input, output, session):
         token_html = []
         for i, (tok, att_recv, recv_norm) in enumerate(zip(tokens, attention_received, att_received_norm)):
             clean_tok = tok.replace("##", "").replace("Ġ", "")
+            # GPT-2 lowercase for display if aggregated? No, visualization handles it.
+            # Just keep clean logic.
+            
             opacity = 0.2 + (recv_norm * 0.6)
             bg_color = f"rgba({color_rgb}, {opacity})"
             tooltip = f"Token: {clean_tok}&#10;Attention Received: {att_recv:.3f}"
             token_html.append(f'<span class="token-viz" style="background:{bg_color};" title="{tooltip}">{clean_tok}</span>')
             
         html = '<div class="token-viz-container">' + ''.join(token_html) + '</div>'
+        
         legend_html = f'''
-        <div style="display:flex;gap:12px;margin-top:8px;font-size:9px;color:#6b7280;">
-            <div style="display:flex;align-items:center;gap:4px;">
-                <div style="width:10px;height:10px;background:rgba({color_rgb},0.8);border-radius:2px;"></div><span>High Attention</span>
+        <div style="display:flex; justify-content:space-between; margin-top:8px; align-items:center;">
+            <div style="display:flex;gap:12px;font-size:9px;color:#6b7280;align-items:center;">
+                <div style="display:flex;align-items:center;gap:4px;">
+                    <div style="width:10px;height:10px;background:rgba({color_rgb},0.8);border-radius:2px;"></div><span>High Attention</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:4px;">
+                    <div style="width:10px;height:10px;background:rgba({color_rgb},0.2);border-radius:2px;"></div><span>Low Attention</span>
+                </div>
             </div>
-            <div style="display:flex;align-items:center;gap:4px;">
-                <div style="width:10px;height:10px;background:rgba({color_rgb},0.2);border-radius:2px;"></div><span>Low Attention</span>
+            <div style="font-size:9px;">
+                {footer_html}
             </div>
         </div>
         '''
@@ -834,13 +863,13 @@ def server(input, output, session):
     @output
     @render.ui
     def preview_text():
-        res = cached_result.get()
+        res = get_active_result()
         return get_preview_text_view(res, input.text_input(), "")
 
     @output
     @render.ui
     def preview_text_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         return get_preview_text_view(res, input.text_input(), "_B")
 
 
@@ -978,36 +1007,45 @@ def server(input, output, session):
             )
         )
 
+
+    # --- Helper for Renderers to get Aggregated Data ---
+    def get_active_result(suffix=""):
+        res = cached_result.get() if suffix == "" else cached_result_B.get()
+        if not res: return None
+        
+        use_word_level = False
+        try:
+            cm = input.compare_mode()
+            wl = input.word_level_toggle()
+            # Allow word level in single mode too if enabled
+            if wl:
+                use_word_level = True
+        except Exception as e:
+            # print(f"DEBUG: get_active_result error reading inputs: {e}")
+            pass
+            
+        if use_word_level:
+            from ..utils import aggregate_data_to_words
+            res = aggregate_data_to_words(res, filter_special=True)
+            
+        return res
+
     @output
     @render.ui
     def visualization_options_container():
-        # Only show Visualization Options for BERT (encoder-only models)
-        # For GPT-2, we hide the entire section
-        try:
-            model_family = input.model_family()
-        except:
-            model_family = "bert"
-            
-        if model_family == "gpt2":
-            return None
-            
-        return ui.div(
-            {"class": "sidebar-section"},
-            ui.tags.span("Visualization Options", class_="sidebar-label"),
-            ui.input_switch("use_mlm", ui.span("Show MLM Predictions", style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #cbd5e1; font-weight: 600;"), value=False)
-        )
+        return None
 
     @output
     @render.ui
     def render_embedding_table():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         return get_embedding_table(res)
 
     @output
     @render.ui
     def render_segment_table():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         return ui.div(
             {"class": "card", "style": "height: 100%;"}, 
@@ -1019,7 +1057,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_posenc_table():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         return ui.div(
             {"class": "card", "style": "height: 100%;"}, 
@@ -1031,7 +1069,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_sum_layernorm():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         _, _, _, _, _, _, _, encoder_model, *_ = res
         return ui.div(
@@ -1044,7 +1082,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_qkv_table():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
@@ -1059,7 +1097,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_scaled_attention():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         
         # Use global_selected_tokens for span support
@@ -1087,7 +1125,7 @@ def server(input, output, session):
         try: head_idx = int(input.global_head())
         except: head_idx = 0
         try: top_k = int(input.global_topk())
-        except: top_k = 5
+        except: top_k = 3
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
@@ -1099,7 +1137,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_ffn():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         try: layer = int(input.global_layer())
         except: layer = 0
@@ -1113,7 +1151,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_add_norm():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         try: layer = int(input.global_layer())
         except: layer = 0
@@ -1127,7 +1165,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_add_norm_post_ffn():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         try: layer = int(input.global_layer())
         except: layer = 0
@@ -1141,7 +1179,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_layer_output():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         _, _, _, _, _, _, _, encoder_model, *_ = res
         if hasattr(encoder_model, "encoder"): # BERT
@@ -1158,7 +1196,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_mlm_predictions():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         
         # Determine if we should show predictions
@@ -1172,30 +1210,43 @@ def server(input, output, session):
         try: text = input.text_input()
         except: text = ""
         try: top_k = int(input.global_topk())
-        except: top_k = 5
+        except: top_k = 3
 
         if model_family == "gpt2":
             use_mlm = True
             title = "Next Token Predictions (Causal)"
             desc = "Predicting the probability of the next token appearing after the sequence."
         else:
-            try: use_mlm = input.use_mlm()
-            except: use_mlm = False
+            # BERT logic: Check local state
+            use_mlm = show_mlm_A.get()
             
             title = "Masked Token Predictions (MLM)"
             desc = "Pseudo-Likelihood: Each token is individually masked and predicted using the bidirectional context."
 
+            if not use_mlm:
+                 return ui.div(
+                    {"class": "card", "style": "height: 100%; display: flex; flex-direction: column; justify-content: space-between;"},
+                    ui.div(
+                        ui.h4(title),
+                        ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    ),
+                    ui.div(
+                         {"style": "flex-grow: 1; display: flex; align-items: center; justify-content: center; padding: 20px;"},
+                         ui.input_action_button("trigger_mlm_A", "Generate Predictions", class_="btn-primary")
+                    )
+                )
+
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4(title),
-            ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px; min-height: 32px;"),
             get_output_probabilities(res, use_mlm, text, top_k=top_k)
         )
 
     @output
     @render.ui
     def render_radar_view():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
@@ -1239,7 +1290,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_tree_view():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         try: root_idx = int(input.global_focus_token())
         except: root_idx = 0
@@ -1260,7 +1311,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_global_metrics():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         
         # Check if we should use all layers/heads or specific selection
@@ -1291,12 +1342,47 @@ def server(input, output, session):
         # Helper to generate choices dict
         def get_choices(items):
             return {str(i): f"{i}: {t}" for i, t in enumerate(items)}
+        
+        # --- Word-Level Aggregation Logic ---
+        res = get_active_result() if suffix == "" else get_active_result("_B")
+        
+        # Check if we should aggregate
+        use_word_level = False
+        try:
+            cm = input.compare_mode()
+            wl = input.word_level_toggle()
+            if wl:
+                use_word_level = True
+        except:
+            pass
+            
+        if use_word_level and res:
+            # Apply aggregation
+            from ..utils import aggregate_data_to_words
+            res = aggregate_data_to_words(res, filter_special=True)
+            
+            # Update local tokens var for this render pass
+            if res:
+                 tokens = res[0]
+                 # Update clean tokens for display
+                 clean_tokens = tokens # They are already cleaned in aggregation
+        
+        # Legend for Tokenization Mode
+        tokenization_legend = ""
+        if use_word_level:
+            tokenization_legend = ui.div(
+                {"class": "tokenization-legend", "style": "font-size: 10px; color: #6b7280; margin-bottom: 8px; font-style: italic; background: #f3f4f6; padding: 4px 8px; border-radius: 4px; display: inline-block;"},
+                "Tokenization: Word-Level (Aggregated)"
+            )
 
         if is_gpt2:
             # GPT-2 Layout
             return ui.div(
                 {"id": f"dashboard-container{suffix}", "class": "dashboard-stack gpt2-layout content-hidden"},
                 
+                # Tokenization Legend
+                tokenization_legend,
+
                 # Row 1: Embeddings
                 ui.div(
                     {"class": "flex-row-container"},
@@ -1385,6 +1471,10 @@ def server(input, output, session):
             {"id": f"dashboard-container{suffix}", "class": "dashboard-stack content-hidden"}, # Initially hidden
             ui.div(
                 {"class": "dashboard-stack"},
+                
+                # Tokenization Legend
+                tokenization_legend,
+
                 # Row 1: Initial Embeddings 
                 ui.div(
                     {"class": "flex-row-container"},
@@ -1501,7 +1591,7 @@ def server(input, output, session):
 
     @reactive.calc
     def tokens_data():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return []
         tokens = res[0]
         return [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
@@ -1517,7 +1607,7 @@ def server(input, output, session):
             ui.update_select("tree_root_token", choices=choices)
 
         # Update B selectors (if they exist in the UI)
-        res_B = cached_result_B.get()
+        res_B = get_active_result("_B")
         if res_B:
             tokens_B = res_B[0]
             clean_tokens_B = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens_B]
@@ -1533,12 +1623,192 @@ def server(input, output, session):
     def dashboard_content():
         config = current_layout_config.get()
         
-        # Check if in comparison mode
+        # Check comparison mode and fetch model details early
+        res_A = get_active_result()
+        res_B = get_active_result("_B")
+        
         try: compare_models = input.compare_mode()
         except: compare_models = False
         try: compare_prompts = input.compare_prompts_mode()
         except: compare_prompts = False
         
+        is_family_diff = False
+        tokenization_info = ""
+        
+        if compare_models and res_A and res_B:
+            _, _, _, _, _, _, _, encoder_model_A, *_ = res_A
+            _, _, _, _, _, _, _, encoder_model_B, *_ = res_B
+            is_gpt2_A = not hasattr(encoder_model_A, "encoder")
+            is_gpt2_B = not hasattr(encoder_model_B, "encoder")
+            
+            if is_gpt2_A != is_gpt2_B:
+                is_family_diff = True
+            
+            type_A = "Byte-Pair" if is_gpt2_A else "WordPiece"
+            type_B = "Byte-Pair" if is_gpt2_B else "WordPiece"
+            # tokenization_info constructed below
+            
+            # Condense legend with tooltips
+            def get_tok_badge(variant, color):
+                name = "Byte Pair Encoding" if variant == "Byte-Pair" else "WordPiece"
+                short_name = "BPE" if variant == "Byte-Pair" else "WordPiece"
+                desc = "GPT-2's subword algorithm. Merges frequent byte pairs. Treats spaces as part of tokens (Ġ prefix)." if variant == "Byte-Pair" else "BERT's subword algorithm. Splits words into stem + suffix (## prefix)."
+                return f"""
+                <span class='info-tooltip-wrapper' style='cursor:help;'>
+                    <span style='display:inline-flex; align-items:center; gap:4px; background:{color}15; border:1px solid {color}40; padding:2px 8px; border-radius:4px;'>
+                        <strong style='color:{color}; font-size:10px;'>{short_name}</strong>
+                    </span>
+                    <div class='info-tooltip-content'>
+                        <strong>{name}</strong>
+                        <p>{desc}</p>
+                    </div>
+                </span>
+                """
+
+            badge_A = get_tok_badge(type_A, "#3b82f6")
+            badge_B = get_tok_badge(type_B, "#ff5ca9")
+            
+            tok_info_A = f"<span style='font-size:9px; color:#9ca3af;'>Tokenization: {badge_A}</span>"
+            tok_info_B = f"<span style='font-size:9px; color:#9ca3af;'>Tokenization: {badge_B}</span>"
+
+        # Helper to create the toggle UI with updated tooltip and theming
+        def create_word_level_toggle(color_theme="blue"):
+            # Define colors based on theme
+            if color_theme == "pink":
+                # Pink Theme (Model B)
+                bg_gradient = "linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%)" # Rose-50 to Rose-100
+                border_color = "#fecdd3" # Rose-200
+                text_color = "#be185d" # Pink-700
+                icon_bg = "#ec4899" # Pink-500
+                highlight_bg = "rgba(236,72,153,0.15)"
+                highlight_border = "rgba(236,72,153,0.3)"
+                highlight_text = "#ec4899"
+            else:
+                # Blue Theme (Model A - Default)
+                bg_gradient = "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)" # Sky-50 to Sky-100
+                border_color = "#bae6fd" # Sky-200
+                text_color = "#0369a1" # Sky-700
+                icon_bg = "#0ea5e9" # Sky-500
+                highlight_bg = "rgba(59,130,246,0.1)" # Blue-ish
+                highlight_border = "rgba(59,130,246,0.3)"
+                highlight_text = "#3b82f6"
+
+            return ui.div(
+                {"class": "info-tooltip-wrapper word-level-toggle", "style": f"display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: {bg_gradient}; border: 1px solid {border_color}; padding: 0 6px; border-radius: 5px; height: 24px;"},
+                ui.input_switch("word_level_toggle", None, value=input.word_level_toggle() if "word_level_toggle" in input else False, width="auto"),
+                ui.span("Activate Word Level", style=f"font-size: 9px; font-weight: 600; color: {text_color}; white-space: nowrap; line-height: 1;"),
+                ui.span({"class": "info-tooltip-icon", "style": f"font-size:6px; width:10px; height:10px; line-height:10px; font-family:'PT Serif', serif; background: {icon_bg}; color: white;"}, "i"),
+                ui.div(
+                    {"class": "info-tooltip-content", "style": "width: 320px; max-width: 320px;"},
+                    ui.HTML(f"""
+                        <strong style='font-size: 11px;'>Word Level Aggregation</strong>
+                        <p style='margin-bottom: 8px;'>Aligns BERT (WordPiece) with GPT-2 (BPE) by merging sub-tokens and re-distributing attention.</p>
+
+                        <div style='background:rgba(255,255,255,0.1); padding:8px; border-radius:4px; margin: 4px 0;'>
+                            <strong style='color:{highlight_text}; font-size: 10px;'>1. Filtering & Re-normalization step-by-step:</strong>
+                            <p style='font-size:9px; margin:4px 0;'>BERT often attends heavily to special tokens like [sep]. Because GPT-2 doesn't have these, we remove them to compare "content-to-content" attention.</p>
+                            
+                            <div style='background:{highlight_bg}; padding:6px; border-radius:3px; margin-top:4px; border:1px dashed {highlight_border};'>
+                                <strong style='font-size:9px; color:{highlight_text};'>Example:</strong>
+                                <div style='display: grid; grid-template-columns: 1fr auto 1fr; gap: 4px; align-items: center; font-size: 9px; margin-top: 4px;'>
+                                    <div style='text-align:center;'>
+                                        <div style='color:#94a3b8; margin-bottom:2px;'>Raw Attention</div>
+                                        <div>[CLS]: 20%</div>
+                                        <div>[SEP]: 10%</div>
+                                        <div style='font-weight:bold; color:white;'>Content: 70%</div>
+                                    </div>
+                                    <div style='color:{highlight_text}; font-weight:bold;'>→</div>
+                                    <div style='text-align:center;'>
+                                        <div style='color:#94a3b8; margin-bottom:2px;'>Re-normalized</div>
+                                        <div style='text-decoration:line-through; opacity:0.5;'>[CLS]: 0%</div>
+                                        <div style='text-decoration:line-through; opacity:0.5;'>[SEP]: 0%</div>
+                                        <div style='font-weight:bold; color:{highlight_text};'>Content: 100%</div>
+                                    </div>
+                                </div>
+                                <div style='font-size: 8px; color: #94a3b8; margin-top: 4px; text-align: center;'>
+                                    (0.70 / 0.70 = 1.0)
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style='background:rgba(255,255,255,0.1); padding:8px; border-radius:4px; margin: 8px 0;'>
+                            <strong style='color:{highlight_text}; font-size: 10px;'>2. Sub-token Merging:</strong>
+                             
+                            <div style='background:{highlight_bg}; padding:6px; border-radius:3px; margin:4px 0; border:1px dashed {highlight_border};'>
+                                <strong style='font-size:9px; color:{highlight_text};'>Merge Example:</strong>
+                                <div style='display: flex; gap: 4px; align-items: center; justify-content: center; font-size: 9px; margin-top: 4px;'>
+                                    <div style='border: 1px solid {highlight_text}60; padding: 1px 4px; border-radius: 3px; background: {highlight_text}20;'>play</div>
+                                    <div style='color: #94a3b8;'>+</div>
+                                    <div style='border: 1px solid {highlight_text}60; padding: 1px 4px; border-radius: 3px; background: {highlight_text}20;'>##ing</div>
+                                    <div style='color:{highlight_text}; font-weight:bold;'>→</div>
+                                    <div style='border: 1px solid {highlight_text}; padding: 1px 6px; border-radius: 3px; background: {highlight_text}40; font-weight: bold;'>playing*</div>
+                                </div>
+                            </div>
+
+                             <ul style='font-size:9px; margin:4px 0 0 0; padding-left:14px; color:#e2e8f0;'>
+                                <li><b>Vectors:</b> Average of sub-token vectors (mean pool).</li>
+                                <li><b>Attention:</b> Average input attention (receiving), Sum output attention (sending).</li>
+                            </ul>
+                        </div>
+                        
+                        <div style='margin-top: 6px; font-size: 9px; color: #cbd5e1; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;'>
+                            Tokens marked with <b style="color:{highlight_text};">*</b> are merged.
+                        </div>
+                    """)
+                )
+            )
+
+        # Helper to create the header
+        def create_preview_header(has_toggle=False, color_theme="blue"):
+            right_content = ui.div(class_="toggle-placeholder", style="width: 1px;") # Placeholder to keep height
+            if has_toggle:
+                right_content = ui.div(
+                    {"style": "display: flex; align-items: center; gap: 8px; margin-left: 12px;"},
+                    create_word_level_toggle(color_theme)
+                )
+            
+            return ui.div(
+                {"class": "viz-header-with-info", "style": "margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; min-height: 24px;"},
+                ui.div(
+                    {"style": "display: flex; align-items: center;"},
+                    ui.h4("Sentence Preview", style="margin: 0; margin-right: 8px;"),
+                    ui.div(
+                        {"class": "info-tooltip-wrapper", "style": "margin-left: 6px;"},
+                        ui.span({"class": "info-tooltip-icon", "style": "font-size:8px; width:14px; height:14px; line-height:14px; font-family:'PT Serif', serif;"}, "i"),
+                        ui.div(
+                            {"class": "info-tooltip-content"},
+                            ui.HTML("""
+                                <strong>Attention Received</strong>
+                                <p>Background opacity highlights tokens that the model focuses on most.</p>
+                                <div style='background:rgba(255,255,255,0.1); padding:8px; border-radius:4px; margin: 8px 0;'>
+                                    <strong style='color:#3b82f6;'>Calculation:</strong>
+                                    <code style='display:block; margin-top:4px;'>AVG(All Layers, All Heads) → Sum(Columns)</code>
+                                </div>
+                                <p style='font-size:10px; color:#fff; margin-bottom: 8px;'>Sum of attention weights received from all other tokens, averaged across all layers and heads.</p>
+                                <p style='font-style:italic; color:#fff;'>Hover tokens for attention received</p>
+                            """)
+                        )
+                    ),
+                ),
+                right_content
+            )
+
+        # Logic to place toggle on BERT when families differ
+        toggle_on_A = False
+        toggle_on_B = False
+
+        if is_family_diff:
+            # Place on whichever is NOT GPT-2 (i.e. is BERT)
+            if is_gpt2_A:
+                toggle_on_B = True # A is GPT2, so B must be BERT
+            else:
+                toggle_on_A = True # A is BERT
+        
+        # Create headers with appropriate themes
+        # Header A is always Blue-themed naturally, Header B is Pink-themed
+        preview_title = create_preview_header(toggle_on_A, "blue") 
+        preview_title_B = create_preview_header(toggle_on_B, "pink")
+
         compare = compare_models or compare_prompts
         
         # Determine labels
@@ -1566,7 +1836,11 @@ def server(input, output, session):
             else:
                 # Compare mode - show headers + paired static previews
                 # Use separate variables for A and B inputs
-                t_b = input.text_input_B().strip()
+                if compare_prompts:
+                    t_b = input.text_input_B().strip()
+                else:
+                    t_b = input.text_input().strip()
+                
                 preview_a = f'<div style="font-family:monospace;color:#3b82f6;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>'
                 preview_b = f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{t_b}"</div>' if t_b else '<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>'
                 return ui.div(
@@ -1592,7 +1866,7 @@ def server(input, output, session):
         
         if not compare:
             # ORIGINAL MODE - Always use output_ui for preview to avoid layout flash
-            res = cached_result.get()
+            res = get_active_result()
             
             if not res:
                 # Only show preview card + loading message when waiting for data
@@ -1600,7 +1874,7 @@ def server(input, output, session):
                     # Always use output_ui for preview - it handles grey/colored states internally
                     ui.div(
                         {"class": "card", "style": "margin-bottom: 32px;"},
-                        ui.h4("Sentence Preview"),
+                        preview_title,
                         get_preview_text_view(res, input.text_input(), ""),
                     ),
                     ui.div(
@@ -1613,7 +1887,7 @@ def server(input, output, session):
             return ui.div(
                 ui.div(
                     {"class": "card", "style": "margin-bottom: 32px;"},
-                    ui.h4("Sentence Preview"),
+                    preview_title,
                     get_preview_text_view(res, input.text_input(), ""),
                 ),
                 # Dashboard layout
@@ -1647,9 +1921,10 @@ def server(input, output, session):
 
             # For outputs that need card wrapper (preview_text doesn't have one)
             def paired_with_card(title, output_a, output_b):
+                header = ui.h4(title) if isinstance(title, str) else title
                 return ui.layout_columns(
-                    ui.div({"class": "card compare-card-a"}, ui.h4(title), output_a),
-                    ui.div({"class": "card compare-card-b"}, ui.h4(title), output_b),
+                    ui.div({"class": "card compare-card-a"}, header, output_a),
+                    ui.div({"class": "card compare-card-b"}, header, output_b),
                     col_widths=[6, 6]
                 )
 
@@ -1690,16 +1965,16 @@ def server(input, output, session):
                     @output(id=aid)
                     @render.ui
                     def _render_arrow():
-                        res = cached_result.get()
-                        res_B = cached_result_B.get()
+                        res = get_active_result()
+                        res_B = get_active_result("_B")
                         if not res or not res_B: 
                             return None
                         return paired_arrows(f, t)
                 register_arrow_renderer(arrow_id, from_s, to_s)
 
             # Load results
-            res_A = cached_result.get()
-            res_B = cached_result_B.get()
+            res_A = get_active_result()
+            res_B = get_active_result("_B")
 
             # If strictly waiting for data, show only preview row + loading message
             # But ALWAYS use output_ui (not static HTML) to avoid blank flash on transition
@@ -1707,10 +1982,10 @@ def server(input, output, session):
                  return ui.div(
                      {"id": "dashboard-container-compare", "class": "dashboard-stack"},
                       ui.layout_columns(
-                         ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
-                         ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
-                         col_widths=[6, 6]
-                    ),
+                          ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
+                          ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
+                          col_widths=[6, 6]
+                     ),
                     # Use output_ui - the renderers handle grey/colored states internally
                     paired_with_card("Sentence Preview", ui.output_ui("preview_text"), ui.output_ui("preview_text_B")),
                     ui.div(
@@ -1731,7 +2006,18 @@ def server(input, output, session):
                 ),
                 
                 # Row 0: Sentence Preview
-                paired_with_card("Sentence Preview", get_preview_text_view(res_A, input.text_input(), ""), get_preview_text_view(res_B, input.text_input(), "_B")),
+                # Use manual layout to put Toggle only on Card A (avoid duplicate ID)
+                ui.layout_columns(
+                    ui.div({"class": "card compare-card-a"}, preview_title, get_preview_text_view(res_A, input.text_input(), "", footer_html=tok_info_A if is_family_diff else "")),
+
+                    ui.div(
+                        {"class": "card compare-card-b"},
+                        # Header for B 
+                        preview_title_B,
+                        get_preview_text_view(res_B, input.text_input(), "_B", footer_html=tok_info_B if is_family_diff else "")
+                    ),
+                    col_widths=[6, 6]
+                ),
                 
                 # Hidden container for Simultaneous Reveal
                 ui.div(
@@ -2033,25 +2319,25 @@ def server(input, output, session):
     @output(id="isa_scatter")
     @render.ui
     def isa_scatter_renderer():
-        res = cached_result.get()
+        res = get_active_result()
         return get_isa_scatter_view(res, suffix="", plot_only=False)
 
     @output(id="isa_scatter_A_compare")
     @render.ui
     def isa_scatter_renderer_A_compare():
-        res = cached_result.get()
+        res = get_active_result()
         return get_isa_scatter_view(res, suffix="", vertical_layout=True)
 
     @output(id="isa_scatter_B_compare")
     @render.ui
     def isa_scatter_renderer_B_compare():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         return get_isa_scatter_view(res, suffix="_B", vertical_layout=True)
 
     @output(id="isa_scatter_B")
     @render.ui
     def isa_scatter_renderer_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         return get_isa_scatter_view(res, suffix="_B", vertical_layout=True)
 
 
@@ -2255,7 +2541,7 @@ def server(input, output, session):
     @render.ui
     def isa_token_view():
         pair = isa_selected_pair()
-        res = cached_result.get()
+        res = get_active_result()
 
         if res is None or pair is None:
             return ui.div(
@@ -2415,7 +2701,7 @@ def server(input, output, session):
         if pair is None:
             return ui.HTML("<em style='color:#94a3b8;'>Click a dot on the ISA chart.</em>")
         tx, sy = pair
-        res = cached_result.get()
+        res = get_active_result()
         score = 0.0
         if res and res[-2]:
             score = res[-2]["sentence_attention_matrix"][tx, sy]
@@ -2425,7 +2711,7 @@ def server(input, output, session):
     @render.ui
     def isa_token_view_B():
         pair = isa_selected_pair_B()
-        res = cached_result_B.get()
+        res = get_active_result("_B")
 
         if res is None or pair is None:
             return ui.div(
@@ -2584,7 +2870,7 @@ def server(input, output, session):
         if pair is None:
             return ui.HTML("<em style='color:#94a3b8;'>Click a dot on the ISA chart.</em>")
         tx, sy = pair
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         score = 0.0
         if res and res[-2]:
             score = res[-2]["sentence_attention_matrix"][tx, sy]
@@ -2654,7 +2940,7 @@ def server(input, output, session):
     @output
     @render.ui
     def attention_map():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
         if attentions is None or len(attentions) == 0: return None
@@ -2961,7 +3247,7 @@ def server(input, output, session):
     @output
     @render.ui
     def attention_flow():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         tokens, _, _, attentions, *_ = res
         if attentions is None or len(attentions) == 0: return None
@@ -3142,21 +3428,48 @@ def server(input, output, session):
     @output
     @render.ui
     def attention_flow_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res: return None
         tokens, _, _, attentions, *_ = res
         if attentions is None or len(attentions) == 0: return None
-        try: layer_idx = int(input.att_layer())
+
+        # Check if we're in global mode
+        use_global = global_metrics_mode.get() == "all"
+
+        try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        try: head_idx = int(input.att_head())
+        try: head_idx = int(input.global_head())
         except: head_idx = 0
-        try: selected = input.flow_token_select_B()
-        except: selected = "all"
-        focus_idx = None if selected == "all" else int(selected)
+
+        # Use global_selected_tokens for span support (same as Model A)
+        selected_indices = []
+        try:
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
+        except:
+            pass
+
+        # Fallback
+        if not selected_indices:
+            try:
+                global_token = int(input.global_focus_token())
+                if global_token >= 0:
+                    selected_indices = [global_token]
+            except:
+                pass
+
+        focus_indices = selected_indices if selected_indices else None
 
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
-        
-        att = attentions[layer_idx][0, head_idx].cpu().numpy()
+
+        # Get attention matrix - either specific layer/head or averaged across all
+        if use_global:
+            att_layers = [layer[0].cpu().numpy() for layer in attentions]
+            att = np.mean(att_layers, axis=(0, 1))
+        else:
+            att = attentions[layer_idx][0, head_idx].cpu().numpy()
+
         n_tokens = len(tokens)
         color_palette = ['#ff5ca9', '#3b82f6', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e', '#a855f7', '#0ea5e9']
 
@@ -3164,29 +3477,31 @@ def server(input, output, session):
 
         min_pixels_per_token = 50
         calculated_width = max(1000, n_tokens * min_pixels_per_token)
-        block_width = 0.95 / n_tokens 
+        block_width = 0.95 / n_tokens
 
         for i, tok in enumerate(tokens):
             cleaned_tok = tok.replace("##", "").replace("Ġ", "")
             color = color_palette[i % len(color_palette)]
             x_pos = i / n_tokens + block_width / 2
-            show_focus = focus_idx is not None
-            is_selected = focus_idx == i if show_focus else True
+
+            is_selected = (i in focus_indices) if focus_indices else True
 
             if n_tokens > 30: font_size = 9 if is_selected else 8
             elif n_tokens > 20: font_size = 11 if is_selected else 10
             else: font_size = 13 if is_selected else 10
 
-            text_color = color if (show_focus and is_selected) else "#111827"
-            fig.add_trace(go.Scatter(x=[x_pos], y=[1.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
-            fig.add_trace(go.Scatter(x=[x_pos], y=[-0.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight='bold'), showlegend=False, hoverinfo='skip'))
+            text_color = color if (focus_indices and is_selected) else "#111827"
+            weight = 'bold' if (focus_indices and is_selected) else 'normal'
+
+            fig.add_trace(go.Scatter(x=[x_pos], y=[1.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight=weight), showlegend=False, hoverinfo='skip'))
+            fig.add_trace(go.Scatter(x=[x_pos], y=[-0.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight=weight), showlegend=False, hoverinfo='skip'))
 
         threshold = 0.04
         for i in range(n_tokens):
             for j in range(n_tokens):
                 weight = att[i, j]
                 if weight > threshold:
-                    is_line_focused = (focus_idx is not None and i == focus_idx) or (focus_idx is None)
+                    is_line_focused = (i in focus_indices) if focus_indices else True
                     x_source = i / n_tokens + block_width / 2
                     x_target = j / n_tokens + block_width / 2
                     x_vals = [x_source, (x_source + x_target) / 2, x_target]
@@ -3199,17 +3514,24 @@ def server(input, output, session):
                         line_color = '#2a2a2a'
                         line_opacity = 0.003
                         line_width = 0.1
-                    
+
                     cleaned_token_i = tokens[i].replace("##", "").replace("Ġ", "")
                     cleaned_token_j = tokens[j].replace("##", "").replace("Ġ", "")
-                    
+
                     fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color=line_color, width=line_width), opacity=line_opacity, showlegend=False, hoverinfo='text' if is_line_focused else 'skip', hovertext=f"<b>{cleaned_token_i} to {cleaned_token_j}</b><br>Attention: {weight:.4f}"))
 
-        title_text = ""
-        if focus_idx is not None:
-            focus_color = color_palette[focus_idx % len(color_palette)]
-            cleaned_focus_token = tokens[focus_idx].replace("##", "").replace("Ġ", "")
-            title_text += f" · <b style='color:{focus_color}'>Focused: '{cleaned_focus_token}'</b>"
+        # Dynamic title based on mode
+        if use_global:
+            title_text = "Attention Flow — Averaged (All Layers · Heads)"
+        else:
+            title_text = f"Attention Flow — Layer {layer_idx}, Head {head_idx}"
+
+        if focus_indices:
+            for fidx in focus_indices[:3]:  # Show up to 3 focused tokens
+                if fidx < len(tokens):
+                    focus_color = color_palette[fidx % len(color_palette)]
+                    cleaned_focus_token = tokens[fidx].replace("##", "").replace("Ġ", "")
+                    title_text += f" · <b style='color:{focus_color}'>'{cleaned_focus_token}'</b>"
 
         fig.update_layout(
              title=title_text,
@@ -3251,7 +3573,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_radar_view():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         if not res: return None
         # Removed dependency on input.radar_layer/head/mode to break infinite loop
@@ -3336,7 +3658,7 @@ def server(input, output, session):
     @output
     @render.ui
     def radar_plot_internal():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         
         try: layer_idx = int(input.global_layer())
@@ -3633,7 +3955,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_tree_view():
-        res = cached_result.get()
+        res = get_active_result()
         if not res: return None
         
         # Check if we're in global mode
@@ -3713,7 +4035,7 @@ def server(input, output, session):
                 ),
                 ui.div(
                     {"class": "header-row-bottom", "style": "margin-top: 4px;"},
-                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens. Depth & Top-K are controlled by the Global Top-K setting. Thicker edges = stronger influence.")
+                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
                 )
             ),
             get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="", use_global=use_global, max_depth=top_k_val, top_k=top_k_val)
@@ -3726,7 +4048,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_embedding_table_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         return get_embedding_table(res)
@@ -3734,7 +4056,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_segment_table_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         return ui.div(
@@ -3747,7 +4069,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_posenc_table_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         return ui.div(
@@ -3760,7 +4082,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_sum_layernorm_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         _, _, _, _, _, _, _, encoder_model, *_ = res
@@ -3774,7 +4096,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_qkv_table_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         try: layer_idx = int(input.global_layer())
@@ -3793,7 +4115,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_scaled_attention_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
             
@@ -3822,7 +4144,7 @@ def server(input, output, session):
         try: head_idx = int(input.global_head())
         except: head_idx = 0
         try: top_k = int(input.global_topk())
-        except: top_k = 5
+        except: top_k = 3
         
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
@@ -3837,7 +4159,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_ffn_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         try: layer = int(input.global_layer())
@@ -3852,7 +4174,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_add_norm_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         try: layer = int(input.global_layer())
@@ -3867,7 +4189,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_add_norm_post_ffn_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         try: layer = int(input.global_layer())
@@ -3882,7 +4204,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_layer_output_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         _, _, _, _, _, _, _, encoder_model, *_ = res
@@ -3900,12 +4222,20 @@ def server(input, output, session):
     @output
     @render.ui
     def render_mlm_predictions_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         
         try:
-            model_family = input.model_family_B()
+            is_compare_prompts = input.compare_prompts_mode()
+        except:
+            is_compare_prompts = False
+
+        try:
+            if is_compare_prompts:
+                 model_family = input.model_family()
+            else:
+                 model_family = input.model_family_B()
         except:
             model_family = "bert"
             
@@ -3917,29 +4247,46 @@ def server(input, output, session):
         try: text = input.text_input()
         except: text = ""
         
-        is_bert = model_family == "bert"
+        is_bert = model_family != "gpt2" # safer check
         
         try: top_k = int(input.global_topk())
-        except: top_k = 5
+        except: top_k = 3
 
         if is_bert:
+            # BERT logic: Check local state
+            use_mlm_B = show_mlm_B.get()
+            
             title = "Masked Token Predictions (MLM)"
             desc = "Pseudo-Likelihood: Each token is individually masked and predicted using the bidirectional context."
+            
+            if not use_mlm_B:
+                 return ui.div(
+                    {"class": "card", "style": "height: 100%; display: flex; flex-direction: column; justify-content: space-between;"},
+                    ui.div(
+                        ui.h4(title),
+                        ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    ),
+                    ui.div(
+                         {"style": "flex-grow: 1; display: flex; align-items: center; justify-content: center; padding: 20px;"},
+                         ui.input_action_button("trigger_mlm_B", "Generate Predictions", class_="btn-primary")
+                    )
+                )
         else:
+            use_mlm_B = True
             title = "Next Token Predictions (Causal)"
             desc = "Predicting the probability of the next token appearing after the sequence."
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4(title),
-            ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_output_probabilities(res, use_mlm, text, suffix="_B", top_k=top_k)
+            ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px; min-height: 32px;"),
+            get_output_probabilities(res, use_mlm_B, text, suffix="_B", top_k=top_k)
         )
 
     @output
     @render.ui
     def render_radar_view_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         try: layer_idx = int(input.global_layer())
@@ -3950,7 +4297,7 @@ def server(input, output, session):
         except: mode = "single"
         
         return ui.div(
-            {"class": "card card-compact-height", "style": "height: 100%;"},
+            {"class": "card card-compact-height", "style": "height: 100%; display: flex; flex-direction: column;"},
             ui.div(
                 {"class": "header-controls-stacked"},
                 ui.div(
@@ -3991,18 +4338,10 @@ def server(input, output, session):
                     {"class": "header-row-bottom", "style": "margin-top: 4px;"},
                     ui.div({"class": "viz-description", "style": "margin: 0;"}, "Analyzes attention patterns to identify potential linguistic roles of each head. Each dimension represents a heuristic score for different attention behaviors. ⚠️ Labels like 'Syntax' and 'Semantics' are approximations based on attention patterns, not verified functional roles.")
                 )
-            ),
-             ui.div(
-                 {"style": "display: flex; flex-direction: column; align-items: center; margin-top: 12px; margin-bottom: 12px; gap: 6px;"},
-                 ui.tags.span("ATTENTION MODE", style="font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase;"),
-                 ui.div(
-                     {"class": "radio-group-compact"},
-                     ui.input_radio_buttons("radar_mode_B", None, {"single": "Single Head", "all": "All Heads", "cluster": "Global Clusters"}, selected=mode, inline=True)
-                 )
              ),
             head_specialization_radar(res, layer_idx, head_idx, mode, suffix="_B"),
             ui.HTML(f"""
-                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
+                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: 16px; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
                     <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: center;">
                         <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
@@ -4020,7 +4359,7 @@ def server(input, output, session):
     @output
     @render.ui
     def render_tree_view_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
 
@@ -4055,6 +4394,9 @@ def server(input, output, session):
         try: head_idx = int(input.global_head())
         except: head_idx = 0
         
+
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
 
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens_B]
         choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
@@ -4102,29 +4444,44 @@ def server(input, output, session):
                     ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
                 )
             ),
-            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="_B")
+            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="_B", top_k=top_k, max_depth=top_k)
         )
 
     @output
     @render.ui
     def render_global_metrics_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
+        
+        # Check if we should use all layers/heads or specific selection
+        use_all = global_metrics_mode.get() == "all"
+        
+        if use_all:
+            layer_idx = None
+            head_idx = None
+            subtitle = "All Layers · All Heads"
+        else:
+            try: layer_idx = int(input.global_layer())
+            except: layer_idx = 0
+            try: head_idx = int(input.global_head())
+            except: head_idx = 0
+            subtitle = f"Layer {layer_idx} · Head {head_idx}"
+
         return ui.div(
             {"class": "card"}, 
             ui.div(
                 {"style": "display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;"},
                 ui.h4("Global Attention Metrics", style="margin: 0;"),
-                ui.span("All Layers · All Heads", style="font-size: 11px; color: #94a3b8; font-weight: 500;")
+                ui.span(subtitle, style="font-size: 11px; color: #94a3b8; font-weight: 500;")
             ),
-            get_metrics_display(res)
+            get_metrics_display(res, layer_idx=layer_idx, head_idx=head_idx)
         )
 
     @output
     @render.ui
     def attention_map_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         tokens, _, _, attentions, _, _, _, encoder_model, *_ = res
@@ -4157,7 +4514,7 @@ def server(input, output, session):
                 # Unique token - no suffix
                 cleaned_tokens.append(t)
         
-        # Custom colorscale 
+        # Custom colorscale for attention map (White -> Blue -> Dark Blue)
         att_colorscale = [
             [0.0, '#ffffff'],
             [0.1, '#f0f9ff'],
@@ -4166,15 +4523,119 @@ def server(input, output, session):
             [1.0, '#1e3a8a']
         ]
 
-        fig = px.imshow(att, x=cleaned_tokens, y=cleaned_tokens, color_continuous_scale=att_colorscale, aspect="auto")
+        # Clean tokens for display in the heatmap
+        base_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
+        
+        # Count occurrences of each token
+        from collections import Counter
+        token_counts = Counter(base_tokens)
+        
+        # Track occurrence number for each token
+        occurrence_tracker = {}
+        cleaned_tokens = []
+        for t in base_tokens:
+            if token_counts[t] > 1:
+                # Duplicate token - add occurrence number
+                occurrence_tracker[t] = occurrence_tracker.get(t, 0) + 1
+                cleaned_tokens.append(f"{t}_{occurrence_tracker[t]}")
+            else:
+                # Unique token - no suffix
+                cleaned_tokens.append(t)
+        
+        # Convert attention matrix: replace NaN with None for proper gap handling (no hover)
+        att_list = []
+        rows, cols = att.shape
+        for i in range(rows):
+            row = []
+            for j in range(cols):
+                if np.isnan(att[i, j]):
+                    row.append(None)
+                else:
+                    row.append(float(att[i, j]))
+            att_list.append(row)
+        
+        # Use go.Heatmap with list data for proper None/gap handling
+        fig = go.Figure(data=go.Heatmap(
+            z=att_list,
+            x=cleaned_tokens,
+            y=cleaned_tokens,
+            colorscale=att_colorscale,
+            zmin=0,
+            zmax=1,
+            hoverongaps=False,  # Don't show hover for None/gap cells
+            colorbar=dict(
+                title=dict(
+                    text="Attention",
+                    font=dict(color="#64748b", size=11)
+                ),
+                tickfont=dict(color="#64748b", size=10)
+            ),
+        ))
+
+        # --- Highlight Selected Token Logic (Span Support) ---
+        selected_indices = []
+        try:
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
+        except:
+            pass
+
+        if not selected_indices:
+            try:
+                single = int(input.global_focus_token())
+                if single != -1:
+                    selected_indices = [single]
+            except:
+                pass
+
+        # Prepare styled ticks
+        styled_tokens = []
+        for i, tok in enumerate(cleaned_tokens):
+            if i in selected_indices:
+                styled_tokens.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
+            else:
+                styled_tokens.append(tok)
+
+        # Highlight Row/Column Shapes for ALL selected tokens
+        for selected_idx in selected_indices:
+            if selected_idx >= 0 and selected_idx < len(cleaned_tokens):
+                 fig.add_shape(type="rect",
+                    x0=-0.5, x1=len(cleaned_tokens)-0.5,
+                    y0=selected_idx-0.5, y1=selected_idx+0.5,
+                    fillcolor="rgba(236, 72, 153, 0.15)",
+                    line=dict(color="#ec4899", width=1),
+                    layer="above"
+                 )
+                 fig.add_shape(type="rect",
+                    x0=selected_idx-0.5, x1=selected_idx+0.5,
+                    y0=-0.5, y1=len(cleaned_tokens)-0.5,
+                    fillcolor="rgba(236, 72, 153, 0.15)",
+                    line=dict(color="#ec4899", width=1),
+                    layer="above"
+                 )
+
+        # Consistent Layout
         fig.update_layout(
-            margin=dict(l=40, r=10, t=40, b=40), 
-            coloraxis_colorbar=dict(title=dict(text="Attention", font=dict(size=11)), tickfont=dict(size=10)),
-            plot_bgcolor="rgba(0,0,0,0)", 
+            xaxis_title="Key (attending to)",
+            yaxis_title="Query (attending from)",
+            margin=dict(l=40, r=10, t=40, b=40),
+            plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color="#64748b", family="Inter"),
-            xaxis=dict(tickfont=dict(size=10)),
-            yaxis=dict(tickfont=dict(size=10)),
+            xaxis=dict(
+                tickfont=dict(size=10),
+                ticktext=styled_tokens,
+                tickvals=list(range(len(cleaned_tokens))),
+                title=dict(font=dict(size=11))
+            ),
+            yaxis=dict(
+                tickfont=dict(size=10),
+                ticktext=styled_tokens,
+                tickvals=list(range(len(cleaned_tokens))),
+                autorange='reversed',
+                title=dict(font=dict(size=11))
+            ),
             title=dict(
                 text=f"Attention Heatmap — Layer {layer_idx}, Head {head_idx}",
                 x=0.5,
@@ -4185,7 +4646,6 @@ def server(input, output, session):
             )
         )
         
-
         return ui.div(
             {"class": "card", "style": "height: 100%; display: flex; flex-direction: column;"},
             ui.div(
@@ -4224,8 +4684,24 @@ def server(input, output, session):
             ),
             ui.div({"class": "viz-description", "style": "margin-top: 20px; flex-shrink: 0;"}, "Displays how much each token attends to every other token. Darker cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence."),
             ui.div(
-                {"style": "flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%;"},
-                ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False)) # removed div_id_B here in previous turn, but it was just removed.
+                {"style": "flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%; height: 500px;"},
+                ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_heatmap_B")),
+                ui.HTML("""<script>
+                    (function() {
+                        var attempts = 0;
+                        function checkAndResize() {
+                            var p = document.getElementById('attention_heatmap_B');
+                            if(p && p.data) {
+                                Plotly.Plots.resize(p);
+                                console.log("Resized Heatmap B");
+                            }
+                            attempts++;
+                            if (attempts < 10) setTimeout(checkAndResize, 200);
+                        }
+                        // Start polling for visibility/readiness
+                        setTimeout(checkAndResize, 100);
+                    })();
+                </script>""")
             )
         )
 
@@ -4235,7 +4711,7 @@ def server(input, output, session):
     @output
     @render.ui
     def attention_flow_B():
-        res = cached_result_B.get()
+        res = get_active_result("_B")
         if not res:
             return None
         tokens, _, _, attentions, *_ = res
@@ -4354,7 +4830,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.div(
-                {"class": "header-simple"},
+                {"class": "header-with-selectors"},
                 ui.div(
                     {"class": "viz-header-with-info"},
                     ui.h4("Attention Flow"),
@@ -4385,9 +4861,17 @@ def server(input, output, session):
                             """)
                         )
                     )
+                ),
+                ui.div(
+                    {"class": "selection-boxes-container", "style": "visibility: hidden; pointer-events: none;"},
+                    ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
+                    ui.div(
+                        {"class": "selection-box"},
+                        ui.div({"class": "select-compact", "style": "height: 24px; width: 100px;"}) # Dummy spacer
+                    )
                 )
             ),
-            ui.div({"class": "viz-description"}, "Traces attention weight patterns between tokens. Thicker lines indicate stronger attention. ⚠️ This shows weight distribution, not actual information flow through the network."),
+            ui.div({"class": "viz-description", "style": "margin-top: -5px;"}, "Traces attention weight patterns between tokens. Thicker lines indicate stronger attention. ⚠️ This shows weight distribution, not actual information flow through the network."),
             ui.div(
                 {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_flow_plot_B"))

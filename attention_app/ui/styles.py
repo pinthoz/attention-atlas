@@ -233,6 +233,25 @@ CSS = """
             border-color: #ff5ca9;
         }
 
+        /* Word Level Toggle - Compact styling */
+        .word-level-toggle .form-check {
+            padding: 0 !important;
+            margin: 0 !important;
+            min-height: auto !important;
+            display: flex;
+            align-items: center;
+        }
+        .word-level-toggle .form-check-input {
+            margin: 15px 0 0 0 !important;
+            width: 28px !important;
+            height: 14px !important;
+            cursor: pointer;
+        }
+        .word-level-toggle .form-switch .form-check-input:checked {
+            background-color: #0ea5e9;
+            border-color: #0ea5e9;
+        }
+
         .sidebar p {
             font-size: 13px;
             line-height: 1.5;

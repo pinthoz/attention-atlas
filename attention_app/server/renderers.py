@@ -110,7 +110,11 @@ def get_segment_embedding_view(res):
     segment_ids = inputs.get("token_type_ids")
     if segment_ids is None:
         return ui.HTML("<p style='font-size:10px;color:#6b7280;'>No segment information available.</p>")
+    
     ids = segment_ids[0].cpu().numpy().tolist()
+    
+    if len(ids) != len(tokens):
+         return ui.HTML("<p style='font-size:10px;color:#6b7280;'>Segment breakdown not available in Word-Level mode.</p>")
 
     rows = ""
     for i, (tok, seg) in enumerate(zip(tokens, ids)):
@@ -175,6 +179,13 @@ def get_sum_layernorm_view(res, encoder_model):
     device = input_ids.device
     with torch.no_grad():
         if hasattr(encoder_model, "embeddings"): # BERT
+            # Check for aggregation mismatch
+            if seq_len != len(tokens):
+                # Fallback: Use aggregated embeddings from res[1] (which is Sum+Norm usually or close to it)
+                # We can't separate Sum vs Norm easily aggregated.
+                # Just show the same vector for both or just one column.
+                return ui.HTML(f"<div class='card-scroll'><p style='font-size:11px;color:#6b7280;padding:8px;'>Detailed Sum/Norm breakdown not available in Word-Level mode (aggregated).</p></div>")
+            
             word_embed = encoder_model.embeddings.word_embeddings(input_ids)
             position_ids = torch.arange(seq_len, device=device).unsqueeze(0)
             pos_embed = encoder_model.embeddings.position_embeddings(position_ids)
@@ -182,19 +193,14 @@ def get_sum_layernorm_view(res, encoder_model):
             summed = word_embed + pos_embed + seg_embed
             normalized = encoder_model.embeddings.LayerNorm(summed)
         else: # GPT-2
+            if seq_len != len(tokens):
+                 return ui.HTML(f"<div class='card-scroll'><p style='font-size:11px;color:#6b7280;padding:8px;'>Detailed Sum/Norm breakdown not available in Word-Level mode (aggregated).</p></div>")
+
             # GPT-2 uses wte (token) and wpe (position)
             word_embed = encoder_model.wte(input_ids)
             position_ids = torch.arange(seq_len, device=device).unsqueeze(0)
             pos_embed = encoder_model.wpe(position_ids)
             summed = word_embed + pos_embed
-            normalized = encoder_model.ln_f(summed) # Use final layernorm as proxy or first block's ln_1?
-            # Actually GPT-2 has LN inside blocks. The initial embedding is just sum.
-            # But for visualization consistency, we can show sum vs normalized (if applicable).
-            # Standard GPT-2 doesn't have a LayerNorm immediately after embedding, it's pre-norm inside blocks.
-            # So "normalized" here might be misleading for GPT-2.
-            # Let's just use summed for both columns or skip normalization viz for GPT-2?
-            # Better: Show summed and "N/A" or just summed.
-            # Or use the first layer's LN?
             normalized = summed # Placeholder since GPT-2 is pre-norm
 
     summed_np = summed[0].cpu().numpy()
@@ -300,7 +306,8 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3):
         # Get top k for this token
         if hasattr(layer_block, "attention"): # BERT
             top_idx = np.argsort(att_head[f_idx])[::-1][:top_k]
-            causal_note = ""
+            # Add invisible spacer to match GPT-2's causal note height
+            causal_note = "<div style='font-size:10px;margin-bottom:4px;visibility:hidden;'>Causal: Future tokens are masked</div>"
         else: # GPT-2 (Causal)
             valid_scores = [(j, att_head[f_idx, j]) for j in range(len(tokens)) if j <= f_idx]
             valid_scores.sort(key=lambda x: x[1], reverse=True)
@@ -496,6 +503,26 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5):
     device = ModelManager.get_device()
 
     is_gpt2 = not hasattr(encoder_model, "encoder")
+    
+    # Check for aggregation
+    input_seq_len = inputs["input_ids"].shape[1]
+    # We don't have tokens passed explicitly? 
+    # Wait, get_output_probabilities definition does NOT take 'tokens'.
+    # It takes check logic or we can use mlm_tokens length.
+    
+    # Let's verify compatibility
+    # If we are in word level, inputs["input_ids"] is original length.
+    # But this view blindly regenerates tokens from inputs. 
+    # To detect word level, we need to know if 'res' is aggregated.
+    # 'res' tuple has 'tokens' at index 0.
+    tokens_in_res = res[0]
+    if len(tokens_in_res) != input_seq_len:
+         return ui.HTML(
+            "<div class='prediction-panel'>"
+            "<p style='font-size:11px;color:#ef4444;'>MLM Predictions are not compatible with Word-Level Aggregation.</p>"
+            "<p style='font-size:10px;color:#6b7280;'>Switch off 'Word Lvl' to see predictions.</p>"
+            "</div>"
+        )
     
     with torch.no_grad():
         if is_gpt2:
