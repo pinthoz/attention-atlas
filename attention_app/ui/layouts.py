@@ -231,6 +231,7 @@ attention_analysis_page = ui.page_fluid(
                         const container = document.getElementById('input-container');
                         if (event.value === true) {
                             container.classList.add('compare-prompts-active');
+                            switchPrompt('A'); // Ensure Tab A is active and B is dimmed
                         } else {
                             container.classList.remove('compare-prompts-active');
                             switchPrompt('A');
@@ -244,6 +245,13 @@ attention_analysis_page = ui.page_fluid(
                 });
 
                 $(document).on('shiny:connected', function() {
+                    // Initialize inputs with default values
+                    const inputA = document.getElementById('text_input');
+                    if (inputA) Shiny.setInputValue('text_input', inputA.value);
+
+                    const inputB = document.getElementById('text_input_B');
+                    if (inputB) Shiny.setInputValue('text_input_B', inputB.value);
+
                     const stored = localStorage.getItem('attention_atlas_history');
                     if (stored) {
                         Shiny.setInputValue('restored_history', JSON.parse(stored));
@@ -254,7 +262,12 @@ attention_analysis_page = ui.page_fluid(
 
             ui.div(
                 {"style": "margin-bottom: 0px;"}, # Space for Visual Options
-                ui.output_ui("dynamic_submit_button"),
+                ui.input_action_button("generate_all", "Generate All", class_="btn-primary"),
+                ui.div(
+                    {"id": "loading_spinner", "class": "loading-container", "style": "display:none;"},
+                    ui.div({"class": "spinner"}),
+                    ui.span("Processing...")
+                ),
             ),
         ),
         
@@ -349,7 +362,7 @@ app_ui = ui.page_navbar(
             }
             /* Pull Visualization Options closer to Generate button */
             #visualization_options_container {
-                margin-top: -20px !important;
+                /* margin-top: -20px !important; REMOVED to fix overlap */
             }
             #visualization_options_container .sidebar-section {
                 margin-top: 0 !important;

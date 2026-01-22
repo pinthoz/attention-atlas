@@ -265,12 +265,43 @@ JS_INTERACTIVE = """
 
         Shiny.addCustomMessageHandler('stop_loading', function(msg) {
             var btn = $('#generate_all');
+            // Restore original content if available, otherwise default
             if (btn.data('original-content')) {
                 btn.html(btn.data('original-content'));
             } else {
-                btn.html('Generate All');
+                // If checking dynamic label state is complex, just keep current text minus spinner?
+                // Better: rely on update_button_label to have set the correct original-content
+                btn.html('Generate All'); 
             }
             btn.prop('disabled', false).css('opacity', '1');
+        });
+
+        // NEW: Handle dynamic button label updates cleanly
+        Shiny.addCustomMessageHandler('update_button_label', function(msg) {
+            console.log("JS: update_button_label received:", msg);
+            setTimeout(function() {
+                var btn = $('#generate_all');
+                
+                if (btn.length === 0) {
+                    console.error("JS: Button #generate_all NOT FOUND");
+                    return;
+                }
+
+                var newLabel = msg.label;
+                
+                // Check current state
+                var isDisabled = btn.prop('disabled');
+
+                if (isDisabled) {
+                    // If currently loading, update the stored original content
+                    btn.data('original-content', newLabel);
+                } else {
+                    // Immediate update
+                    btn.html(newLabel);
+                    // Also update stored content just in case
+                    btn.data('original-content', newLabel); 
+                }
+            }, 50); // Small delay to win any race conditions
         });
 
         // Bias Loading Handlers
