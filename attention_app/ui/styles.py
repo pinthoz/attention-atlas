@@ -804,6 +804,51 @@ CSS = """
             cursor: pointer;
         }
 
+        /* Tabbed View Controls */
+        .view-controls {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            padding-bottom: 8px;
+        }
+
+        .view-btn {
+            padding: 1px 8px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            background: rgba(0,0,0,0.03);
+            color: var(--text-muted);
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            line-height: 1.4;
+        }
+
+        .view-btn:hover {
+            background: rgba(0,0,0,0.06);
+            color: var(--text-main);
+        }
+
+        .view-btn.active {
+            background: var(--primary-color);
+            color: white;
+            box-shadow: 0 2px 4px rgba(255, 92, 169, 0.3);
+        }
+        
+        .view-pane {
+            display: none; /* Hidden by default, JS toggles this */
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(2px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         select.form-control:hover,
         .form-select:hover {
             border-color: #3b82f6;
@@ -3003,5 +3048,579 @@ __all__ = ["CSS"]
             border-color: #ec4899;
             color: white;
             box-shadow: 0 0 8px rgba(236, 72, 153, 0.4);
+        }
+
+        /* ==========================================
+           Vector Summary Components
+           Embedding, Position Encoding, QKV views
+           ========================================== */
+
+        .vector-summary-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding: 8px;
+        }
+
+        .vector-summary-section {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .summary-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .summary-icon {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--primary-color);
+            background: rgba(255, 92, 169, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            min-width: 32px;
+            text-align: center;
+        }
+
+        .summary-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-main);
+            flex: 1;
+        }
+
+        .summary-stat {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-muted);
+            background: #e2e8f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        /* Norm Table Styling */
+        .norm-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .norm-table th {
+            text-align: left;
+            padding: 6px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .norm-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .norm-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-main);
+            min-width: 50px;
+        }
+
+        .norm-bar-cell {
+            width: 40%;
+        }
+
+        .norm-bar-bg {
+            background: #e2e8f0;
+            border-radius: 4px;
+            height: 8px;
+            overflow: hidden;
+        }
+
+        .norm-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            background: linear-gradient(90deg, var(--primary-color), var(--accent-blue));
+            transition: width 0.3s ease;
+        }
+
+        .pos-norm-fill {
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+        }
+
+        .pos-index {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-muted);
+            width: 30px;
+            text-align: center;
+        }
+
+        /* Similarity Table Styling */
+        .sim-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .sim-table th {
+            text-align: left;
+            padding: 6px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .sim-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .sim-neighbors {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .sim-neighbor {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--accent-blue);
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: default;
+            white-space: nowrap;
+        }
+
+        .sim-neighbor:hover {
+            background: rgba(59, 130, 246, 0.2);
+        }
+
+        .sim-neighbor small {
+            opacity: 0.7;
+            font-size: 9px;
+        }
+
+        /* Vector Details Toggle (Collapsible) */
+        .vector-details {
+            margin-top: 8px;
+        }
+
+        .vector-details-toggle {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 8px 12px;
+            background: #f1f5f9;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .vector-details-toggle::before {
+            content: '▶';
+            font-size: 8px;
+            transition: transform 0.2s ease;
+        }
+
+        .vector-details[open] .vector-details-toggle::before {
+            transform: rotate(90deg);
+        }
+
+        .vector-details-toggle:hover {
+            background: #e2e8f0;
+            color: var(--text-main);
+        }
+
+        .vector-details[open] .vector-details-toggle {
+            border-radius: 6px 6px 0 0;
+            margin-bottom: 0;
+        }
+
+        .vector-details > .token-table,
+        .vector-details > .qkv-container {
+            margin-top: 8px;
+            padding: 12px;
+            background: #fff;
+            border-radius: 0 0 6px 6px;
+            border: 1px solid var(--border-color);
+            border-top: none;
+        }
+
+        /* QKV Specific Styles */
+        .qkv-stats-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .qkv-stat {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .q-stat {
+            background: rgba(34, 197, 94, 0.1);
+            color: #16a34a;
+        }
+
+        .k-stat {
+            background: rgba(249, 115, 22, 0.1);
+            color: #ea580c;
+        }
+
+        .v-stat {
+            background: rgba(168, 85, 247, 0.1);
+            color: #9333ea;
+        }
+
+        .qkv-norm-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .qkv-norm-table th {
+            text-align: left;
+            padding: 6px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .qkv-norm-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .qkv-norm-cell {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .qkv-mini-bar {
+            height: 6px;
+            border-radius: 3px;
+            max-width: 60px;
+            min-width: 4px;
+        }
+
+        .q-bar {
+            background: linear-gradient(90deg, #22c55e, #16a34a);
+        }
+
+        .k-bar {
+            background: linear-gradient(90deg, #f97316, #ea580c);
+        }
+
+        .v-bar {
+            background: linear-gradient(90deg, #a855f7, #9333ea);
+        }
+
+        .qkv-norm-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-muted);
+            min-width: 30px;
+        }
+
+        .qk-neighbor {
+            background: rgba(249, 115, 22, 0.1);
+            color: #ea580c;
+        }
+
+        .qk-neighbor:hover {
+            background: rgba(249, 115, 22, 0.2);
+        }
+
+        /* ==========================================
+           PCA Visualization Styles
+           ========================================== */
+
+        .pca-container {
+            background: #fff;
+            border-radius: 8px;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .pca-svg {
+            width: 100%;
+            height: auto;
+            max-height: 200px;
+        }
+
+        .pca-axis {
+            stroke: var(--border-color);
+            stroke-width: 1;
+        }
+
+        .pca-axis-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            fill: var(--text-muted);
+            text-anchor: middle;
+        }
+
+        .pca-point {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .pca-point:hover {
+            r: 7;
+            filter: brightness(1.1);
+        }
+
+        /* Color classes for different vector types */
+        .pca-embedding {
+            fill: var(--primary-color);
+        }
+
+        .pca-position {
+            fill: #8b5cf6;
+        }
+
+        .pca-query {
+            fill: #22c55e;
+        }
+
+        .pca-key {
+            fill: #f97316;
+        }
+
+        .pca-value {
+            fill: #a855f7;
+        }
+
+        .pca-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            fill: var(--text-main);
+            pointer-events: none;
+        }
+
+        .pca-label-small {
+            font-size: 8px;
+            fill: var(--text-muted);
+        }
+
+        .pca-variance {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-muted);
+            text-align: center;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .pca-note {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: center;
+            padding: 16px;
+            font-style: italic;
+        }
+
+        /* QKV PCA specific styles */
+        .qkv-pca-legend {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.pca-query {
+            background: #22c55e;
+        }
+
+        .legend-dot.pca-key {
+            background: #f97316;
+        }
+
+        .legend-dot.pca-value {
+            background: #a855f7;
+        }
+
+        .qkv-connector {
+            stroke: rgba(0, 0, 0, 0.08);
+            stroke-width: 1;
+            stroke-dasharray: 2, 2;
+        }
+
+        /* Combined Summary Table (L2 Norm + Cosine Similarity) */
+        .combined-summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            table-layout: fixed;
+        }
+
+        .combined-summary-table th {
+            text-align: left;
+            padding: 4px 6px;
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            border-bottom: 1px solid var(--border-color);
+            background: #f8fafc;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            white-space: nowrap;
+        }
+
+        .combined-summary-table th:first-child {
+            width: 55px;
+            min-width: 55px;
+        }
+        
+        /* Default behavior: allow other columns to size naturally or equally */
+        .combined-summary-table th:not(:first-child) {
+             min-width: 80px; /* Prevent aggressive truncation like 'GELU Acti...' */
+        }
+
+        /* Helper for 50/50 split on data columns (excluding token) */
+        .combined-summary-table.distribute-cols th:not(:first-child) {
+            width: 45%; 
+        }
+
+        .combined-summary-table td {
+            padding: 3px 6px;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: middle;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .combined-summary-table .token-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--primary-color);
+            font-size: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .combined-summary-table .norm-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-main);
+            text-align: center;
+        }
+
+        .combined-summary-table .sim-neighbors {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            overflow: hidden;
+        }
+
+        .combined-summary-table .sim-neighbor {
+            font-size: 9px;
+            padding: 1px 4px;
+        }
+
+        /* Position index column for posenc table */
+        .combined-summary-table .pos-index {
+            width: 25px;
+            text-align: center;
+            font-size: 9px;
+        }
+
+        /* Compact vector summary sections */
+        .vector-summary-container {
+            gap: 10px;
+            padding: 6px;
+        }
+
+        .vector-summary-section {
+            padding: 8px;
+        }
+
+        .summary-header {
+            margin-bottom: 6px;
+            padding-bottom: 6px;
+        }
+
+        /* QKV Combined Table Specific */
+        .qkv-combined-table th:first-child {
+            width: 55px;
+        }
+
+        .qkv-combined-table th:nth-child(2),
+        .qkv-combined-table th:nth-child(3),
+        .qkv-combined-table th:nth-child(4) {
+            width: 35px;
+            text-align: center;
+        }
+
+        .qkv-combined-table th.q-header {
+            color: #16a34a;
+        }
+
+        .qkv-combined-table th.k-header {
+            color: #ea580c;
+        }
+
+        .qkv-combined-table th.v-header {
+            color: #9333ea;
+        }
+
+        .qkv-combined-table .q-norm {
+            color: #16a34a;
+        }
+
+        .qkv-combined-table .k-norm {
+            color: #ea580c;
+        }
+
+        .qkv-combined-table .v-norm {
+            color: #9333ea;
         }
         """

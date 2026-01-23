@@ -47,6 +47,9 @@ def server(input, output, session):
     running = reactive.value(False)
     cached_result = reactive.value(None)
     cached_result_B = reactive.value(None) # For comparison
+    # Store the text used for generation to avoid reading input.text_input() in renderers
+    cached_text_A = reactive.value("")
+    cached_text_B = reactive.value("")
     isa_selected_pair = reactive.Value(None)
     isa_selected_pair = reactive.Value(None)
     isa_selected_pair_B = reactive.Value(None) # For comparison
@@ -108,21 +111,8 @@ def server(input, output, session):
         return ui.div(*items)
 
     # Synchronize text inputs between tabs
-    @reactive.Effect
-    @reactive.event(input.text_input)
-    def sync_attention_to_bias():
-        val = input.text_input()
-        current_bias = input.bias_input_text()
-        if val != current_bias:
-            ui.update_text_area("bias_input_text", value=val)
-
-    @reactive.Effect
-    @reactive.event(input.bias_input_text)
-    def sync_bias_to_attention():
-        val = input.bias_input_text()
-        current_attn = input.text_input()
-        if val != current_attn:
-            ui.update_text_area("text_input", value=val)
+    # Synchronize text inputs between tabs - MOVED TO GEN BUTTON TO PREVENT INPUT LAG
+    # (Removed continuous sync)
     
     @reactive.Effect
     @reactive.event(input.model_family)
@@ -269,6 +259,9 @@ def server(input, output, session):
                 current_history.remove(text) # Move to top
             updated_history = [text] + current_history
             input_history.set(updated_history[:20]) # Limit to 20 items
+        
+        # Sync to Bias Input
+        ui.update_text_area("bias_input_text", value=text)
 
         # Reset MLM states on new generation
         show_mlm_A.set(False)
@@ -295,7 +288,8 @@ def server(input, output, session):
                 print("DEBUG: Starting heavy_compute A")
                 result_A = await loop.run_in_executor(pool, heavy_compute, text, model_name)
                 cached_result.set(result_A)
-                
+                cached_text_A.set(text)  # Store text used for generation
+
                 # Compute Second Result if needed
                 if compare_models:
                     # Case 1: Same Prompt (A), Different Model (B)
@@ -303,22 +297,26 @@ def server(input, output, session):
                     print(f"DEBUG: Starting heavy_compute B ({model_name_B}) for Compare Models")
                     result_B = await loop.run_in_executor(pool, heavy_compute, text, model_name_B)
                     cached_result_B.set(result_B)
-                
+                    cached_text_B.set(text)  # Same text for compare models
+
                 elif compare_prompts:
                     # Case 2: Different Prompt (B), Same Model (A)
                     try: text_B = input.text_input_B().strip()
                     except: text_B = ""
-                    
+
                     if text_B:
                         print(f"DEBUG: Starting heavy_compute B (Prompt B) for Compare Prompts")
                         # Use Model A for Prompt B
                         result_B = await loop.run_in_executor(pool, heavy_compute, text_B, model_name)
                         cached_result_B.set(result_B)
+                        cached_text_B.set(text_B)  # Store Prompt B text
                     else:
                         cached_result_B.set(None)
-                        
+                        cached_text_B.set("")
+
                 else:
                     cached_result_B.set(None)
+                    cached_text_B.set("")
                     
         except Exception as e:
             print(f"ERROR in compute_all: {e}")
@@ -743,6 +741,8 @@ def server(input, output, session):
         # Hide if results exist (dashboard will show its own preview)
         if cached_result.get():
             return None
+        
+        # Restore live preview (Safe now that dashboard is isolated)
         t = input.text_input().strip()
         if t:
             return ui.HTML(f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{t}"</div>')
@@ -781,8 +781,9 @@ def server(input, output, session):
         # Check cached_result only if we were NOT editing (but we are, so skip check)
         # if cached_result.get(): return None 
         
-        t = input.text_input_B().strip() # Use text_input_B here!
-        print(f"DEBUG: static_preview_text_compare_b triggered. Step={step}, Text='{t}'")
+        try: t = input.text_input_B().strip()
+        except: t = ""
+        
         if t:
             return ui.HTML(f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{t}"</div>')
         else:
@@ -844,13 +845,22 @@ def server(input, output, session):
     @render.ui
     def preview_text():
         res = get_active_result()
-        return get_preview_text_view(res, input.text_input(), "")
+        if not res: return None
+        # Reconstruct text to avoid reactivity
+        tokens = res[0]
+        tokenizer = res[6]
+        text_used = tokenizer.convert_tokens_to_string(tokens)
+        return get_preview_text_view(res, text_used, "")
 
     @output
     @render.ui
     def preview_text_B():
         res = get_active_result("_B")
-        return get_preview_text_view(res, input.text_input(), "_B")
+        if not res: return None
+        tokens = res[0]
+        tokenizer = res[6]
+        text_used = tokenizer.convert_tokens_to_string(tokens)
+        return get_preview_text_view(res, text_used, "_B")
 
 
     def get_gpt2_dashboard_ui(res, input, output, session):
@@ -858,9 +868,11 @@ def server(input, output, session):
         num_layers = len(encoder_model.h)
         num_heads = encoder_model.h[0].attn.num_heads
         
-        # Get current selections
 
-        
+        # Get current selections
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
 
         return ui.div(
@@ -869,16 +881,16 @@ def server(input, output, session):
             # Row 1: Embeddings
             ui.layout_columns(
                 ui.div(
-                    {"class": "card"}, 
-                    ui.h4("Token Embeddings"), 
+                    {"class": "card"},
+                    ui.h4("Token Embeddings"),
                     ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                    get_embedding_table(res)
+                    get_embedding_table(res, top_k=top_k)
                 ),
                 ui.div(
-                    {"class": "card"}, 
-                    ui.h4("Positional Embeddings"), 
+                    {"class": "card"},
+                    ui.h4("Positional Embeddings"),
                     ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                    get_posenc_table(res)
+                    get_posenc_table(res, top_k=top_k)
                 ),
                 ui.div(
                     {"class": "card"},
@@ -898,7 +910,7 @@ def server(input, output, session):
                         ui.h4("Q/K/V Projections")
                     ),
                     ui.p("Projects input to Query, Key, Value vectors.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                    get_qkv_table(res, qkv_layer)
+                    get_qkv_table(res, qkv_layer, top_k=top_k)
                 ),
                 ui.div(
                     {"class": "card"},
@@ -1020,7 +1032,9 @@ def server(input, output, session):
     def render_embedding_table():
         res = get_active_result()
         if not res: return None
-        return get_embedding_table(res)
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+        return get_embedding_table(res, top_k=top_k)
 
     @output
     @render.ui
@@ -1028,9 +1042,9 @@ def server(input, output, session):
         res = get_active_result()
         if not res: return None
         return ui.div(
-            {"class": "card", "style": "height: 100%;"}, 
-            ui.h4("Segment Embeddings"), 
-            ui.p("Segment ID (Sentence A/B)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            {"class": "card", "style": "height: 100%;"},
+            ui.h4("Segment Embeddings"),
+            ui.p("Encodes sentence membership (A or B), allowing BERT to reason about relationships between sentence pairs. When more than two sentences are provided, all sentences beyond the first are treated as Sentence B.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_segment_embedding_view(res)
         )
 
@@ -1039,11 +1053,13 @@ def server(input, output, session):
     def render_posenc_table():
         res = get_active_result()
         if not res: return None
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
         return ui.div(
-            {"class": "card", "style": "height: 100%;"}, 
-            ui.h4("Positional Embeddings"), 
+            {"class": "card", "style": "height: 100%;"},
+            ui.h4("Positional Embeddings"),
             ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_posenc_table(res)
+            get_posenc_table(res, top_k=top_k)
         )
 
     @output
@@ -1066,12 +1082,14 @@ def server(input, output, session):
         if not res: return None
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Q/K/V Projections"),
             ui.p("Projects input to Query, Key, Value vectors.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_qkv_table(res, layer_idx)
+            get_qkv_table(res, layer_idx, top_k=top_k)
         )
 
     @output
@@ -1178,7 +1196,7 @@ def server(input, output, session):
     def render_mlm_predictions():
         res = get_active_result()
         if not res: return None
-        
+
         # Determine if we should show predictions
         # GPT-2: Always show
         # BERT: Show only if switch is on
@@ -1186,9 +1204,11 @@ def server(input, output, session):
             model_family = input.model_family()
         except:
             model_family = "bert"
-            
-        try: text = input.text_input()
-        except: text = ""
+
+        # Reconstruct text from tokenizer to avoid reactivity from input.text_input()
+        tokens = res[0]
+        tokenizer = res[6]
+        text = tokenizer.convert_tokens_to_string(tokens)
         try: top_k = int(input.global_topk())
         except: top_k = 3
 
@@ -1799,12 +1819,13 @@ def server(input, output, session):
             header_b = "Prompt B"
         
         if not config:
-            # BEFORE GENERATION - Show static preview
+            # BEFORE GENERATION - Show live preview (Safe because dashboard isn't loaded yet)
             t = input.text_input().strip()
-            preview_html = f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">Type a sentence above and click Generate All.</div>'
-            
+            # Placeholder changed to '(input)' per user request
+            preview_html = f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">(input)</div>'
+
             if not compare:
-                # Single mode static preview
+                # Single mode live preview
                 return ui.div(
                     ui.div(
                         {"class": "card"},
@@ -1814,15 +1835,15 @@ def server(input, output, session):
                     ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1');</script>")
                 )
             else:
-                # Compare mode - show headers + paired static previews
-                # Use separate variables for A and B inputs
+                # Compare mode - live paired previews
                 if compare_prompts:
-                    t_b = input.text_input_B().strip()
+                    try: t_b = input.text_input_B().strip()
+                    except: t_b = ""
                 else:
-                    t_b = input.text_input().strip()
+                    t_b = t # Same text if comparing models
                 
-                preview_a = f'<div style="font-family:monospace;color:#3b82f6;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>'
-                preview_b = f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{t_b}"</div>' if t_b else '<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>'
+                preview_b = f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{t_b}"</div>' if t_b else '<div style="color:#9ca3af;font-size:12px;">(input)</div>'
+                
                 return ui.div(
                     {"id": "dashboard-container-compare", "class": "dashboard-stack"},
                     # Header: MODEL A | MODEL B
@@ -1833,7 +1854,7 @@ def server(input, output, session):
                     ),
                     # Paired previews
                     ui.layout_columns(
-                        ui.div({"class": "card", "style": "border: 2px solid #3b82f6;"}, ui.h4("Sentence Preview"), ui.HTML(preview_a)),
+                        ui.div({"class": "card", "style": "border: 2px solid #3b82f6;"}, ui.h4("Sentence Preview"), ui.HTML(preview_html)),
                         ui.div({"class": "card", "style": "border: 2px solid #ff5ca9;"}, ui.h4("Sentence Preview"), ui.HTML(preview_b)),
                         col_widths=[6, 6]
                     ),
@@ -1850,25 +1871,30 @@ def server(input, output, session):
             
             if not res:
                 # Only show preview card + loading message when waiting for data
+                # Use cached_text_A to avoid reactivity from input.text_input()
                 return ui.div(
                     # Always use output_ui for preview - it handles grey/colored states internally
                     ui.div(
                         {"class": "card", "style": "margin-bottom: 32px;"},
                         preview_title,
-                        get_preview_text_view(res, input.text_input(), ""),
+                        get_preview_text_view(res, cached_text_A.get(), ""),
                     ),
                     ui.div(
                         {"style": "padding: 40px; text-align: center; color: #9ca3af;"},
                         ui.p("Generating data...", style="font-size: 14px; animation: pulse 1.5s infinite;")
                     )
                 )
-            
+
             # Data is ready - show preview + full dashboard
+            # Reconstruct text from tokenizer to avoid reactivity
+            tokens_A = res[0]
+            tokenizer_A = res[6]
+            text_A = tokenizer_A.convert_tokens_to_string(tokens_A)
             return ui.div(
                 ui.div(
                     {"class": "card", "style": "margin-bottom: 32px;"},
                     preview_title,
-                    get_preview_text_view(res, input.text_input(), ""),
+                    get_preview_text_view(res, text_A, ""),
                 ),
                 # Dashboard layout
                 dashboard_layout_helper(is_gpt2, num_layers, num_heads, [], suffix="")
@@ -1876,6 +1902,9 @@ def server(input, output, session):
         else:
             # SIDE-BY-SIDE MODE - Paired Sections (no arrows)
             # Each section rendered as: Section A | Section B
+            # Get top_k for summary tables
+            try: top_k = int(input.global_topk())
+            except: top_k = 3
             # Get Model B config
             res_B = cached_result_B.get()
             is_gpt2_B = False
@@ -1975,26 +2004,34 @@ def server(input, output, session):
                  )
 
             # Render Paired Layout - simple approach like single mode
+            # Reconstruct text from tokenizers to avoid reactivity
+            tokens_A = res_A[0]
+            tokenizer_A = res_A[6]
+            text_A_reconstructed = tokenizer_A.convert_tokens_to_string(tokens_A)
+            tokens_B = res_B[0]
+            tokenizer_B = res_B[6]
+            text_B_reconstructed = tokenizer_B.convert_tokens_to_string(tokens_B)
+
             return ui.div(
                 {"id": "dashboard-container-compare", "class": "dashboard-stack"},
-                
+
                 # Top Header: MODEL A | MODEL B
                 ui.layout_columns(
                     ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
                     ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                     col_widths=[6, 6]
                 ),
-                
+
                 # Row 0: Sentence Preview
                 # Use manual layout to put Toggle only on Card A (avoid duplicate ID)
                 ui.layout_columns(
-                    ui.div({"class": "card compare-card-a"}, preview_title, get_preview_text_view(res_A, input.text_input(), "", footer_html=tok_info_A if is_family_diff else "")),
+                    ui.div({"class": "card compare-card-a"}, preview_title, get_preview_text_view(res_A, text_A_reconstructed, "", footer_html=tok_info_A if is_family_diff else "")),
 
                     ui.div(
                         {"class": "card compare-card-b"},
-                        # Header for B 
+                        # Header for B
                         preview_title_B,
-                        get_preview_text_view(res_B, input.text_input(), "_B", footer_html=tok_info_B if is_family_diff else "")
+                        get_preview_text_view(res_B, text_B_reconstructed, "_B", footer_html=tok_info_B if is_family_diff else "")
                     ),
                     col_widths=[6, 6]
                 ),
@@ -2007,11 +2044,11 @@ def server(input, output, session):
                     ui.div(paired_arrows("Sentence Preview", "Token Embeddings"), class_="arrow-row"),
 
                     # Row 1: Token Embeddings
-                    paired_with_card("Token Embeddings", get_embedding_table(res_A), get_embedding_table(res_B)),
+                    paired_with_card("Token Embeddings", get_embedding_table(res_A, top_k=top_k), get_embedding_table(res_B, top_k=top_k)),
                     ui.div(paired_arrows("Token Embeddings", "Positional Embeddings"), class_="arrow-row"),
 
                     # Row 2: Positional Embeddings
-                    paired_with_card("Positional Embeddings", get_posenc_table(res_A), get_posenc_table(res_B)),
+                    paired_with_card("Positional Embeddings", get_posenc_table(res_A, top_k=top_k), get_posenc_table(res_B, top_k=top_k)),
                     ui.output_ui("arrow_pos_qkv", class_="arrow-row"),
 
                     # Row 3: Q/K/V Projections
@@ -4031,7 +4068,9 @@ def server(input, output, session):
         res = get_active_result("_B")
         if not res:
             return None
-        return get_embedding_table(res)
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+        return get_embedding_table(res, top_k=top_k)
 
     @output
     @render.ui
@@ -4040,9 +4079,9 @@ def server(input, output, session):
         if not res:
             return None
         return ui.div(
-            {"class": "card", "style": "height: 100%;"}, 
-            ui.h4("Segment Embeddings"), 
-            ui.p("Segment ID (Sentence A/B)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            {"class": "card", "style": "height: 100%;"},
+            ui.h4("Segment Embeddings"),
+            ui.p("Encodes sentence membership (A or B), allowing BERT to reason about relationships between sentence pairs. When more than two sentences are provided, all sentences beyond the first are treated as Sentence B.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_segment_embedding_view(res)
         )
 
@@ -4052,11 +4091,13 @@ def server(input, output, session):
         res = get_active_result("_B")
         if not res:
             return None
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
         return ui.div(
-            {"class": "card", "style": "height: 100%;"}, 
-            ui.h4("Positional Embeddings"), 
+            {"class": "card", "style": "height: 100%;"},
+            ui.h4("Positional Embeddings"),
             ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_posenc_table(res)
+            get_posenc_table(res, top_k=top_k)
         )
 
     @output
@@ -4081,7 +4122,9 @@ def server(input, output, session):
             return None
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
-        
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.div(
@@ -4089,7 +4132,7 @@ def server(input, output, session):
                 ui.h4("Q/K/V Projections")
             ),
             ui.p("Projects input to Query, Key, Value vectors.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_qkv_table(res, layer_idx)
+            get_qkv_table(res, layer_idx, top_k=top_k)
         )
 
     @output
@@ -4201,7 +4244,7 @@ def server(input, output, session):
         res = get_active_result("_B")
         if not res:
             return None
-        
+
         try:
             is_compare_prompts = input.compare_prompts_mode()
         except:
@@ -4214,15 +4257,17 @@ def server(input, output, session):
                  model_family = input.model_family_B()
         except:
             model_family = "bert"
-            
+
         try: use_mlm = input.use_mlm()
         except: use_mlm = False
-        
+
         if model_family == "gpt2": use_mlm = True
-            
-        try: text = input.text_input()
-        except: text = ""
-        
+
+        # Reconstruct text from tokenizer to avoid reactivity from input.text_input()
+        tokens = res[0]
+        tokenizer = res[6]
+        text = tokenizer.convert_tokens_to_string(tokens)
+
         is_bert = model_family != "gpt2" # safer check
         
         try: top_k = int(input.global_topk())
