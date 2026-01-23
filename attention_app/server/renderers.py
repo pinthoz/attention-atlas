@@ -359,8 +359,8 @@ def get_embedding_table(res, top_k=3):
     html_norm = f"""
     <table class='combined-summary-table'>
         <tr>
-            <th style='text-align:left;padding-left:8px;'>Token</th>
-            <th style='text-align:center;'>L2 Norm (Magnitude)</th>
+            <th style='text-align:left;padding-left:8px; width:55%;'>Token</th>
+            <th style='text-align:center; width:45%;'>L2 Norm (Magnitude)</th>
         </tr>
         {''.join(norm_rows)}
     </table>
@@ -1049,7 +1049,7 @@ def get_add_norm_view(res, layer_idx):
             f"<div style='width:{width}%;height:10px;border-radius:999px;"
             f"background:linear-gradient(90deg,#ff5ca9,#3b82f6);'></div></div></td></tr>"
         )
-    html_change = f"<table class='combined-summary-table'><tr><th style='text-align:left;padding-left:8px;'>Token</th><th>Change Magnitude</th></tr>{''.join(change_rows)}</table>"
+    html_change = f"<table class='combined-summary-table'><tr><th style='text-align:left;padding-left:8px; width:55%;'>Token</th><th style='width:45%;'>Change Magnitude</th></tr>{''.join(change_rows)}</table>"
     
     # 2. Raw Vectors View (Heatmap of Output)
     rows = []
@@ -1129,7 +1129,7 @@ def get_add_norm_post_ffn_view(res, layer_idx):
             f"<div style='width:{width}%;height:10px;border-radius:999px;"
             f"background:linear-gradient(90deg,#ff5ca9,#3b82f6);'></div></div></td></tr>"
         )
-    html_change = f"<table class='combined-summary-table'><tr><th style='text-align:left;padding-left:8px;'>Token</th><th>Residual Change (FFN)</th></tr>{''.join(change_rows)}</table>"
+    html_change = f"<table class='combined-summary-table'><tr><th style='text-align:left;padding-left:8px; width:55%;'>Token</th><th style='width:45%;'>Residual Change (FFN)</th></tr>{''.join(change_rows)}</table>"
     
     # 2. Raw Vectors View (Heatmap)
     rows = []
