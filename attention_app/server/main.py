@@ -142,6 +142,19 @@ def server(input, output, session):
             
         ui.update_select("model_name", choices=choices, selected=selected)
 
+    # Ensure Compare Modes are Mutually Exclusive
+    @reactive.Effect
+    @reactive.event(input.compare_mode)
+    def handle_compare_mode_change():
+        if input.compare_mode():
+            ui.update_switch("compare_prompts_mode", value=False)
+
+    @reactive.Effect
+    @reactive.event(input.compare_prompts_mode)
+    def handle_compare_prompts_change():
+        if input.compare_prompts_mode():
+            ui.update_switch("compare_mode", value=False)
+
     # Prompt Wizard Step State: 'A' or 'B' or 'DONE'
     prompt_entry_step = reactive.Value("A")
 

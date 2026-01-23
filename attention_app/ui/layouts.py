@@ -78,7 +78,7 @@ attention_analysis_page = ui.page_fluid(
                 # RIGHT COLUMN: Model B (Conditional)
                 ui.panel_conditional(
                     "input.compare_mode",
-                    {"style": "flex: 1; min-width: 0; display: flex; flex-direction: column; display: none;"}, # Hidden by default
+                    {"style": "flex: 1; min-width: 0; display: flex; flex-direction: column;"}, # Hidden by default via Shiny logic
                     
                     # Model B Header
                     ui.tags.span("Model B", class_="sidebar-label", style="color: #ff5ca9; font-size: 10px; font-weight: 700; margin-bottom: 4px; display: block; border-bottom: 1px dashed rgba(255, 92, 169, 0.3); padding-bottom: 2px;"),
