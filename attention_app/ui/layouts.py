@@ -45,10 +45,11 @@ attention_analysis_page = ui.page_fluid(
                 ui.div(
                     {"style": "flex: 1; min-width: 0; display: flex; flex-direction: column;"},
                     
-                    # Model A Header (Conditional)
+                    # Model A Header (Conditional) - Hidden by default to prevent FOUC
                     ui.panel_conditional(
                         "input.compare_mode",
-                        ui.tags.span("Model A", class_="sidebar-label", style="color: #3b82f6; font-size: 10px; font-weight: 700; margin-bottom: 4px; display: block; border-bottom: 1px dashed rgba(59, 130, 246, 0.3); padding-bottom: 2px;")
+                        ui.tags.span("Model A", class_="sidebar-label", style="color: #3b82f6; font-size: 10px; font-weight: 700; margin-bottom: 4px; display: block; border-bottom: 1px dashed rgba(59, 130, 246, 0.3); padding-bottom: 2px;"),
+                        style="display: none;" 
                     ),
 
                     # Inputs A
@@ -65,9 +66,9 @@ attention_analysis_page = ui.page_fluid(
                         "model_name",
                         None,
                         choices={
-                            "bert-base-uncased": "Base (Uncased)", # Shortened label
-                            "bert-large-uncased": "Large (Uncased)", # Shortened label
-                            "bert-base-multilingual-uncased": "Multilingual", # Shortened label
+                            "bert-base-uncased": "BERT Base (Uncased)",
+                            "bert-large-uncased": "BERT Large (Uncased)",
+                            "bert-base-multilingual-uncased": "BERT Multilingual",
                         },
                         selected="bert-base-uncased",
                         width="100%"
@@ -77,7 +78,7 @@ attention_analysis_page = ui.page_fluid(
                 # RIGHT COLUMN: Model B (Conditional)
                 ui.panel_conditional(
                     "input.compare_mode",
-                    {"style": "flex: 1; min-width: 0; display: flex; flex-direction: column;"}, # Attributes for the panel div
+                    {"style": "flex: 1; min-width: 0; display: flex; flex-direction: column; display: none;"}, # Hidden by default
                     
                     # Model B Header
                     ui.tags.span("Model B", class_="sidebar-label", style="color: #ff5ca9; font-size: 10px; font-weight: 700; margin-bottom: 4px; display: block; border-bottom: 1px dashed rgba(255, 92, 169, 0.3); padding-bottom: 2px;"),
@@ -130,7 +131,8 @@ attention_analysis_page = ui.page_fluid(
                             {"class": "compare-tabs-inline"},
                             ui.div("A", id="tab-a", class_="prompt-tab tab-a active", onclick="switchPrompt('A')"),
                             ui.div("B", id="tab-b", class_="prompt-tab tab-b", onclick="switchPrompt('B')")
-                        )
+                        ),
+                        style="display: none;"
                     ),
                 ),
                 
