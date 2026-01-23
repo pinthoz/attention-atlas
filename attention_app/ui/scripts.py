@@ -1,5 +1,24 @@
 JS_CODE = """
         // Define global functions immediately (before Shiny connects)
+        window.switchView = function(containerId, tabName) {
+            // 1. Hide all panes in this container
+            var panes = document.querySelectorAll('#' + containerId + ' .view-pane');
+            panes.forEach(function(pane) {
+                pane.style.display = 'none';
+            });
+            
+            // 2. Show target pane
+            var target = document.getElementById(containerId + '_' + tabName);
+            if(target) target.style.display = 'block';
+            
+            // 3. Update buttons
+            var buttons = document.querySelectorAll('#' + containerId + ' .view-btn');
+            buttons.forEach(function(btn) {
+                btn.classList.remove('active');
+                if(btn.dataset.tab === tabName) btn.classList.add('active');
+            });
+        };
+
         window.toggleMlmDetails = function(id) {
             var el = document.getElementById(id);
             if (el.style.display === 'none' || el.style.display === '') {
