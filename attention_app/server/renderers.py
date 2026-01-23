@@ -728,11 +728,24 @@ def get_sum_layernorm_view(res, encoder_model):
     return _render_dual_tab_view(unique_id, html_heatmap, tokens, combined_vectors, controls_style="justify-content: center; padding: 8px 0;")
 
 
-def get_qkv_table(res, layer_idx, top_k=3, suffix=""):
+def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw"):
+    """
+    Generate Q/K/V projection table with multiple views.
+
+    Args:
+        res: Result tuple from model computation
+        layer_idx: Layer index to visualize
+        top_k: Number of top neighbors to show
+        suffix: Suffix for unique IDs (for comparison mode)
+        norm_mode: Normalization mode for attention weights ("raw", "col", "rollout")
+    """
     tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
     layer_block = get_layer_block(encoder_model, layer_idx)
     hs_in = hidden_states[layer_idx]
     unique_id = f"qkv_tab{suffix}"
+
+    # Determine if causal (GPT-2)
+    is_causal = not hasattr(layer_block, "attention")
 
     Q, K, V = extract_qkv(layer_block, hs_in)
     n = len(tokens)
@@ -756,6 +769,42 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix=""):
     # Get attention weights for this layer (averaged across heads for comparison)
     att_layer = attentions[layer_idx][0].cpu().numpy()  # Shape: (num_heads, seq_len, seq_len)
     att_avg = np.mean(att_layer, axis=0)  # Average across heads
+
+    # Apply normalization to attention weights based on mode
+    if norm_mode == "col":
+        # Column normalization: each column sums to 1
+        col_sums = att_avg.sum(axis=0, keepdims=True)
+        att_avg = att_avg / (col_sums + 1e-8)
+    elif norm_mode == "rollout":
+        # Attention rollout: accumulated attention flow through layers
+        att_per_layer = []
+        for l_idx in range(layer_idx + 1):
+            layer_att = attentions[l_idx][0].cpu().numpy()
+            layer_att_avg = np.mean(layer_att, axis=0)
+            att_per_layer.append(layer_att_avg)
+
+        seq_len = att_per_layer[0].shape[0]
+        rollout = np.eye(seq_len)
+
+        for l_idx in range(layer_idx + 1):
+            attention = att_per_layer[l_idx]
+            # Add residual connection
+            attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
+            # Re-normalize rows
+            row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
+            attention_with_residual = attention_with_residual / (row_sums + 1e-8)
+            # Accumulate
+            rollout = np.matmul(attention_with_residual, rollout)
+
+        att_avg = rollout
+
+    # Get normalization mode label for display
+    if norm_mode == "raw":
+        att_label = "Attention Weights (query perspective)"
+    elif norm_mode == "col":
+        att_label = "Attention Weights (key perspective)"
+    else:
+        att_label = f"Accumulated Attention Flow (0→{layer_idx})"
 
     # 1. Norm View
     norm_rows = []
@@ -884,8 +933,8 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix=""):
                 </div>
             </div>
             <div class='heatmap-panel'>
-                <div class='heatmap-title'>Attention Weights</div>
-                <div class='heatmap-subtitle'>Actual attention (avg across heads)</div>
+                <div class='heatmap-title'>{att_label}</div>
+                <div class='heatmap-subtitle'>{"Raw attention (avg across heads)" if norm_mode == "raw" else "Column-normalized" if norm_mode == "col" else f"Rollout through layers 0→{layer_idx}"}</div>
                 <div class='heatmap-wrapper'>
                     <img class='comparison-heatmap' src='data:image/png;base64,{att_weights_img}' alt='Attention Weights Heatmap'>
                     <div class='heatmap-colorbar attention-colorbar'>
@@ -940,7 +989,18 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix=""):
     return ui.HTML(html)
 
 
-def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3):
+def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, norm_mode="raw"):
+    """
+    Generate scaled attention view showing attention computation details.
+
+    Args:
+        res: Result tuple from model computation
+        layer_idx: Layer index
+        head_idx: Head index
+        focus_indices: Token indices to show attention for
+        top_k: Number of top attention targets to show
+        norm_mode: Normalization mode ("raw", "col", "rollout") - affects ranking
+    """
     tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
     if attentions is None or len(attentions) == 0:
         return ui.HTML("")
@@ -951,7 +1011,7 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3):
     elif not focus_indices:
         # Default to first token if empty list provided
         focus_indices = [0]
-    
+
     # Limit number of tokens to display to avoid UI explosion (max 5)
     if len(focus_indices) > 5:
         focus_indices = focus_indices[:5]
@@ -961,24 +1021,55 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3):
     hs_in = hidden_states[layer_idx]
     Q, K, V = extract_qkv(layer_block, hs_in)
 
+    is_causal = not hasattr(layer_block, "attention")
+
     if hasattr(layer_block, "attention"): # BERT
         num_heads = layer_block.attention.self.num_attention_heads
     else: # GPT-2
         num_heads = layer_block.attn.num_heads
     d_k = Q.shape[-1] // num_heads
 
+    # Compute normalized attention if needed
+    if norm_mode == "col":
+        # Column normalization
+        col_sums = att_head.sum(axis=0, keepdims=True)
+        att_normalized = att_head / (col_sums + 1e-8)
+        norm_label = "col-norm"
+    elif norm_mode == "rollout":
+        # Attention rollout
+        att_per_layer = []
+        for l_idx in range(layer_idx + 1):
+            layer_att = attentions[l_idx][0].cpu().numpy()
+            layer_att_avg = np.mean(layer_att, axis=0)
+            att_per_layer.append(layer_att_avg)
+
+        seq_len = att_per_layer[0].shape[0]
+        rollout = np.eye(seq_len)
+
+        for l_idx in range(layer_idx + 1):
+            attention = att_per_layer[l_idx]
+            attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
+            row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
+            attention_with_residual = attention_with_residual / (row_sums + 1e-8)
+            rollout = np.matmul(attention_with_residual, rollout)
+
+        att_normalized = rollout
+        norm_label = "rollout"
+    else:
+        att_normalized = att_head
+        norm_label = None
+
     all_blocks = ""
 
     for f_idx in focus_indices:
         f_idx = max(0, min(f_idx, len(tokens) - 1))
-        
-        # Get top k for this token
-        if hasattr(layer_block, "attention"): # BERT
-            top_idx = np.argsort(att_head[f_idx])[::-1][:top_k]
-            # Add invisible spacer to match GPT-2's causal note height
+
+        # Get top k for this token using normalized values for ranking
+        if not is_causal: # BERT
+            top_idx = np.argsort(att_normalized[f_idx])[::-1][:top_k]
             causal_note = "<div style='font-size:10px;margin-bottom:4px;visibility:hidden;'>Causal: Future tokens are masked</div>"
         else: # GPT-2 (Causal)
-            valid_scores = [(j, att_head[f_idx, j]) for j in range(len(tokens)) if j <= f_idx]
+            valid_scores = [(j, att_normalized[f_idx, j]) for j in range(len(tokens)) if j <= f_idx]
             valid_scores.sort(key=lambda x: x[1], reverse=True)
             top_idx = [x[0] for x in valid_scores[:top_k]]
             causal_note = "<div style='font-size:10px;color:#888;margin-bottom:4px;font-style:italic;'>Causal: Future tokens are masked</div>"
@@ -987,7 +1078,19 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3):
         for rank, j in enumerate(top_idx, 1):
             dot = float(np.dot(Q[f_idx], K[j]))
             scaled = dot / np.sqrt(d_k)
-            prob = att_head[f_idx, j]
+            prob = att_head[f_idx, j]  # Raw softmax value
+
+            # Build the values row
+            values_html = f"""
+                        <span class='scaled-step'>Q·K = <b>{dot:.2f}</b></span>
+                        <span class='scaled-step'>÷√d<sub>k</sub> = <b>{scaled:.2f}</b></span>
+                        <span class='scaled-step'>softmax = <b>{prob:.3f}</b></span>
+            """
+
+            # Add normalized value if not raw mode
+            if norm_label:
+                norm_val = att_normalized[f_idx, j]
+                values_html += f"""<span class='scaled-step' style='color:#8b5cf6;'>{norm_label} = <b>{norm_val:.3f}</b></span>"""
 
             computations += f"""
             <div class='scaled-computation-row'>
@@ -999,19 +1102,22 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3):
                         <span class='token-name' style='color:#3b82f6;'>{tokens[j].replace("##", "").replace("Ġ", "")}</span>
                     </div>
                     <div class='scaled-values'>
-                        <span class='scaled-step'>Q·K = <b>{dot:.2f}</b></span>
-                        <span class='scaled-step'>÷√d<sub>k</sub> = <b>{scaled:.2f}</b></span>
-                        <span class='scaled-step'>softmax = <b>{prob:.3f}</b></span>
+                        {values_html}
                     </div>
                 </div>
             </div>
             """
-        
+
+        # Add normalization indicator to the formula
+        formula_suffix = ""
+        if norm_label:
+            formula_suffix = f" <span style='color:#8b5cf6;font-size:10px;'>[ranked by {norm_label}]</span>"
+
         # Wrap each token's block
         all_blocks += f"""
         <div class='scaled-attention-box' style='margin-bottom: 16px; border-bottom: 1px solid #f1f5f9; padding-bottom: 16px;'>
             <div class='scaled-formula' style='margin-bottom:8px;'>
-                <span style='color:#ff5ca9;font-weight:bold;'>{tokens[f_idx].replace("##", "").replace("Ġ", "")}</span>: softmax(Q·K<sup>T</sup>/√d<sub>k</sub>)
+                <span style='color:#ff5ca9;font-weight:bold;'>{tokens[f_idx].replace("##", "").replace("Ġ", "")}</span>: softmax(Q·K<sup>T</sup>/√d<sub>k</sub>){formula_suffix}
             </div>
             <div class='scaled-computations'>
                 {computations}
@@ -1359,151 +1465,293 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5):
     )
 
 
-def get_metrics_display(res, layer_idx=None, head_idx=None):
+def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False, baseline_stats=None, norm_mode="raw"):
+    """
+    Generate metrics display for attention patterns.
+
+    Args:
+        res: Result tuple from model computation
+        layer_idx: Layer index (None for global average)
+        head_idx: Head index (None for global average)
+        use_full_scale: Whether to use full 0-1 scale for gauges
+        baseline_stats: Pre-computed baseline statistics
+        norm_mode: Normalization mode ("raw", "col", "rollout")
+    """
     tokens, _, _, attentions, *_ = res
     if attentions is None or len(attentions) == 0:
         return ui.HTML("")
 
     att_layers = [layer[0].cpu().numpy() for layer in attentions]
-    
-    # If specific layer/head selected, use that; otherwise average all
+
+    def apply_normalization(att_matrix, layer_for_rollout=None):
+        """Apply normalization based on mode."""
+        if norm_mode == "col":
+            col_sums = att_matrix.sum(axis=0, keepdims=True)
+            return att_matrix / (col_sums + 1e-8)
+        elif norm_mode == "rollout" and layer_for_rollout is not None:
+            # Attention rollout
+            att_per_layer = []
+            for l_idx in range(layer_for_rollout + 1):
+                layer_att = att_layers[l_idx]
+                layer_att_avg = np.mean(layer_att, axis=0)
+                att_per_layer.append(layer_att_avg)
+
+            seq_len = att_per_layer[0].shape[0]
+            rollout = np.eye(seq_len)
+
+            for l_idx in range(layer_for_rollout + 1):
+                attention = att_per_layer[l_idx]
+                attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
+                row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
+                attention_with_residual = attention_with_residual / (row_sums + 1e-8)
+                rollout = np.matmul(attention_with_residual, rollout)
+
+            return rollout
+        else:
+            return att_matrix
+
+    # 1. Compute Metrics for the Selected View (Specific Head or Global Avg)
     if layer_idx is not None and head_idx is not None:
         # Single layer, single head
         att_matrix = att_layers[layer_idx][head_idx]
+        att_matrix = apply_normalization(att_matrix, layer_idx)
+        current_metrics = compute_all_attention_metrics(att_matrix)
     else:
         # Average across all layers and heads
         att_matrix = np.mean(att_layers, axis=(0, 1))
+        att_matrix = apply_normalization(att_matrix, len(att_layers) - 1)
+        current_metrics = compute_all_attention_metrics(att_matrix)
+
+    # 2. Compute Context (Layer Stats) if in Specific Head Mode
+    context_stats = {}
+    if layer_idx is not None and head_idx is not None:
+        # We need to compute metrics for ALL heads in this layer to get percentiles
+        layer_heads = att_layers[layer_idx] # shape (num_heads, seq, seq)
+        num_heads = layer_heads.shape[0]
+
+        # Collect metrics for all heads (with normalization applied)
+        layer_metrics_list = []
+        for h in range(num_heads):
+            head_att = apply_normalization(layer_heads[h], layer_idx)
+            m = compute_all_attention_metrics(head_att)
+            # Normalize focus entropy locally for comparison
+            num_tokens = head_att.shape[0]
+            max_ent = num_tokens * np.log(num_tokens) if num_tokens > 1 else 1
+            m['focus_normalized'] = m['focus_entropy'] / max_ent if max_ent > 0 else 0
+            layer_metrics_list.append(m)
+        
+        # Compute Percentiles and Averages for each key
+        keys_to_context = ['confidence_max', 'confidence_avg', 'focus_normalized', 'sparsity', 'distribution_median', 'uniformity', 'balance']
+        
+        for key in keys_to_context:
+            values = [stats[key] for stats in layer_metrics_list]
+            current_val = current_metrics.get(key)
+            if key == 'focus_normalized':
+                # Re-calc current normalized for consistency
+                num_tokens = att_matrix.shape[0]
+                max_ent = num_tokens * np.log(num_tokens) if num_tokens > 1 else 1
+                current_val = current_metrics['focus_entropy'] / max_ent if max_ent > 0 else 0
+            
+            # Percentile (rank)
+            # strictly less count
+            smaller_count = sum(v < current_val for v in values)
+            percentile = (smaller_count / len(values)) * 100
+            
+            # Average
+            avg_val = float(np.mean(values))
+            
+            context_stats[key] = {
+                "percentile": percentile,
+                "avg": avg_val,
+                "is_available": True
+            }
+            
+    # CSS for markers
+    marker_styles = """
+    <style>
+        .gauge-marker-avg {
+            position: absolute;
+            top: -2px;
+            bottom: -2px;
+            width: 2px;
+            background: #64748b;
+            z-index: 10;
+        }
+        .gauge-marker-baseline {
+            position: absolute;
+            top: -4px;
+            bottom: -4px;
+            width: 2px;
+            background: #8b5cf6; /* Purple for baseline */
+            z-index: 11;
+        }
+        .gauge-marker-baseline::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -2px;
+            width: 6px;
+            height: 6px;
+            background: #8b5cf6;
+            transform: rotate(45deg);
+        }
+    </style>
+    """
     
-    metrics_dict = compute_all_attention_metrics(att_matrix)
-    
-    # Calculate Flow Change (JSD between first and last layer)
+    # Global metrics like Flow Change don't have "layer context" in the same way
     flow_change = calculate_flow_change(att_layers)
     
-    # Balance is now in metrics_dict (from compute_all_attention_metrics)
-    balance = metrics_dict.get('balance', 0.5)
+    # Balance is in metrics_dict
+    balance = current_metrics.get('balance', 0.5)
     
-    # Get token count for normalization
-    num_tokens = len(tokens) if tokens else att_avg.shape[0]
-    
-    # Normalize focus entropy by max possible entropy
-    # For attention matrix: each row sums to 1, max entropy per row = log(n)
-    # With n rows, max total entropy = n × log(n)
-    # This gives focus_normalized in range [0, 1]: 0=focused, 1=diffuse
+    # Normalize current focus
+    num_tokens = att_matrix.shape[0]
     max_entropy = num_tokens * np.log(num_tokens) if num_tokens > 1 else 1
-    focus_normalized = metrics_dict['focus_entropy'] / max_entropy if max_entropy > 0 else 0
+    focus_normalized = current_metrics['focus_entropy'] / max_entropy if max_entropy > 0 else 0
 
-    # Thresholds based on paper "From Attention to Assurance" (Golshanrad & Faghih)
-    # Format: (low_max, high_min, min_range, max_range, reverse)
-    # reverse=True means lower values are "better" (like focus - lower = more focused)
+    # Thresholds / Interpretations
+    # If use_full_scale is True, we overwrite max_range to 1.0 (or theoretical max)
     interpretations = {
-        # Confidence Max (Eq. 5): max attention weight
-        # Higher = more confident = head focuses strongly on specific token
         'confidence_max': (0.20, 0.50, 0.0, 1.0, False),
-        # Confidence Avg (Eq. 6): average of row maxes
-        # Higher = queries consistently find confident targets
-        'confidence_avg': (0.15, 0.40, 0.0, 0.8, False),
-        # Focus Normalized (Eq. 8): entropy / log(n²)
-        # 0 = fully focused, 1 = fully uniform
-        # LOWER = more focused = better (reverse=True)
+        'confidence_avg': (0.15, 0.40, 0.0, 0.8, False), # Max 0.8 reasonable
         'focus_normalized': (0.30, 0.70, 0.0, 1.0, True),
-        # Sparsity (Eq. 11): % below adaptive threshold (1/seq_len)
-        # Higher = most tokens ignored = very selective
         'sparsity': (0.30, 0.60, 0.0, 1.0, False),
-        # Distribution Median (Eq. 12): median attention weight
-        'distribution_median': (0.005, 0.02, 0.0, 0.05, False),
-        # Uniformity (Eq. 15): std dev of attention weights
-        # Lower = more uniform, Higher = more variable
+        'distribution_median': (0.005, 0.02, 0.0, 0.05, False), # Very small usually
         'uniformity': (0.03, 0.10, 0.0, 0.2, False),
-        # Flow Change (Eq. 9): JSD between first and last layer
-        # Higher = more transformation = better feature extraction
         'flow_change': (0.10, 0.25, 0.0, 0.5, False),
-        # Balance: proportion of attention to [CLS] (0-1)
-        # Lower = content focus, Higher = CLS focus (potential shortcut)
         'balance': (0.15, 0.40, 0.0, 1.0, False),
     }
 
     def get_interpretation(key, value):
-        """Return (level, color, gauge_percent, low_pct, high_pct)"""
         low_max, high_min, min_r, max_r, reverse = interpretations.get(key, (0.3, 0.7, 0, 1, False))
         
-        # Calculate gauge percentage for value position
+        # Override scale if Full Scale requested
+        # For distribution_median/uniformity/flow_change, 1.0 is technically possible but rare.
+        # We will use 1.0 for most, but maybe 0.5 for flow/uniformity if 1.0 is impossible.
+        # Ideally, user wants 0-1 for "Absolute".
+        scale_max_display = str(max_r)
+        
+        if use_full_scale:
+            max_r = 1.0
+            scale_max_display = "1.0"
+            # Special cases where 1.0 is absurdly high? 
+            # Uniformity max is roughly 0.5 (if half 0 half 1). 
+            # sticking to 1.0 for consistency of "Full Scale".
+
         gauge_pct = min(100, max(0, ((value - min_r) / (max_r - min_r)) * 100))
         
-        # Calculate fixed threshold positions on the gauge
+        # Recalculate zone positions relative to the NEW max_r
         low_pct = ((low_max - min_r) / (max_r - min_r)) * 100
         high_pct = ((high_min - min_r) / (max_r - min_r)) * 100
         
-        # Determine level - Color scheme: Low=Green, Medium=Yellow, High=Red
-        if reverse:
-            # For entropy: low values = focused (good), high values = diffuse (bad)
-            if value <= low_max:
-                return ("Focused", "#22c55e", gauge_pct, low_pct, high_pct)  # Green
-            elif value >= high_min:
-                return ("Diffuse", "#ef4444", gauge_pct, low_pct, high_pct)  # Red
-            else:
-                return ("Moderate", "#f59e0b", gauge_pct, low_pct, high_pct)  # Yellow/Amber
-        else:
-            # Normal metrics: Low=Green, Medium=Yellow, High=Red
-            if value <= low_max:
-                return ("Low", "#22c55e", gauge_pct, low_pct, high_pct)  # Green
-            elif value >= high_min:
-                return ("High", "#ef4444", gauge_pct, low_pct, high_pct)  # Red
-            else:
-                return ("Medium", "#f59e0b", gauge_pct, low_pct, high_pct)  # Yellow/Amber
+        # Color logic (Unchanged)
+        if reverse: # Lower is better/focused
+            if value <= low_max: interp = ("Focused", "#22c55e")
+            elif value >= high_min: interp = ("Diffuse", "#ef4444")
+            else: interp = ("Moderate", "#f59e0b")
+        else: # Higher is "High"
+            if value <= low_max: interp = ("Low", "#22c55e") # Green=Low (often "Good" or just "Low")
+            elif value >= high_min: interp = ("High", "#ef4444")
+            else: interp = ("Medium", "#f59e0b")
+            
+        return interp[0], interp[1], gauge_pct, low_pct, high_pct, scale_max_display, max_r, min_r
 
-    # Build metrics with enhanced info - use normalized focus
-    # Format: (label, value, value_fmt, key, modal_name, scale_max_label)
+    # Metrics List
     metrics = [
-        ("Confidence (Max)", metrics_dict['confidence_max'], "{:.2f}", "confidence_max", "Confidence Max", "1.0", False),
-        ("Confidence (Avg)", metrics_dict['confidence_avg'], "{:.2f}", "confidence_avg", "Confidence Avg", "1.0", False),
-        ("Focus (Normalized)", focus_normalized, "{:.2f}", "focus_normalized", "Focus", "1.0", False),
-        ("Sparsity", metrics_dict['sparsity'], "{:.0%}", "sparsity", "Sparsity", "100%", False),
-        ("Distribution", metrics_dict['distribution_median'], "{:.3f}", "distribution_median", "Distribution", "0.05", False),
-        ("Uniformity", metrics_dict['uniformity'], "{:.3f}", "uniformity", "Uniformity", "0.2", False),
-        ("Balance", balance, "{:.2f}", "balance", "Balance", "1.0", False),
-        ("Flow Change", flow_change, "{:.2f}", "flow_change", "Flow Change", "∞", True),  # Global metric - always uses all layers
+        ("Confidence (Max)", current_metrics['confidence_max'], "{:.2f}", "confidence_max", "Confidence Max"),
+        ("Confidence (Avg)", current_metrics['confidence_avg'], "{:.2f}", "confidence_avg", "Confidence Avg"),
+        ("Focus (Normalized)", focus_normalized, "{:.2f}", "focus_normalized", "Focus"),
+        ("Sparsity", current_metrics['sparsity'], "{:.0%}", "sparsity", "Sparsity"),
+        ("Distribution", current_metrics['distribution_median'], "{:.3f}", "distribution_median", "Distribution"),
+        ("Uniformity", current_metrics['uniformity'], "{:.3f}", "uniformity", "Uniformity"),
+        ("Balance", balance, "{:.2f}", "balance", "Balance"),
+        ("Flow Change", flow_change, "{:.2f}", "flow_change", "Flow Change"),
     ]
 
     cards_html = '<div class="metrics-grid">'
-    for idx, (label, raw_value, fmt, key, modal_name, scale_max, is_global) in enumerate(metrics):
+    for label, raw_value, fmt, key, modal_name in metrics:
         value_str = fmt.format(raw_value)
-        interp_label, interp_color, gauge_pct, low_pct, high_pct = get_interpretation(key, raw_value)
+        label_text, color, gauge_pct, low_pct, high_pct, scale_lbl, max_r, min_r = get_interpretation(key, raw_value)
         
-        # Fixed scale gauge: Low zone | Medium zone | High zone
-        # Zone colors: Green (Low) | Yellow (Medium) | Red (High)
-        zone1_color = "#22c55e"  # Green (Low)
-        zone2_color = "#f59e0b"  # Yellow/Amber (Medium)
-        zone3_color = "#ef4444"  # Red (High)
+        # Context Info Generation
+        context_html = ""
+        context_marker = ""
+        baseline_marker = ""
         
-        # Add global indicator for metrics that always use all layers
-        global_indicator = ''
-        if is_global:
-            global_indicator = '''
-                <span class="global-info-icon info-tooltip-icon" 
-                      onmouseenter="showGlobalMetricInfo(this);"
-                      onmouseleave="hideGlobalMetricInfo();"
-                      onclick="event.stopPropagation();"
-                      style="font-size: 8px; width: 14px; height: 14px; line-height: 14px; margin-left: 4px; vertical-align: middle; font-family: 'PT Serif', serif;">i</span>
+        # 1. Baseline Marker Computation
+        b_val = None
+        if baseline_stats:
+            if key == "flow_change":
+                # Global metric lookup
+                b_val = baseline_stats.get("global", {}).get("flow_change")
+            elif layer_idx is not None and head_idx is not None:
+                # Head metric lookup
+                b_key = (layer_idx, head_idx)
+                if b_key in baseline_stats:
+                    b_val = baseline_stats[b_key].get(key)
+            
+            if b_val is not None:
+                # Calculate position for baseline
+                b_pct = min(100, max(0, ((b_val - min_r) / (max_r - min_r)) * 100))
+                baseline_marker = f'<div class="gauge-marker-baseline" style="left: {b_pct}%;" title="Global Baseline: {fmt.format(b_val)}"></div>'
+
+        # 2. Context HTML Generation
+        ref_html = ""
+        if b_val is not None:
+             ref_html = f'<div title="Average value from baseline sentences (Global Reference)" style="color:#8b5cf6;">Ref: <b>{fmt.format(b_val)}</b></div>'
+
+        if key in context_stats and context_stats[key]["is_available"]:
+            stats = context_stats[key]
+            pctile = stats["percentile"]
+            avg = stats["avg"]
+            
+            # Add marker for avg
+            avg_pct = min(100, max(0, ((avg - min_r) / (max_r - min_r)) * 100))
+            context_marker = f'<div class="gauge-marker-avg" style="left: {avg_pct}%;" title="Layer Avg: {fmt.format(avg)}"></div>'
+            
+            # Use grid for alignment: Rank | Avg | Ref
+            context_html = f'''
+            <div class="metric-context" style="display:flex; flex-direction:column; gap:2px; margin-top:4px;">
+                <div style="display:flex; justify-content:space-between; width:100%;">
+                    <span title="Percentile within this layer">Rank: <b>{pctile:.0f}%</b></span>
+                    <span title="Average value for all heads in this layer">Avg: <b>{fmt.format(avg)}</b></span>
+                </div>
+                {ref_html}
+            </div>
             '''
-        
+        elif key == "flow_change":
+             # Global metric - just show Ref if available
+             if ref_html:
+                 context_html = f'<div class="metric-context" style="margin-top:4px;">{ref_html}</div>'
+             else:
+                 context_html = '<div class="metric-context"><span style="color:#9ca3af; font-style:italic;">Global Metric</span></div>'
+
+        # Zones
+        zone1_color, zone2_color, zone3_color = "#22c55e", "#f59e0b", "#ef4444"
+
         cards_html += f'''
-            <div class="metric-card"
-                 data-metric-name="{modal_name}"
-                 onclick="showMetricModal('{modal_name}', 'Global', 'Avg')">
-                <div class="metric-label">{label}{global_indicator}</div>
-                <div class="metric-value">{value_str}</div>
+            <div class="metric-card" onclick="showMetricModal('{modal_name}', 'Global', 'Avg')">
+                <div class="metric-header-row">
+                    <div class="metric-label">{label}</div>
+                    <div class="metric-badge" style="background: {color}20; color: {color};">{label_text}</div>
+                </div>
+                
+                <div class="metric-value-row">
+                    <div class="metric-value">{value_str}</div>
+                    {context_html}
+                </div>
+
                 <div class="metric-gauge-wrapper">
                     <span class="gauge-scale-label">0</span>
                     <div class="metric-gauge-fixed">
                         <div class="gauge-zone" style="width: {low_pct}%; background: {zone1_color}30;"></div>
                         <div class="gauge-zone" style="width: {high_pct - low_pct}%; background: {zone2_color}30;"></div>
                         <div class="gauge-zone" style="width: {100 - high_pct}%; background: {zone3_color}30;"></div>
-                        <div class="gauge-marker" style="left: {gauge_pct}%; background: {interp_color};"></div>
+                        {context_marker}
+                        {baseline_marker}
+                        <div class="gauge-marker" style="left: {gauge_pct}%; background: {color}; z-index:2;"></div>
                     </div>
-                    <span class="gauge-scale-label">{scale_max}</span>
-                </div>
-                <div class="metric-badge-container">
-                    <div class="metric-badge" style="background: {interp_color}20; color: {interp_color};">{interp_label}</div>
+                    <span class="gauge-scale-label">{scale_lbl}</span>
                 </div>
             </div>
         '''
@@ -1511,16 +1759,26 @@ def get_metrics_display(res, layer_idx=None, head_idx=None):
     return ui.HTML(cards_html)
 
 
-def get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth):
-    """Generate JSON tree data for D3.js visualization."""
+def get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth, norm_mode="raw"):
+    """
+    Generate JSON tree data for D3.js visualization.
+
+    Args:
+        res: Result tuple from model computation
+        layer_idx: Layer index
+        head_idx: Head index
+        root_idx: Root token index for the tree
+        top_k: Number of top children to show per node
+        max_depth: Maximum depth of the tree
+        norm_mode: Normalization mode ("raw", "col", "rollout")
+    """
     tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
     if attentions is None or len(attentions) == 0:
         return None
 
-    # Get attention matrix for selected layer and head
-    att = attentions[layer_idx][0, head_idx].cpu().numpy()
+    # Get raw attention matrix for selected layer and head
+    raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
 
-    # Get Q and K for computing dot products
     # Get Q and K for computing dot products
     layer_block = get_layer_block(encoder_model, layer_idx)
     hs_in = hidden_states[layer_idx]
@@ -1529,10 +1787,39 @@ def get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth
 
     if hasattr(layer_block, "attention"): # BERT
         num_heads = layer_block.attention.self.num_attention_heads
+        is_causal = False
     else: # GPT-2
         num_heads = layer_block.attn.num_heads
+        is_causal = True
 
     d_k = Q.shape[-1] // num_heads
+
+    # Apply normalization based on mode
+    if norm_mode == "col":
+        # Column normalization
+        col_sums = raw_att.sum(axis=0, keepdims=True)
+        att = raw_att / (col_sums + 1e-8)
+    elif norm_mode == "rollout":
+        # Attention rollout
+        att_per_layer = []
+        for l_idx in range(layer_idx + 1):
+            layer_att = attentions[l_idx][0].cpu().numpy()
+            layer_att_avg = np.mean(layer_att, axis=0)
+            att_per_layer.append(layer_att_avg)
+
+        seq_len = att_per_layer[0].shape[0]
+        rollout = np.eye(seq_len)
+
+        for l_idx in range(layer_idx + 1):
+            attention = att_per_layer[l_idx]
+            attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
+            row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
+            attention_with_residual = attention_with_residual / (row_sums + 1e-8)
+            rollout = np.matmul(attention_with_residual, rollout)
+
+        att = rollout
+    else:
+        att = raw_att
 
     # Compute the tree structure with proper JSON format
     tree = compute_influence_tree(att, tokens, Q, K, d_k, root_idx, top_k, max_depth)
