@@ -23,7 +23,9 @@ from ..utils import positional_encoding, array_to_base64_img, compute_influence_
 from ..metrics import compute_all_attention_metrics
 from ..head_specialization import compute_all_heads_specialization
 from ..isa import compute_isa
+from ..isa import compute_isa
 from ..isa import get_sentence_token_attention
+from .baselines import compute_baselines
 
 import traceback
 
@@ -54,6 +56,10 @@ def server(input, output, session):
     isa_selected_pair = reactive.Value(None)
     isa_selected_pair_B = reactive.Value(None) # For comparison
     
+    # Baseline Logic
+    baseline_stats = reactive.Value(None)
+    current_baseline_model = reactive.Value(None)
+
     # --- History Logic ---
     input_history = reactive.Value([])
 
@@ -138,6 +144,35 @@ def server(input, output, session):
 
     # Prompt Wizard Step State: 'A' or 'B' or 'DONE'
     prompt_entry_step = reactive.Value("A")
+
+    # Update Baselines when model changes
+    @reactive.Effect
+    def update_baselines():
+        res = cached_result.get()
+        if not res: return
+        
+        # Unpack needed items
+        # (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, ...)
+        tokenizer = res[6]
+        model = res[7]
+        
+        try: model_name = input.model_name()
+        except: model_name = "unknown"
+        
+        # Check if we need to recompute (new model or first run)
+        if current_baseline_model.get() != model_name:
+            is_gpt2 = not hasattr(model, "encoder")
+            try:
+                # Run computation in a way that doesn't block if possible, 
+                # but these are small baselines so synchronous is okay-ish for now.
+                # Ideally this should be threaded if long.
+                stats = compute_baselines(model, tokenizer, is_gpt2)
+                baseline_stats.set(stats)
+                current_baseline_model.set(model_name)
+                print(f"DEBUG: Baselines updated for {model_name}")
+            except Exception as e:
+                print(f"ERROR computing baselines: {e}")
+                traceback.print_exc()
 
     # Mutual Exclusivity for Compare Modes
     @reactive.Effect
@@ -426,12 +461,135 @@ def server(input, output, session):
     
     # Reactive value to track if global metrics should use all layers/heads
     global_metrics_mode = reactive.Value("specific")  # "all" or "specific"
-    
+
+    # Reactive value for attention normalization mode
+    global_norm_mode = reactive.Value("raw")  # "raw" | "col" | "rollout"
+
+    # Reactive value for rollout layers mode ("current" = 0→selected layer, "all" = all layers)
+    global_rollout_layers = reactive.Value("current")
+
     # Reset to specific when sliders change
     @reactive.Effect
     @reactive.event(input.global_layer, input.global_head)
     def reset_metrics_mode():
         global_metrics_mode.set("specific")
+
+    # Update norm mode when radio button changes
+    @reactive.Effect
+    @reactive.event(input.global_norm)
+    def update_norm_mode():
+        try:
+            mode = input.global_norm()
+            if mode in ["raw", "col", "rollout"]:
+                global_norm_mode.set(mode)
+        except:
+            pass
+
+    # Update rollout layers mode when dropdown changes
+    @reactive.Effect
+    @reactive.event(input.global_rollout_layers)
+    def update_rollout_layers():
+        try:
+            mode = input.global_rollout_layers()
+            if mode in ["current", "all"]:
+                global_rollout_layers.set(mode)
+        except:
+            pass
+
+    # -------------------------------------------------------------------------
+    # ATTENTION NORMALIZATION HELPERS
+    # -------------------------------------------------------------------------
+    def attention_rollout(attentions, current_layer):
+        """
+        Compute attention rollout up to the specified layer.
+
+        Attention rollout propagates attention through all layers accounting
+        for residual connections, showing how information flows from input
+        to the current layer.
+
+        Args:
+            attentions: tuple of attention tensors, one per layer
+                        Each has shape (batch, num_heads, seq_len, seq_len)
+            current_layer: int, compute rollout up to this layer (inclusive)
+
+        Returns:
+            numpy array of shape (seq_len, seq_len) with accumulated attention
+        """
+        # Average across heads for each layer
+        att_per_layer = []
+        for layer_idx in range(current_layer + 1):
+            # Shape: (num_heads, seq_len, seq_len) -> (seq_len, seq_len)
+            att_layer = attentions[layer_idx][0].cpu().numpy()
+            att_avg = np.mean(att_layer, axis=0)
+            att_per_layer.append(att_avg)
+
+        seq_len = att_per_layer[0].shape[0]
+        rollout = np.eye(seq_len)
+
+        for layer_idx in range(current_layer + 1):
+            attention = att_per_layer[layer_idx]
+            # Add residual connection (0.5 * attention + 0.5 * identity)
+            attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
+            # Re-normalize rows to sum to 1
+            row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
+            attention_with_residual = attention_with_residual / (row_sums + 1e-8)
+            # Accumulate: rollout = attention_with_residual @ rollout
+            rollout = np.matmul(attention_with_residual, rollout)
+
+        return rollout
+
+    def get_normalized_attention(raw_attention, attentions, layer_idx, mode, is_causal=False, use_all_layers=False):
+        """
+        Apply normalization to attention weights based on the selected mode.
+
+        Args:
+            raw_attention: numpy array (seq_len, seq_len) - raw attention weights
+            attentions: tuple of all layer attentions (needed for rollout)
+            layer_idx: current layer index
+            mode: "raw" | "col" | "rollout"
+            is_causal: bool, whether to apply causal masking
+            use_all_layers: bool, for rollout mode - use all layers instead of up to current
+
+        Returns:
+            numpy array (seq_len, seq_len) with normalized attention
+        """
+        if mode == "raw":
+            return raw_attention
+        elif mode == "col":
+            # Column normalization: normalize by key dimension (columns sum to 1)
+            # This shows "which tokens receive the most attention overall"
+            col_sums = raw_attention.sum(axis=0, keepdims=True)
+            # Add epsilon to avoid division by zero
+            normalized = raw_attention / (col_sums + 1e-8)
+            return normalized
+        elif mode == "rollout":
+            # Attention rollout: accumulated flow through layers
+            # Use all layers or up to the current layer
+            target_layer = len(attentions) - 1 if use_all_layers else layer_idx
+            rollout = attention_rollout(attentions, target_layer)
+            # Apply causal masking if needed
+            if is_causal:
+                rollout = rollout.copy()
+                rollout[np.triu_indices_from(rollout, k=1)] = np.nan
+            return rollout
+        else:
+            return raw_attention
+
+    def get_norm_mode_label(mode, layer_idx=None, use_all_layers=False, total_layers=None):
+        """Get dynamic label for the current normalization mode."""
+        if mode == "raw":
+            return "Attention Weights (query perspective)"
+        elif mode == "col":
+            return "Attention Weights (key perspective - who receives attention)"
+        elif mode == "rollout":
+            if use_all_layers and total_layers is not None:
+                layer_str = f"0→{total_layers - 1}"
+            elif layer_idx is not None:
+                layer_str = f"0→{layer_idx}"
+            else:
+                layer_str = "all"
+            return f"Accumulated Attention Flow (layers {layer_str})"
+        return "Attention Weights"
 
     # -------------------------------------------------------------------------
     # FLOATING CONTROL BAR RENDERER
@@ -609,15 +767,50 @@ def server(input, output, session):
                     this.classList.toggle('active');
                 }});
              }}
+
+             // Scale Toggle
+             const scaleToggle = document.getElementById('scale-toggle');
+             if (scaleToggle) {{
+                 scaleToggle.onclick = function() {{
+                     this.classList.toggle('active');
+                     const isFull = this.classList.contains('active');
+                     Shiny.setInputValue('global_scale_full', isFull, {{priority: 'event'}});
+                 }};
+             }}
              
-             // Norm Radio
+             // Norm Radio with Rollout layers visibility
             const radioGroup = document.getElementById('norm-radio-group');
+            const rolloutControl = document.getElementById('rollout-layers-control');
+            const rolloutLayersGroup = document.getElementById('rollout-layers-group');
+
             if (radioGroup) {{
                 radioGroup.querySelectorAll('.radio-option').forEach(btn => {{
                     btn.onclick = function() {{
                         radioGroup.querySelectorAll('.radio-option').forEach(b => b.classList.remove('active'));
                         this.classList.add('active');
-                        Shiny.setInputValue('global_norm', this.getAttribute('data-value'), {{priority: 'event'}});
+                        const normValue = this.getAttribute('data-value');
+                        Shiny.setInputValue('global_norm', normValue, {{priority: 'event'}});
+
+                        // Show/hide rollout layers control
+                        if (rolloutControl) {{
+                            if (normValue === 'rollout') {{
+                                rolloutControl.classList.add('visible');
+                            }} else {{
+                                rolloutControl.classList.remove('visible');
+                            }}
+                        }}
+                    }};
+                }});
+            }}
+
+            // Rollout layers radio buttons
+            if (rolloutLayersGroup) {{
+                rolloutLayersGroup.querySelectorAll('.radio-option').forEach(btn => {{
+                    btn.onclick = function() {{
+                        rolloutLayersGroup.querySelectorAll('.radio-option').forEach(b => b.classList.remove('active'));
+                        this.classList.add('active');
+                        const layersValue = this.getAttribute('data-value');
+                        Shiny.setInputValue('global_rollout_layers', layersValue, {{priority: 'event'}});
                     }};
                 }});
             }}
@@ -703,16 +896,39 @@ def server(input, output, session):
                 
                 # Divider
                 ui.div({"class": "control-divider"}),
-
-                # Norm
+                
+                # Scale Toggle
                 ui.div(
                     {"class": "control-group"},
+                    ui.span("Scale", class_="control-label"),
+                    ui.div(
+                        {"class": "btn-global", "id": "scale-toggle", "style": "width: 40px; cursor: pointer; position: relative;", "title": "Toggle between Optimized Scale (green) and Full 0-1 Scale (grey)"},
+                        ui.span("Full", style="font-size: 8px;")
+                    )
+                ),
+
+
+                
+                # Norm (horizontal layout: label left, buttons right)
+                ui.div(
+                    {"class": "control-group norm-control-group"},
                     ui.span("Norm", class_="control-label"),
                     ui.div(
-                        {"class": "radio-group", "id": "norm-radio-group"},
-                        ui.span("Raw", class_="radio-option active", **{"data-value": "raw"}),
-                        ui.span("Row", class_="radio-option", **{"data-value": "row"}),
-                        ui.span("Rollout", class_="radio-option", **{"data-value": "rollout"}),
+                        {"class": "norm-control-wrapper"},
+                        ui.div(
+                            {"class": "radio-group", "id": "norm-radio-group"},
+                            ui.span("Raw", class_="radio-option active", title="Direct attention from softmax. Each query (row) distributes 100% of its attention.", **{"data-value": "raw"}),
+                            ui.span("Col", class_="radio-option", title="Normalized by keys (columns). Shows which tokens are most attended to overall.", **{"data-value": "col"}),
+                            ui.span("Rollout", class_="radio-option", title="Accumulated attention flow through all layers up to current, accounting for residual connections.", **{"data-value": "rollout"}),
+                        ),
+                        ui.div(
+                            {"class": "rollout-layers-control", "id": "rollout-layers-control"},
+                            ui.div(
+                                {"class": "radio-group", "id": "rollout-layers-group"},
+                                ui.span("0→L", class_="radio-option active", title="Rollout from layer 0 to the currently selected layer", **{"data-value": "current"}),
+                                ui.span("All", class_="radio-option", title="Rollout across all layers (0 to max layer)", **{"data-value": "all"}),
+                            )
+                        )
                     )
                 ),
                 
@@ -1086,11 +1302,14 @@ def server(input, output, session):
         try: top_k = int(input.global_topk())
         except: top_k = 3
 
+        # Get normalization mode for the alignment view
+        norm_mode = global_norm_mode.get()
+
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Q/K/V Projections"),
             ui.p("Query, Key, Value projections with magnitude, alignment, and directional analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-            get_qkv_table(res, layer_idx, top_k=top_k)
+            get_qkv_table(res, layer_idx, top_k=top_k, norm_mode=norm_mode)
         )
 
     @output
@@ -1118,7 +1337,7 @@ def server(input, output, session):
                 pass
         
         focus_indices = selected_indices if selected_indices else [0]
-        
+
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
@@ -1126,11 +1345,14 @@ def server(input, output, session):
         try: top_k = int(input.global_topk())
         except: top_k = 3
 
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Scaled Dot-Product Attention"),
             ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k)
+            get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k, norm_mode=norm_mode)
         )
 
     @output
@@ -1296,17 +1518,20 @@ def server(input, output, session):
         try: root_idx = int(input.global_focus_token())
         except: root_idx = 0
         if root_idx == -1: root_idx = 0
-        
+
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
 
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
             ui.h4("Attention Dependency Tree"),
             ui.p("Visualizes the hierarchical influence of tokens on the selected focus token.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_influence_tree_ui(res, root_idx, layer_idx, head_idx)
+            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, norm_mode=norm_mode)
         )
 
     @output
@@ -1329,14 +1554,44 @@ def server(input, output, session):
             except: head_idx = 0
             subtitle = f"Layer {layer_idx} · Head {head_idx}"
         
+        # Get Scale
+        try: use_full_scale = input.global_scale_full()
+        except: use_full_scale = False
+
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+
         return ui.div(
-            {"class": "card"}, 
+            {"class": "card"},
             ui.div(
-                {"style": "display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;"},
-                ui.h4("Global Attention Metrics", style="margin: 0;"),
+                {"style": "display: flex; align-items: center; gap: 8px; margin-bottom: 12px;"},
+                ui.h4("Attention Metrics", style="margin: 0;"),
+                ui.div(
+                    {"class": "info-tooltip-wrapper"},
+                    ui.span({"class": "info-tooltip-icon"}, "i"),
+                    ui.div(
+                        {"class": "info-tooltip-content"},
+                        ui.HTML("""
+                            <strong style='color:#3b82f6;font-size:13px;display:block;margin-bottom:8px'>Attention Metrics</strong>
+                            
+                            <p style='margin:0 0 10px 0'>Evaluates the properties of the attention mechanism for the selected layer/head.</p>
+                            
+                            <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-bottom:8px'>
+                                <strong style='color:#60a5fa;font-size:11px'>Context Indicators:</strong>
+                                <ul style='margin:6px 0 0 0;padding-left:14px;font-size:10px'>
+                                    <li><b>Layer Rank:</b> Percentile of this head's value compared to all other heads in the same layer.</li>
+                                    <li><b>Avg:</b> The average value for this metric across all heads in this layer.</li>
+                                    <li><b>Ref:</b> Average value computed from a baseline set of 10 neutral sentences.</li>
+                                </ul>
+                            </div>
+
+                            <p style='margin:0 0 10px 0'><strong style='color:#60a5fa'>Scale Toggle:</strong> Switch between "Optimized" (zoomed to data range) and "Full" (0-1) scales for absolute comparison.</p>
+                        """)
+                    )
+                ),
                 ui.span(subtitle, style="font-size: 11px; color: #94a3b8; font-weight: 500;")
             ),
-            get_metrics_display(res, layer_idx=layer_idx, head_idx=head_idx)
+            get_metrics_display(res, layer_idx=layer_idx, head_idx=head_idx, use_full_scale=use_full_scale, baseline_stats=baseline_stats.get(), norm_mode=norm_mode)
         )
 
     def dashboard_layout_helper(is_gpt2, num_layers, num_heads, clean_tokens, suffix=""):
@@ -2962,49 +3217,58 @@ def server(input, output, session):
         if not res: return None
         tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
         if attentions is None or len(attentions) == 0: return None
-        
+
         # Check if we're in global mode
         use_global = global_metrics_mode.get() == "all"
-        
+
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
-        
-        # Get attention matrix - either specific layer/head or averaged across all
-        if use_global:
-            # Average attention across all layers and all heads
-            att_layers = [layer[0].cpu().numpy() for layer in attentions]
-            att = np.mean(att_layers, axis=(0, 1))
-        else:
-            att = attentions[layer_idx][0, head_idx].cpu().numpy()
-        
+
         layer_block = get_layer_block(encoder_model, layer_idx)
-        
+
         if hasattr(layer_block, "attention"): # BERT
             num_heads = layer_block.attention.self.num_attention_heads
             num_layers = len(encoder_model.encoder.layer)
+            is_causal = False
         else: # GPT-2
             num_heads = layer_block.attn.num_heads
             num_layers = len(encoder_model.h)
-            
+            is_causal = True
+
+        # Get rollout layers setting
+        use_all_layers = global_rollout_layers.get() == "all"
+
+        # Get raw attention matrix - either specific layer/head or averaged across all
+        if use_global:
+            # Average attention across all layers and all heads
+            att_layers = [layer[0].cpu().numpy() for layer in attentions]
+            raw_att = np.mean(att_layers, axis=(0, 1))
+        else:
+            raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+
+        # Apply normalization based on mode
+        att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=is_causal, use_all_layers=use_all_layers)
+
         hs_in = hidden_states[layer_idx]
-        
+
         Q, K, V = extract_qkv(layer_block, hs_in)
-        
+
         L = len(tokens)
-        
-        # Determine if causal
-        if hasattr(layer_block, "attention"): # BERT
-             is_causal = False
-             causal_desc = ""
-        else: # GPT-2
-             is_causal = True
-             # Mask upper triangle (future tokens)
-             # Use NaN to make them transparent/hidden in Plotly
-             att = att.copy() # Ensure writable
-             att[np.triu_indices_from(att, k=1)] = np.nan
-             causal_desc = " <span style='color:#ef4444;font-weight:bold;'>(Causal Mask Applied)</span>"
+
+        # Handle causal masking for non-rollout modes
+        causal_desc = ""
+        if is_causal and norm_mode != "rollout":
+            # Mask upper triangle (future tokens) - rollout already handles this
+            att = att.copy()
+            att[np.triu_indices_from(att, k=1)] = np.nan
+            causal_desc = " <span style='color:#ef4444;font-weight:bold;'>(Causal Mask Applied)</span>"
+        elif is_causal and norm_mode == "rollout":
+            causal_desc = " <span style='color:#ef4444;font-weight:bold;'>(Causal Mask Applied)</span>"
 
         d_k = Q.shape[-1] // num_heads
         custom = np.empty((L, L, 5), dtype=object)
@@ -3153,11 +3417,19 @@ def server(input, output, session):
                     layer="above"
                  )
 
-        # Dynamic title based on mode
+        # Dynamic title based on mode and normalization
+        norm_label = get_norm_mode_label(norm_mode, layer_idx, use_all_layers=use_all_layers, total_layers=num_layers)
         if use_global:
-            title_text = "Attention Heatmap — Averaged (All Layers · Heads)"
+            title_text = f"Attention Heatmap — Averaged (All Layers · Heads)"
         else:
             title_text = f"Attention Heatmap — Layer {layer_idx}, Head {head_idx}"
+
+        # Add normalization indicator to title
+        if norm_mode == "col":
+            title_text += " · <span style='color:#8b5cf6'>Column-normalized</span>"
+        elif norm_mode == "rollout":
+            rollout_end = num_layers - 1 if use_all_layers else layer_idx
+            title_text += f" · <span style='color:#06b6d4'>Rollout (0→{rollout_end})</span>"
         
         fig.update_layout(
             xaxis_title="Key (attending to)", 
@@ -3226,7 +3498,13 @@ def server(input, output, session):
                     )
                 ),
             ),
-            ui.div({"class": "viz-description", "style": "margin-top: 20px; flex-shrink: 0;"}, ui.HTML(f"Displays how much each token attends to every other token. Brighter cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence.{causal_desc}")),
+            ui.div({"class": "viz-description", "style": "margin-top: 20px; flex-shrink: 0;"}, ui.HTML(
+                f"<strong style='color:#64748b'>{norm_label}</strong><br>" +
+                ("Displays how much each token attends to every other token (rows sum to 1)." if norm_mode == "raw" else
+                 "Normalized by columns: shows which tokens receive the most attention overall (columns sum to 1)." if norm_mode == "col" else
+                 f"Accumulated attention flow from input through layers 0→{layer_idx}, accounting for residual connections.") +
+                f" Brighter cells indicate stronger weights. ⚠️ Note that high attention ≠ importance or influence.{causal_desc}"
+            )),
             ui.div(
                 {"style": "flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_map_plot"))
@@ -3267,17 +3545,33 @@ def server(input, output, session):
     def attention_flow():
         res = get_active_result()
         if not res: return None
-        tokens, _, _, attentions, *_ = res
+        tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
         if attentions is None or len(attentions) == 0: return None
-        
+
         # Check if we're in global mode
         use_global = global_metrics_mode.get() == "all"
-        
+
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
-        
+
+        # Determine if causal (GPT-2)
+        layer_block = get_layer_block(encoder_model, layer_idx)
+        is_causal = not hasattr(layer_block, "attention")
+
+        # Get number of layers for rollout
+        if is_causal:
+            num_layers = len(encoder_model.h)
+        else:
+            num_layers = len(encoder_model.encoder.layer)
+
+        # Get rollout layers setting
+        use_all_layers = global_rollout_layers.get() == "all"
+
         # Use global_selected_tokens for span support
         selected_indices = []
         try:
@@ -3286,7 +3580,7 @@ def server(input, output, session):
                 selected_indices = json.loads(val)
         except:
             pass
-            
+
         # Fallback
         if not selected_indices:
             try:
@@ -3295,18 +3589,22 @@ def server(input, output, session):
                     selected_indices = [global_token]
             except:
                 pass
-        
+
         focus_indices = selected_indices if selected_indices else None # None means show all
 
         clean_tokens = tokens_data()
-        
-        # Get attention matrix - either specific layer/head or averaged across all
+
+        # Get raw attention matrix - either specific layer/head or averaged across all
         if use_global:
             # Average attention across all layers and all heads
             att_layers = [layer[0].cpu().numpy() for layer in attentions]
-            att = np.mean(att_layers, axis=(0, 1))
+            raw_att = np.mean(att_layers, axis=(0, 1))
         else:
-            att = attentions[layer_idx][0, head_idx].cpu().numpy()
+            raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+
+        # Apply normalization based on mode
+        att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=False, use_all_layers=use_all_layers)
+        # Note: We don't apply causal masking here as flow visualization handles it differently
         n_tokens = len(tokens)
         color_palette = ['#ff5ca9', '#3b82f6', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e', '#a855f7', '#0ea5e9']
 
@@ -3369,14 +3667,21 @@ def server(input, output, session):
                     
                     fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color=line_color, width=line_width), opacity=line_opacity, showlegend=False, hoverinfo='text' if is_line_focused else 'skip', hovertext=f"<b>{cleaned_token_i} to {cleaned_token_j}</b><br>Attention: {weight:.4f}"))
 
+        # Build title with normalization indicator
         title_text = ""
+        if norm_mode == "col":
+            title_text = "<span style='color:#8b5cf6'>Column-normalized</span>"
+        elif norm_mode == "rollout":
+            rollout_end = num_layers - 1 if use_all_layers else layer_idx
+            title_text = f"<span style='color:#06b6d4'>Rollout (0→{rollout_end})</span>"
+
         if focus_indices:
             token_spans = []
             for idx in focus_indices:
                 focus_color = color_palette[idx % len(color_palette)]
                 cleaned = tokens[idx].replace("##", "").replace("Ġ", "")
                 token_spans.append(f"<span style='color:{focus_color}'>{cleaned}</span>")
-            
+
             title_text += f" · <b>Focused: {', '.join(token_spans)}</b>"
 
         fig.update_layout(
@@ -3436,7 +3741,10 @@ def server(input, output, session):
                     )
                 )
             ),
-            ui.div({"class": "viz-description"}, "Traces attention weight patterns between tokens. Thicker lines indicate stronger attention. ⚠️ This shows weight distribution, not actual information flow through the network."),
+            ui.div({"class": "viz-description"}, ui.HTML(
+                f"<strong style='color:#64748b'>{get_norm_mode_label(norm_mode, layer_idx, use_all_layers=use_all_layers, total_layers=num_layers)}</strong><br>" +
+                "Traces attention weight patterns between tokens. Thicker lines indicate stronger attention. ⚠️ This shows weight distribution, not actual information flow through the network."
+            )),
             ui.div(
                 {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_flow_plot"))
@@ -3913,23 +4221,23 @@ def server(input, output, session):
 
 
     # This function replaces the previous @output @render.ui def influence_tree():
-    def get_influence_tree_ui(res, root_idx=0, layer_idx=0, head_idx=0, suffix="", use_global=False, max_depth=3, top_k=3):
+    def get_influence_tree_ui(res, root_idx=0, layer_idx=0, head_idx=0, suffix="", use_global=False, max_depth=3, top_k=3, norm_mode="raw"):
         if not res:
             return ui.HTML("""
                 <div style='padding: 20px; text-align: center;'>
                     <p style='font-size:11px;color:#9ca3af;'>Generate attention data to view the influence tree.</p>
                 </div>
             """)
-        
+
         tokens, _, _, attentions, *_ = res
         if attentions is None or len(attentions) == 0:
             return ui.HTML("<p style='font-size:11px;color:#6b7280;'>No attention data available.</p>")
-        
+
         # Ensure valid indices
         root_idx = max(0, min(root_idx, len(tokens) - 1))
-        
+
         try:
-            tree_data = get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth)
+            tree_data = get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth, norm_mode=norm_mode)
             
             if tree_data is None:
                 return ui.HTML("<p style='font-size:11px;color:#6b7280;'>Unable to generate tree.</p>")
@@ -4012,7 +4320,10 @@ def server(input, output, session):
             top_k_val = int(input.global_topk())
         except:
             top_k_val = 3
-            
+
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
             ui.div(
@@ -4056,7 +4367,7 @@ def server(input, output, session):
                     ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
                 )
             ),
-            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="", use_global=use_global, max_depth=top_k_val, top_k=top_k_val)
+            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="", use_global=use_global, max_depth=top_k_val, top_k=top_k_val, norm_mode=norm_mode)
         )
 
     # -------------------------------------------------------------------------
@@ -4126,6 +4437,9 @@ def server(input, output, session):
         try: top_k = int(input.global_topk())
         except: top_k = 3
 
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.div(
@@ -4133,7 +4447,7 @@ def server(input, output, session):
                 ui.h4("Q/K/V Projections")
             ),
             ui.p("Query, Key, Value projections with magnitude, alignment, and directional analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-            get_qkv_table(res, layer_idx, top_k=top_k, suffix="_B")
+            get_qkv_table(res, layer_idx, top_k=top_k, suffix="_B", norm_mode=norm_mode)
         )
 
     @output
@@ -4158,14 +4472,17 @@ def server(input, output, session):
              pass
         
         focus_indices = selected_indices if selected_indices else [0]
-        
+
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
         try: top_k = int(input.global_topk())
         except: top_k = 3
-        
+
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.div(
@@ -4173,7 +4490,7 @@ def server(input, output, session):
                 ui.h4("Scaled Dot-Product Attention")
             ),
             ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k)
+            get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k, norm_mode=norm_mode)
         )
 
     @output
@@ -4420,6 +4737,9 @@ def server(input, output, session):
         try: top_k = int(input.global_topk())
         except: top_k = 3
 
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens_B]
         choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
 
@@ -4466,7 +4786,7 @@ def server(input, output, session):
                     ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
                 )
             ),
-            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="_B", top_k=top_k, max_depth=top_k)
+            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="_B", top_k=top_k, max_depth=top_k, norm_mode=norm_mode)
         )
 
     @output
@@ -4490,14 +4810,44 @@ def server(input, output, session):
             except: head_idx = 0
             subtitle = f"Layer {layer_idx} · Head {head_idx}"
 
+        # Get Scale
+        try: use_full_scale = input.global_scale_full()
+        except: use_full_scale = False
+
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+
         return ui.div(
-            {"class": "card"}, 
+            {"class": "card"},
             ui.div(
-                {"style": "display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;"},
-                ui.h4("Global Attention Metrics", style="margin: 0;"),
+                {"style": "display: flex; align-items: center; gap: 8px; margin-bottom: 12px;"},
+                ui.h4("Attention Metrics", style="margin: 0;"),
+                ui.div(
+                    {"class": "info-tooltip-wrapper"},
+                    ui.span({"class": "info-tooltip-icon"}, "i"),
+                    ui.div(
+                        {"class": "info-tooltip-content"},
+                        ui.HTML("""
+                            <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Metrics</strong>
+
+                            <p style='margin:0 0 10px 0'>Evaluates the properties of the attention mechanism for the selected layer/head.</p>
+
+                            <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-bottom:8px'>
+                                <strong style='color:#f472b6;font-size:11px'>Context Indicators:</strong>
+                                <ul style='margin:6px 0 0 0;padding-left:14px;font-size:10px'>
+                                    <li><b>Layer Rank:</b> Percentile of this head's value compared to all other heads in the same layer.</li>
+                                    <li><b>Avg:</b> The average value for this metric across all heads in this layer.</li>
+                                    <li><b>Ref:</b> Average value computed from a baseline set of 10 neutral sentences.</li>
+                                </ul>
+                            </div>
+
+                            <p style='margin:0 0 10px 0'><strong style='color:#f472b6'>Scale Toggle:</strong> Switch between "Optimized" (zoomed to data range) and "Full" (0-1) scales for absolute comparison.</p>
+                        """)
+                    )
+                ),
                 ui.span(subtitle, style="font-size: 11px; color: #94a3b8; font-weight: 500;")
             ),
-            get_metrics_display(res, layer_idx=layer_idx, head_idx=head_idx)
+            get_metrics_display(res, layer_idx=layer_idx, head_idx=head_idx, use_full_scale=use_full_scale, baseline_stats=baseline_stats.get(), norm_mode=norm_mode)
         )
 
     @output
@@ -4506,20 +4856,45 @@ def server(input, output, session):
         res = get_active_result("_B")
         if not res:
             return None
-        tokens, _, _, attentions, _, _, _, encoder_model, *_ = res
+        tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
         if attentions is None or len(attentions) == 0:
             return None
+
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
-        
-        att = attentions[layer_idx][0, head_idx].cpu().numpy()
-        
+
+        layer_block = get_layer_block(encoder_model, layer_idx)
+        is_causal = not hasattr(layer_block, "attention")
+
+        # Get number of layers
+        if is_causal:
+            num_layers = len(encoder_model.h)
+        else:
+            num_layers = len(encoder_model.encoder.layer)
+
+        # Get rollout layers setting
+        use_all_layers = global_rollout_layers.get() == "all"
+
+        # Get raw attention
+        raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+
+        # Apply normalization
+        att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=is_causal, use_all_layers=use_all_layers)
+
+        # Apply causal masking for non-rollout modes
+        if is_causal and norm_mode != "rollout":
+            att = att.copy()
+            att[np.triu_indices_from(att, k=1)] = np.nan
+
         # Clean tokens for display in the heatmap
         # Add index suffix ONLY to duplicate tokens (Plotly merges duplicate labels otherwise)
         base_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
-        
+
         # Count occurrences of each token
         from collections import Counter
         token_counts = Counter(base_tokens)
@@ -4659,7 +5034,9 @@ def server(input, output, session):
                 title=dict(font=dict(size=11))
             ),
             title=dict(
-                text=f"Attention Heatmap — Layer {layer_idx}, Head {head_idx}",
+                text=f"Attention Heatmap — Layer {layer_idx}, Head {head_idx}" +
+                     (" · <span style='color:#8b5cf6'>Column-normalized</span>" if norm_mode == "col" else
+                      f" · <span style='color:#06b6d4'>Rollout (0→{num_layers - 1 if use_all_layers else layer_idx})</span>" if norm_mode == "rollout" else ""),
                 x=0.5,
                 y=0.98,
                 xanchor='center',
@@ -4667,7 +5044,10 @@ def server(input, output, session):
                 font=dict(size=14, color="#334155")
             )
         )
-        
+
+        # Get normalization label
+        norm_label = get_norm_mode_label(norm_mode, layer_idx, use_all_layers=use_all_layers, total_layers=num_layers)
+
         return ui.div(
             {"class": "card", "style": "height: 100%; display: flex; flex-direction: column;"},
             ui.div(
@@ -4704,7 +5084,13 @@ def server(input, output, session):
                     )
                 ),
             ),
-            ui.div({"class": "viz-description", "style": "margin-top: 20px; flex-shrink: 0;"}, "Displays how much each token attends to every other token. Darker cells indicate stronger attention weights. ⚠️ Note that high attention ≠ importance or influence."),
+            ui.div({"class": "viz-description", "style": "margin-top: 20px; flex-shrink: 0;"}, ui.HTML(
+                f"<strong style='color:#64748b'>{norm_label}</strong><br>" +
+                ("Displays how much each token attends to every other token (rows sum to 1)." if norm_mode == "raw" else
+                 "Normalized by columns: shows which tokens receive the most attention overall (columns sum to 1)." if norm_mode == "col" else
+                 f"Accumulated attention flow from input through layers 0→{layer_idx}, accounting for residual connections.") +
+                " Darker cells indicate stronger weights. ⚠️ Note that high attention ≠ importance or influence."
+            )),
             ui.div(
                 {"style": "flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%; height: 500px;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_heatmap_B")),
@@ -4736,14 +5122,31 @@ def server(input, output, session):
         res = get_active_result("_B")
         if not res:
             return None
-        tokens, _, _, attentions, *_ = res
+        tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
         if attentions is None or len(attentions) == 0:
             return None
+
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
 
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
+
+        # Determine if causal
+        layer_block = get_layer_block(encoder_model, layer_idx)
+        is_causal = not hasattr(layer_block, "attention")
+
+        # Get number of layers
+        if is_causal:
+            num_layers = len(encoder_model.h)
+        else:
+            num_layers = len(encoder_model.encoder.layer)
+
+        # Get rollout layers setting
+        use_all_layers = global_rollout_layers.get() == "all"
+
         # Use global_selected_tokens_B for span support
         selected_indices = []
         try:
@@ -4752,7 +5155,7 @@ def server(input, output, session):
                 selected_indices = json.loads(val)
         except:
             pass
-            
+
         # Fallback
         if not selected_indices:
             try:
@@ -4761,16 +5164,18 @@ def server(input, output, session):
                     selected_indices = [global_token]
             except:
                 pass
-        
+
         # Safety: Filter indices to be within bounds of current tokens (crucial for Compare Prompts)
         if selected_indices:
             selected_indices = [idx for idx in selected_indices if idx < len(tokens)]
-        
+
         focus_indices = selected_indices if selected_indices else None # None means show all
 
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
-        
-        att = attentions[layer_idx][0, head_idx].cpu().numpy()
+
+        # Get raw attention and apply normalization
+        raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+        att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=False, use_all_layers=use_all_layers)
         n_tokens = len(tokens)
         color_palette = ['#ff5ca9', '#3b82f6', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e', '#a855f7', '#0ea5e9']
 
@@ -4818,14 +5223,21 @@ def server(input, output, session):
                     
                     fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color=line_color, width=line_width), opacity=line_opacity, showlegend=False, hoverinfo='text' if is_line_focused else 'skip', hovertext=f"<b>{cleaned_token_i} to {cleaned_token_j}</b><br>Attention: {weight:.4f}"))
 
+        # Build title with normalization indicator
+        rollout_end = num_layers - 1 if use_all_layers else layer_idx
         title_text = ""
+        if norm_mode == "col":
+            title_text = "<span style='color:#8b5cf6'>Column-normalized</span>"
+        elif norm_mode == "rollout":
+            title_text = f"<span style='color:#06b6d4'>Rollout (0→{rollout_end})</span>"
+
         if focus_indices:
             token_spans = []
             for idx in focus_indices:
                 focus_color = color_palette[idx % len(color_palette)]
                 cleaned = tokens[idx].replace("##", "").replace("Ġ", "")
                 token_spans.append(f"<span style='color:{focus_color}'>{cleaned}</span>")
-            
+
             title_text += f" · <b>Focused: {', '.join(token_spans)}</b>"
 
         fig.update_layout(
@@ -4893,7 +5305,10 @@ def server(input, output, session):
                     )
                 )
             ),
-            ui.div({"class": "viz-description", "style": "margin-top: -5px;"}, "Traces attention weight patterns between tokens. Thicker lines indicate stronger attention. ⚠️ This shows weight distribution, not actual information flow through the network."),
+            ui.div({"class": "viz-description", "style": "margin-top: -5px;"}, ui.HTML(
+                f"<strong style='color:#64748b'>{get_norm_mode_label(norm_mode, layer_idx)}</strong><br>" +
+                "Traces attention weight patterns between tokens. Thicker lines indicate stronger attention. ⚠️ This shows weight distribution, not actual information flow through the network."
+            )),
             ui.div(
                 {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_flow_plot_B"))

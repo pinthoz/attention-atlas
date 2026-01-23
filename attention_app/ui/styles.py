@@ -354,6 +354,17 @@ CSS = """
             flex-shrink: 0;
         }
 
+        /* Norm control group - horizontal layout with label on left */
+        .floating-control-bar .norm-control-group {
+            flex-direction: row;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .floating-control-bar .norm-control-group .control-label {
+            writing-mode: horizontal-tb;
+        }
+
         .floating-control-bar .control-label {
             font-size: 8px;
             font-weight: 600;
@@ -437,11 +448,12 @@ CSS = """
             display: none;
         }
 
-        /* Radio button group for normalization */
+        /* Radio button group for normalization - vertical layout */
         .floating-control-bar .radio-group {
             display: flex;
-            align-items: center;
-            gap: 2px;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 1px;
             background: rgba(30, 41, 59, 0.6);
             border-radius: 6px;
             padding: 2px;
@@ -449,15 +461,17 @@ CSS = """
         }
 
         .floating-control-bar .radio-option {
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 8px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 7px;
             font-weight: 600;
             color: #64748b;
             cursor: pointer;
             transition: all 0.15s ease;
             text-transform: uppercase;
             letter-spacing: 0.3px;
+            text-align: center;
+            line-height: 1.2;
         }
 
         .floating-control-bar .radio-option:hover {
@@ -468,6 +482,27 @@ CSS = """
         .floating-control-bar .radio-option.active {
             background: var(--primary-color);
             color: white;
+        }
+
+        /* Norm control group with vertical layout */
+        .floating-control-bar .norm-control-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Rollout layers control - hidden by default */
+        .floating-control-bar .rollout-layers-control {
+            display: none;
+            flex-direction: column;
+            gap: 1px;
+            margin-left: 4px;
+            padding-left: 4px;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .floating-control-bar .rollout-layers-control.visible {
+            display: flex;
         }
 
         /* Token sentence preview - flexible width */
@@ -1065,8 +1100,8 @@ CSS = """
         /* Metrics Grid */
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
             margin-top: 0;
         }
 
@@ -1075,11 +1110,11 @@ CSS = """
             flex-direction: column;
             background: linear-gradient(135deg, #ffe5f3 0%, #ffd4ec 100%);
             border-radius: 12px;
-            padding: 14px 16px 12px 16px;
+            padding: 10px 12px;
             border: 1px solid #ffb8de;
             transition: all 0.2s;
             cursor: pointer;
-            min-height: 140px;
+            min-height: 100px;
         }
 
         .metric-card:hover {
@@ -1089,26 +1124,50 @@ CSS = """
         }
 
         .metric-label {
-            font-size: 11px;
+            font-size: 10px;
             color: var(--text-muted);
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-bottom: 8px;
-            min-height: 28px; /* Fixed height for alignment */
+            margin-bottom: 4px;
+            min-height: 0; 
             display: flex;
-            align-items: flex-start; /* Align text to top */
+            align-items: center;
         }
 
         .metric-value {
-            font-size: 24px;
+            font-size: 18px;
             font-weight: 700;
             color: var(--text-main);
             font-family: 'Outfit', sans-serif;
-            flex-grow: 1;
+            line-height: 1.1;
         }
 
         /* Metric Card Enhancements */
+        .metric-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 4px;
+        }
+
+        .metric-value-row {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin-bottom: 8px;
+            flex-grow: 1;
+        }
+
+        .metric-context {
+            font-size: 9px;
+            color: #64748b;
+            line-height: 1.35;
+            display: flex;
+            flex-direction: column;
+            white-space: nowrap;
+        }
+
         .metric-header {
             display: flex;
             justify-content: space-between;
