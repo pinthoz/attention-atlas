@@ -895,7 +895,8 @@ def server(input, output, session):
                 ui.div(
                     {"class": "card"},
                     ui.h4("Sum & Layer Normalization"),
-                    ui.p("Sum of embeddings + Pre-Norm", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    ui.p("Combines token, position, and segment embeddings, with layer normalization to stabilize activations before attention.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                    ui.div(style="height: 34px;"), # Spacer to align with Q/K/V (which has 2 button rows)
                     get_sum_layernorm_view(res, encoder_model)
                 ),
                 col_widths=[4, 4, 4]
@@ -909,7 +910,7 @@ def server(input, output, session):
                         {"class": "header-simple"},
                         ui.h4("Q/K/V Projections")
                     ),
-                    ui.p("Projects input to Query, Key, Value vectors.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    ui.p("Query, Key, Value projections with magnitude, alignment, and directional analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
                     get_qkv_table(res, qkv_layer, top_k=top_k)
                 ),
                 ui.div(
@@ -1071,7 +1072,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Sum & Layer Normalization"),
-            ui.p("Sum of embeddings + Pre-Norm", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Combines token, position, and segment embeddings, with layer normalization to stabilize activations before attention.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_sum_layernorm_view(res, encoder_model)
         )
 
@@ -1088,7 +1089,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Q/K/V Projections"),
-            ui.p("Projects input to Query, Key, Value vectors.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Query, Key, Value projections with magnitude, alignment, and directional analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_qkv_table(res, layer_idx, top_k=top_k)
         )
 
@@ -4110,7 +4111,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Sum & Layer Normalization"),
-            ui.p("Sum of embeddings + Pre-Norm", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_sum_layernorm_view(res, encoder_model)
         )
 
@@ -4131,8 +4132,8 @@ def server(input, output, session):
                 {"class": "header-simple"},
                 ui.h4("Q/K/V Projections")
             ),
-            ui.p("Projects input to Query, Key, Value vectors.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_qkv_table(res, layer_idx, top_k=top_k)
+            ui.p("Query, Key, Value projections with magnitude, alignment, and directional analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+            get_qkv_table(res, layer_idx, top_k=top_k, suffix="_B")
         )
 
     @output

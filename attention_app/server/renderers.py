@@ -298,6 +298,45 @@ def _render_qkv_pca_scatter(tokens, Q, K, V):
     return svg
 
 
+# Assuming array_to_base64_img is defined here or imported from elsewhere
+# For the purpose of this edit, we'll place matrix_to_base64_img after the assumed location of array_to_base64_img.
+# The provided context implies array_to_base64_img ends with plt.close(fig) and buf.seek(0) and returns base64.
+# Since array_to_base64_img is not in the provided content, we'll insert matrix_to_base64_img before get_embedding_table.
+
+# Placeholder for array_to_base64_img if it were in the file:
+# def array_to_base64_img(arr, cmap="Blues", height=0.18):
+#     import matplotlib.pyplot as plt
+#     import io
+#     import base64
+#     fig, ax = plt.subplots(figsize=(len(arr) * 0.1, height))
+#     ax.imshow(arr[np.newaxis, :], cmap=cmap, aspect='auto')
+#     ax.axis('off')
+#     plt.tight_layout(pad=0)
+#     buf = io.BytesIO()
+#     plt.savefig(buf, format='png', dpi=100, bbox_inches='tight', pad_inches=0)
+#     plt.close(fig)
+#     buf.seek(0)
+#     return base64.b64encode(buf.getvalue()).decode('utf-8')
+
+
+def matrix_to_base64_img(matrix, cmap="Blues", figsize=(5, 5)):
+    import matplotlib.pyplot as plt
+    import io
+    import base64
+    import numpy as np
+    fig, ax = plt.subplots(figsize=figsize)
+    # Use generic heatmap
+    ax.imshow(matrix, cmap=cmap, aspect='equal')
+    ax.axis('off')
+    plt.tight_layout(pad=0)
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=100, bbox_inches='tight', pad_inches=0)
+    plt.close(fig)
+    buf.seek(0)
+    return base64.b64encode(buf.getvalue()).decode('utf-8')
+
+
 def get_embedding_table(res, top_k=3):
     tokens, embeddings, *_ = res
     n = len(tokens)
@@ -560,7 +599,7 @@ def get_posenc_table(res, top_k=3):
     return ui.HTML(html)
 
 
-def _render_dual_tab_view(unique_id, html_heatmap, tokens, vectors_for_pca, html_change=None):
+def _render_dual_tab_view(unique_id, html_heatmap, tokens, vectors_for_pca, html_change=None, controls_style="justify-content: center;"):
     """Helper to render standardized Raw Vectors | PCA tabs."""
     
     # Generate PCA view
@@ -586,12 +625,11 @@ def _render_dual_tab_view(unique_id, html_heatmap, tokens, vectors_for_pca, html
 
     return ui.HTML(f"""
     <div id='{unique_id}'>
-        <div class='view-controls' style='justify-content: center;'>
+        <div class='view-controls' style='{controls_style}'>
             {change_btn}
             <button class='view-btn {heat_active_class}' data-tab='heat' onclick="switchView('{unique_id}\', \'heat\')" title="Visual heatmap of vector values" style="flex: 0 1 auto; width: 25%;">Raw Vectors</button>
             <button class='view-btn' data-tab='pca' onclick="switchView('{unique_id}\', \'pca\')" title="2D Principal Component Analysis projection" style="flex: 0 1 auto; width: 25%;">PCA</button>
         </div>
-
         <div class='card-scroll vector-summary-container'>
             {change_pane}
             <div id='{unique_id}_heat' class='view-pane' style='display:{heat_display};'>{html_heatmap}</div>
@@ -687,14 +725,14 @@ def get_sum_layernorm_view(res, encoder_model):
 
     html_heatmap = f"<table class='combined-summary-table distribute-cols'>{header}{''.join(rows)}</table>"
 
-    return _render_dual_tab_view(unique_id, html_heatmap, tokens, combined_vectors)
+    return _render_dual_tab_view(unique_id, html_heatmap, tokens, combined_vectors, controls_style="justify-content: center; padding: 8px 0;")
 
 
-def get_qkv_table(res, layer_idx, top_k=3):
-    tokens, _, _, _, hidden_states, _, _, encoder_model, *_ = res
+def get_qkv_table(res, layer_idx, top_k=3, suffix=""):
+    tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
     layer_block = get_layer_block(encoder_model, layer_idx)
     hs_in = hidden_states[layer_idx]
-    unique_id = "qkv_tab"
+    unique_id = f"qkv_tab{suffix}"
 
     Q, K, V = extract_qkv(layer_block, hs_in)
     n = len(tokens)
@@ -708,6 +746,16 @@ def get_qkv_table(res, layer_idx, top_k=3):
     qk_sim = _compute_cosine_similarity_matrix(Q) @ _compute_cosine_similarity_matrix(K).T
     # Normalize to [0,1] range approximately
     qk_sim = (qk_sim + 1) / 2
+
+    # Compute TRUE directional alignment: cosine similarity between Q[i] and K[j]
+    # This shows how aligned Q and K vectors are, independent of magnitude
+    q_normalized = Q / (np.linalg.norm(Q, axis=1, keepdims=True) + 1e-8)
+    k_normalized = K / (np.linalg.norm(K, axis=1, keepdims=True) + 1e-8)
+    dir_alignment = np.dot(q_normalized, k_normalized.T)  # Range: [-1, 1]
+
+    # Get attention weights for this layer (averaged across heads for comparison)
+    att_layer = attentions[layer_idx][0].cpu().numpy()  # Shape: (num_heads, seq_len, seq_len)
+    att_avg = np.mean(att_layer, axis=0)  # Average across heads
 
     # 1. Norm View
     norm_rows = []
@@ -782,12 +830,88 @@ def get_qkv_table(res, layer_idx, top_k=3):
     </table>
     """
 
+    # 5. Directional Alignment View (Cosine Similarity Q vs K)
+    # Generate heatmap images for side-by-side comparison
+    dir_align_img = matrix_to_base64_img(dir_alignment, cmap="RdBu_r", figsize=(4, 4))
+    att_weights_img = matrix_to_base64_img(att_avg, cmap="Blues", figsize=(4, 4))
+
+    # Clean token labels for axis display
+    clean_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
+    token_labels_html = "".join([f"<span class='axis-label'>{t}</span>" for t in clean_tokens])
+
+    html_dir = f"""
+    <div class='directional-alignment-container'>
+        <div style='margin-bottom: 10px; display: flex; align-items: flex-start; gap: 6px;'>
+            <div class='info-tooltip-wrapper'>
+                <span class='info-tooltip-icon' style='font-size:8px; width:14px; height:14px; line-height:14px;'>i</span>
+                <div class='info-tooltip-content' style='width: 360px;'>
+                    <strong>Directional Alignment (Cosine Similarity)</strong>
+                    <p>Measures how aligned Q and K vectors are in direction, independent of magnitude.</p>
+                    <div style='background:rgba(255,255,255,0.1); padding:8px; border-radius:4px; margin: 8px 0;'>
+                        <code style='font-size: 10px;'>cos(Q, K) = (Q · K) / (||Q|| × ||K||)</code>
+                    </div>
+                    <p><strong style='color:#ef4444;'>Red:</strong> Similar directions (high alignment)</p>
+                    <p><strong style='color:#3b82f6;'>Blue:</strong> Opposite directions (negative)</p>
+                    <p><strong style='color:#9ca3af;'>White:</strong> Orthogonal (no relationship)</p>
+
+                    <hr style='border-color: rgba(255,255,255,0.2); margin: 10px 0;'>
+                    <strong>Why compare with Attention Weights?</strong>
+                    <div style='background:rgba(255,255,255,0.1); padding:8px; border-radius:4px; margin: 8px 0;'>
+                        <code style='font-size: 10px;'>Attention = softmax(Q·K / √dk)</code>
+                    </div>
+                    <p style='font-size: 10px;'>The dot product Q·K combines both direction AND magnitude. Cosine isolates just the direction.</p>
+                    <p style='font-size: 10px;'><strong>→</strong> If attention is high where cosine is low: the model may be relying on vector magnitude rather than semantic similarity.</p>
+                    <p style='font-size: 10px;'><strong>→</strong> If attention is low where cosine is high: other tokens with larger magnitudes may be "stealing" attention.</p>
+
+                    <hr style='border-color: rgba(255,255,255,0.2); margin: 10px 0;'>
+                    <strong>Why does this change per layer?</strong>
+                    <p style='font-size: 10px;'>Each layer has its own learned Wq and Wk matrices. Early layers typically capture positional and syntactic patterns, while deeper layers encode semantic and contextual relationships.</p>
+                </div>
+            </div>
+            <span style='font-size: 10px; color: #6b7280; line-height: 1.4;'>Compares Q·K directional similarity (cosine) with actual attention weights. Helps identify if attention is driven by genuine semantic alignment or by vector magnitude effects.</span>
+        </div>
+        <div class='heatmap-comparison'>
+            <div class='heatmap-panel'>
+                <div class='heatmap-title'>Directional Alignment (Cosine)</div>
+                <div class='heatmap-subtitle'>Q → K similarity by direction</div>
+                <div class='heatmap-wrapper'>
+                    <img class='comparison-heatmap' src='data:image/png;base64,{dir_align_img}' alt='Directional Alignment Heatmap'>
+                    <div class='heatmap-colorbar cosine-colorbar'>
+                        <span>-1</span>
+                        <div class='colorbar-gradient cosine-gradient'></div>
+                        <span>+1</span>
+                    </div>
+                </div>
+            </div>
+            <div class='heatmap-panel'>
+                <div class='heatmap-title'>Attention Weights</div>
+                <div class='heatmap-subtitle'>Actual attention (avg across heads)</div>
+                <div class='heatmap-wrapper'>
+                    <img class='comparison-heatmap' src='data:image/png;base64,{att_weights_img}' alt='Attention Weights Heatmap'>
+                    <div class='heatmap-colorbar attention-colorbar'>
+                        <span>0</span>
+                        <div class='colorbar-gradient attention-gradient'></div>
+                        <span>1</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class='axis-labels-container'>
+            <div class='axis-label-row'>
+                <span style='font-size: 9px; color: #94a3b8; margin-right: 8px;'>Tokens:</span>
+                {token_labels_html}
+            </div>
+        </div>
+    </div>
+    """
+
     # Assemble Tabbed Interface
     html = f"""
     <div id='{unique_id}'>
-        <div class='view-controls'>
+        <div class='view-controls qkv-controls'>
             <button class='view-btn active' data-tab='norm' onclick="switchView('{unique_id}', 'norm')" title="View vector magnitude (L2 Norm)">Norms</button>
-            <button class='view-btn' data-tab='sim' onclick="switchView('{unique_id}', 'sim')" title="Cosine similarity between tokens">Alignment</button>
+            <button class='view-btn' data-tab='dir' onclick="switchView('{unique_id}', 'dir')" title="Cosine similarity between Q and K vectors (direction only, ignores magnitude)">Directional</button>
+            <button class='view-btn' data-tab='sim' onclick="switchView('{unique_id}', 'sim')" title="Q·K alignment showing potential attention targets">Alignment</button>
             <button class='view-btn' data-tab='pca' onclick="switchView('{unique_id}', 'pca')" title="2D Principal Component Analysis projection">PCA</button>
             <button class='view-btn' data-tab='vec' onclick="switchView('{unique_id}', 'vec')" title="Visual heatmap of raw vector values">Raw Vectors</button>
         </div>
@@ -795,6 +919,9 @@ def get_qkv_table(res, layer_idx, top_k=3):
         <div class='card-scroll vector-summary-container'>
             <div id='{unique_id}_norm' class='view-pane' style='display:block;'>
                 {html_norm}
+            </div>
+            <div id='{unique_id}_dir' class='view-pane'>
+                {html_dir}
             </div>
             <div id='{unique_id}_sim' class='view-pane'>
                 {html_sim}

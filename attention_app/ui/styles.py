@@ -828,6 +828,19 @@ CSS = """
             line-height: 1.4;
         }
 
+        /* Q/K/V Projections - compact buttons centered */
+        .qkv-controls {
+            flex-wrap: wrap;
+            gap: 4px 6px !important;
+            justify-content: center;
+        }
+
+        .qkv-controls .view-btn {
+            padding: 2px 6px !important;
+            font-size: 9px !important;
+            letter-spacing: 0.3px !important;
+        }
+
         .view-btn:hover {
             background: rgba(0,0,0,0.06);
             color: var(--text-main);
@@ -847,6 +860,98 @@ CSS = """
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(2px); }
             to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Directional Alignment Visualization */
+        .directional-alignment-container {
+            padding: 4px 0;
+        }
+
+        .heatmap-comparison {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .heatmap-panel {
+            flex: 1;
+            min-width: 180px;
+            max-width: 220px;
+            text-align: center;
+        }
+
+        .heatmap-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 2px;
+        }
+
+        .heatmap-subtitle {
+            font-size: 9px;
+            color: #9ca3af;
+            margin-bottom: 8px;
+        }
+
+        .heatmap-wrapper {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .comparison-heatmap {
+            width: 100%;
+            max-width: 180px;
+            height: auto;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .heatmap-colorbar {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 6px;
+            font-size: 8px;
+            color: #6b7280;
+        }
+
+        .colorbar-gradient {
+            width: 60px;
+            height: 8px;
+            border-radius: 2px;
+        }
+
+        .cosine-gradient {
+            background: linear-gradient(to right, #3b82f6, #f8fafc, #ef4444);
+        }
+
+        .attention-gradient {
+            background: linear-gradient(to right, #f8fafc, #3b82f6);
+        }
+
+        .axis-labels-container {
+            margin-top: 12px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .axis-label-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .axis-label {
+            font-size: 8px;
+            padding: 1px 4px;
+            background: rgba(0,0,0,0.03);
+            border-radius: 2px;
+            color: #64748b;
         }
 
         select.form-control:hover,
