@@ -714,7 +714,7 @@ JS_TREE_VIZ = """
 
 # Transition modal code
 JS_TRANSITION_MODAL = """
-        window.showTransitionModal = function(fromSection, toSection) {
+        window.showTransitionModal = function(fromSection, toSection, modelType) {
             var modalId = 'transition-modal';
             var modal = document.getElementById(modalId);
 
@@ -732,7 +732,7 @@ JS_TRANSITION_MODAL = """
                 });
             }
 
-            var explanation = getTransitionExplanation(fromSection, toSection);
+            var explanation = getTransitionExplanation(fromSection, toSection, modelType);
 
             var content = `
                 <div class="modal-content" style="max-width: 650px; border: 1px solid rgba(255, 92, 169, 0.3);">
@@ -871,17 +871,56 @@ JS_TRANSITION_MODAL = """
             modal.style.display = 'block';
         };
 
-        function getTransitionExplanation(from, to) {
-            const explanations = {
-                'Sentence Preview_Token Embeddings': `
+        function getTransitionExplanation(from, to, modelType) {
+            // Dynamic handling for Input -> Token Embeddings based on Model Type
+            if (from === 'Input' && to === 'Token Embeddings') {
+                if (modelType === 'gpt2') {
+                    return `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Tokenization & Embedding Lookup</h4>
+                    <p>The input text is first processed by the <strong>Byte-Pair Encoding (BPE) tokenizer</strong>, which breaks words into subword units (tokens) based on frequency patterns. Each token is mapped to a unique integer ID.</p>
+                    <p>These IDs are then used to look up dense vectors from the <strong>Token Embedding Matrix</strong> (size: <code>vocab_size × hidden_dim</code>).</p>
+                    <p>GPT-2 uses no special start token — generation begins directly from the input. The end-of-text token <code>&lt;|endoftext|&gt;</code> marks sequence boundaries.</p>
+                    <ul>
+                        <li><strong>Output Shape:</strong> <code>(batch_size, seq_len, hidden_dim)</code></li>
+                    </ul>
+                    `;
+                } else {
+                    // Default / BERT
+                    return `
                     <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Tokenization & Embedding Lookup</h4>
                     <p>The input text is first processed by the <strong>WordPiece tokenizer</strong>, which breaks words into subword units (tokens). Each token is mapped to a unique integer ID.</p>
                     <p>These IDs are then used to look up dense vectors from the <strong>Token Embedding Matrix</strong> (size: <code>vocab_size × hidden_dim</code>).</p>
+                    <p>Special tokens <code>[CLS]</code> (start) and <code>[SEP]</code> (separator) are added.</p>
                     <ul>
-                        <li>Special tokens <code>[CLS]</code> (start) and <code>[SEP]</code> (separator) are added.</li>
                         <li><strong>Output Shape:</strong> <code>(batch_size, seq_len, hidden_dim)</code></li>
                     </ul>
-                `,
+                    `;
+                }
+            }
+
+            // Dynamic handling for Add & Norm (post-FFN) -> Exit
+            if (from === 'Add & Norm (post-FFN)' && to === 'Exit') {
+                if (modelType === 'gpt2') {
+                    return `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Final Prediction</h4>
+                    <p>The <strong>Add & Norm</strong> layer outputs the final <strong>Hidden States</strong>.</p>
+                    <p>These vectors are then projected to the vocabulary size to predict the <strong>Next Token</strong> in the sequence (Causal Language Modeling).</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">P(token_{t+1}) = Softmax(Hidden · W_vocab)</div>
+                    `;
+                } else {
+                    // BERT
+                    return `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Final Output & Prediction</h4>
+                    <p>The <strong>Add & Norm</strong> layer outputs the final <strong>Hidden States</strong>.</p>
+                    <p>In the pre-training phase, these are used for <strong>Masked Token Predictions (MLM)</strong>, reconstructing masked words from context.</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">P(mask) = Softmax(Hidden · W_vocab)</div>
+                    <p>For fine-tuning tasks (e.g., classification), the [CLS] token's hidden state is typically used.</p>
+                    `;
+                }
+            }
+
+            const explanations = {
+                // 'Input_Token Embeddings' is handled dynamically above
                 'Token Embeddings_Segment Embeddings': `
                     <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Adding Sentence Context</h4>
                     <p><strong>Segment Embeddings</strong> distinguish between different sentences in the input (e.g., Sentence A vs. Sentence B). This is crucial for tasks like Question Answering or Next Sentence Prediction.</p>
@@ -918,16 +957,28 @@ JS_TRANSITION_MODAL = """
                     </ul>
                     <p>Each projection uses a weight matrix of size <code>hidden_dim × hidden_dim</code>.</p>
                 `,
-                'Q/K/V Projections_Scaled Dot-Product Attention': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Computing Attention Scores</h4>
-                    <p>The core attention mechanism calculates how much each token should attend to every other token:</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Attention(Q, K, V) = softmax(QK^T / √d_k)V</div>
+                'Segment Embeddings_Sum & Layer Normalization': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Input Aggregation</h4>
+                    <p>The Segment Embeddings are combined with the other embedding components (Token and Positional) to form the sequence representation.</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Input = Token + Segment + Position</div>
+                    <p>All three vectors are summed element-wise, meaning they must occupy the same vector space. The result is then normalized (LayerNorm) to prepare it for the Transformer layers.</p>
+                `,
+                'Q/K/V Projections_Add & Norm': `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Q/K/V ➜ Scaled Attention ➜ Add & Norm</h4>
+                    
+                    <strong style="color:#3b82f6; display:block; margin-bottom:4px;">Step 1: Q/K/V ➜ Scaled Dot-Product Attention</strong>
+                    <p>The projected Query, Key, and Value vectors are fed into the attention mechanism. The model calculates the compatibility (scores) between Q and K to decide "where to look".</p>
+                    <div style="background:rgba(255,255,255,0.05); padding:8px; border-radius:4px; margin:8px 0; font-size:12px;">Scores = (Q · K^T) / √d_k</div>
+
+                    <strong style="color:#3b82f6; display:block; margin-top:16px; margin-bottom:4px;">Step 2: Scaled Dot-Product Attention ➜ Add & Norm</strong>
+                    <p>The scores are converted to probabilities and used to aggregate context.</p>
                     <ol>
-                        <li><strong>Dot Product (QK^T):</strong> Measures similarity between Queries and Keys.</li>
-                        <li><strong>Scaling (1/√d_k):</strong> Prevents gradients from vanishing in the softmax.</li>
-                        <li><strong>Softmax:</strong> Converts scores into probabilities (attention weights).</li>
-                        <li><strong>Weighted Sum:</strong> Aggregates Values based on these weights.</li>
+                        <li><strong>Softmax:</strong> Converts scores to attention weights (probabilities).</li>
+                        <li><strong>Weighted Sum:</strong> Multiplies Values (V) by these weights to get the Context Vector.</li>
+                        <li><strong>Residual:</strong> The Context Vector is added back to the original input (x + Sublayer(x)).</li>
+                        <li><strong>Norm:</strong> The result is normalized (LayerNorm).</li>
                     </ol>
+                    <div style="background:rgba(255,255,255,0.05); padding:8px; border-radius:4px; margin:8px 0; font-size:12px;">Output = LayerNorm(x + Attention(Q,K,V))</div>
                 `,
                 'Scaled Dot-Product Attention_Global Attention Metrics': `
                     <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Aggregating Statistics</h4>

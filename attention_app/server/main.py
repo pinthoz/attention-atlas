@@ -373,6 +373,7 @@ def server(input, output, session):
             cached_result_B.set(None)
         finally:
             running.set(False)
+            await session.send_custom_message('stop_loading', {})
 
     # Sync History UI
     @reactive.Effect
@@ -624,6 +625,8 @@ def server(input, output, session):
         except: current_layer = 0
         try: current_head = int(input.global_head())
         except: current_head = 0
+        try: current_topk = int(input.global_topk())
+        except: current_topk = 3
 
         # --- MODEL A DATA ---
         _, _, _, _, _, _, _, encoder_model, *_ = res
@@ -735,6 +738,14 @@ def server(input, output, session):
                     if (selectedArray.includes(i)) chip.classList.add('active');
                     else chip.classList.remove('active');
                 }});
+
+                // SYNC: Update MLM Tokens (only for Model A)
+                if (prefix === 'A') {{
+                    $('.maskable-token, .predicted-word').removeClass('masked-active');
+                    selectedArray.forEach(i => {{
+                         $(`[data-index="${{i}}"]`).addClass('masked-active');
+                    }});
+                }}
                 
                 // Send to Shiny
                 const inputName = prefix === 'A' ? 'global_selected_tokens' : 'global_selected_tokens_B';
@@ -951,8 +962,8 @@ def server(input, output, session):
                     ui.span("Top-K", class_="control-label"),
                     ui.div(
                         {"class": "slider-container"},
-                        ui.tags.span("3", id="topk-value", class_="slider-value"),
-                        ui.tags.input(type="range", id="topk-slider", min="1", max="20", value="3", step="1")
+                        ui.tags.span(str(current_topk), id="topk-value", class_="slider-value"),
+                        ui.tags.input(type="range", id="topk-slider", min="1", max="20", value=str(current_topk), step="1")
                     )
                 ),
             ),
@@ -1104,6 +1115,68 @@ def server(input, output, session):
 
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
 
+            # Determine View Mode for Layout
+        try: 
+            view_mode = input.view_mode()
+        except: 
+            view_mode = "basic"
+
+        # Define Layout Blocks
+        
+        # Block 1: Global Metrics Card
+        metrics_card = ui.div({
+            "class": "card"
+        }, 
+            ui.div(
+                {"style": "display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;"},
+                ui.h4("Global Attention Metrics", style="margin: 0;"),
+                ui.span("All Layers · All Heads", style="font-size: 11px; color: #94a3b8; font-weight: 500;")
+            ),
+            get_metrics_display(res)
+        )
+        
+        # Block 2: Attention Maps Layout
+        maps_row = ui.layout_columns(
+            ui.output_ui("attention_map"),
+            ui.output_ui("attention_flow"),
+            col_widths=[6, 6]
+        )
+
+        # Block 3: Head Specialization & Tree Layout
+        radar_tree_row = ui.layout_columns(
+            ui.div(
+                {"class": "card"},
+                ui.div(
+                    {"class": "header-controls-stacked"},
+                    ui.div(
+                        {"class": "header-row-top"},
+                        ui.h4("Head Specialization")
+                    ),
+                    ui.div(
+                        {"class": "header-row-bottom"},
+                        ui.span("Attention Mode:", class_="toggle-label"),
+                        ui.output_ui("render_radar_view")
+                    )
+                ),
+            ),
+            ui.div(
+                {"class": "card"},
+                ui.div(
+                    {"class": "header-controls-stacked"},
+                        ui.div(
+                            {"class": "header-simple"},
+                            ui.h4("Attention Dependency Tree")
+                        )
+                ),
+                ui.output_ui("render_tree_view")
+            ),
+            col_widths=[5, 7]
+        )
+
+        # Configurable Layout Order
+        # User requested consistency: Head Specialization ALWAYS on Top.
+        dynamic_rows = [radar_tree_row, metrics_card, maps_row]
+
         return ui.div(
             {"class": "dashboard-stack gpt2-layout"},
             
@@ -1148,7 +1221,7 @@ def server(input, output, session):
                         {"class": "header-simple"},
                         ui.h4("Scaled Dot-Product Attention")
                     ),
-                    ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                    ui.p("Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
                     get_scaled_attention_view(res, att_layer, att_head, focus_token_idx, top_k=top_k)
                 ),
                 ui.div(
@@ -1160,56 +1233,10 @@ def server(input, output, session):
                 col_widths=[4, 4, 4]
             ),
 
-            # Row 3: Global Metrics & Attention Map
-            ui.div({
-                "class": "card"
-            }, 
-                ui.div(
-                    {"style": "display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;"},
-                    ui.h4("Global Attention Metrics", style="margin: 0;"),
-                    ui.span("All Layers · All Heads", style="font-size: 11px; color: #94a3b8; font-weight: 500;")
-                ),
-                get_metrics_display(res)
-            ),
-            
-            # Row 3: Attention Visualizations 
-            ui.layout_columns(
-                ui.output_ui("attention_map"),
-                ui.output_ui("attention_flow"),
-                col_widths=[6, 6]
-            ),
+            # Dynamic Rows (Swapped based on mode)
+            *dynamic_rows,
 
-            # Row 4: Radar & Tree
-            ui.layout_columns(
-                ui.div(
-                    {"class": "card"},
-                    ui.div(
-                        {"class": "header-controls-stacked"},
-                        ui.div(
-                            {"class": "header-row-top"},
-                            ui.h4("Head Specialization")
-                        ),
-                        ui.div(
-                            {"class": "header-row-bottom"},
-                            ui.span("Attention Mode:", class_="toggle-label"),
-                            ui.output_ui("render_radar_view")
-                        )
-                    ),
-                ),
-
-                ui.div(
-                    {"class": "card"},
-                    ui.div(
-                        {"class": "header-controls-stacked"},
-                            ui.div(
-                                {"class": "header-simple"},
-                                ui.h4("Attention Dependency Tree")
-                            )
-                    ),
-                    ui.output_ui("render_tree_view")
-                ),
-                col_widths=[5, 7]
-            ),
+            # Row 5: ISA
 
             # Row 5: ISA
             ui.output_ui("isa_row_dynamic"),
@@ -1217,7 +1244,7 @@ def server(input, output, session):
             # Row 6: Unembedding & Predictions
             ui.layout_columns(
                 ui.div({"class": "card"}, ui.h4("Hidden States"), ui.p("Final vector representation before projection.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_layer_output_view(res, num_layers - 1)),
-                ui.div({"class": "card"}, ui.h4("Next Token Predictions"), ui.p("Probabilities for the next token (Softmax output).", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_output_probabilities(res, use_mlm_val, text_val, top_k=top_k)),
+                ui.div({"class": "card"}, ui.h4("Masked Token Predictions (MLM)", style="display:flex;align-items:center;"), ui.p("Probabilities for the predicted token.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_output_probabilities(res, use_mlm_val, text_val, top_k=top_k)),
                 col_widths=[6, 6]
             ),
             
@@ -1364,7 +1391,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Scaled Dot-Product Attention"),
-            ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
             get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k, norm_mode=norm_mode)
         )
 
@@ -1433,50 +1460,367 @@ def server(input, output, session):
         res = get_active_result()
         if not res: return None
 
-        # Determine if we should show predictions
-        # GPT-2: Always show
-        # BERT: Show only if switch is on
-        try:
-            model_family = input.model_family()
-        except:
-            model_family = "bert"
+        # JS for Interactive Masking
+        js_script = ui.HTML("""
+        <script>
+        function toggleMask(index) {
+            // SYNC: Trigger Floating Bar Click (Source of Truth)
+            // This will call handleTokenClick -> updateSelection -> Syncs visually back to here
+            // Use [data-prefix='A'] assumption for MLM
+            const chip = document.querySelector(`.token-chip[data-idx="${index}"][data-prefix="A"]`);
+            if (chip) {
+                // Simulate Ctrl+Click to toggle without clearing others?
+                // handleTokenClick checks window.event.shiftKey. It doesn't check ctrlKey for toggle?
+                // Using a manual dispatch to be safe or updating handleTokenClick?
+                // handleTokenClick: "else { // Toggle ... }" runs if !shiftKey.
+                // So simple click IS toggle in the current implementation (lines 711+).
+                chip.click();
+            } else {
+               // Fallback if bar not loaded? Just toggle locally.
+               $('[data-index="' + index + '"]').toggleClass('masked-active');
+            }
+        }
+        
+        $(document).on('click', '#run_custom_mask', function() {
+            var indices = [];
+            // We only need to check one set of tokens to get state, e.g. the selector
+            $('.maskable-token.masked-active').each(function() {
+                indices.push(parseInt($(this).attr('data-index')));
+            });
+            Shiny.setInputValue('manual_mask_indices', indices, {priority: 'event'});
+        });
+        </script>
+        <style>
+        .maskable-token {
+            display: inline-block;
+            margin: 2px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            
+            /* Match Sentence Preview Style (.token-viz) */
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+        }
+        .maskable-token:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 10;
+            border-color: #3b82f6;
+        }
+        .maskable-token.masked-active {
+            background: #fee2e2; /* Light red */
+            border-color: #ef4444;
+            color: transparent; /* Hide original text visually */
+            position: relative;
+        }
+        .maskable-token.masked-active::after {
+            content: "[MASK]";
+            color: #b91c1c; /* Red text for mask */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 10px;
+            font-weight: bold;
+            pointer-events: none;
+        }
+        
+        /* Predicted Sentence Tokens - Sync Style */
+        .predicted-word {
+            display: inline-block;
+            cursor: pointer;
+            border-radius: 4px;
+            padding: 0 4px; /* Slightly more padding */
+            transition: all 0.2s ease;
+            position: relative;
+            
+            /* Inactive state: Prediction is ignored/inactive */
+            color: #7c3aed;
+            opacity: 0.4;
+            filter: grayscale(80%);
+            border: 1px solid transparent;
+        }
+        
+        /* Interactive tokens (Original words) */
+        .interactive-token {
+             display: inline-block;
+             margin: 0 2px;
+             padding: 0 4px;
+             border-radius: 4px;
+             cursor: pointer;
+             transition: all 0.15s;
+             border: 1px solid transparent;
+             /* Match default text style but clickable */
+        }
+        .interactive-token:hover, .predicted-word:hover {
+            background: #f1f5f9;
+        }
 
-        # Reconstruct text from tokenizer to avoid reactivity from input.text_input()
+        /* Active State logic */
+        
+        /* 1. Interactive Token (Original) -> Creates Mask */
+        .interactive-token.masked-active {
+            background: #fee2e2;
+            border-color: #ef4444;
+            color: transparent;
+            position: relative;
+            border: 1px solid #ef4444;
+            min-width: 40px; /* Ensure width for [MASK] */
+        }
+        .interactive-token.masked-active::after {
+            content: "[MASK]";
+            color: #b91c1c;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 10px; font-weight: bold;
+            pointer-events: none;
+        }
+
+        /* 2. Predicted Token (Result) -> HIGHLIGHTS Prediction */
+        .predicted-word.masked-active {
+            /* Active = We want to SEE the prediction */
+            opacity: 1;
+            filter: none;
+            background: rgba(124, 58, 237, 0.1); 
+            color: #7c3aed !important; 
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            font-weight: 700;
+        }
+        
+        .predicted-word.masked-active::after {
+            content: none !important; /* Do NOT show [MASK] */
+        }
+
+        /* Toggle Switch Styling */
+        .form-check-input:checked {
+            background-color: #7c3aed;
+            border-color: #7c3aed;
+        }
+        .form-check-input:focus {
+            box-shadow: 0 0 0 0.25rem rgba(124, 58, 237, 0.25);
+            border-color: #8b5cf6;
+        }
+        /* Interactive Label Font Fix */
+        .form-check-label {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            color: #475569;
+        }
+        
+        .mask-selector-container {
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 12px;
+            margin-bottom: 12px;
+        }
+        .mask-selector-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #64748b;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .btn-secondary-sm {
+            background: white;
+            border: 1px solid #cbd5e1;
+            color: #475569;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+        }
+        .btn-secondary-sm:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+        }
+        /* Predicted Sentence Styles */
+        .predicted-sentence-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-left: 3px solid #7c3aed; /* Violet accent */
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            text-align: left;
+            position: relative;
+        }
+        .predicted-sentence-card::before {
+            display: none;
+        }
+        .predicted-label {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            color: #64748b;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .predicted-text {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-size: 16px;
+            color: #1e293b;
+            line-height: 1.5;
+            font-weight: 400;
+        }
+        .predicted-word {
+            color: #7c3aed;
+            font-weight: 600;
+            background: rgba(124, 58, 237, 0.05);
+            padding: 1px 4px;
+            border-radius: 4px;
+            border-bottom: 1px solid rgba(124, 58, 237, 0.3);
+            transition: all 0.2s ease;
+        }
+        .predicted-word:hover {
+            background: rgba(124, 58, 237, 0.1);
+            border-bottom-color: rgba(124, 58, 237, 0.6);
+        }
+        .empty-state-message {
+            padding: 40px 20px;
+            text-align: center;
+            color: #64748b;
+            font-style: italic;
+            background: #f8fafc;
+            border-radius: 12px;
+            border: 2px dashed #e2e8f0;
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        </style>
+        """)
+
+        # Determine if we should show predictions
+        try: model_family = input.model_family()
+        except: model_family = "bert"
+
+        # Reconstruct text from tokenizer
         tokens = res[0]
         tokenizer = res[6]
         text = tokenizer.convert_tokens_to_string(tokens)
         try: top_k = int(input.global_topk())
         except: top_k = 3
+        
+        # Interactive Mode Logic (BERT only)
+        manual_mode = False
+        custom_mask_indices = None
+        
+        controls = []
 
         if model_family == "gpt2":
             use_mlm = True
             title = "Next Token Predictions (Causal)"
             desc = "Predicting the probability of the next token appearing after the sequence."
         else:
-            # BERT logic: Check local state
-            use_mlm = show_mlm_A.get()
+            use_mlm = True # Always show
             
-            title = "Masked Token Predictions (MLM)"
-            desc = "Pseudo-Likelihood: Each token is individually masked and predicted using the bidirectional context."
+            # Interactive Mode Toggle
+            try: manual_mode = input.mlm_interactive_mode()
+            except: manual_mode = False
+            
+            if manual_mode:
+                try: custom_mask_indices = input.manual_mask_indices()
+                except: custom_mask_indices = None
+            
+            # Custom Toggle Button for Interactive Mode (Style: Norm/Similarity)
+            # User wants "Toggle Masks" text, pink style like Norm buttons.
+            # We use radio-group styling for consistency.
+            active_class = "active" if manual_mode else ""
+            button_label = "Go back" if manual_mode else "Toggle Masks"
+            
+            # Inject CSS for the button to ensure it looks correct even if classes are missing
+            button_style = """
+            <style>
+            .toggle-masks-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 4px 12px;
+                background: #f1f5f9;
+                color: #64748b;
+                border-radius: 6px;
+                font-size: 11px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+                border: 1px solid transparent;
+                user-select: none;
+            }
+            .toggle-masks-btn:hover {
+                background: #e2e8f0;
+                color: #334155;
+            }
+            .toggle-masks-btn.active {
+                background: #ff5ca9; /* Pink */
+                color: white;
+                box-shadow: 0 2px 6px rgba(255, 92, 169, 0.3);
+            }
+            .toggle-masks-btn.active:hover {
+                background: #f43f8e;
+            }
+            </style>
+            """
+            
+            controls.append(ui.HTML(f"""
+            {button_style}
+            <div class='control-group' style='display:flex; align-items:center;'>
+                <div class='radio-group'>
+                    <span class='toggle-masks-btn {active_class}' 
+                          onclick="Shiny.setInputValue('mlm_interactive_mode', !{str(manual_mode).lower()}, {{priority: 'event'}});">
+                        {button_label}
+                    </span>
+                </div>
+            </div>
+            """))
 
-            if not use_mlm:
-                 return ui.div(
-                    {"class": "card", "style": "height: 100%; display: flex; flex-direction: column; justify-content: space-between;"},
-                    ui.div(
-                        ui.h4(title),
-                        ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                    ),
-                    ui.div(
-                         {"style": "flex-grow: 1; display: flex; align-items: center; justify-content: center; padding: 20px;"},
-                         ui.input_action_button("trigger_mlm_A", "Generate Predictions", class_="btn-primary")
-                    )
-                )
+            # Add tooltip to title for BERT
+            tooltip_html = """
+                <div class='info-tooltip-wrapper' style='display:flex; align-items:center; margin-left:2px;'>
+                    <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
+                    <div class='info-tooltip-content'>
+                        <strong>Masked Language Modeling</strong>
+                        <p>We use BERT's Masked Language Modeling capability. To get these results, we iteratively mask each token in the sequence one by one and ask the model to predict the most likely original token based on the surrounding context (left and right).</p>
+                    </div>
+                </div>
+            """
+            
+            # Use ui.h4 directly with flexbox to match other headers perfectly while aligning content
+            title_header = ui.h4(
+                "Masked Token Predictions (MLM)", 
+                ui.HTML(tooltip_html), 
+                style="margin:0; display:flex; align-items:center;"
+            )
+            desc = "Predicts the masked token using bidirectional context."
+
+        # Header Container: Separating Title Row from Description to allow vertical centering of Button vs Title
+        header_row = ui.div(
+            {"style": "display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 4px;"},
+            title_header,
+            ui.div(*controls)
+        )
+        
+        description_row = ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px; min-height: 20px; line-height: 1.4;")
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
-            ui.h4(title),
-            ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px; min-height: 32px;"),
-            get_output_probabilities(res, use_mlm, text, top_k=top_k)
+            js_script,
+            header_row,
+            description_row,
+            get_output_probabilities(res, use_mlm, text, top_k=top_k, manual_mode=manual_mode, custom_mask_indices=custom_mask_indices)
         )
 
     @output
@@ -1611,31 +1955,31 @@ def server(input, output, session):
         # Helper to generate choices dict
         def get_choices(items):
             return {str(i): f"{i}: {t}" for i, t in enumerate(items)}
-        
+
+        # --- Get View Mode ---
+        view_mode = "basic"
+        try: view_mode = input.view_mode()
+        except: pass
+        is_advanced = view_mode == "advanced"
+
         # --- Word-Level Aggregation Logic ---
         res = get_active_result() if suffix == "" else get_active_result("_B")
-        
+
         # Check if we should aggregate
         use_word_level = False
         try:
             cm = input.compare_mode()
             wl = input.word_level_toggle()
-            if wl:
-                use_word_level = True
-        except:
-            pass
-            
+            if wl: use_word_level = True
+        except: pass
+
         if use_word_level and res:
-            # Apply aggregation
             from ..utils import aggregate_data_to_words
             res = aggregate_data_to_words(res, filter_special=True)
-            
-            # Update local tokens var for this render pass
             if res:
                  tokens = res[0]
-                 # Update clean tokens for display
-                 clean_tokens = tokens # They are already cleaned in aggregation
-        
+                 clean_tokens = tokens
+
         # Legend for Tokenization Mode
         tokenization_legend = ""
         if use_word_level:
@@ -1644,192 +1988,164 @@ def server(input, output, session):
                 "Tokenization: Word-Level (Aggregated)"
             )
 
-        if is_gpt2:
-            # GPT-2 Layout
-            return ui.div(
-                {"id": f"dashboard-container{suffix}", "class": "dashboard-stack gpt2-layout content-hidden"},
-                
-                # Tokenization Legend
-                tokenization_legend,
+        # --- PANEL DEFINITIONS ---
 
-                # Row 1: Embeddings
+        # 1. OVERVIEW PANEL (Preview, Predictions, Global Metrics, Radar, [Advanced: Hidden States])
+        def create_overview_panel():
+            if not is_advanced:
+                # Basic Layout: Row 1 = Predictions | Radar, Row 2 = Global Metrics
+                row1 = ui.layout_columns(
+                     ui.output_ui(f"render_mlm_predictions{suffix}"),
+                     ui.output_ui(f"render_radar_view{suffix}"),
+                     col_widths=[6, 6]
+                )
+                row2 = ui.layout_columns(
+                     ui.output_ui(f"render_global_metrics{suffix}"),
+                     col_widths=[12]
+                )
+                return ui.div(row1, row2)
+            else:
+                # Advanced Layout: Row 1 = Predictions | Radar, Row 2 = Global Metrics, Row 3 = Hidden States
+                # User requested Priority: Radar Top (matches Basic)
+                row1 = ui.layout_columns(
+                    ui.output_ui(f"render_mlm_predictions{suffix}"),
+                    ui.output_ui(f"render_radar_view{suffix}"),
+                    col_widths=[6, 6]
+                )
+                row2 = ui.layout_columns(
+                     ui.output_ui(f"render_global_metrics{suffix}"),
+                     col_widths=[12]
+                )
+                row3 = ui.layout_columns(
+                        ui.output_ui(f"render_layer_output{suffix}"),
+                        col_widths=[12]
+                )
+                return ui.div(row1, row2, row3)
+
+        # 2. EXPLORE ATTENTION PANEL (Map, Flow, Tree, ISA, [Advanced: QKV, Scaled])
+        def create_explore_panel():
+            # Attention Heatmap & Flow (Always)
+            row1 = ui.layout_columns(
+                ui.output_ui(f"attention_map{suffix}"),
+                ui.output_ui(f"attention_flow{suffix}"),
+                col_widths=[6, 6]
+            )
+            
+            # Tree View (Now standalone row since Radar moved)
+            row2 = ui.layout_columns(
+                ui.output_ui(f"render_tree_view{suffix}"),
+                col_widths=[12] # Tree can be wide, it's a D3 viz
+            )
+            
+            input_list = [row1, row2]
+            
+            # ISA (Always)
+            if suffix == "":
+                input_list.append(ui.output_ui("isa_row_dynamic"))
+            else:
+                input_list.append(ui.output_ui(f"isa_scatter{suffix}"))
+
+            # Advanced Components: QKV & Scaled Attention
+            # Advanced Components: QKV moved to Deep Dive. Scaled Attention remains.
+            if is_advanced:
+                row_advanced = ui.layout_columns(
+                    ui.output_ui(f"render_scaled_attention{suffix}"),
+                    col_widths=[12]
+                )
+                input_list.append(ui.div(style="margin-top: 26px;"))
+                input_list.append(row_advanced)
+
+            return ui.div(*input_list)
+
+        # 3. DEEP DIVE PANEL (ADVANCED ONLY)
+        # Embeddings, Norms, FFNs
+        def create_deep_dive_panel_bert():
+            return ui.output_ui(f"render_deep_dive_bert_atomic{suffix}")
+
+        def create_deep_dive_panel_gpt2():
+             # GPT-2 Logic remains (or should I update it too? User said "sections of deep dive..."). 
+             # For now, focusing on BERT request logic first layer. 
+             # But "sections of deep dive" implies all. 
+             # I will stick to BERT first to avoid breaking everything at once, 
+             # unless I see it's easy. 
+             # Given code block, I only see create_deep_dive_panel_bert.
+             # I will leave GPT2 as is for now or update if simple.
+             return ui.div(
+                # Embeddings Row
                 ui.div(
-                    {"class": "flex-row-container"},
+                    {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        arrow("Sentence Preview", "Token Embeddings", "vertical", suffix=suffix, style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                        arrow("Embeddings", "Token Embeddings", "vertical", suffix=suffix, style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
                         ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), ui.output_ui(f"render_embedding_table{suffix}", style="height: 100%;"))
                     ),
                     arrow("Token Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
                         ui.output_ui(f"render_posenc_table{suffix}", style="height: 100%;"),
-                        arrow("Sum & Layer Normalization", "Q/K/V Projections", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;")
+                        arrow("Sum & Layer Normalization", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;")
                     ),
                     arrow("Positional Embeddings", "Sum & Layer Normalization", "horizontal", suffix=suffix),
                     ui.div({"class": "flex-card"}, ui.output_ui(f"render_sum_layernorm{suffix}", style="height: 100%;")),
+                    arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix),
+                    ui.div({"class": "flex-card"}, ui.output_ui(f"render_qkv_table{suffix}", style="height: 100%;")),
                 ),
-
-                # Row 2: Transformer Block Details (Attention)
+                # Residual Connections & FFN Row
                 ui.div(
                     {"class": "flex-row-container"},
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        ui.output_ui(f"render_qkv_table{suffix}", style="height: 100%;")
-                    ),
-                    arrow("Q/K/V Projections", "Scaled Dot-Product Attention", "horizontal", suffix=suffix),
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        ui.output_ui(f"render_scaled_attention{suffix}", style="height: 100%;")
-                    ),
-                ),
-                
-                # Row 3: Global Metrics & Attention Map
-                ui.output_ui(f"render_global_metrics{suffix}"),
-                
-                ui.layout_columns(
-                    ui.output_ui(f"attention_map{suffix}"),
-                    ui.output_ui(f"attention_flow{suffix}"),
-                    col_widths=[6, 6]
-                ),
-
-                # Row 4: Radar & Tree
-                ui.layout_columns(
-                    ui.output_ui(f"render_radar_view{suffix}"),
-                    ui.output_ui(f"render_tree_view{suffix}"),
-                    col_widths=[5, 7]
-                ),
-
-                # Row 5: ISA
-                ui.output_ui(f"isa_scatter{suffix}"),
-
-                # Row 6: Transformer Block Details (FFN)
-                ui.div(
-                    {"class": "flex-row-container"},
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        arrow("Inter-Sentence Attention", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
                         ui.output_ui(f"render_add_norm{suffix}", style="height: 100%;")
                     ),
                     arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
                         ui.output_ui(f"render_ffn{suffix}", style="height: 100%;"),
-                        arrow("Add & Norm (post-FFN)", "Hidden States", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;")
+                        arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;")
                     ),
                     arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
                         ui.output_ui(f"render_add_norm_post_ffn{suffix}", style="height: 100%;")
                     ),
-                ),
-
-                # Row 7: Unembedding & Predictions
-                ui.div(
-                    {"class": "flex-row-container"},
-                    ui.div({"class": "flex-card"}, ui.output_ui(f"render_layer_output{suffix}", style="height: 100%;")),
-                    arrow("Hidden States", "Next Token Predictions", "horizontal", suffix=suffix),
-                    ui.div({"class": "flex-card"}, ui.output_ui(f"render_mlm_predictions{suffix}", style="height: 100%;")),
                 )
             )
 
-
-
-        # Construct UI (BERT)
-        return ui.div(
-            {"id": f"dashboard-container{suffix}", "class": "dashboard-stack content-hidden"}, # Initially hidden
-            ui.div(
-                {"class": "dashboard-stack"},
-                
-                # Tokenization Legend
-                tokenization_legend,
-
-                # Row 1: Initial Embeddings 
-                ui.div(
-                    {"class": "flex-row-container"},
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        arrow("Sentence Preview", "Token Embeddings", "vertical", suffix=suffix, style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), ui.output_ui(f"render_embedding_table{suffix}"))
-                    ),
-                    arrow("Token Embeddings", "Segment Embeddings", "horizontal", suffix=suffix),
-                    ui.div({"class": "flex-card"}, ui.output_ui(f"render_segment_table{suffix}", style="height: 100%;")),
-                    arrow("Segment Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
-                    ui.div({"class": "flex-card"}, ui.output_ui(f"render_posenc_table{suffix}", style="height: 100%;")),
-                ),
-                
-                # Row 2: Processing
-                ui.div(
-                    {"class": "flex-row-container"},
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        ui.output_ui(f"render_sum_layernorm{suffix}")
-                    ),
-                    arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix),
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        arrow("Positional Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;"),
-                        ui.output_ui(f"render_qkv_table{suffix}")
-                    ),
-                    arrow("Q/K/V Projections", "Scaled Dot-Product Attention", "horizontal", suffix=suffix),
-                    ui.div(
-                        {"class": "flex-card"},
-                        ui.output_ui(f"render_scaled_attention{suffix}")
-                    ),
-                ),
-                
-                # Row 3: Global Metrics
-                ui.output_ui(f"render_global_metrics{suffix}"),
-                
-                # Row 4: Attention Visualizations 
-                ui.layout_columns(
-                    ui.output_ui(f"attention_map{suffix}"),
-                    ui.output_ui(f"attention_flow{suffix}"),
-                    col_widths=[6, 6]
-                ),
-                
-                
-                # Row 5: Specialization Analysis
-                ui.layout_columns(
-                    ui.output_ui(f"render_radar_view{suffix}"),
-                    ui.output_ui(f"render_tree_view{suffix}"),
-                    col_widths=[5, 7]
-                ),
-                
-                
-                # Row 6: Inter-Sentence Attention (full width)
-                ui.output_ui("isa_row_dynamic") if suffix == "" else ui.output_ui(f"isa_scatter{suffix}"),
-                
-                
-                # Row 7: Residual Connections
-                ui.div(
-                    {"class": "flex-row-container"},
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        arrow("Inter-Sentence Attention", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
-                        ui.output_ui(f"render_add_norm{suffix}")
-                    ),
-                    arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        ui.output_ui(f"render_ffn{suffix}"),
-                        arrow("Add & Norm (post-FFN)", "Hidden States", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;")
-                    ),
-                    arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
-                    ui.div({"class": "flex-card"}, ui.output_ui(f"render_add_norm_post_ffn{suffix}")),
-                ),
-                
-                # Row 8: Final Outputs 
-                ui.div(
-                    {"class": "flex-row-container"},
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        ui.output_ui(f"render_layer_output{suffix}")
-                    ),
-                    arrow("Hidden States", "Token Output Predictions", "horizontal", suffix=suffix),
-                    ui.div({"class": "flex-card"}, ui.output_ui(f"render_mlm_predictions{suffix}")),
-                ),
+        # --- Build Accordion Panels ---
+        accordion_panels = [
+            ui.accordion_panel(
+                ui.span("Overview", ui.span({"class": "accordion-panel-badge essential"}, "Essential")),
+                create_overview_panel(),
+                value="overview"
             ),
+            ui.accordion_panel(
+                ui.span("Explore Attention", ui.span({"class": "accordion-panel-badge explore"}, "Visual")),
+                create_explore_panel(),
+                value="explore"
+            ),
+        ]
+
+        if is_advanced:
+            deep_dive_content = create_deep_dive_panel_gpt2() if is_gpt2 else create_deep_dive_panel_bert()
+            accordion_panels.append(
+                ui.accordion_panel(
+                    ui.span("Deep Dive / Internals", ui.span({"class": "accordion-panel-badge technical"}, "Technical")),
+                    deep_dive_content,
+                    value="deep_dive"
+                )
+            )
+
+        dashboard_accordion = ui.accordion(
+            *accordion_panels,
+            id=f"dashboard_accordion{suffix}",
+            open=["overview"],
+            multiple=True,
+        )
+
+        return ui.div(
+            {"id": f"dashboard-container{suffix}", "class": "dashboard-stack"},
+            tokenization_legend,
+            dashboard_accordion
         )
 
     # Deduplicating reactive value for layout configuration
@@ -4502,7 +4818,7 @@ def server(input, output, session):
                 {"class": "header-simple"},
                 ui.h4("Scaled Dot-Product Attention")
             ),
-            ui.p("Calculates attention scores between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
             get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k, norm_mode=norm_mode)
         )
 
@@ -5326,6 +5642,178 @@ def server(input, output, session):
                 {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_flow_plot_B"))
             )
+        )
+
+    @output
+    @render.ui
+    def render_deep_dive_bert_atomic():
+        res = get_active_result()
+        if not res: 
+            return ui.div(
+                "Loading...",
+                style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;"
+            )
+        suffix = ""
+        
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+        try: layer_idx = int(input.global_layer())
+        except: layer_idx = 0
+        norm_mode = global_norm_mode.get()
+        _, _, _, _, _, _, _, encoder_model, *_ = res
+        model_type = getattr(encoder_model.config, 'model_type', 'bert')
+
+        return ui.div(
+            # Embeddings Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k))
+                ),
+                arrow("Token Embeddings", "Segment Embeddings", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div(
+                        {"class": "card", "style": "height: 100%;"},
+                        ui.h4("Segment Embeddings"),
+                        ui.p("Encodes sentence membership (A or B).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                        get_segment_embedding_view(res)
+                    ),
+                    arrow("Segment Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
+                ),
+                arrow("Segment Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k))
+                ),
+            ),
+            # Sum & Norm Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model))
+                ),
+                arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div(
+                        {"class": "card", "style": "height: 100%;"},
+                        ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
+                        ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                        get_qkv_table(res, layer_idx, top_k=top_k, suffix=suffix, norm_mode=norm_mode)
+                    ),
+
+                ),
+            ),
+            # Residual Connections Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 22px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx))
+                ),
+                arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -35px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx))
+                ),
+                arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx)),
+                    arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
+                ),
+            ),
+        )
+
+    @output
+    @render.ui
+    def render_deep_dive_bert_atomic_B():
+        res = get_active_result("_B")
+        if not res: 
+            return ui.div(
+                "Loading...",
+                style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;"
+            )
+        suffix = "_B"
+        
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+        try: layer_idx = int(input.global_layer())
+        except: layer_idx = 0
+        norm_mode = global_norm_mode.get()
+        _, _, _, _, _, _, _, encoder_model, *_ = res
+        model_type = getattr(encoder_model.config, 'model_type', 'bert')
+
+        return ui.div(
+            # Embeddings Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k))
+                ),
+                arrow("Token Embeddings", "Segment Embeddings", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div(
+                        {"class": "card", "style": "height: 100%;"},
+                        ui.h4("Segment Embeddings"),
+                        ui.p("Encodes sentence membership (A or B).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                        get_segment_embedding_view(res)
+                    ),
+                    arrow("Segment Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
+                ),
+                arrow("Segment Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k))
+                ),
+            ),
+            # Sum & Norm Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model))
+                ),
+                arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div(
+                        {"class": "card", "style": "height: 100%;"},
+                        ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
+                        ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                        get_qkv_table(res, layer_idx, top_k=top_k, suffix=suffix, norm_mode=norm_mode)
+                    ),
+
+                ),
+            ),
+            # Residual Connections Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 25px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx))
+                ),
+                arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -35px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx))
+                ),
+                arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx)),
+                    arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
+                ),
+            ),
         )
 
 __all__ = ["server"]

@@ -50,7 +50,7 @@ def extract_qkv(layer_block, hidden_states):
     return Q, K, V
 
 
-def arrow(from_section, to_section, direction="horizontal", suffix="", **kwargs):
+def arrow(from_section, to_section, direction="horizontal", suffix="", model_type=None, **kwargs):
     """
     Uniform arrow component - centered positioning
     direction: "horizontal" | "vertical" | "initial"
@@ -68,9 +68,13 @@ def arrow(from_section, to_section, direction="horizontal", suffix="", **kwargs)
     if "extra_class" in kwargs:
         classes += f" {kwargs.pop('extra_class')}"
 
+    onclick_js = f"showTransitionModal('{from_section}', '{to_section}')"
+    if model_type:
+        onclick_js = f"showTransitionModal('{from_section}', '{to_section}', '{model_type}')"
+
     attrs = {
         "class": classes,
-        "onclick": f"showTransitionModal('{from_section}', '{to_section}')",
+        "onclick": onclick_js,
         "id": arrow_id,
         "title": f"Click: {from_section} → {to_section}"
     }
@@ -1282,14 +1286,18 @@ def get_layer_output_view(res, layer_idx):
 
     return ui.HTML(
         "<div class='card-scroll vector-summary-container'>"
-        "<table class='combined-summary-table distribute-cols'>"
-        "<tr><th>Token</th><th>Vector (64 dims)</th><th style='padding-left:12px;'>Statistics</th></tr>"
+        "<table class='combined-summary-table' style='width:100%; table-layout:fixed;'>"
+        "<tr>"
+        "<th style='width:30%;'>Token</th>"
+        "<th style='width:40%;'>Vector (64 dims)</th>"
+        "<th style='width:30%; padding-left:12px;'>Statistics</th>"
+        "</tr>"
         + "".join(rows)
         + "</table></div>"
     )
 
 
-def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5):
+def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode=False, custom_mask_indices=None):
     if not use_mlm:
         return ui.HTML(
             "<div class='prediction-panel'>"
@@ -1311,15 +1319,6 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5):
     
     # Check for aggregation
     input_seq_len = inputs["input_ids"].shape[1]
-    # We don't have tokens passed explicitly? 
-    # Wait, get_output_probabilities definition does NOT take 'tokens'.
-    # It takes check logic or we can use mlm_tokens length.
-    
-    # Let's verify compatibility
-    # If we are in word level, inputs["input_ids"] is original length.
-    # But this view blindly regenerates tokens from inputs. 
-    # To detect word level, we need to know if 'res' is aggregated.
-    # 'res' tuple has 'tokens' at index 0.
     tokens_in_res = res[0]
     if len(tokens_in_res) != input_seq_len:
          return ui.HTML(
@@ -1329,29 +1328,87 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5):
             "</div>"
         )
     
+    mlm_tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
+    
+    # --- Interactive Token Selector HTML ---
+    # We generate this regardless, or only in manual mode?
+    # In manual mode, we need it to be clickable.
+    selector_html = ""
+    if manual_mode:
+        selector_buttons = []
+        current_masks = set(custom_mask_indices) if custom_mask_indices else set()
+        
+        for i, tok in enumerate(mlm_tokens):
+            clean_tok = tok.replace("##", "").replace("Ġ", "")
+            is_masked = i in current_masks
+            active_class = "masked-active" if is_masked else ""
+            
+            # Using span instead of button to avoid form submission, handled by JS
+            btn = f"""
+            <div class='maskable-token {active_class}' data-index='{i}' onclick='toggleMask({i})'>
+                <div class='token-text'>{clean_tok}</div>
+            </div>
+            """
+            selector_buttons.append(btn)
+            
+        selector_html = f"""
+        <div class='mask-selector-container'>
+            <div class='mask-selector-label'>Click tokens to mask:</div>
+            <div class='mask-token-list'>
+                {''.join(selector_buttons)}
+            </div>
+            <div style='margin-top:8px;display:flex;justify-content:flex-end;'>
+                <button id='run_custom_mask' class='metric-tag'>Predict Masked</button>
+            </div>
+        </div>
+        """
+
+    # --- Inference Logic ---
+    logits_tensor = None
+    probs = None
+    target_indices = [] # Indices to visualize
+
     with torch.no_grad():
         if is_gpt2:
             # GPT-2: Standard Causal Prediction (Next Token)
             mlm_outputs = mlm_model(**inputs)
             probs = torch.softmax(mlm_outputs.logits, dim=-1)[0]
             logits_tensor = mlm_outputs.logits[0]
+            target_indices = range(len(mlm_tokens)) # Show all
+        elif manual_mode:
+            # BERT Manual Multi-Masking
+            # Create ONE input with specific masks
+            input_ids = inputs["input_ids"].clone() # (1, seq_len)
+            mask_token_id = tokenizer.mask_token_id
+            
+            # Apply masks
+            if custom_mask_indices:
+                for idx in custom_mask_indices:
+                    input_ids[0, idx] = mask_token_id
+            
+            # Prepare inputs
+            custom_inputs = {"input_ids": input_ids}
+            if "attention_mask" in inputs: custom_inputs["attention_mask"] = inputs["attention_mask"]
+            if "token_type_ids" in inputs: custom_inputs["token_type_ids"] = inputs["token_type_ids"]
+            
+            outputs = mlm_model(**custom_inputs)
+            full_logits = outputs.logits # (1, seq_len, vocab)
+            
+            probs = torch.softmax(full_logits, dim=-1)[0] # (seq_len, vocab)
+            logits_tensor = full_logits[0]
+            
+            # Show predictions only for MASKED indices, or all? 
+            # Usually only masked are interesting.
+            target_indices = sorted(list(current_masks)) if custom_mask_indices else []
         else:
-            # BERT: Iterative Masking (Pseudo-Likelihood)
-            # We create a batch where each token is masked individually
+            # BERT: Iterative Masking (Pseudo-Likelihood) - ORIGINAL LOGIC
             input_ids = inputs["input_ids"][0]
             seq_len = len(input_ids)
             mask_token_id = tokenizer.mask_token_id
             
-            # Create a batch of (seq_len, seq_len)
-            # Be careful with max sequence length - BERT usually handles up to 512
-            # but batching 512x512 might be memory intensive on small GPUs.
-            # Assuming typical shiny usage (short sentences < 50 tokens), this is fine.
-            # For longer, we should chunk, but let's implement basic version first.
-            
             batch_input_ids = input_ids.repeat(seq_len, 1)
             batch_input_ids.fill_diagonal_(mask_token_id)
             
-            # Repeat other inputs if present
             attention_mask = inputs["attention_mask"].repeat(seq_len, 1) if "attention_mask" in inputs else None
             token_type_ids = inputs["token_type_ids"].repeat(seq_len, 1) if "token_type_ids" in inputs else None
             
@@ -1359,30 +1416,85 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5):
             if attention_mask is not None: batch_inputs["attention_mask"] = attention_mask
             if token_type_ids is not None: batch_inputs["token_type_ids"] = token_type_ids
             
-            # Run inference on the batch
             outputs = mlm_model(**batch_inputs)
-            # outputs.logits shape: (seq_len, seq_len, vocab_size)
             full_logits = outputs.logits
             
-            # We want the prediction for the MASKED position at each row
-            # Row i has mask at index i. We want logits[i, i, :]
+            # Extract diagonal (masked positions)
             diagonal_logits = full_logits[torch.arange(seq_len), torch.arange(seq_len), :]
             
             probs = torch.softmax(diagonal_logits, dim=-1)
             logits_tensor = diagonal_logits
+            target_indices = range(seq_len)
 
-    mlm_tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
     cards = ""
-    # top_k passed as argument
-
-    for i, tok in enumerate(mlm_tokens):
-        # Clean token header
-        tok = tok.replace("##", "").replace("Ġ", "")
-        if not tok: tok = "&nbsp;"
+    # Process Results
+    
+    predicted_sentence_html = ""
+    if manual_mode:
+        predicted_tokens = []
         
-        # Calculate context string for display (PLL)
+        # We need to reconstruct the sentence with interactive spans
+        for i, tok in enumerate(mlm_tokens):
+            clean_tok = tok.replace("##", "").replace("Ġ", "")
+            if not clean_tok: clean_tok = "&nbsp;"
+            
+            # Determine state
+            is_masked = i in target_indices # currently masked/predicted
+            
+            if is_masked:
+                # Get the prediction
+                token_probs = probs[i]
+                top_idx = torch.argmax(token_probs).item()
+                pred_tok = tokenizer.decode([top_idx]) or "[UNK]"
+                clean_pred = pred_tok.replace("##", "").replace("Ġ", "")
+                
+                # Render as active predicted word
+                # Class 'predicted-word' + 'masked-active' (meaning mask is ON, showing prediction)
+                span = f"<span class='predicted-word masked-active' data-index='{i}' onclick='toggleMask({i})'>{clean_pred}</span>"
+                predicted_tokens.append(span)
+            else:
+                # Original word
+                # Class 'interactive-token'. Not active.
+                span = f"<span class='interactive-token' data-index='{i}' onclick='toggleMask({i})'>{clean_tok}</span>"
+                predicted_tokens.append(span)
+        
+        # Reconstruct sentence with spaces
+        display_sentence = ""
+        for i, html_tok in enumerate(predicted_tokens):
+            # Space logic based on ORIGINAL tokens (to respect subwords)
+            if i > 0:
+                raw_tok = mlm_tokens[i]
+                if not raw_tok.startswith("##"):
+                    display_sentence += " "
+            display_sentence += html_tok
+            
+        predicted_sentence_html = f"""
+        <div class='predicted-sentence-card'>
+            <div class='predicted-label'>MODEL PREDICTION</div>
+            <div class='predicted-text'>
+                {display_sentence}
+            </div>
+        </div>
+        """
+
+    # If manual mode and no masks, show prompt
+    if manual_mode and not target_indices:
+        cards = ""
+    
+    # (Removed duplicate 'cards += predicted_sentence_html')
+
+    for i in target_indices:
+        # For iterative mode, i is simple index.
+        # For manual mode, i is a masked index.
+        tok = mlm_tokens[i]
+        
+        # Clean token header
+        tok_display = tok.replace("##", "").replace("Ġ", "")
+        if not tok_display: tok_display = "&nbsp;"
+        
+        # Calculate context string for display (PLL) - Only for Iterative Mode
         context_html = ""
-        if not is_gpt2:
+        if not is_gpt2 and not manual_mode:
             try:
                 masked_copy = list(mlm_tokens)
                 masked_copy[i] = "[MASK]"
@@ -1393,6 +1505,11 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5):
                 context_html = f"<div class='mlm-context' style='margin-bottom:8px;font-size:11px;color:#475569;background:#f1f5f9;padding:4px;border-radius:4px;border:1px solid #e2e8f0;'>Context: <b>{context_str}</b></div>"
             except:
                 context_html = ""
+        
+        # In manual mode, maybe show what the original token was vs prediction?
+        header_extra = ""
+        if manual_mode:
+            header_extra = f"<span style='font-size:10px;color:#ef4444;margin-left:6px;'>(Masked)</span>"
 
         token_probs = probs[i]
         top_vals, top_idx = torch.topk(token_probs, top_k)
@@ -1460,9 +1577,11 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5):
         </div>
         """
 
-    return ui.HTML(
-        f"<div class='prediction-panel'><div class='card-scroll'><div class='mlm-grid'>{cards}</div></div></div>"
-    )
+    results_html = ""
+    if cards:
+         results_html = predicted_sentence_html + f"<div class='prediction-panel'><div class='card-scroll'><div class='mlm-grid'>{cards}</div></div></div>"
+
+    return ui.HTML(selector_html + results_html)
 
 
 def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False, baseline_stats=None, norm_mode="raw"):
