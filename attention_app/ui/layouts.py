@@ -21,18 +21,37 @@ attention_analysis_page = ui.page_fluid(
             ui.h3("Attention Atlas"),
         ),
         ui.div(
-            {"class": "app-subtitle"},
+            {"class": "app-subtitle", "style": "margin-bottom: 12px; padding-bottom: 12px;"}, # Tighter spacing
             "An interactive visualization of Transformer internals with a focus on attention mechanisms."
         ),
 
+        # View Mode Toggle (Basic/Advanced) - Modern Pill Buttons with Icons
         ui.div(
-            {"class": "sidebar-section"},
+            {"class": "sidebar-section", "style": "margin-top: 4px; margin-bottom: 4px;"}, # Move closer to line
+            ui.tags.span("Mode", class_="sidebar-label"),
+            ui.div(
+                {"id": "view-mode-container", "style": "width: 100%; display: flex; justify-content: center; margin-top: 6px;"},
+                ui.input_radio_buttons(
+                    "view_mode",
+                    None,
+                    choices={
+                        "basic": ui.HTML('''<span class="btn-content"><span>Basic</span><i class="fa-solid fa-gear"></i></span>'''),
+                        "advanced": ui.HTML('''<span class="btn-content"><span>Advanced</span><i class="fa-solid fa-brain"></i></span>''')
+                    },
+                    selected="basic",
+                    inline=True,
+                ),
+            ),
+        ),
+
+        ui.div(
+            {"class": "sidebar-section", "style": "margin-top: 0; transform: translateY(-8px);"}, # Fine-tuned vertical spacing
             # Header
             ui.tags.span("Compare Modes", class_="sidebar-label"),
             
-            # Checkbox Row - forced single line with compact spacing
+            # Checkbox Row - centered
             ui.div(
-                {"style": "margin-bottom: 0px; display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden;"},
+                {"id": "compare-modes-container", "style": "margin-bottom: 16px; display: flex; align-items: center; justify-content: center; width: 100%; gap: 48px; white-space: nowrap;"},
                 ui.input_switch("compare_mode", ui.span("Models", style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #cbd5e1; font-weight: 600;"), value=False),
                 ui.input_switch("compare_prompts_mode", ui.span("Prompts", style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #cbd5e1; font-weight: 600;"), value=False)
             ),
@@ -107,7 +126,7 @@ attention_analysis_page = ui.page_fluid(
         ),
 
         ui.div(
-            {"class": "sidebar-section"},
+            {"class": "sidebar-section", "style": "margin-top: 0; transform: translateY(-14px);"}, # Force visual move up
             ui.tags.span("Input Text", class_="sidebar-label"),
             
             # Custom History Input Component
@@ -264,7 +283,7 @@ attention_analysis_page = ui.page_fluid(
 
             ui.div(
                 {"style": "margin-bottom: 0px;"}, # Space for Visual Options
-                ui.input_action_button("generate_all", "Generate All", class_="btn-primary"),
+                ui.input_action_button("generate_all", "Generate All", class_="btn-primary", style="padding-top: 6px; padding-bottom: 6px; min-height: 0; height: auto;"), # Shorter button
                 ui.div(
                     {"id": "loading_spinner", "class": "loading-container", "style": "display:none;"},
                     ui.div({"class": "spinner"}),
@@ -312,6 +331,7 @@ app_ui = ui.page_navbar(
         ui.tags.title("Attention Atlas"),
         ui.tags.style(CSS),
         ui.tags.link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@500;700&family=PT+Serif:wght@400;700&display=swap"),
+        ui.tags.link(rel="stylesheet", href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"),
         ui.tags.script(src="https://cdn.plot.ly/plotly-2.24.1.min.js"),
         ui.tags.script(src="https://d3js.org/d3.v7.min.js"),
         ui.tags.script(JS_CODE),
@@ -369,6 +389,265 @@ app_ui = ui.page_navbar(
             #visualization_options_container .sidebar-section {
                 margin-top: 0 !important;
                 padding-top: 0 !important;
+            }
+
+            /* View Mode Toggle Styling - Equal Width & Centered */
+            #view-mode-container .shiny-input-container {
+                width: 100% !important;
+                display: flex !important;
+                justify-content: center !important;
+            }
+            
+            #view-mode-container .shiny-options-group {
+                display: flex !important;
+                gap: 12px !important;
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+                margin-top: 0 !important;
+                justify-content: center !important;
+                width: 100% !important;
+            }
+            
+            #view-mode-container .form-check {
+                padding: 0 !important;
+                margin: 0 !important;
+                min-height: 0 !important;
+            }
+
+            /* Target labels specifically inside the radio group */
+            #view-mode-container .shiny-options-group label {
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                padding: 4px 0 !important; /* Shorter vertical padding */
+                width: 125px !important; /* FIXED WIDTH FOR EQUALITY */
+                flex: 0 0 125px !important; /* Rigid flex sizing */
+                font-size: 13px !important;
+                font-weight: 700 !important;
+                font-family: 'Inter', system-ui, sans-serif !important;
+                text-transform: none !important; /* Allow Title Case */
+                letter-spacing: 0.5px !important;
+                color: #ff5ca9 !important;
+                background: transparent !important;
+                border: 2px solid #ff5ca9 !important;
+                border-radius: 9999px !important;
+                cursor: pointer !important;
+                transition: all 0.2s ease-in-out !important;
+                line-height: 1 !important;
+                margin: 0 !important;
+                opacity: 1 !important;
+                box-shadow: none !important;
+            }
+
+            /* Hide inputs */
+            #view-mode-container input[type="radio"],
+            #view-mode-container .form-check-input {
+                 position: absolute;
+                 opacity: 0;
+                 width: 0;
+                 height: 0;
+                 pointer-events: none;
+            }
+
+            /* Aggressively clear inner styles */
+            #view-mode-container .btn-content,
+            #view-mode-container .btn-content span,
+            #view-mode-container label span,
+            #view-mode-container i {
+                background-color: transparent !important;
+                background: transparent !important;
+                color: inherit !important;
+                border: none !important;
+                box-shadow: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            #view-mode-container .btn-content {
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                width: 100% !important;
+                gap: 8px !important;
+            }
+
+            #view-mode-container i {
+                font-size: 14px !important;
+            }
+
+            /* Hover State */
+            #view-mode-container .shiny-options-group label:hover {
+                background: rgba(255, 92, 169, 0.1) !important;
+                transform: translateY(-1px) !important;
+            }
+
+            /* Active State - Solid Pink (Less Bright) */
+            #view-mode-container input:checked + label,
+            #view-mode-container label:has(input:checked) {
+                background-color: #e64090 !important; /* Slightly darker/less neon pink */
+                color: #ffffff !important;
+                border-color: #e64090 !important;
+                box-shadow: none !important; /* Removed shadow/glow */
+            }
+            
+            #view-mode-container input:checked + label:hover,
+            #view-mode-container label:has(input:checked):hover {
+                 background-color: #d63080 !important;
+                 transform: translateY(-1px) !important;
+                 box-shadow: none !important;
+            }
+
+            /* Compare Modes Centering Fix */
+            #compare-modes-container .shiny-input-container {
+                width: auto !important;
+                margin-bottom: 0 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+            }
+
+            #compare-modes-container .form-check {
+                margin: 0 !important;
+                padding-left: 0 !important; /* Reset bootstrap padding */
+                display: flex !important;
+                align-items: center !important;
+                min-height: auto !important;
+                width: auto !important; /* Allow shrinking */
+                justify-content: center !important;
+            }
+            
+            #compare-modes-container .form-check-input {
+                margin-left: 0 !important; /* Reset bootstrap */
+                margin-right: 6px !important;
+                float: none !important;
+            }
+
+
+
+            /* Accordion Styling for Dark Theme */
+            .accordion {
+                background: transparent !important;
+                border: none !important;
+            }
+            .accordion-item {
+                background: transparent !important;
+                border: 1px solid #334155 !important;
+                border-radius: 8px !important;
+                margin-bottom: 12px !important;
+                overflow: hidden !important;
+            }
+            .accordion-header {
+                margin: 0 !important;
+            }
+            .accordion-button {
+                background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
+                color: #e2e8f0 !important;
+                font-size: 14px !important;
+                font-weight: 600 !important;
+                padding: 14px 20px !important;
+                border: none !important;
+                box-shadow: none !important;
+                transition: all 0.2s ease !important;
+            }
+            .accordion-button:not(.collapsed) {
+                background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%) !important;
+                color: #ffffff !important;
+                box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2) !important;
+            }
+            .accordion-button:hover {
+                background: linear-gradient(135deg, #334155 0%, #1e293b 100%) !important;
+            }
+            .accordion-button:not(.collapsed):hover {
+                background: linear-gradient(135deg, #2563eb 0%, #6d28d9 100%) !important;
+            }
+            .accordion-button::after {
+                filter: invert(1) !important;
+            }
+            .accordion-button:not(.collapsed)::after {
+                filter: invert(1) !important;
+            }
+            .accordion-body {
+                background: #0f172a !important;
+                padding: 16px !important;
+                border-top: 1px solid #334155 !important;
+            }
+            .accordion-panel-badge {
+                display: inline-flex !important;
+                align-items: center !important;
+                gap: 6px !important;
+                font-size: 10px !important;
+                font-weight: 500 !important;
+                padding: 2px 8px !important;
+                border-radius: 4px !important;
+                margin-left: 10px !important;
+                text-transform: uppercase !important;
+                letter-spacing: 0.5px !important;
+            }
+            .accordion-panel-badge.essential {
+                background: rgba(34, 197, 94, 0.15) !important;
+                color: #22c55e !important;
+                border: 1px solid rgba(34, 197, 94, 0.3) !important;
+            }
+            .accordion-panel-badge.explore {
+                background: rgba(59, 130, 246, 0.15) !important;
+                color: #3b82f6 !important;
+                border: 1px solid rgba(59, 130, 246, 0.3) !important;
+            }
+            .accordion-panel-badge.technical {
+                background: rgba(139, 92, 246, 0.15) !important;
+                color: #8b5cf6 !important;
+                border: 1px solid rgba(139, 92, 246, 0.3) !important;
+            }
+
+            /* Navbar Styling Overrides (Attention / Bias Buttons) */
+            .navbar {
+                padding-bottom: 12px !important; /* Closer to bottom */
+                background: transparent !important;
+                border-top: none !important;
+            }
+
+            .navbar .nav-link {
+                background: transparent !important;
+                border: 2px solid #ff5ca9 !important; /* Match Inactive View Mode */
+                color: #ff5ca9 !important;
+                border-radius: 9999px !important;
+                font-weight: 700 !important;
+                text-transform: none !important; /* Allow Title Case */
+                font-size: 13px !important;
+                padding: 6px 0 !important; /* Match Generate All button padding */
+                margin: 0 !important;
+                width: 100% !important;
+                display: flex !important;
+                justify-content: center !important;
+                align-items: center !important;
+                transition: all 0.2s ease-in-out !important;
+                min-height: 0 !important;
+                height: auto !important;
+            }
+
+            .navbar .nav-link:hover {
+                background: rgba(255, 92, 169, 0.1) !important;
+                color: #ff5ca9 !important;
+                transform: translateY(-1px) !important;
+            }
+
+            .navbar .nav-link.active {
+                background: #e64090 !important; /* Slightly darker pink for active, distinct from inactive? Or keep same logic? User said "design de não selecionado", let's make active solid to distinguish */
+                color: #ffffff !important;
+                border-color: #e64090 !important;
+                box-shadow: none !important;
+            }
+            
+            /* Ensure navbar items take full width available in the container */
+            .navbar-nav {
+                width: 100% !important;
+                padding: 0 24px !important;
+                gap: 16px !important;
+            }
+            
+            .navbar-nav > li {
+                flex: 1 !important;
             }
         """)
     ),
