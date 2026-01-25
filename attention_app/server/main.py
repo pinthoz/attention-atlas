@@ -739,13 +739,11 @@ def server(input, output, session):
                     else chip.classList.remove('active');
                 }});
 
-                // SYNC: Update MLM Tokens (only for Model A)
-                if (prefix === 'A') {{
-                    $('.maskable-token, .predicted-word').removeClass('masked-active');
-                    selectedArray.forEach(i => {{
-                         $(`[data-index="${{i}}"]`).addClass('masked-active');
-                    }});
-                }}
+                // SYNC: Update MLM Tokens for the correct model (A or B)
+                $(`.maskable-token[data-model="${{prefix}}"], .predicted-word[data-model="${{prefix}}"], .interactive-token[data-model="${{prefix}}"]`).removeClass('masked-active');
+                selectedArray.forEach(i => {{
+                     $(`[data-index="${{i}}"][data-model="${{prefix}}"]`).addClass('masked-active');
+                }});
                 
                 // Send to Shiny
                 const inputName = prefix === 'A' ? 'global_selected_tokens' : 'global_selected_tokens_B';
@@ -1463,31 +1461,35 @@ def server(input, output, session):
         # JS for Interactive Masking
         js_script = ui.HTML("""
         <script>
-        function toggleMask(index) {
+        function toggleMask(index, modelPrefix) {
             // SYNC: Trigger Floating Bar Click (Source of Truth)
-            // This will call handleTokenClick -> updateSelection -> Syncs visually back to here
-            // Use [data-prefix='A'] assumption for MLM
-            const chip = document.querySelector(`.token-chip[data-idx="${index}"][data-prefix="A"]`);
+            // Use the modelPrefix to target the correct floating bar chips
+            modelPrefix = modelPrefix || 'A';
+            const chip = document.querySelector(`.token-chip[data-idx="${index}"][data-prefix="${modelPrefix}"]`);
             if (chip) {
-                // Simulate Ctrl+Click to toggle without clearing others?
-                // handleTokenClick checks window.event.shiftKey. It doesn't check ctrlKey for toggle?
-                // Using a manual dispatch to be safe or updating handleTokenClick?
-                // handleTokenClick: "else { // Toggle ... }" runs if !shiftKey.
-                // So simple click IS toggle in the current implementation (lines 711+).
                 chip.click();
             } else {
-               // Fallback if bar not loaded? Just toggle locally.
-               $('[data-index="' + index + '"]').toggleClass('masked-active');
+               // Fallback if bar not loaded? Just toggle locally for the correct model.
+               $(`[data-index="${index}"][data-model="${modelPrefix}"]`).toggleClass('masked-active');
             }
         }
-        
+
         $(document).on('click', '#run_custom_mask', function() {
             var indices = [];
-            // We only need to check one set of tokens to get state, e.g. the selector
-            $('.maskable-token.masked-active').each(function() {
+            // Get indices only from Model A tokens
+            $('.maskable-token[data-model="A"].masked-active').each(function() {
                 indices.push(parseInt($(this).attr('data-index')));
             });
             Shiny.setInputValue('manual_mask_indices', indices, {priority: 'event'});
+        });
+
+        $(document).on('click', '#run_custom_mask_B', function() {
+            var indices = [];
+            // Get indices only from Model B tokens
+            $('.maskable-token[data-model="B"].masked-active').each(function() {
+                indices.push(parseInt($(this).attr('data-index')));
+            });
+            Shiny.setInputValue('manual_mask_indices_B', indices, {priority: 'event'});
         });
         </script>
         <style>
@@ -2483,8 +2485,8 @@ def server(input, output, session):
             # Simple pairing helper - adds colored border around existing cards
             def paired(output_a, output_b):
                 return ui.layout_columns(
-                    ui.div({"class": "compare-wrapper-a"}, output_a),
-                    ui.div({"class": "compare-wrapper-b"}, output_b),
+                    ui.div({"class": "compare-wrapper-a", "style": "height: 100%;"}, output_a),
+                    ui.div({"class": "compare-wrapper-b", "style": "height: 100%;"}, output_b),
                     col_widths=[6, 6]
                 )
 
@@ -2492,8 +2494,8 @@ def server(input, output, session):
             def paired_with_card(title, output_a, output_b):
                 header = ui.h4(title) if isinstance(title, str) else title
                 return ui.layout_columns(
-                    ui.div({"class": "card compare-card-a"}, header, output_a),
-                    ui.div({"class": "card compare-card-b"}, header, output_b),
+                    ui.div({"class": "card compare-card-a", "style": "height: 100%; display: flex; flex-direction: column;"}, header, output_a),
+                    ui.div({"class": "card compare-card-b", "style": "height: 100%; display: flex; flex-direction: column;"}, header, output_b),
                     col_widths=[6, 6]
                 )
 
@@ -2557,10 +2559,37 @@ def server(input, output, session):
                  _, _, _, _, _, _, _, encoder_model_B, *_ = res_B
                  is_gpt2_A = not hasattr(encoder_model_A, "encoder")
                  is_gpt2_B = not hasattr(encoder_model_B, "encoder")
+                 model_type_A = "gpt2" if is_gpt2_A else "bert"
+                 model_type_B = "gpt2" if is_gpt2_B else "bert"
 
                  rows = []
-                 # Embeddings
-                 rows.append(paired_with_card("Token Embeddings", get_embedding_table(res_A, top_k=top_k), get_embedding_table(res_B, top_k=top_k)))
+                 
+                 # Embeddings - Arrow must be OUTSIDE the .card to avoid overflow: hidden clipping
+                 # and match Single Mode atomic layout.
+                 row_A = ui.div(
+                     {"style": "position: relative; height: 100%;"},
+                     arrow("Input", "Token Embeddings", "vertical", suffix="_A", model_type=model_type_A, 
+                           style="position: absolute; top: -32px; left: 50%; transform: translateX(-50%); width: auto; margin: 0; z-index: 100;"),
+                     ui.div(
+                         {"class": "card compare-card-a", "style": "height: 100%; display: flex; flex-direction: column;"},
+                         ui.h4("Token Embeddings"),
+                         ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                         get_embedding_table(res_A, top_k=top_k)
+                     )
+                 )
+                 row_B = ui.div(
+                     {"style": "position: relative; height: 100%;"},
+                     arrow("Input", "Token Embeddings", "vertical", suffix="_B", model_type=model_type_B, 
+                           style="position: absolute; top: -32px; left: 50%; transform: translateX(-50%); width: auto; margin: 0; z-index: 100;"),
+                     ui.div(
+                         {"class": "card compare-card-b", "style": "height: 100%; display: flex; flex-direction: column;"},
+                         ui.h4("Token Embeddings"),
+                         ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+                         get_embedding_table(res_B, top_k=top_k)
+                     )
+                 )
+
+                 rows.append(ui.layout_columns(row_A, row_B, col_widths=[6, 6]))
                  
                  next_from = "Token Embeddings"
                  
@@ -2571,7 +2600,7 @@ def server(input, output, session):
                      next_from = "Segment Embeddings"
                  
                  # Positional
-                 rows.append(ui.div(paired_arrows(next_from, "Positional Embeddings", model_type_A="gpt2" if is_gpt2_A else "bert", model_type_B="gpt2" if is_gpt2_B else "bert"), class_="arrow-row"))
+                 rows.append(ui.div(paired_arrows(next_from, "Positional Embeddings", model_type_A=model_type_A, model_type_B=model_type_B), class_="arrow-row"))
                  rows.append(paired_with_card("Positional Embeddings", get_posenc_table(res_A, top_k=top_k), get_posenc_table(res_B, top_k=top_k)))
                  
                  # Sum & Norm
@@ -2595,8 +2624,8 @@ def server(input, output, session):
                  rows.append(paired(ui.output_ui("render_add_norm_post_ffn"), ui.output_ui("render_add_norm_post_ffn_B")))
                  
                  # Exit Arrow
-                 rows.append(ui.div(paired_arrows("Add & Norm (Post-FFN)", "Exit", model_type_A="gpt2" if is_gpt2_A else "bert", model_type_B="gpt2" if is_gpt2_B else "bert"), class_="arrow-row"))
-                 
+                 rows.append(ui.div(paired_arrows("Add & Norm (Post-FFN)", "Exit", model_type_A=model_type_A, model_type_B=model_type_B), class_="arrow-row"))
+
                  return ui.div(*rows)
 
             # Load results
@@ -4894,50 +4923,125 @@ def server(input, output, session):
         except:
             model_family = "bert"
 
-        try: use_mlm = input.use_mlm()
-        except: use_mlm = False
-
-        if model_family == "gpt2": use_mlm = True
-
         # Reconstruct text from tokenizer to avoid reactivity from input.text_input()
         tokens = res[0]
         tokenizer = res[6]
         text = tokenizer.convert_tokens_to_string(tokens)
 
-        is_bert = model_family != "gpt2" # safer check
-        
+        is_bert = model_family != "gpt2"
+
         try: top_k = int(input.global_topk())
         except: top_k = 3
 
+        # JS for Interactive Masking (Model B)
+        js_script_B = ui.HTML("""
+        <script>
+        // Ensure toggleMask function exists (may already be defined by Model A)
+        if (typeof window.toggleMask === 'undefined') {
+            window.toggleMask = function(index, modelPrefix) {
+                modelPrefix = modelPrefix || 'A';
+                const chip = document.querySelector(`.token-chip[data-idx="${index}"][data-prefix="${modelPrefix}"]`);
+                if (chip) {
+                    chip.click();
+                } else {
+                    $(`[data-index="${index}"][data-model="${modelPrefix}"]`).toggleClass('masked-active');
+                }
+            };
+        }
+
+        // Handler for Model B Predict Masked button
+        $(document).off('click', '#run_custom_mask_B').on('click', '#run_custom_mask_B', function() {
+            var indices = [];
+            $('.maskable-token[data-model="B"].masked-active').each(function() {
+                indices.push(parseInt($(this).attr('data-index')));
+            });
+            Shiny.setInputValue('manual_mask_indices_B', indices, {priority: 'event'});
+        });
+        </script>
+        """)
+
+        controls = []
+
         if is_bert:
-            # BERT logic: Check local state
-            use_mlm_B = show_mlm_B.get()
-            
-            title = "Masked Token Predictions (MLM)"
-            desc = "Pseudo-Likelihood: Each token is individually masked and predicted using the bidirectional context."
-            
-            if not use_mlm_B:
-                 return ui.div(
-                    {"class": "card", "style": "height: 100%; display: flex; flex-direction: column; justify-content: space-between;"},
-                    ui.div(
-                        ui.h4(title),
-                        ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                    ),
-                    ui.div(
-                         {"style": "flex-grow: 1; display: flex; align-items: center; justify-content: center; padding: 20px;"},
-                         ui.input_action_button("trigger_mlm_B", "Generate Predictions", class_="btn-primary")
-                    )
-                )
+            use_mlm_B = True
+
+            # Interactive Mode Logic (like Model A)
+            try: manual_mode = input.mlm_interactive_mode_B()
+            except: manual_mode = False
+
+            custom_mask_indices = None
+            if manual_mode:
+                try: custom_mask_indices = input.manual_mask_indices_B()
+                except: custom_mask_indices = None
+
+            # Toggle Masks button (same style as Model A)
+            active_class = "active" if manual_mode else ""
+            button_label = "Go back" if manual_mode else "Toggle Masks"
+
+            controls.append(ui.HTML(f"""
+            <div class='control-group' style='display:flex; align-items:center;'>
+                <div class='radio-group'>
+                    <span class='toggle-masks-btn {active_class}'
+                          onclick="Shiny.setInputValue('mlm_interactive_mode_B', !{str(manual_mode).lower()}, {{priority: 'event'}});">
+                        {button_label}
+                    </span>
+                </div>
+            </div>
+            """))
+
+            # Tooltip for BERT
+            tooltip_html = """
+                <div class='info-tooltip-wrapper' style='display:flex; align-items:center; margin-left:2px;'>
+                    <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
+                    <div class='info-tooltip-content'>
+                        <strong>Masked Language Modeling</strong>
+                        <p>We use BERT's Masked Language Modeling capability. To get these results, we iteratively mask each token in the sequence one by one and ask the model to predict the most likely original token based on the surrounding context (left and right).</p>
+                    </div>
+                </div>
+            """
+
+            title_header = ui.h4(
+                "Masked Token Predictions (MLM)",
+                ui.HTML(tooltip_html),
+                style="margin:0; display:flex; align-items:center;"
+            )
+            desc = "Predicts the masked token using bidirectional context."
         else:
             use_mlm_B = True
-            title = "Next Token Predictions (Causal)"
+            manual_mode = False
+            custom_mask_indices = None
+
+            tooltip_html = """
+                <div class='info-tooltip-wrapper' style='display:flex; align-items:center; margin-left:2px;'>
+                    <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
+                    <div class='info-tooltip-content'>
+                        <strong>Causal Language Modeling</strong>
+                        <p>We use GPT-2's Causal Language Modeling. The model predicts the <strong>next token</strong> in the sequence based on all previous tokens.</p>
+                    </div>
+                </div>
+            """
+            title_header = ui.h4(
+                "Next Token Predictions (Causal)",
+                ui.HTML(tooltip_html),
+                style="margin:0; display:flex; align-items:center;"
+            )
             desc = "Predicting the probability of the next token appearing after the sequence."
+
+        # Header Container (same layout as Model A)
+        header_row = ui.div(
+            {"style": "display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 4px;"},
+            title_header,
+            ui.div(*controls)
+        )
+
+        description_row = ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px; min-height: 20px; line-height: 1.4;")
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
-            ui.h4(title),
-            ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px; min-height: 32px;"),
-            get_output_probabilities(res, use_mlm_B, text, suffix="_B", top_k=top_k)
+            js_script_B,
+            header_row,
+            description_row,
+            get_output_probabilities(res, use_mlm_B, text, suffix="_B", top_k=top_k, manual_mode=manual_mode, custom_mask_indices=custom_mask_indices)
         )
 
     @output

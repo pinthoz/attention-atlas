@@ -798,33 +798,65 @@ CSS = """
 
         /* Compare mode: reduce gap for arrow rows */
         #dashboard-container-compare {
-            gap: 16px !important;
+            gap: 20px !important; /* Reduced from 24px */
+        }
+
+        /* Tighter vertical spacing for arrow rows in compare mode */
+        #dashboard-container-compare .arrow-row {
+            margin-top: -10px !important;
+            margin-bottom: -10px !important;
+            position: relative;
+            top: 5px; /* Center arrows vertically in the margin space */
+        }
+
+        /* Last arrow (Exit) needs more top offset */
+        #dashboard-container-compare .arrow-row:last-of-type {
+            top: 12px;
+        }
+
+        /* Space for Input arrow at top and reduced bottom margin in deep dive compare */
+        #dashboard-container-compare .accordion-item:last-child .accordion-body {
+            padding-top: 40px !important;
+            padding-bottom: 15px !important;
         }
 
         /* Ensure content body mimics the flex stack for uniform spacing */
         #compare-content-body {
             display: flex;
             flex-direction: column;
-            gap: 16px !important; /* MATCH PARENT GAP */
+            gap: 12px !important; /* Reduced from 16px to match Single Mode density */
             width: 100%;
         }
-        
+
         #compare-content-body > * {
-            margin-bottom: 0 !important; /* MATCH DASHBOARD STACK BEHAVIOR */
+            margin-bottom: 0 !important;
         }
-        
+
+        /* Reduce card padding specifically in compare mode for higher density */
+        #compare-content-body .card {
+            padding: 16px !important;
+        }
+
         /* Arrows in compare mode should have minimal spacing */
         #compare-content-body .arrow-row {
-            margin-top: 5px !important;     /* Natural gap (16px) ensures "slight gap" above */
-            margin-bottom: -25px !important; /* Aggressive negative margin tighters space below */
+            margin-top: -16px !important;    /* Tighter gap */
+            margin-bottom: -16px !important; /* Tighter gap */
             padding: 0 !important;
-            z-index: 1;
+            height: 10px; /* Minimal container height */
+            z-index: 10;
             position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        #compare-content-body .arrow-vertical {
+            height: 16px !important; /* Smaller arrow area */
+            margin: 0 auto !important;
         }
 
         /* Compare Mode Borders */
         /* Target the card directly inside the wrapper or the card itself */
-        .compare-card-a, 
+        .compare-card-a,
         .compare-wrapper-a .card,
         .compare-wrapper-a > .shiny-html-output > .card {
             border: 2px solid #3b82f6 !important;
@@ -832,7 +864,7 @@ CSS = """
             box-shadow: none !important; /* Remove shadow to avoid visual clutter with strong border */
         }
 
-        .compare-card-b, 
+        .compare-card-b,
         .compare-wrapper-b .card,
         .compare-wrapper-b > .shiny-html-output > .card {
             border: 2px solid #ff5ca9 !important;
