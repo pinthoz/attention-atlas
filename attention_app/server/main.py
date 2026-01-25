@@ -1725,6 +1725,21 @@ def server(input, output, session):
             use_mlm = True
             title = "Next Token Predictions (Causal)"
             desc = "Predicting the probability of the next token appearing after the sequence."
+            
+            tooltip_html = """
+                <div class='info-tooltip-wrapper' style='display:flex; align-items:center; margin-left:2px;'>
+                    <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
+                    <div class='info-tooltip-content'>
+                        <strong>Causal Language Modeling</strong>
+                        <p>We use GPT-2's Causal Language Modeling. The model predicts the <strong>next token</strong> in the sequence based on all previous tokens.</p>
+                    </div>
+                </div>
+            """
+            title_header = ui.h4(
+                title, 
+                ui.HTML(tooltip_html),
+                style="margin:0; display:flex; align-items:center;"
+            )
         else:
             use_mlm = True # Always show
             
@@ -2063,53 +2078,7 @@ def server(input, output, session):
             return ui.output_ui(f"render_deep_dive_bert_atomic{suffix}")
 
         def create_deep_dive_panel_gpt2():
-             # GPT-2 Logic remains (or should I update it too? User said "sections of deep dive..."). 
-             # For now, focusing on BERT request logic first layer. 
-             # But "sections of deep dive" implies all. 
-             # I will stick to BERT first to avoid breaking everything at once, 
-             # unless I see it's easy. 
-             # Given code block, I only see create_deep_dive_panel_bert.
-             # I will leave GPT2 as is for now or update if simple.
-             return ui.div(
-                # Embeddings Row
-                ui.div(
-                    {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        arrow("Embeddings", "Token Embeddings", "vertical", suffix=suffix, style="position: absolute; top: -27px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), ui.output_ui(f"render_embedding_table{suffix}", style="height: 100%;"))
-                    ),
-                    arrow("Token Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        ui.output_ui(f"render_posenc_table{suffix}", style="height: 100%;"),
-                        arrow("Sum & Layer Normalization", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;")
-                    ),
-                    arrow("Positional Embeddings", "Sum & Layer Normalization", "horizontal", suffix=suffix),
-                    ui.div({"class": "flex-card"}, ui.output_ui(f"render_sum_layernorm{suffix}", style="height: 100%;")),
-                    arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix),
-                    ui.div({"class": "flex-card"}, ui.output_ui(f"render_qkv_table{suffix}", style="height: 100%;")),
-                ),
-                # Residual Connections & FFN Row
-                ui.div(
-                    {"class": "flex-row-container"},
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        ui.output_ui(f"render_add_norm{suffix}", style="height: 100%;")
-                    ),
-                    arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        ui.output_ui(f"render_ffn{suffix}", style="height: 100%;"),
-                        arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0;")
-                    ),
-                    arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        ui.output_ui(f"render_add_norm_post_ffn{suffix}", style="height: 100%;")
-                    ),
-                )
-            )
+             return ui.output_ui(f"render_deep_dive_gpt2_atomic{suffix}")
 
         # --- Build Accordion Panels ---
         accordion_panels = [
@@ -2216,6 +2185,12 @@ def server(input, output, session):
         except: compare_models = False
         try: compare_prompts = input.compare_prompts_mode()
         except: compare_prompts = False
+
+        # --- Get View Mode ---
+        view_mode = "basic"
+        try: view_mode = input.view_mode()
+        except: pass
+        is_advanced = view_mode == "advanced"
         
         is_family_diff = False
         tokenization_info = ""
@@ -2485,8 +2460,8 @@ def server(input, output, session):
                 dashboard_layout_helper(is_gpt2, num_layers, num_heads, [], suffix="")
             )
         else:
-            # SIDE-BY-SIDE MODE - Paired Sections (no arrows)
-            # Each section rendered as: Section A | Section B
+            # SIDE-BY-SIDE MODE - Accordion Layout
+            
             # Get top_k for summary tables
             try: top_k = int(input.global_topk())
             except: top_k = 3
@@ -2523,55 +2498,112 @@ def server(input, output, session):
                 )
 
             # Paired arrows - vertical arrows for both models
-            def paired_arrows(from_section, to_section):
+            def paired_arrows(from_section, to_section, model_type_A=None, model_type_B=None):
                 return ui.layout_columns(
                     ui.div(
                         {"style": "display: flex; justify-content: center; padding: 0; margin: 0;"},
-                        arrow(from_section, to_section, "vertical", suffix="_A", extra_class="arrow-blue")
+                        arrow(from_section, to_section, "vertical", suffix="_A", extra_class="arrow-blue", model_type=model_type_A)
                     ),
                     ui.div(
                         {"style": "display: flex; justify-content: center; padding: 0; margin: 0;"},
-                        arrow(from_section, to_section, "vertical", suffix="_B", extra_class="arrow-pink")
+                        arrow(from_section, to_section, "vertical", suffix="_B", extra_class="arrow-pink", model_type=model_type_B)
                     ),
                     col_widths=[6, 6]
                 )
 
-            # Dynamic Arrow Renderers for Compare Mode to prevent "pop-in"
-            # These renderers wait for data to be available before showing the arrow
-            arrow_defs = [
-                ("arrow_pos_qkv", "Positional Embeddings", "Q/K/V Projections"),
-                ("arrow_qkv_scaled", "Q/K/V Projections", "Scaled Attention"),
-                ("arrow_scaled_global", "Scaled Attention", "Global Metrics"),
-                ("arrow_global_map", "Global Metrics", "Attention Map"),
-                ("arrow_map_flow", "Attention Map", "Attention Flow"),
-                ("arrow_flow_radar", "Attention Flow", "Radar View"),
-                ("arrow_radar_tree", "Radar View", "Tree View"),
-                ("arrow_tree_isa", "Tree View", "ISA"),
-                ("arrow_isa_addnorm", "ISA", "Add & Norm"),
-                ("arrow_addnorm_ffn", "Add & Norm", "Feed-Forward Network"),
-                ("arrow_ffn_post", "Feed-Forward Network", "Add & Norm (Post-FFN)"),
-                ("arrow_post_hidden", "Add & Norm (Post-FFN)", "Hidden States"),
-                ("arrow_hidden_next", "Hidden States", "Next Token Predictions"),
-            ]
+            # --- PANEL DEFINITIONS ---
 
-            for arrow_id, from_s, to_s in arrow_defs:
-                def register_arrow_renderer(aid, f, t):
-                    @output(id=aid)
-                    @render.ui
-                    def _render_arrow():
-                        res = get_active_result()
-                        res_B = get_active_result("_B")
-                        if not res or not res_B: 
-                            return None
-                        return paired_arrows(f, t)
-                register_arrow_renderer(arrow_id, from_s, to_s)
+            def create_overview_panel_compare():
+                content = [
+                     # Predictions
+                     paired(ui.output_ui("render_mlm_predictions"), ui.output_ui("render_mlm_predictions_B")),
+                     # Radar
+                     paired(ui.output_ui("render_radar_view"), ui.output_ui("render_radar_view_B")),
+                     # Global Metrics
+                     paired(ui.output_ui("render_global_metrics"), ui.output_ui("render_global_metrics_B")),
+                ]
+                
+                # Hidden States (if advanced) - In Single Mode this is in Overview
+                if is_advanced:
+                    content.append(paired(ui.output_ui("render_layer_output"), ui.output_ui("render_layer_output_B")))
+                    
+                return ui.div(*content)
+
+            def create_explore_panel_compare():
+                # Base content
+                content = [
+                    # Map
+                    paired(ui.output_ui("attention_map"), ui.output_ui("attention_map_B")),
+                    # Flow
+                    paired(ui.output_ui("attention_flow"), ui.output_ui("attention_flow_B")),
+                    
+                    # Tree
+                    paired(ui.output_ui("render_tree_view"), ui.output_ui("render_tree_view_B")),
+                    
+                    # ISA
+                    paired(ui.output_ui("isa_scatter_A_compare"), ui.output_ui("isa_scatter_B_compare"))
+                ]
+                
+                # Advanced: Scaled Attention (if advanced)
+                if is_advanced:
+                     content.append(ui.div(style="height: 20px;"))
+                     content.append(paired(ui.output_ui("render_scaled_attention"), ui.output_ui("render_scaled_attention_B")))
+                
+                return ui.div(*content)
+
+            def create_deep_dive_panel_compare():
+                 # Res unpack to check for model types for dynamic Deep Dive layout
+                 _, _, _, _, _, _, _, encoder_model_A, *_ = res_A
+                 _, _, _, _, _, _, _, encoder_model_B, *_ = res_B
+                 is_gpt2_A = not hasattr(encoder_model_A, "encoder")
+                 is_gpt2_B = not hasattr(encoder_model_B, "encoder")
+
+                 rows = []
+                 # Embeddings
+                 rows.append(paired_with_card("Token Embeddings", get_embedding_table(res_A, top_k=top_k), get_embedding_table(res_B, top_k=top_k)))
+                 
+                 next_from = "Token Embeddings"
+                 
+                 # Segment Embeddings (Show ONLY if both are BERT - neither is GPT-2)
+                 if not is_gpt2_A and not is_gpt2_B:
+                     rows.append(ui.div(paired_arrows(next_from, "Segment Embeddings"), class_="arrow-row"))
+                     rows.append(paired(ui.output_ui("render_segment_table"), ui.output_ui("render_segment_table_B")))
+                     next_from = "Segment Embeddings"
+                 
+                 # Positional
+                 rows.append(ui.div(paired_arrows(next_from, "Positional Embeddings", model_type_A="gpt2" if is_gpt2_A else "bert", model_type_B="gpt2" if is_gpt2_B else "bert"), class_="arrow-row"))
+                 rows.append(paired_with_card("Positional Embeddings", get_posenc_table(res_A, top_k=top_k), get_posenc_table(res_B, top_k=top_k)))
+                 
+                 # Sum & Norm
+                 rows.append(ui.div(paired_arrows("Positional Embeddings", "Sum & Layer Normalization"), class_="arrow-row"))
+                 rows.append(paired(ui.output_ui("render_sum_layernorm"), ui.output_ui("render_sum_layernorm_B")))
+
+                 # QKV
+                 rows.append(ui.div(paired_arrows("Sum & Layer Normalization", "Q/K/V Projections"), class_="arrow-row"))
+                 rows.append(paired(ui.output_ui("render_qkv_table"), ui.output_ui("render_qkv_table_B")))
+                 
+                 # Add & Norm
+                 rows.append(ui.div(paired_arrows("Q/K/V Projections", "Add & Norm"), class_="arrow-row"))
+                 rows.append(paired(ui.output_ui("render_add_norm"), ui.output_ui("render_add_norm_B")))
+                 
+                 # FFN
+                 rows.append(ui.div(paired_arrows("Add & Norm", "Feed-Forward Network"), class_="arrow-row"))
+                 rows.append(paired(ui.output_ui("render_ffn"), ui.output_ui("render_ffn_B")))
+                 
+                 # Post FFN
+                 rows.append(ui.div(paired_arrows("Feed-Forward Network", "Add & Norm (Post-FFN)"), class_="arrow-row"))
+                 rows.append(paired(ui.output_ui("render_add_norm_post_ffn"), ui.output_ui("render_add_norm_post_ffn_B")))
+                 
+                 # Exit Arrow
+                 rows.append(ui.div(paired_arrows("Add & Norm (Post-FFN)", "Exit", model_type_A="gpt2" if is_gpt2_A else "bert", model_type_B="gpt2" if is_gpt2_B else "bert"), class_="arrow-row"))
+                 
+                 return ui.div(*rows)
 
             # Load results
             res_A = get_active_result()
             res_B = get_active_result("_B")
 
             # If strictly waiting for data, show only preview row + loading message
-            # But ALWAYS use output_ui (not static HTML) to avoid blank flash on transition
             if not res_A or not res_B:
                  return ui.div(
                      {"id": "dashboard-container-compare", "class": "dashboard-stack"},
@@ -2579,7 +2611,7 @@ def server(input, output, session):
                           ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
                           ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                           col_widths=[6, 6]
-                     ),
+                      ),
                     # Use output_ui - the renderers handle grey/colored states internally
                     paired_with_card("Sentence Preview", ui.output_ui("preview_text"), ui.output_ui("preview_text_B")),
                     ui.div(
@@ -2588,7 +2620,7 @@ def server(input, output, session):
                     )
                  )
 
-            # Render Paired Layout - simple approach like single mode
+            # Render Paired Layout
             # Reconstruct text from tokenizers to avoid reactivity
             tokens_A = res_A[0]
             tokenizer_A = res_A[6]
@@ -2596,6 +2628,29 @@ def server(input, output, session):
             tokens_B = res_B[0]
             tokenizer_B = res_B[6]
             text_B_reconstructed = tokenizer_B.convert_tokens_to_string(tokens_B)
+
+            # Build Accordion Items
+            accordion_items = [
+                ui.accordion_panel(
+                    ui.span("Overview", ui.span({"class": "accordion-panel-badge essential"}, "Essential")),
+                    create_overview_panel_compare(),
+                    value="overview"
+                ),
+                ui.accordion_panel(
+                    ui.span("Explore Attention", ui.span({"class": "accordion-panel-badge explore"}, "Visual")),
+                    create_explore_panel_compare(),
+                    value="explore"
+                ),
+            ]
+            
+            if is_advanced:
+                accordion_items.append(
+                    ui.accordion_panel(
+                        ui.span("Deep Dive / Internals", ui.span({"class": "accordion-panel-badge technical"}, "Technical")),
+                        create_deep_dive_panel_compare(),
+                        value="deep_dive"
+                    )
+                )
 
             return ui.div(
                 {"id": "dashboard-container-compare", "class": "dashboard-stack"},
@@ -2608,84 +2663,18 @@ def server(input, output, session):
                 ),
 
                 # Row 0: Sentence Preview
-                # Use manual layout to put Toggle only on Card A (avoid duplicate ID)
                 ui.layout_columns(
                     ui.div({"class": "card compare-card-a"}, preview_title, get_preview_text_view(res_A, text_A_reconstructed, "", footer_html=tok_info_A if is_family_diff else "")),
-
-                    ui.div(
-                        {"class": "card compare-card-b"},
-                        # Header for B
-                        preview_title_B,
-                        get_preview_text_view(res_B, text_B_reconstructed, "_B", footer_html=tok_info_B if is_family_diff else "")
-                    ),
+                    ui.div({"class": "card compare-card-b"}, preview_title_B, get_preview_text_view(res_B, text_B_reconstructed, "_B", footer_html=tok_info_B if is_family_diff else "")),
                     col_widths=[6, 6]
                 ),
                 
-                # Hidden container for Simultaneous Reveal
-                ui.div(
-                    {"id": "compare-content-body", "class": "content-hidden"},
-                    
-                    # Row 0.5: First Arrow (Inserted here so it reveals with the content)
-                    ui.div(paired_arrows("Sentence Preview", "Token Embeddings"), class_="arrow-row"),
-
-                    # Row 1: Token Embeddings
-                    paired_with_card("Token Embeddings", get_embedding_table(res_A, top_k=top_k), get_embedding_table(res_B, top_k=top_k)),
-                    ui.div(paired_arrows("Token Embeddings", "Positional Embeddings"), class_="arrow-row"),
-
-                    # Row 2: Positional Embeddings
-                    paired_with_card("Positional Embeddings", get_posenc_table(res_A, top_k=top_k), get_posenc_table(res_B, top_k=top_k)),
-                    ui.output_ui("arrow_pos_qkv", class_="arrow-row"),
-
-                    # Row 3: Q/K/V Projections
-                    paired(ui.output_ui("render_qkv_table"), ui.output_ui("render_qkv_table_B")),
-                    ui.output_ui("arrow_qkv_scaled", class_="arrow-row"),
-
-                    # Row 4: Scaled Attention
-                    paired(ui.output_ui("render_scaled_attention"), ui.output_ui("render_scaled_attention_B")),
-                    ui.output_ui("arrow_scaled_global", class_="arrow-row"),
-
-                    # Row 5: Global Metrics
-                    paired(ui.output_ui("render_global_metrics"), ui.output_ui("render_global_metrics_B")),
-                    ui.output_ui("arrow_global_map", class_="arrow-row"),
-
-                    # Row 6: Attention Map
-                    paired(ui.output_ui("attention_map"), ui.output_ui("attention_map_B")),
-                    ui.output_ui("arrow_map_flow", class_="arrow-row"),
-
-                    # Row 7: Attention Flow
-                    paired(ui.output_ui("attention_flow"), ui.output_ui("attention_flow_B")),
-                    ui.output_ui("arrow_flow_radar", class_="arrow-row"),
-
-                    # Row 8: Radar View
-                    paired(ui.output_ui("render_radar_view"), ui.output_ui("render_radar_view_B")),
-                    ui.output_ui("arrow_radar_tree", class_="arrow-row"),
-
-                    # Row 9: Tree View
-                    paired(ui.output_ui("render_tree_view"), ui.output_ui("render_tree_view_B")),
-                    ui.output_ui("arrow_tree_isa", class_="arrow-row"),
-
-                    # Row 10: ISA
-                    paired(ui.output_ui("isa_scatter_A_compare"), ui.output_ui("isa_scatter_B_compare")),
-                    ui.output_ui("arrow_isa_addnorm", class_="arrow-row"),
-
-                    # Row 11: Add & Norm
-                    paired(ui.output_ui("render_add_norm"), ui.output_ui("render_add_norm_B")),
-                    ui.output_ui("arrow_addnorm_ffn", class_="arrow-row"),
-
-                    # Row 12: Feed-Forward Network
-                    paired(ui.output_ui("render_ffn"), ui.output_ui("render_ffn_B")),
-                    ui.output_ui("arrow_ffn_post", class_="arrow-row"),
-
-                    # Row 13: Add & Norm (Post-FFN)
-                    paired(ui.output_ui("render_add_norm_post_ffn"), ui.output_ui("render_add_norm_post_ffn_B")),
-                    ui.output_ui("arrow_post_hidden", class_="arrow-row"),
-
-                    # Row 14: Hidden States
-                    paired(ui.output_ui("render_layer_output"), ui.output_ui("render_layer_output_B")),
-                    ui.output_ui("arrow_hidden_next", class_="arrow-row"),
-
-                    # Row 15: Next Token Predictions
-                    paired(ui.output_ui("render_mlm_predictions"), ui.output_ui("render_mlm_predictions_B")),
+                # Accordion
+                ui.accordion(
+                    *accordion_items,
+                    id="dashboard_accordion_compare",
+                    open=["overview"],
+                    multiple=True,
                 )
             )
 
@@ -5770,6 +5759,164 @@ def server(input, output, session):
                     arrow("Segment Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
                 ),
                 arrow("Segment Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k))
+                ),
+            ),
+            # Sum & Norm Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model))
+                ),
+                arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div(
+                        {"class": "card", "style": "height: 100%;"},
+                        ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
+                        ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                        get_qkv_table(res, layer_idx, top_k=top_k, suffix=suffix, norm_mode=norm_mode)
+                    ),
+
+                ),
+            ),
+            # Residual Connections Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 25px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx))
+                ),
+                arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -35px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx))
+                ),
+                arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx)),
+                    arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
+                ),
+            ),
+        )
+
+    @output
+    @render.ui
+    def render_deep_dive_gpt2_atomic():
+        res = get_active_result()
+        if not res: 
+            return ui.div(
+                "Loading...",
+                style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;"
+            )
+        suffix = ""
+        
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+        try: layer_idx = int(input.global_layer())
+        except: layer_idx = 0
+        norm_mode = global_norm_mode.get()
+        _, _, _, _, _, _, _, encoder_model, *_ = res
+        model_type = getattr(encoder_model.config, 'model_type', 'gpt2')
+
+        return ui.div(
+            # Embeddings Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k))
+                ),
+                ui.div(
+                    {"style": "position: relative; display: flex; align-items: center; justify-content: center;"},
+                    arrow("Token Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
+                    arrow("Positional Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; bottom: -25px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
+                ),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k))
+                ),
+            ),
+            # Sum & Norm Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model))
+                ),
+                arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div(
+                        {"class": "card", "style": "height: 100%;"},
+                        ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
+                        ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                        get_qkv_table(res, layer_idx, top_k=top_k, suffix=suffix, norm_mode=norm_mode)
+                    ),
+
+                ),
+            ),
+            # Residual Connections Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 25px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx))
+                ),
+                arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -35px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx))
+                ),
+                arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx)),
+                    arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
+                ),
+            ),
+        )
+
+    @output
+    @render.ui
+    def render_deep_dive_gpt2_atomic_B():
+        res = get_active_result("_B")
+        if not res: 
+            return ui.div(
+                "Loading...",
+                style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;"
+            )
+        suffix = "_B"
+        
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+        try: layer_idx = int(input.global_layer())
+        except: layer_idx = 0
+        norm_mode = global_norm_mode.get()
+        _, _, _, _, _, _, _, encoder_model, *_ = res
+        model_type = getattr(encoder_model.config, 'model_type', 'gpt2')
+
+        return ui.div(
+            # Embeddings Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k))
+                ),
+                ui.div(
+                    {"style": "position: relative; display: flex; align-items: center; justify-content: center;"},
+                    arrow("Token Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
+                    arrow("Positional Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; bottom: -25px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
+                ),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
                     ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k))

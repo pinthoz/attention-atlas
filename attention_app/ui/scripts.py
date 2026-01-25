@@ -919,6 +919,33 @@ JS_TRANSITION_MODAL = """
                 }
             }
 
+            // Dynamic handling for Token Embeddings -> Positional Embeddings
+            if (from === 'Token Embeddings' && to === 'Positional Embeddings') {
+                if (modelType === 'gpt2') {
+                    return `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Adding Position Information</h4>
+                    <p>In GPT-2, <strong>Positional Embeddings</strong> are added directly to the Token Embeddings. Unlike BERT, there are no Segment Embeddings because GPT-2 is typically trained on a continuous stream of text.</p>
+                    <ul>
+                        <li><strong>Token Embeddings:</strong> Represent the meaning of each word/subword.</li>
+                        <li><strong>Positional Embeddings:</strong> Indicate the order of tokens in the sequence.</li>
+                        <li><strong>Summation:</strong> The two vectors are added element-wise to create the initial input representation.</li>
+                    </ul>
+                    `;
+                } else {
+                    return `
+                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Adding Position & Segment Info</h4>
+                    <p>For BERT, the final input representation is the sum of <strong>three</strong> components. Even if the Segment Embeddings details are hidden in this comparison view, they are included in the calculation.</p>
+                    <ul>
+                        <li><strong>Token Embeddings:</strong> Represent the meaning of each word/subword.</li>
+                        <li><strong>Segment Embeddings:</strong> Distinguish between Sentence A and Sentence B.</li>
+                        <li><strong>Positional Embeddings:</strong> Indicate the order of tokens.</li>
+                    </ul>
+                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Input = Token + Segment + Position</div>
+                    <p>All three vectors are summed element-wise to form the model's input.</p>
+                    `;
+                }
+            }
+
             const explanations = {
                 // 'Input_Token Embeddings' is handled dynamically above
                 'Token Embeddings_Segment Embeddings': `
@@ -1093,15 +1120,6 @@ JS_TRANSITION_MODAL = """
                     <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Logits = Linear(HiddenStates)</div>
                     <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Probabilities = Softmax(Logits)</div>
                     <p>This gives a probability distribution over the entire vocabulary for each token position.</p>
-                `,
-                'Token Embeddings_Positional Embeddings': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Adding Position Information</h4>
-                    <p>In GPT-2, <strong>Positional Embeddings</strong> are added directly to the Token Embeddings. Unlike BERT, there are no Segment Embeddings because GPT-2 is typically trained on a continuous stream of text.</p>
-                    <ul>
-                        <li><strong>Token Embeddings:</strong> Represent the meaning of each word/subword.</li>
-                        <li><strong>Positional Embeddings:</strong> Indicate the order of tokens in the sequence.</li>
-                        <li><strong>Summation:</strong> The two vectors are added element-wise to create the initial input representation.</li>
-                    </ul>
                 `,
                 'Hidden States_Next Token Predictions': `
                     <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Causal Language Modeling</h4>

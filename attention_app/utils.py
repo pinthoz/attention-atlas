@@ -105,7 +105,7 @@ def compute_influence_tree(attention_matrix, tokens, Q_matrix, K_matrix, d_k, ro
                 children.append(child_tree)
         
         return {
-            'name': tokens[token_idx],
+            'name': tokens[token_idx].replace("##", "").replace("Ġ", ""),
             'att': att_weight,
             'qk_sim': qk_sim,
             'token_idx': int(token_idx),
