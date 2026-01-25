@@ -997,11 +997,11 @@ CSS = """
         }
 
         .cosine-gradient {
-            background: linear-gradient(to right, #3b82f6, #f8fafc, #ef4444);
+            background: linear-gradient(to right, #8b5cf6, #f8fafc, #ef4444);
         }
 
         .attention-gradient {
-            background: linear-gradient(to right, #f8fafc, #3b82f6);
+            background: linear-gradient(to right, #f8fafc, #ff5ca9);
         }
 
         .axis-labels-container {
@@ -3351,12 +3351,12 @@ __all__ = ["CSS"]
         .norm-bar-fill {
             height: 100%;
             border-radius: 4px;
-            background: linear-gradient(90deg, var(--primary-color), var(--accent-blue));
+            background: linear-gradient(90deg, #ff5ca9, #e64090);
             transition: width 0.3s ease;
         }
 
         .pos-norm-fill {
-            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            background: linear-gradient(90deg, #ff5ca9, #8b5cf6);
         }
 
         .pos-index {
@@ -3813,15 +3813,52 @@ __all__ = ["CSS"]
             color: #9333ea;
         }
 
-        .qkv-combined-table .q-norm {
-            color: #16a34a;
-        }
-
-        .qkv-combined-table .k-norm {
-            color: #ea580c;
-        }
-
         .qkv-combined-table .v-norm {
             color: #9333ea;
+        }
+        
+        /* ==========================================
+           Accordion Styling Overrides
+           ========================================== */
+           
+        .accordion-button:not(.collapsed) {
+            color: white !important;
+            background: #ff5ca9 !important;
+            box-shadow: 0 4px 6px -1px rgba(255, 92, 169, 0.2) !important;
+        }
+
+        .accordion-button:focus {
+            z-index: 3;
+            border-color: #ff5ca9;
+            outline: 0;
+            box-shadow: 0 0 0 0.25rem rgba(255, 92, 169, 0.25) !important;
+        }
+
+        .accordion-button:not(.collapsed)::after {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='white'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e") !important;
+        }
+
+        .accordion-item {
+            border-radius: 16px !important;
+            overflow: hidden !important; /* Needed to clip child borders */
+            border: 1px solid #e2e8f0 !important;
+            margin-bottom: 16px; /* Spacing between items if desired, matching cards */
+            background-color: transparent !important; /* Fix potential white corners */
+        }
+
+        .accordion-collapse {
+            border-bottom-left-radius: 16px !important;
+            border-bottom-right-radius: 16px !important;
+        }
+
+        /* Fix corners for first/last items specifically if Bootstrap overrides radius */
+        .accordion-item:first-of-type {
+            border-top-left-radius: 16px !important;
+            border-top-right-radius: 16px !important;
+        }
+
+        .accordion-item:last-of-type {
+            border-bottom-left-radius: 16px !important;
+            border-bottom-right-radius: 16px !important;
         }
         """

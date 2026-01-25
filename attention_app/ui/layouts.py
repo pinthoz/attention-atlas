@@ -542,9 +542,9 @@ app_ui = ui.page_navbar(
             }
             .accordion-item {
                 background: transparent !important;
-                border: 1px solid #334155 !important;
-                border-radius: 8px !important;
-                margin-bottom: 12px !important;
+                border: 1px solid #e2e8f0 !important;
+                border-radius: 16px !important;
+                margin-bottom: 16px !important;
                 overflow: hidden !important;
             }
             .accordion-header {
@@ -561,15 +561,21 @@ app_ui = ui.page_navbar(
                 transition: all 0.2s ease !important;
             }
             .accordion-button:not(.collapsed) {
-                background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%) !important;
+                background: #ff5ca9 !important;
                 color: #ffffff !important;
-                box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2) !important;
+                box-shadow: 0 4px 6px -1px rgba(255, 92, 169, 0.2) !important;
+            }
+            .accordion-button:focus {
+                z-index: 3;
+                border-color: #ff5ca9;
+                outline: 0;
+                box-shadow: 0 0 0 0.25rem rgba(255, 92, 169, 0.25) !important;
             }
             .accordion-button:hover {
                 background: linear-gradient(135deg, #334155 0%, #1e293b 100%) !important;
             }
             .accordion-button:not(.collapsed):hover {
-                background: linear-gradient(135deg, #2563eb 0%, #6d28d9 100%) !important;
+                background: #e64090 !important;
             }
             .accordion-button::after {
                 filter: invert(1) !important;
@@ -581,6 +587,8 @@ app_ui = ui.page_navbar(
                 background: #0f172a !important;
                 padding: 16px !important;
                 border-top: 1px solid #334155 !important;
+                border-bottom-left-radius: 16px !important;
+                border-bottom-right-radius: 16px !important;
             }
             .accordion-panel-badge {
                 display: inline-flex !important;
@@ -608,6 +616,13 @@ app_ui = ui.page_navbar(
                 background: rgba(139, 92, 246, 0.15) !important;
                 color: #8b5cf6 !important;
                 border: 1px solid rgba(139, 92, 246, 0.3) !important;
+            }
+            
+            /* Badges on Active (Pink) Header -> White */
+            .accordion-button:not(.collapsed) .accordion-panel-badge {
+                background: rgba(255, 255, 255, 0.2) !important;
+                color: white !important;
+                border: 1px solid rgba(255, 255, 255, 0.5) !important;
             }
 
             /* Navbar Styling Overrides (Attention / Bias Buttons) */
