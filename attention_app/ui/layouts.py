@@ -625,55 +625,7 @@ app_ui = ui.page_navbar(
                 border: 1px solid rgba(255, 255, 255, 0.5) !important;
             }
 
-            /* Navbar Styling Overrides (Attention / Bias Buttons) */
-            .navbar {
-                padding-bottom: 12px !important; /* Closer to bottom */
-                background: transparent !important;
-                border-top: none !important;
-            }
-
-            .navbar .nav-link {
-                background: transparent !important;
-                border: 2px solid #ff5ca9 !important; /* Match Inactive View Mode */
-                color: #ff5ca9 !important;
-                border-radius: 9999px !important;
-                font-weight: 700 !important;
-                text-transform: none !important; /* Allow Title Case */
-                font-size: 13px !important;
-                padding: 6px 0 !important; /* Match Generate All button padding */
-                margin: 0 !important;
-                width: 100% !important;
-                display: flex !important;
-                justify-content: center !important;
-                align-items: center !important;
-                transition: all 0.2s ease-in-out !important;
-                min-height: 0 !important;
-                height: auto !important;
-            }
-
-            .navbar .nav-link:hover {
-                background: rgba(255, 92, 169, 0.1) !important;
-                color: #ff5ca9 !important;
-                transform: translateY(-1px) !important;
-            }
-
-            .navbar .nav-link.active {
-                background: #e64090 !important; /* Slightly darker pink for active, distinct from inactive? Or keep same logic? User said "design de não selecionado", let's make active solid to distinguish */
-                color: #ffffff !important;
-                border-color: #e64090 !important;
-                box-shadow: none !important;
-            }
-            
-            /* Ensure navbar items take full width available in the container */
-            .navbar-nav {
-                width: 100% !important;
-                padding: 0 24px !important;
-                gap: 16px !important;
-            }
-            
-            .navbar-nav > li {
-                flex: 1 !important;
-            }
+            /* Navbar Styling Overrides (Removed - Consolidated in styles.py) */
         """)
     ),
 
