@@ -5718,7 +5718,7 @@ def server(input, output, session):
                 arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -35px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
+                    arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
                     ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx))
                 ),
                 arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),

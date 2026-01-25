@@ -1,4 +1,41 @@
 CSS = """
+        /* CRITICAL: Hide compare mode elements IMMEDIATELY to prevent flash on page load */
+        #model-a-header,
+        #model-b-panel {
+            display: none !important;
+            opacity: 0;
+            transition: opacity 0.2s ease-in-out;
+        }
+        /* Class added by JS when compare_mode is active - overrides the hide rule */
+        #model-a-header.compare-active {
+            display: block !important;
+        }
+        #model-b-panel.compare-active {
+            display: flex !important;
+        }
+        #model-a-header.compare-active,
+        #model-b-panel.compare-active {
+            opacity: 1;
+        }
+
+        /* Navbar buttons (Attention/Bias) - Apply styled appearance IMMEDIATELY */
+        /* These rules load before Bootstrap can apply defaults */
+        .navbar .nav-link {
+            background: transparent !important;
+            border: 2px solid #ff5ca9 !important;
+            color: #ff5ca9 !important;
+            border-radius: 9999px !important;
+            font-weight: 700 !important;
+            font-size: 13px !important;
+            padding: 6px 0 !important;
+            opacity: 1 !important;
+        }
+        .navbar .nav-link.active {
+            background: #e64090 !important;
+            color: #ffffff !important;
+            border-color: #e64090 !important;
+        }
+
         :root {
             --primary-color: #ff5ca9;
             --primary-hover: #ff74b8;
