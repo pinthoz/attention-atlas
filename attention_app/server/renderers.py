@@ -1565,7 +1565,7 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
         cards += f"""
         <div class='mlm-card'>
             <div class='{header_class}' {onclick_attr} title='{header_title}'>
-                {tok}
+                {tok_display}
                 {'<span style="font-size:10px;opacity:0.6;margin-left:4px;">▼</span>' if context_html else ''}
             </div>
             <div id='{header_id}' class='mlm-details-panel' style='margin-bottom:8px;'>
