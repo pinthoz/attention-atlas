@@ -1329,7 +1329,10 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
         )
     
     mlm_tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
-    
+
+    # Model prefix to distinguish A vs B tokens
+    model_prefix = "B" if suffix == "_B" else "A"
+
     # --- Interactive Token Selector HTML ---
     # We generate this regardless, or only in manual mode?
     # In manual mode, we need it to be clickable.
@@ -1344,13 +1347,15 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
             active_class = "masked-active" if is_masked else ""
             
             # Using span instead of button to avoid form submission, handled by JS
+            # Add data-model attribute to distinguish A vs B
             btn = f"""
-            <div class='maskable-token {active_class}' data-index='{i}' onclick='toggleMask({i})'>
+            <div class='maskable-token {active_class}' data-index='{i}' data-model='{model_prefix}' onclick='toggleMask({i}, "{model_prefix}")'>
                 <div class='token-text'>{clean_tok}</div>
             </div>
             """
             selector_buttons.append(btn)
             
+        button_id = "run_custom_mask_B" if model_prefix == "B" else "run_custom_mask"
         selector_html = f"""
         <div class='mask-selector-container'>
             <div class='mask-selector-label'>Click tokens to mask:</div>
@@ -1358,7 +1363,7 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
                 {''.join(selector_buttons)}
             </div>
             <div style='margin-top:8px;display:flex;justify-content:flex-end;'>
-                <button id='run_custom_mask' class='metric-tag'>Predict Masked</button>
+                <button id='{button_id}' class='metric-tag'>Predict Masked</button>
             </div>
         </div>
         """
@@ -1447,15 +1452,17 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
                 top_idx = torch.argmax(token_probs).item()
                 pred_tok = tokenizer.decode([top_idx]) or "[UNK]"
                 clean_pred = pred_tok.replace("##", "").replace("Ġ", "")
-                
+
                 # Render as active predicted word
                 # Class 'predicted-word' + 'masked-active' (meaning mask is ON, showing prediction)
-                span = f"<span class='predicted-word masked-active' data-index='{i}' onclick='toggleMask({i})'>{clean_pred}</span>"
+                # Add data-model attribute to distinguish A vs B
+                span = f"<span class='predicted-word masked-active' data-index='{i}' data-model='{model_prefix}' onclick='toggleMask({i}, \"{model_prefix}\")'>{clean_pred}</span>"
                 predicted_tokens.append(span)
             else:
                 # Original word
                 # Class 'interactive-token'. Not active.
-                span = f"<span class='interactive-token' data-index='{i}' onclick='toggleMask({i})'>{clean_tok}</span>"
+                # Add data-model attribute to distinguish A vs B
+                span = f"<span class='interactive-token' data-index='{i}' data-model='{model_prefix}' onclick='toggleMask({i}, \"{model_prefix}\")'>{clean_tok}</span>"
                 predicted_tokens.append(span)
         
         # Reconstruct sentence with spaces
