@@ -93,11 +93,12 @@ CSS = """
             display: flex !important;
             justify-content: center !important;
             align-items: center !important;
-            padding: 24px 0 !important;
+            padding: 12px 0 !important;
             background: transparent !important;
             z-index: 1002 !important; /* Above sidebar background */
             pointer-events: none; /* Allow clicks through empty areas */
             box-shadow: none !important;
+            border-top: none !important;
         }
 
         /* Force explicit centering on all bootstrap containers */
@@ -125,7 +126,7 @@ CSS = """
             flex-direction: row !important; /* Side-by-side buttons */
             justify-content: center !important;
             align-items: center !important;
-            gap: 12px;
+            gap: 16px;
             
             /* Visuals */
             background: transparent;
@@ -155,33 +156,36 @@ CSS = """
             display: flex !important;
             align-items: center;
             
-            border-radius: 999px !important;
-            padding: 7px 0 !important;
+            border-radius: 9999px !important;
+            padding: 6px 0 !important;
             font-family: 'Outfit', sans-serif !important;
-            font-size: 14px !important;
-            font-weight: 600 !important;
-            border: 1px solid rgba(255,255,255,0.1) !important;
+            font-size: 13px !important;
+            font-weight: 700 !important;
+            border: 2px solid #ff5ca9 !important;
             margin: 0 !important;
             letter-spacing: 0.3px;
+            height: 32px !important; /* Force explicit height */
+            box-sizing: border-box !important;
             
             /* Inactive State (Dark theme friendly) */
-            background: rgba(255, 255, 255, 0.05) !important;
-            color: #94a3b8 !important; /* Muted text */
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            background: transparent !important;
+            color: #ff5ca9 !important; /* Pink text */
+            transition: background 0.2s, color 0.2s, transform 0.2s !important; /* Prevent layout transitions */
         }
 
         .navbar .nav-link:hover {
-            background: rgba(255, 255, 255, 0.1) !important;
-            color: white !important;
-            border-color: rgba(255,255,255,0.2) !important;
+            background: rgba(255, 92, 169, 0.1) !important;
+            color: #ff5ca9 !important;
+            border-color: #ff5ca9 !important;
+            transform: translateY(-1px);
         }
 
         .navbar .nav-link.active {
             /* Active State matches btn-primary */
-            background: var(--primary-color) !important;
+            background: #e64090 !important;
             color: white !important;
-            border-color: var(--primary-color) !important;
-            box-shadow: 0 4px 6px -1px rgba(255, 92, 169, 0.2);
+            border-color: #e64090 !important;
+            box-shadow: none !important;
         }
 
         /* Sidebar Styling */
