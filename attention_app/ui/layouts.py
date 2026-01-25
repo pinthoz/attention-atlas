@@ -63,13 +63,9 @@ attention_analysis_page = ui.page_fluid(
                 # LEFT COLUMN: Model A (Always Visible, Flex Grow)
                 ui.div(
                     {"style": "flex: 1; min-width: 0; display: flex; flex-direction: column;"},
-                    
-                    # Model A Header (Conditional) - Hidden by default to prevent FOUC
-                    ui.panel_conditional(
-                        "input.compare_mode",
-                        ui.tags.span("Model A", class_="sidebar-label", style="color: #3b82f6; font-size: 10px; font-weight: 700; margin-bottom: 4px; display: block; border-bottom: 1px dashed rgba(59, 130, 246, 0.3); padding-bottom: 2px;"),
-                        style="display: none;" 
-                    ),
+
+                    # Model A Header - Hidden by default via CSS, shown when compare_mode is on
+                    ui.tags.span("Model A", id="model-a-header", class_="sidebar-label", style="color: #3b82f6; font-size: 10px; font-weight: 700; margin-bottom: 4px; border-bottom: 1px dashed rgba(59, 130, 246, 0.3); padding-bottom: 2px;"),
 
                     # Inputs A
                     ui.tags.span("Model Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
@@ -94,14 +90,13 @@ attention_analysis_page = ui.page_fluid(
                     ),
                 ),
 
-                # RIGHT COLUMN: Model B (Conditional)
-                ui.panel_conditional(
-                    "input.compare_mode",
-                    {"style": "flex: 1; min-width: 0; display: flex; flex-direction: column;"}, # Hidden by default via Shiny logic
-                    
+                # RIGHT COLUMN: Model B - Hidden by default via CSS, shown when compare_mode is on
+                ui.div(
+                    {"id": "model-b-panel", "style": "flex: 1; min-width: 0; flex-direction: column;"},
+
                     # Model B Header
                     ui.tags.span("Model B", class_="sidebar-label", style="color: #ff5ca9; font-size: 10px; font-weight: 700; margin-bottom: 4px; display: block; border-bottom: 1px dashed rgba(255, 92, 169, 0.3); padding-bottom: 2px;"),
-                    
+
                     # Inputs B
                     ui.tags.span("Model Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
                     ui.input_select(
@@ -256,6 +251,21 @@ attention_analysis_page = ui.page_fluid(
                         } else {
                             container.classList.remove('compare-prompts-active');
                             switchPrompt('A');
+                        }
+                    }
+                    // Handle compare_mode toggle - show/hide Model A header and Model B panel smoothly
+                    if (event.name === 'compare_mode') {
+                        const modelAHeader = document.getElementById('model-a-header');
+                        const modelBPanel = document.getElementById('model-b-panel');
+
+                        if (event.value === true) {
+                            // Show elements by adding class (CSS handles display and transition)
+                            if (modelAHeader) modelAHeader.classList.add('compare-active');
+                            if (modelBPanel) modelBPanel.classList.add('compare-active');
+                        } else {
+                            // Hide elements by removing class
+                            if (modelAHeader) modelAHeader.classList.remove('compare-active');
+                            if (modelBPanel) modelBPanel.classList.remove('compare-active');
                         }
                     }
                 });
