@@ -52,6 +52,12 @@ def server(input, output, session):
     # Store the text used for generation to avoid reading input.text_input() in renderers
     cached_text_A = reactive.value("")
     cached_text_B = reactive.value("")
+    
+    # Snapshots of sidebar state - Updated ONLY on 'Generate All'
+    active_compare_models = reactive.Value(False)
+    active_compare_prompts = reactive.Value(False)
+    active_view_mode = reactive.Value("basic")
+    
     isa_selected_pair = reactive.Value(None)
     isa_selected_pair = reactive.Value(None)
     isa_selected_pair_B = reactive.Value(None) # For comparison
@@ -273,24 +279,45 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.generate_all)
     async def compute_all():
-        # Reset MLM triggers on new computation
-        show_mlm_A.set(False)
-        show_mlm_B.set(False)
-
-        # Wizard Logic
+        # Wizard Logic - CHECK THIS FIRST to avoid premature reset
         try: mode = input.compare_prompts_mode()
         except: mode = False
         
         if mode:
             step = prompt_entry_step.get()
             if step == "A":
-                # Transition to B, DO NOT COMPUTE
+                # Transition to B, DO NOT COMPUTE, DO NOT SNAPSHOT, DO NOT RESET
                 prompt_entry_step.set("B")
                 await session.send_custom_message("switch_prompt_tab", "B")
                 return
 
-            # If we are here, we are in Step B (or DONE), so we compute
+            # If we are here, we are in Step B (or DONE), so we proceed
             prompt_entry_step.set("DONE")
+
+        # --- SNAPSHOT SIDEBAR STATE ---
+        # Only these values will be used for rendering until the next 'Generate All'
+        try: cm = input.compare_mode()
+        except: cm = False
+        try: cpm = input.compare_prompts_mode()
+        except: cpm = False
+        try: vm = input.view_mode()
+        except: vm = "basic"
+        
+        active_compare_models.set(cm)
+        active_compare_prompts.set(cpm)
+        active_view_mode.set(vm)
+
+        # Clear existing results to provide a "fresh load" feel.
+        # Set cached_text to current inputs so they appear in previews immediately while loading.
+        cached_result.set(None)
+        cached_result_B.set(None)
+        cached_text_A.set(input.text_input().strip())
+        try: cached_text_B.set(input.text_input_B().strip())
+        except: cached_text_B.set("")
+        
+        # Reset MLM triggers on new computation
+        show_mlm_A.set(False)
+        show_mlm_B.set(False)
 
         print("DEBUG: compute_all triggered")
         text = input.text_input().strip()
@@ -462,16 +489,17 @@ def server(input, output, session):
     @reactive.event(input.trigger_global_view)
     def set_global_view():
         # Toggle global metrics mode
+        is_comparing = active_compare_models.get() or active_compare_prompts.get()
         if global_metrics_mode.get() == "all":
             # Deselect: go back to specific layer/head
             global_metrics_mode.set("specific")
             ui.update_radio_buttons("radar_mode", selected="single")
-            if input.compare_mode(): ui.update_radio_buttons("radar_mode_B", selected="single")
+            if is_comparing: ui.update_radio_buttons("radar_mode_B", selected="single")
         else:
             # Select: set to global (all layers/heads)
             global_metrics_mode.set("all")
             ui.update_radio_buttons("radar_mode", selected="all")
-            if input.compare_mode(): ui.update_radio_buttons("radar_mode_B", selected="all")
+            if is_comparing: ui.update_radio_buttons("radar_mode_B", selected="all")
     
     # Reactive value to track if global metrics should use all layers/heads
     global_metrics_mode = reactive.Value("specific")  # "all" or "specific"
@@ -616,9 +644,9 @@ def server(input, output, session):
         if not res:
             return None  # Don't show control bar until data is ready
         
-        # Determine mode
-        try: compare_prompts = input.compare_prompts_mode()
-        except: compare_prompts = False
+        # Determine mode (Snapshotted)
+        compare_prompts = active_compare_prompts.get()
+        compare_models = active_compare_models.get()
 
         # Get defaults
         try: current_layer = int(input.global_layer())
@@ -1083,22 +1111,41 @@ def server(input, output, session):
     @render.ui
     def preview_text():
         res = get_active_result()
-        if not res: return None
-        # Reconstruct text to avoid reactivity
-        tokens = res[0]
-        tokenizer = res[6]
-        text_used = tokenizer.convert_tokens_to_string(tokens)
-        return get_preview_text_view(res, text_used, "")
+        # Fallback to cached_text_A if no result yet (loading state)
+        if res:
+            tokens = res[0]
+            tokenizer = res[6]
+            encoder_model = res[7]
+            text_used = tokenizer.convert_tokens_to_string(tokens)
+            is_gpt2 = not hasattr(encoder_model, "encoder")
+        else:
+            text_used = cached_text_A.get()
+            is_gpt2 = False # Default or detect from sidebar? 
+            # Actually get_preview_text_view handles the display nicely without is_gpt2
+            
+        # Detect GPT-2 (has 'h' attribute, not 'encoder') and add note about Ġ removal
+        footer = ""
+        if res and not hasattr(res[7], "encoder"):  # GPT-2
+            footer = '<span style="color:#94a3b8;">Ġ (space token) removed for visualization</span>'
+        return get_preview_text_view(res, text_used, "", footer)
 
     @output
     @render.ui
     def preview_text_B():
         res = get_active_result("_B")
-        if not res: return None
-        tokens = res[0]
-        tokenizer = res[6]
-        text_used = tokenizer.convert_tokens_to_string(tokens)
-        return get_preview_text_view(res, text_used, "_B")
+        # Fallback to cached_text_B if no result yet (loading state)
+        if res:
+            tokens = res[0]
+            tokenizer = res[6]
+            encoder_model = res[7]
+            text_used = tokenizer.convert_tokens_to_string(tokens)
+        else:
+            text_used = cached_text_B.get()
+            
+        footer = ""
+        if res and not hasattr(res[7], "encoder"):  # GPT-2
+            footer = '<span style="color:#94a3b8;">Ġ (space token) removed for visualization</span>'
+        return get_preview_text_view(res, text_used, "_B", footer)
 
 
     def get_gpt2_dashboard_ui(res, input, output, session):
@@ -1262,13 +1309,13 @@ def server(input, output, session):
         
         use_word_level = False
         try:
-            cm = input.compare_mode()
+            # Use snapshotted compare_mode if needed (though wl is usually header-based)
+            cm = active_compare_models.get()
             wl = input.word_level_toggle()
             # Allow word level in single mode too if enabled
             if wl:
                 use_word_level = True
         except Exception as e:
-            # print(f"DEBUG: get_active_result error reading inputs: {e}")
             pass
             
         if use_word_level:
@@ -1706,9 +1753,10 @@ def server(input, output, session):
         </style>
         """)
 
-        # Determine if we should show predictions
-        try: model_family = input.model_family()
-        except: model_family = "bert"
+        # Determine if we should show predictions based on the ACTUAL loaded model
+        _, _, _, _, _, _, _, encoder_model_local, *_ = res
+        is_gpt2_local = not hasattr(encoder_model_local, "encoder")
+        model_family = "gpt2" if is_gpt2_local else "bert"
 
         # Reconstruct text from tokenizer
         tokens = res[0]
@@ -1973,10 +2021,8 @@ def server(input, output, session):
         def get_choices(items):
             return {str(i): f"{i}: {t}" for i, t in enumerate(items)}
 
-        # --- Get View Mode ---
-        view_mode = "basic"
-        try: view_mode = input.view_mode()
-        except: pass
+        # --- Get View Mode (Snapshotted) ---
+        view_mode = active_view_mode.get()
         is_advanced = view_mode == "advanced"
 
         # --- Word-Level Aggregation Logic ---
@@ -1985,13 +2031,16 @@ def server(input, output, session):
         # Check if we should aggregate
         use_word_level = False
         try:
-            cm = input.compare_mode()
+            # Note: wl is live because it's in the card header
+            cm = active_compare_models.get()
             wl = input.word_level_toggle()
-            if wl: use_word_level = True
-        except: pass
-
+            # Allow word level in single mode too if enabled
+            if wl:
+                use_word_level = True
+        except Exception as e:
+            pass
+        from ..utils import aggregate_data_to_words
         if use_word_level and res:
-            from ..utils import aggregate_data_to_words
             res = aggregate_data_to_words(res, filter_special=True)
             if res:
                  tokens = res[0]
@@ -2010,7 +2059,6 @@ def server(input, output, session):
         # 1. OVERVIEW PANEL (Preview, Predictions, Global Metrics, Radar, [Advanced: Hidden States])
         def create_overview_panel():
             if not is_advanced:
-                # Basic Layout: Row 1 = Predictions | Radar, Row 2 = Global Metrics
                 row1 = ui.layout_columns(
                      ui.output_ui(f"render_mlm_predictions{suffix}"),
                      ui.output_ui(f"render_radar_view{suffix}"),
@@ -2022,8 +2070,6 @@ def server(input, output, session):
                 )
                 return ui.div(row1, row2)
             else:
-                # Advanced Layout: Row 1 = Predictions | Radar, Row 2 = Global Metrics, Row 3 = Hidden States
-                # User requested Priority: Radar Top (matches Basic)
                 row1 = ui.layout_columns(
                     ui.output_ui(f"render_mlm_predictions{suffix}"),
                     ui.output_ui(f"render_radar_view{suffix}"),
@@ -2039,31 +2085,22 @@ def server(input, output, session):
                 )
                 return ui.div(row1, row2, row3)
 
-        # 2. EXPLORE ATTENTION PANEL (Map, Flow, Tree, ISA, [Advanced: QKV, Scaled])
+        # 2. EXPLORE ATTENTION PANEL
         def create_explore_panel():
-            # Attention Heatmap & Flow (Always)
             row1 = ui.layout_columns(
                 ui.output_ui(f"attention_map{suffix}"),
                 ui.output_ui(f"attention_flow{suffix}"),
                 col_widths=[6, 6]
             )
-            
-            # Tree View (Now standalone row since Radar moved)
             row2 = ui.layout_columns(
                 ui.output_ui(f"render_tree_view{suffix}"),
-                col_widths=[12] # Tree can be wide, it's a D3 viz
+                col_widths=[12]
             )
-            
             input_list = [row1, row2]
-            
-            # ISA (Always)
             if suffix == "":
                 input_list.append(ui.output_ui("isa_row_dynamic"))
             else:
                 input_list.append(ui.output_ui(f"isa_scatter{suffix}"))
-
-            # Advanced Components: QKV & Scaled Attention
-            # Advanced Components: QKV moved to Deep Dive. Scaled Attention remains.
             if is_advanced:
                 row_advanced = ui.layout_columns(
                     ui.output_ui(f"render_scaled_attention{suffix}"),
@@ -2071,16 +2108,155 @@ def server(input, output, session):
                 )
                 input_list.append(ui.div(style="margin-top: 26px;"))
                 input_list.append(row_advanced)
-
             return ui.div(*input_list)
 
         # 3. DEEP DIVE PANEL (ADVANCED ONLY)
-        # Embeddings, Norms, FFNs
+        # Embeddings, Norms, FFNs - Built directly for faster loading
         def create_deep_dive_panel_bert():
-            return ui.output_ui(f"render_deep_dive_bert_atomic{suffix}")
+            if not res:
+                return ui.div("Loading...", style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;")
+
+            try: top_k_val = int(input.global_topk())
+            except: top_k_val = 3
+            try: layer_idx_val = int(input.global_layer())
+            except: layer_idx_val = 0
+            norm_mode_val = global_norm_mode.get()
+            _, _, _, _, _, _, _, encoder_model_local, *_ = res
+            model_type_val = getattr(encoder_model_local.config, 'model_type', 'bert')
+
+            return ui.div(
+                # Embeddings Row
+                ui.div(
+                    {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type_val, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k_val))
+                    ),
+                    arrow("Token Embeddings", "Segment Embeddings", "horizontal", suffix=suffix),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.div(
+                            {"class": "card", "style": "height: 100%;"},
+                            ui.h4("Segment Embeddings"),
+                            ui.p("Encodes sentence membership (A or B).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                            get_segment_embedding_view(res)
+                        ),
+                        arrow("Segment Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
+                    ),
+                    arrow("Segment Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k_val))
+                    ),
+                ),
+                # Sum & Norm Row
+                ui.div(
+                    {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
+                    ),
+                    arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.div(
+                            {"class": "card", "style": "height: 100%;"},
+                            ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
+                            ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                            get_qkv_table(res, layer_idx_val, top_k=top_k_val, suffix=suffix, norm_mode=norm_mode_val)
+                        ),
+                    ),
+                ),
+                # Residual Connections Row
+                ui.div(
+                    {"class": "flex-row-container", "style": "margin-bottom: 22px;"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx_val))
+                    ),
+                    arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx_val))
+                    ),
+                    arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx_val)),
+                        arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type_val, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
+                    ),
+                ),
+            )
 
         def create_deep_dive_panel_gpt2():
-             return ui.output_ui(f"render_deep_dive_gpt2_atomic{suffix}")
+            if not res:
+                return ui.div("Loading...", style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;")
+
+            try: top_k_val = int(input.global_topk())
+            except: top_k_val = 3
+            try: layer_idx_val = int(input.global_layer())
+            except: layer_idx_val = 0
+            norm_mode_val = global_norm_mode.get()
+            _, _, _, _, _, _, _, encoder_model_local, *_ = res
+            model_type_val = "gpt2"
+
+            return ui.div(
+                # Embeddings Row (GPT-2: No Segment Embeddings)
+                ui.div(
+                    {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type_val, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k_val))
+                    ),
+                    arrow("Token Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k_val)),
+                        arrow("Positional Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
+                    ),
+                ),
+                # Sum & Norm Row
+                ui.div(
+                    {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
+                    ),
+                    arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.div(
+                            {"class": "card", "style": "height: 100%;"},
+                            ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
+                            ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                            get_qkv_table(res, layer_idx_val, top_k=top_k_val, suffix=suffix, norm_mode=norm_mode_val)
+                        ),
+                    ),
+                ),
+                # Residual Connections Row
+                ui.div(
+                    {"class": "flex-row-container", "style": "margin-bottom: 22px;"},
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx_val))
+                    ),
+                    arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx_val))
+                    ),
+                    arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
+                    ui.div(
+                        {"class": "flex-card", "style": "position: relative;"},
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx_val)),
+                        arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type_val, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
+                    ),
+                ),
+            )
 
         # --- Build Accordion Panels ---
         accordion_panels = [
@@ -2183,15 +2359,12 @@ def server(input, output, session):
         res_A = get_active_result()
         res_B = get_active_result("_B")
         
-        try: compare_models = input.compare_mode()
-        except: compare_models = False
-        try: compare_prompts = input.compare_prompts_mode()
-        except: compare_prompts = False
+        # Use SNAPSHOTTED compare modes instead of raw inputs to decouple sidebar
+        compare_models = active_compare_models.get()
+        compare_prompts = active_compare_prompts.get()
 
-        # --- Get View Mode ---
-        view_mode = "basic"
-        try: view_mode = input.view_mode()
-        except: pass
+        # --- Get View Mode (Snapshotted) ---
+        view_mode = active_view_mode.get()
         is_advanced = view_mode == "advanced"
         
         is_family_diff = False
@@ -2321,55 +2494,89 @@ def server(input, output, session):
             )
 
         # Helper to create the header
-        def create_preview_header(has_toggle=False, color_theme="blue"):
-            right_content = ui.div(class_="toggle-placeholder", style="width: 1px;") # Placeholder to keep height
-            if has_toggle:
-                right_content = ui.div(
-                    {"style": "display: flex; align-items: center; gap: 8px; margin-left: 12px;"},
-                    create_word_level_toggle(color_theme)
+        def create_preview_header(has_toggle=False, color_theme="blue", gpt2_note=None):
+            # Left side content (Title + Info Tooltip)
+            left_side = ui.div(
+                {"style": "display: flex; align-items: center;"},
+                ui.h4("Sentence Preview", style="margin: 0; margin-right: 8px;"),
+                ui.div(
+                    {"class": "info-tooltip-wrapper", "style": "margin-left: 6px;"},
+                    ui.span({"class": "info-tooltip-icon", "style": "font-size:8px; width:14px; height:14px; line-height:14px; font-family:'PT Serif', serif;"}, "i"),
+                    ui.div(
+                        {"class": "info-tooltip-content"},
+                        ui.HTML("""
+                            <strong>Attention Received</strong>
+                            <p>Background opacity highlights tokens that the model focuses on most.</p>
+                            <div style='background:rgba(255,255,255,0.1); padding:8px; border-radius:4px; margin: 8px 0;'>
+                                <strong style='color:#3b82f6;'>Calculation:</strong>
+                                <code style='display:block; margin-top:4px;'>AVG(All Layers, All Heads) → Sum(Columns)</code>
+                            </div>
+                            <p style='font-size:10px; color:#fff; margin-bottom: 8px;'>Sum of attention weights received from all other tokens, averaged across all layers and heads.</p>
+                            <p style='font-style:italic; color:#fff;'>Hover tokens for attention received</p>
+                        """)
+                    )
                 )
+            )
+
+            # Center/Right side content (GPT-2 Note + Word Level Toggle)
+            right_side_elements = []
+            
+            # GPT-2 note aligned to the right of the title (before the toggle)
+            if gpt2_note:
+                right_side_elements.append(
+                    ui.span(gpt2_note, style="font-size: 9px; color: #94a3b8; font-weight: 500; font-style: italic; margin-left: auto; text-transform: none; letter-spacing: 0;")
+                )
+
+            # Word Level Toggle (appears on the far right)
+            if has_toggle:
+                # Add spacer if we have a GPT-2 note to push them apart
+                if gpt2_note:
+                    right_side_elements.append(ui.div(style="width: 12px;"))
+                
+                right_side_elements.append(create_word_level_toggle(color_theme))
+            else:
+                # Placeholder to maintain height if no toggle is present
+                right_side_elements.append(ui.div(class_="toggle-placeholder", style="width: 1px;"))
             
             return ui.div(
                 {"class": "viz-header-with-info", "style": "margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; min-height: 24px;"},
-                ui.div(
-                    {"style": "display: flex; align-items: center;"},
-                    ui.h4("Sentence Preview", style="margin: 0; margin-right: 8px;"),
-                    ui.div(
-                        {"class": "info-tooltip-wrapper", "style": "margin-left: 6px;"},
-                        ui.span({"class": "info-tooltip-icon", "style": "font-size:8px; width:14px; height:14px; line-height:14px; font-family:'PT Serif', serif;"}, "i"),
-                        ui.div(
-                            {"class": "info-tooltip-content"},
-                            ui.HTML("""
-                                <strong>Attention Received</strong>
-                                <p>Background opacity highlights tokens that the model focuses on most.</p>
-                                <div style='background:rgba(255,255,255,0.1); padding:8px; border-radius:4px; margin: 8px 0;'>
-                                    <strong style='color:#3b82f6;'>Calculation:</strong>
-                                    <code style='display:block; margin-top:4px;'>AVG(All Layers, All Heads) → Sum(Columns)</code>
-                                </div>
-                                <p style='font-size:10px; color:#fff; margin-bottom: 8px;'>Sum of attention weights received from all other tokens, averaged across all layers and heads.</p>
-                                <p style='font-style:italic; color:#fff;'>Hover tokens for attention received</p>
-                            """)
-                        )
-                    ),
-                ),
-                right_content
+                left_side,
+                ui.div({"style": "display: flex; align-items: center; flex-grow: 1; justify-content: flex-end;"}, *right_side_elements)
             )
 
         # Logic to place toggle on BERT when families differ
         toggle_on_A = False
         toggle_on_B = False
+        
+        # Calculate GPT-2 status for headers differently in compare modes
+        actual_is_gpt2_A = False
+        actual_is_gpt2_B = False
+
+        if compare_models and res_A and res_B:
+            _, _, _, _, _, _, _, encoder_model_A, *_ = res_A
+            _, _, _, _, _, _, _, encoder_model_B, *_ = res_B
+            actual_is_gpt2_A = not hasattr(encoder_model_A, "encoder")
+            actual_is_gpt2_B = not hasattr(encoder_model_B, "encoder")
+        elif compare_prompts and res_A:
+            _, _, _, _, _, _, _, encoder_model_A, *_ = res_A
+            actual_is_gpt2_A = not hasattr(encoder_model_A, "encoder")
+            actual_is_gpt2_B = actual_is_gpt2_A
 
         if is_family_diff:
             # Place on whichever is NOT GPT-2 (i.e. is BERT)
-            if is_gpt2_A:
+            if actual_is_gpt2_A:
                 toggle_on_B = True # A is GPT2, so B must be BERT
             else:
                 toggle_on_A = True # A is BERT
         
         # Create headers with appropriate themes
-        # Header A is always Blue-themed naturally, Header B is Pink-themed
-        preview_title = create_preview_header(toggle_on_A, "blue") 
-        preview_title_B = create_preview_header(toggle_on_B, "pink")
+        # Pass GPT-2 note only if in compare mode (user request)
+        gpt2_note_text = "Ġ (space token) removed for visualization"
+        note_A = gpt2_note_text if (compare_models or compare_prompts) and actual_is_gpt2_A else None
+        note_B = gpt2_note_text if (compare_models or compare_prompts) and actual_is_gpt2_B else None
+
+        preview_title = create_preview_header(toggle_on_A, "blue", note_A) 
+        preview_title_B = create_preview_header(toggle_on_B, "pink", note_B)
 
         compare = compare_models or compare_prompts
         
@@ -2452,11 +2659,12 @@ def server(input, output, session):
             tokens_A = res[0]
             tokenizer_A = res[6]
             text_A = tokenizer_A.convert_tokens_to_string(tokens_A)
+            footer_A_main = '<span style="color:#94a3b8;">Ġ (space token) removed for visualization</span>' if is_gpt2 else ""
             return ui.div(
                 ui.div(
                     {"class": "card", "style": "margin-bottom: 32px;"},
                     preview_title,
-                    get_preview_text_view(res, text_A, ""),
+                    get_preview_text_view(res, text_A, "", footer_A_main),
                 ),
                 # Dashboard layout
                 dashboard_layout_helper(is_gpt2, num_layers, num_heads, [], suffix="")
@@ -2562,67 +2770,99 @@ def server(input, output, session):
                  model_type_A = "gpt2" if is_gpt2_A else "bert"
                  model_type_B = "gpt2" if is_gpt2_B else "bert"
 
+                 # Get shared parameters
+                 try: layer_idx = int(input.global_layer())
+                 except: layer_idx = 0
+                 norm_mode = global_norm_mode.get()
+
                  rows = []
-                 
+
+                 # Helper to create a card with content for A or B
+                 def make_card(title, desc, content, side="a"):
+                     card_class = "card compare-card-a" if side == "a" else "card compare-card-b"
+                     return ui.div(
+                         {"class": card_class, "style": "height: 100%; display: flex; flex-direction: column;"},
+                         ui.h4(title),
+                         ui.p(desc, style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                         content
+                     )
+
                  # Embeddings - Arrow must be OUTSIDE the .card to avoid overflow: hidden clipping
-                 # and match Single Mode atomic layout.
                  row_A = ui.div(
                      {"style": "position: relative; height: 100%;"},
-                     arrow("Input", "Token Embeddings", "vertical", suffix="_A", model_type=model_type_A, 
+                     arrow("Input", "Token Embeddings", "vertical", suffix="_A", model_type=model_type_A,
                            style="position: absolute; top: -32px; left: 50%; transform: translateX(-50%); width: auto; margin: 0; z-index: 100;"),
-                     ui.div(
-                         {"class": "card compare-card-a", "style": "height: 100%; display: flex; flex-direction: column;"},
-                         ui.h4("Token Embeddings"),
-                         ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                         get_embedding_table(res_A, top_k=top_k)
-                     )
+                     make_card("Token Embeddings", "Token Lookup (Meaning)", get_embedding_table(res_A, top_k=top_k), "a")
                  )
                  row_B = ui.div(
                      {"style": "position: relative; height: 100%;"},
-                     arrow("Input", "Token Embeddings", "vertical", suffix="_B", model_type=model_type_B, 
+                     arrow("Input", "Token Embeddings", "vertical", suffix="_B", model_type=model_type_B,
                            style="position: absolute; top: -32px; left: 50%; transform: translateX(-50%); width: auto; margin: 0; z-index: 100;"),
-                     ui.div(
-                         {"class": "card compare-card-b", "style": "height: 100%; display: flex; flex-direction: column;"},
-                         ui.h4("Token Embeddings"),
-                         ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                         get_embedding_table(res_B, top_k=top_k)
-                     )
+                     make_card("Token Embeddings", "Token Lookup (Meaning)", get_embedding_table(res_B, top_k=top_k), "b")
                  )
-
                  rows.append(ui.layout_columns(row_A, row_B, col_widths=[6, 6]))
-                 
+
                  next_from = "Token Embeddings"
-                 
+
                  # Segment Embeddings (Show ONLY if both are BERT - neither is GPT-2)
                  if not is_gpt2_A and not is_gpt2_B:
                      rows.append(ui.div(paired_arrows(next_from, "Segment Embeddings"), class_="arrow-row"))
-                     rows.append(paired(ui.output_ui("render_segment_table"), ui.output_ui("render_segment_table_B")))
+                     seg_desc = "Encodes sentence membership (A or B)."
+                     rows.append(ui.layout_columns(
+                         make_card("Segment Embeddings", seg_desc, get_segment_embedding_view(res_A), "a"),
+                         make_card("Segment Embeddings", seg_desc, get_segment_embedding_view(res_B), "b"),
+                         col_widths=[6, 6]
+                     ))
                      next_from = "Segment Embeddings"
-                 
+
                  # Positional
                  rows.append(ui.div(paired_arrows(next_from, "Positional Embeddings", model_type_A=model_type_A, model_type_B=model_type_B), class_="arrow-row"))
                  rows.append(paired_with_card("Positional Embeddings", get_posenc_table(res_A, top_k=top_k), get_posenc_table(res_B, top_k=top_k)))
-                 
+
                  # Sum & Norm
                  rows.append(ui.div(paired_arrows("Positional Embeddings", "Sum & Layer Normalization"), class_="arrow-row"))
-                 rows.append(paired(ui.output_ui("render_sum_layernorm"), ui.output_ui("render_sum_layernorm_B")))
+                 sum_desc = "Combines token, position, and segment embeddings with layer normalization."
+                 rows.append(ui.layout_columns(
+                     make_card("Sum & Layer Normalization", sum_desc, get_sum_layernorm_view(res_A, encoder_model_A), "a"),
+                     make_card("Sum & Layer Normalization", sum_desc, get_sum_layernorm_view(res_B, encoder_model_B), "b"),
+                     col_widths=[6, 6]
+                 ))
 
                  # QKV
                  rows.append(ui.div(paired_arrows("Sum & Layer Normalization", "Q/K/V Projections"), class_="arrow-row"))
-                 rows.append(paired(ui.output_ui("render_qkv_table"), ui.output_ui("render_qkv_table_B")))
-                 
+                 qkv_desc = "Query, Key, Value projections analysis."
+                 rows.append(ui.layout_columns(
+                     make_card("Q/K/V Projections", qkv_desc, get_qkv_table(res_A, layer_idx, top_k=top_k, norm_mode=norm_mode), "a"),
+                     make_card("Q/K/V Projections", qkv_desc, get_qkv_table(res_B, layer_idx, top_k=top_k, suffix="_B", norm_mode=norm_mode), "b"),
+                     col_widths=[6, 6]
+                 ))
+
                  # Add & Norm
                  rows.append(ui.div(paired_arrows("Q/K/V Projections", "Add & Norm"), class_="arrow-row"))
-                 rows.append(paired(ui.output_ui("render_add_norm"), ui.output_ui("render_add_norm_B")))
-                 
+                 addnorm_desc = "Residual Connection + Layer Normalization"
+                 rows.append(ui.layout_columns(
+                     make_card("Add & Norm", addnorm_desc, get_add_norm_view(res_A, layer_idx), "a"),
+                     make_card("Add & Norm", addnorm_desc, get_add_norm_view(res_B, layer_idx), "b"),
+                     col_widths=[6, 6]
+                 ))
+
                  # FFN
                  rows.append(ui.div(paired_arrows("Add & Norm", "Feed-Forward Network"), class_="arrow-row"))
-                 rows.append(paired(ui.output_ui("render_ffn"), ui.output_ui("render_ffn_B")))
-                 
+                 ffn_desc = "Expansion -> Activation -> Projection"
+                 rows.append(ui.layout_columns(
+                     make_card("Feed-Forward Network", ffn_desc, get_ffn_view(res_A, layer_idx), "a"),
+                     make_card("Feed-Forward Network", ffn_desc, get_ffn_view(res_B, layer_idx), "b"),
+                     col_widths=[6, 6]
+                 ))
+
                  # Post FFN
                  rows.append(ui.div(paired_arrows("Feed-Forward Network", "Add & Norm (Post-FFN)"), class_="arrow-row"))
-                 rows.append(paired(ui.output_ui("render_add_norm_post_ffn"), ui.output_ui("render_add_norm_post_ffn_B")))
-                 
+                 rows.append(ui.layout_columns(
+                     make_card("Add & Norm (Post-FFN)", addnorm_desc, get_add_norm_post_ffn_view(res_A, layer_idx), "a"),
+                     make_card("Add & Norm (Post-FFN)", addnorm_desc, get_add_norm_post_ffn_view(res_B, layer_idx), "b"),
+                     col_widths=[6, 6]
+                 ))
+
                  # Exit Arrow
                  rows.append(ui.div(paired_arrows("Add & Norm (Post-FFN)", "Exit", model_type_A=model_type_A, model_type_B=model_type_B), class_="arrow-row"))
 
@@ -2681,6 +2921,15 @@ def server(input, output, session):
                     )
                 )
 
+            # Detect GPT-2 for Model A and B independently to set footer notes for Preview
+            _, _, _, _, _, _, _, encoder_model_A_local, *_ = res_A
+            _, _, _, _, _, _, _, encoder_model_B_local, *_ = res_B
+            
+            # Note: GPT-2 notes are now handled in the header (preview_title / preview_title_B)
+            # We only need to keep the tokenization info (WordPiece/BPE) in the footer if families differ.
+            footer_A = tok_info_A if is_family_diff else ""
+            footer_B = tok_info_B if is_family_diff else ""
+
             return ui.div(
                 {"id": "dashboard-container-compare", "class": "dashboard-stack"},
 
@@ -2693,8 +2942,8 @@ def server(input, output, session):
 
                 # Row 0: Sentence Preview
                 ui.layout_columns(
-                    ui.div({"class": "card compare-card-a"}, preview_title, get_preview_text_view(res_A, text_A_reconstructed, "", footer_html=tok_info_A if is_family_diff else "")),
-                    ui.div({"class": "card compare-card-b"}, preview_title_B, get_preview_text_view(res_B, text_B_reconstructed, "_B", footer_html=tok_info_B if is_family_diff else "")),
+                    ui.div({"class": "card compare-card-a"}, preview_title, get_preview_text_view(res_A, text_A_reconstructed, "", footer_html=footer_A)),
+                    ui.div({"class": "card compare-card-b"}, preview_title_B, get_preview_text_view(res_B, text_B_reconstructed, "_B", footer_html=footer_B)),
                     col_widths=[6, 6]
                 ),
                 
@@ -4911,17 +5160,15 @@ def server(input, output, session):
             return None
 
         try:
-            is_compare_prompts = input.compare_prompts_mode()
+            is_cpm = active_compare_prompts.get()
         except:
-            is_compare_prompts = False
+            is_cpm = False
 
-        try:
-            if is_compare_prompts:
-                 model_family = input.model_family()
-            else:
-                 model_family = input.model_family_B()
-        except:
-            model_family = "bert"
+        # Determine if we should show predictions based on the ACTUAL loaded model for B
+        # Use res_B directly if it exists, otherwise use Model Manager? No, res is source of truth.
+        _, _, _, _, _, _, _, encoder_model_B_local, *_ = res
+        is_gpt2_B_local = not hasattr(encoder_model_B_local, "encoder")
+        model_family = "gpt2" if is_gpt2_B_local else "bert"
 
         # Reconstruct text from tokenizer to avoid reactivity from input.text_input()
         tokens = res[0]
@@ -5054,8 +5301,10 @@ def server(input, output, session):
         except: layer_idx = 0
         try: head_idx = int(input.global_head())
         except: head_idx = 0
-        try: mode = input.radar_mode_B()
-        except: mode = "single"
+        
+        # Use global mode from floating bar for consistency with Model A
+        use_global = global_metrics_mode.get() == "all"
+        mode = "cluster" if use_global else "single"
         
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%; display: flex; flex-direction: column;"},
@@ -5741,7 +5990,7 @@ def server(input, output, session):
     @render.ui
     def render_deep_dive_bert_atomic():
         res = get_active_result()
-        if not res: 
+        if not res:
             return ui.div(
                 "Loading...",
                 style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;"
