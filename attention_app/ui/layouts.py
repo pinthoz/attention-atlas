@@ -128,17 +128,17 @@ attention_analysis_page = ui.page_fluid(
             ui.div(
                 {"class": "custom-input-container", "id": "input-container"},
                 
-                # Tabs Container (History + Compare Prompts Tabs)
+                # Tabs Container (History + Compare Prompts Tabs + Session Controls)
                 ui.div(
                     {"class": "tabs-row"},
-                    
-                    # History Tab (always visible, z-index highest)
+
+                    # History Tab (always visible, left side)
                     ui.div(
                         {"class": "history-tab", "onclick": "toggleHistory()", "title": "History"},
                         ui.HTML("""<svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 448 512" fill="white"><!--!Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.--><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg>"""),
                     ),
-                    
-                    # Compare Prompts Tabs A and B (Conditional, stacked behind history tab)
+
+                    # Compare Prompts Tabs A and B (Conditional, right after History tab)
                     ui.panel_conditional(
                         "input.compare_prompts_mode",
                         ui.div(
@@ -146,7 +146,30 @@ attention_analysis_page = ui.page_fluid(
                             ui.div("A", id="tab-a", class_="prompt-tab tab-a active", onclick="switchPrompt('A')"),
                             ui.div("B", id="tab-b", class_="prompt-tab tab-b", onclick="switchPrompt('B')")
                         ),
-                        style="display: none;"
+                    ),
+
+                    # Session Controls (Right Side - margin-left: auto pushes to right)
+                    ui.div(
+                        {"class": "session-controls", "style": "display: flex; gap: 4px; align-items: flex-end; margin-left: auto;"},
+
+                        # Load Button (Trigger for hidden input)
+                        ui.tags.label(
+                            ui.HTML('<i class="fa-solid fa-folder-open"></i>'),
+                            {"class": "session-btn-custom", "title": "Load Session", "for": "load_session_upload"}
+                        ),
+                        # Hidden File Input
+                        ui.div(
+                            ui.input_file("load_session_upload", None, accept=[".json"], multiple=False),
+                            style="display: none;"
+                        ),
+
+                        # Save Button
+                        ui.download_button(
+                            "save_session",
+                            label=None,
+                            icon=ui.tags.i(class_="fa-solid fa-floppy-disk"),
+                            class_="session-btn-custom"
+                        ),
                     ),
                 ),
                 
@@ -174,7 +197,7 @@ attention_analysis_page = ui.page_fluid(
                     oninput="Shiny.setInputValue('text_input_B', this.value)",
                     style="display: none;"
                 ),
-                
+
                 # JS to handle history interactions and Prompt Switching
                 ui.tags.script("""
                 function toggleHistory() {
@@ -274,6 +297,24 @@ attention_analysis_page = ui.page_fluid(
                 Shiny.addCustomMessageHandler('update_history', function(message) {
                     localStorage.setItem('attention_atlas_history', JSON.stringify(message));
                 });
+                
+                // Session Restore Logic for Textareas
+                Shiny.addCustomMessageHandler('restore_session_text', function(message) {
+                    if (message.text_input) {
+                        const el = document.getElementById('text_input');
+                        if (el) {
+                            el.value = message.text_input;
+                            Shiny.setInputValue('text_input', message.text_input, {priority: 'event'});
+                        }
+                    }
+                    if (message.text_input_B) {
+                        const elB = document.getElementById('text_input_B');
+                        if (elB) {
+                            elB.value = message.text_input_B;
+                            Shiny.setInputValue('text_input_B', message.text_input_B);
+                        }
+                    }
+                });
 
                 $(document).on('shiny:connected', function() {
                     // Initialize inputs with default values
@@ -340,7 +381,7 @@ app_ui = ui.page_navbar(
     header=ui.tags.head(
         ui.tags.title("Attention Atlas"),
         ui.tags.style(CSS),
-        ui.tags.link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@500;700&family=PT+Serif:wght@400;700&display=swap"),
+        ui.tags.link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"),
         ui.tags.link(rel="stylesheet", href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"),
         ui.tags.script(src="https://cdn.plot.ly/plotly-2.24.1.min.js"),
         ui.tags.script(src="https://d3js.org/d3.v7.min.js"),

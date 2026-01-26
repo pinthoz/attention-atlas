@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import traceback
 import re
 import json
+from datetime import datetime
 
 import numpy as np
 import plotly.express as px
@@ -143,6 +144,394 @@ def server(input, output, session):
         hist.insert(0, clean_text)
         hist = hist[:20]
         input_history.set(hist)
+
+    # --- Filename Generation Helper ---
+    def generate_export_filename(section, ext="csv", is_b=False, incl_timestamp=True, data_type=None):
+        """
+        Generate export filename with format: <section>_<data>_<model>_<modelA/B>_<promptA/B>_<timestamp>.ext
+
+        Args:
+            section: The visualization section (e.g., 'attention_tree', 'isa', 'qkv')
+            ext: File extension (csv, json, png)
+            is_b: Whether this is Model B / Prompt B
+            incl_timestamp: Include timestamp in filename
+            data_type: Optional data type descriptor (e.g., 'topk', 'all_layers')
+        """
+        # Get model name
+        try:
+            if is_b:
+                model = input.model_family_B() or "model"
+            else:
+                model = input.model_family() or "model"
+        except:
+            model = "model"
+
+        # Check modes
+        try: cm = input.compare_mode()
+        except: cm = False
+        try: cpm = input.compare_prompts_mode()
+        except: cpm = False
+
+        # Build filename parts
+        parts = [section]
+
+        if data_type:
+            parts.append(data_type)
+
+        parts.append(model)
+
+        # Add model label if compare_mode
+        if cm:
+            parts.append("ModelB" if is_b else "ModelA")
+
+        # Add prompt label if compare_prompts_mode
+        if cpm:
+            parts.append("PromptB" if is_b else "PromptA")
+
+        if incl_timestamp:
+            ts = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            parts.append(ts)
+
+        return f"{'_'.join(parts)}.{ext}"
+        
+    # --- Session Persistence ---
+    @render.download(
+        filename=lambda: generate_export_filename("attention_atlas_session", "json")
+    )
+    def save_session():
+        session_data = {
+            "text_input": input.text_input(),
+            "model_family": input.model_family(),
+            "model_name": input.model_name(),
+            "layer": input.global_layer(),
+            "head": input.global_head(),
+            "topk": input.global_topk(),
+            "norm": input.global_norm(),
+            "view_mode": input.view_mode(),
+            "compare_mode": input.compare_mode(),
+            # Include Model B data if needed
+            "text_input_B": input.text_input_B(),
+            "model_family_B": input.model_family_B(),
+            "model_name_B": input.model_name_B(),
+            "compare_prompts_mode": input.compare_prompts_mode()
+        }
+        
+        yield json.dumps(session_data, indent=2)
+
+    @reactive.Effect
+    @reactive.event(input.load_session_upload)
+    async def load_session():
+        file_infos = input.load_session_upload()
+        if not file_infos:
+            return
+
+        try:
+            with open(file_infos[0]["datapath"], "r") as f:
+                data = json.load(f)
+
+            # Restore model family first (this will update the model_name choices)
+            if "model_family" in data:
+                ui.update_select("model_family", selected=data.get("model_family", "bert"))
+
+            # Restore standard inputs (delay model_name to let family update take effect)
+            ui.update_slider("global_layer", value=int(data.get("layer", 0)))
+            ui.update_slider("global_head", value=int(data.get("head", 0)))
+            ui.update_slider("global_topk", value=int(data.get("topk", 3)))
+            ui.update_select("global_norm", selected=data.get("norm", "raw"))
+
+            # Restore model name after a brief delay (let family update propagate)
+            ui.update_select("model_name", selected=data.get("model_name", "bert-base-uncased"))
+
+            if "view_mode" in data:
+                 ui.update_radio_buttons("view_mode", selected=data.get("view_mode"))
+
+            if "compare_mode" in data:
+                 ui.update_switch("compare_mode", value=data.get("compare_mode"))
+
+            if "model_family_B" in data:
+                 ui.update_select("model_family_B", selected=data.get("model_family_B"))
+
+            if "model_name_B" in data:
+                 ui.update_select("model_name_B", selected=data.get("model_name_B"))
+
+            # Restore custom textareas via JavaScript
+            await session.send_custom_message("restore_session_text", {
+                "text_input": data.get("text_input", ""),
+                "text_input_B": data.get("text_input_B", "")
+            })
+
+            ui.notification_show("Session loaded successfully!", type="message")
+
+        except Exception as e:
+            ui.notification_show(f"Failed to load session: {str(e)}", type="error")
+
+    # --- Data Export Handlers ---
+
+    def get_model_short_name():
+        """Get short model name for filenames (bert or gpt2)."""
+        try:
+            family = input.model_family()
+            return family if family else "model"
+        except:
+            return "model"
+
+    @render.download(filename=lambda: generate_export_filename("head_specialization", "csv", data_type="all_heads"))
+    def export_head_spec():
+        """Export head specialization data as CSV - ALL layers and heads."""
+        res = cached_result.get()
+        if not res:
+            yield "No data available"
+            return
+
+        try:
+            # res structure: (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model, head_specialization, isa_data, head_clusters)
+            head_specialization = res[9] if len(res) > 9 else None
+            if head_specialization is None:
+                yield "No head specialization data available"
+                return
+
+            # Build CSV with all layers and heads
+            lines = ["layer,head,syntax,semantics,cls_focus,punctuation,entities,long_range,self_attention"]
+            for layer_idx in sorted(head_specialization.keys()):
+                layer_data = head_specialization[layer_idx]
+                for head_idx in sorted(layer_data.keys()):
+                    metrics = layer_data[head_idx]
+                    line = f"{layer_idx},{head_idx},{metrics.get('syntax',0):.4f},{metrics.get('semantics',0):.4f},{metrics.get('cls_focus',0):.4f},{metrics.get('punctuation',0):.4f},{metrics.get('entities',0):.4f},{metrics.get('long_range',0):.4f},{metrics.get('self_attention',0):.4f}"
+                    lines.append(line)
+            yield "\n".join(lines)
+        except Exception as e:
+            yield f"Error exporting data: {str(e)}"
+
+    @render.download(filename=lambda: generate_export_filename("multi_head_attention", "csv", data_type="all_layers_heads"))
+    def export_multi_head_data():
+        """Export multi-head attention matrices as CSV - ALL layers and heads."""
+        res = cached_result.get()
+        if not res:
+            yield "No data available"
+            return
+
+        try:
+            tokens = res[0]
+            attentions = res[3]
+
+            if attentions is None or len(attentions) == 0:
+                yield "No attention data available"
+                return
+
+            # Build CSV: layer,head,query_token_idx,key_token_idx,query_token,key_token,weight
+            lines = ["layer,head,query_idx,key_idx,query_token,key_token,weight"]
+            seq_len = len(tokens)
+
+            # Export ALL layers and ALL heads
+            for layer_idx, layer_att in enumerate(attentions):
+                # layer_att shape: (batch=1, num_heads, seq_len, seq_len)
+                if isinstance(layer_att, torch.Tensor):
+                    layer_att_np = layer_att[0].detach().cpu().numpy()  # Remove batch dim
+                else:
+                    layer_att_np = layer_att[0] if len(layer_att.shape) == 4 else layer_att
+
+                num_heads = layer_att_np.shape[0]
+                for h in range(num_heads):
+                    for i in range(seq_len):
+                        for j in range(seq_len):
+                            weight = layer_att_np[h, i, j]
+                            if weight > 1e-4:  # Skip near-zero values for file size
+                                lines.append(f"{layer_idx},{h},{i},{j},{tokens[i]},{tokens[j]},{weight:.6f}")
+
+            yield "\n".join(lines)
+        except Exception as e:
+            yield f"Error exporting data: {str(e)}"
+
+    @render.download(filename=lambda: generate_export_filename("attention_metrics", "csv", data_type="all_layers_heads"))
+    def export_attention_metrics_single():
+        """Export attention metrics for ALL layers and heads as CSV."""
+        res = cached_result.get()
+        if not res:
+            yield "No data available"
+            return
+
+        try:
+            tokens = res[0]
+            attentions = res[3]
+
+            if attentions is None or len(attentions) == 0:
+                yield "No attention data available"
+                return
+
+            # Get metric names from first computation
+            first_layer_att = attentions[0]
+            if isinstance(first_layer_att, torch.Tensor):
+                sample_matrix = first_layer_att[0, 0].detach().cpu().numpy()
+            else:
+                sample_matrix = first_layer_att[0, 0]
+            sample_metrics = compute_all_attention_metrics(sample_matrix)
+            metric_names = list(sample_metrics.keys())
+
+            # Build CSV header
+            lines = ["layer,head," + ",".join(metric_names)]
+
+            # Compute metrics for ALL layers and ALL heads
+            for layer_idx, layer_att in enumerate(attentions):
+                if isinstance(layer_att, torch.Tensor):
+                    layer_att_np = layer_att[0].detach().cpu().numpy()
+                else:
+                    layer_att_np = layer_att[0]
+
+                num_heads = layer_att_np.shape[0]
+                for head_idx in range(num_heads):
+                    att_matrix = layer_att_np[head_idx]
+                    metrics = compute_all_attention_metrics(att_matrix)
+                    values = ",".join([f"{metrics.get(m, 0):.6f}" for m in metric_names])
+                    lines.append(f"{layer_idx},{head_idx},{values}")
+
+            # Also add global metrics (averaged across all)
+            # Compute global by averaging attention across all heads/layers
+            all_weights = []
+            for layer_att in attentions:
+                if isinstance(layer_att, torch.Tensor):
+                    all_weights.append(layer_att[0].detach().cpu().numpy().mean(axis=0))
+                else:
+                    all_weights.append(layer_att[0].mean(axis=0))
+            global_matrix = np.mean(all_weights, axis=0)
+            global_metrics = compute_all_attention_metrics(global_matrix)
+            global_values = ",".join([f"{global_metrics.get(m, 0):.6f}" for m in metric_names])
+            lines.append(f"global,all,{global_values}")
+
+            yield "\n".join(lines)
+        except Exception as e:
+            yield f"Error exporting data: {str(e)}"
+
+    @render.download(filename=lambda: generate_export_filename("attention_tree", "json", data_type="tree_structure"))
+    def export_tree_data_json():
+        """Export attention dependency tree as JSON."""
+        res = cached_result.get()
+        if not res:
+            yield json.dumps({"error": "No data available"})
+            return
+
+        try:
+            tokens = res[0]
+            attentions = res[3]
+            layer_idx = int(input.global_layer()) if input.global_layer() else 0
+            head_idx = int(input.global_head()) if input.global_head() else 0
+            try:
+                focus_token = int(input.global_focus_token()) if input.global_focus_token() else 0
+            except:
+                focus_token = 0
+
+            if attentions is None or len(attentions) == 0:
+                yield json.dumps({"error": "No attention data available"})
+                return
+
+            # Get attention matrix - shape is (batch=1, num_heads, seq_len, seq_len)
+            layer_att = attentions[layer_idx]
+            if isinstance(layer_att, torch.Tensor):
+                att_matrix = layer_att[0, head_idx].detach().cpu().numpy()
+            else:
+                att_matrix = layer_att[0, head_idx]
+
+            # Build tree data
+            tree_data = compute_influence_tree(att_matrix, tokens, root_idx=focus_token)
+
+            export_data = {
+                "model": get_model_short_name(),
+                "layer": layer_idx,
+                "head": head_idx,
+                "focus_token": focus_token,
+                "tokens": tokens,
+                "tree": tree_data
+            }
+
+            yield json.dumps(export_data, indent=2)
+        except Exception as e:
+            yield json.dumps({"error": str(e)})
+
+    @render.download(filename=lambda: generate_export_filename("isa", "json", data_type="sentence_attention"))
+    def export_isa_data():
+        """Export ISA (Inter-sentence Attention) data as JSON."""
+        res = cached_result.get()
+        if not res:
+            yield json.dumps({"error": "No data available"})
+            return
+
+        try:
+            tokens = res[0]
+            # ISA data is at index 10
+            isa_data = res[10] if len(res) > 10 else None
+
+            if isa_data is None:
+                yield json.dumps({"error": "No ISA data available. Ensure input has multiple sentences."})
+                return
+
+            # Convert numpy arrays to lists for JSON serialization
+            export_data = {
+                "model": get_model_short_name(),
+                "tokens": tokens,
+            }
+
+            # Handle different ISA data structures
+            if isinstance(isa_data, dict):
+                for key, value in isa_data.items():
+                    if isinstance(value, np.ndarray):
+                        export_data[key] = value.tolist()
+                    else:
+                        export_data[key] = value
+            else:
+                export_data["isa_scores"] = isa_data if not isinstance(isa_data, np.ndarray) else isa_data.tolist()
+
+            yield json.dumps(export_data, indent=2, default=str)
+        except Exception as e:
+            yield json.dumps({"error": str(e)})
+
+    @render.download(filename=lambda: generate_export_filename("attention_flow", "csv", data_type="all_layers"))
+    def export_attention_flow_data():
+        """Export attention flow (rollout) data as CSV - ALL layers."""
+        res = cached_result.get()
+        if not res:
+            yield "No data available"
+            return
+
+        try:
+            tokens = res[0]
+            attentions = res[3]
+            encoder_model = res[7]
+
+            if attentions is None or len(attentions) == 0:
+                yield "No attention data available"
+                return
+
+            from .renderers import compute_attention_rollout
+
+            lines = ["layer,head,source_idx,target_idx,source_token,target_token,weight"]
+            seq_len = len(tokens)
+
+            # Export per-layer, per-head attention
+            for l_idx, layer_att in enumerate(attentions):
+                if isinstance(layer_att, torch.Tensor):
+                    layer_att_np = layer_att[0].detach().cpu().numpy()
+                else:
+                    layer_att_np = layer_att[0]
+
+                num_heads = layer_att_np.shape[0]
+                for h_idx in range(num_heads):
+                    att_matrix = layer_att_np[h_idx]
+                    for i in range(seq_len):
+                        for j in range(seq_len):
+                            val = att_matrix[i, j]
+                            if val > 1e-4:
+                                lines.append(f"{l_idx},{h_idx},{i},{j},{tokens[i]},{tokens[j]},{val:.6f}")
+
+            # Export global rollout
+            rollout_matrix = compute_attention_rollout(attentions)
+            for i in range(seq_len):
+                for j in range(seq_len):
+                    val = rollout_matrix[i, j]
+                    if val > 1e-4:
+                        lines.append(f"global,rollout,{i},{j},{tokens[i]},{tokens[j]},{val:.6f}")
+
+            yield "\n".join(lines)
+        except Exception as e:
+            yield f"Error exporting data: {str(e)}"
 
     @reactive.Effect
     async def sync_history_storage():
@@ -700,8 +1089,11 @@ def server(input, output, session):
             # Attention rollout: accumulated flow through layers
             # Use all layers or up to the current layer
             target_layer = len(attentions) - 1 if use_all_layers else layer_idx
-            rollout = attention_rollout(attentions, target_layer)
-            # Apply causal masking if needed
+            # Slice attentions up to target_layer (inclusive if 0-indexed?) 
+            # attentions is a tuple/list. range 0 to target_layer inclusive -> [:target_layer+1]
+            relevant_attentions = attentions[:target_layer+1]
+            rollout = compute_attention_rollout(relevant_attentions)
+            
             if is_causal:
                 rollout = rollout.copy()
                 rollout[np.triu_indices_from(rollout, k=1)] = np.nan
@@ -1282,21 +1674,7 @@ def server(input, output, session):
 
         # Block 3: Head Specialization & Tree Layout
         radar_tree_row = ui.layout_columns(
-            ui.div(
-                {"class": "card"},
-                ui.div(
-                    {"class": "header-controls-stacked"},
-                    ui.div(
-                        {"class": "header-row-top"},
-                        ui.h4("Head Specialization")
-                    ),
-                    ui.div(
-                        {"class": "header-row-bottom"},
-                        ui.span("Attention Mode:", class_="toggle-label"),
-                        ui.output_ui("render_radar_view")
-                    )
-                ),
-            ),
+            ui.output_ui("render_radar_dashboard"),
             ui.div(
                 {"class": "card"},
                 ui.div(
@@ -1353,20 +1731,15 @@ def server(input, output, session):
                     ui.p("Query, Key, Value projections with magnitude, alignment, and directional analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
                     get_qkv_table(res, qkv_layer, top_k=top_k)
                 ),
+                ui.output_ui("render_scaled_attention_dashboard"),
                 ui.div(
                     {"class": "card"},
-                    ui.div(
-                        {"class": "header-simple"},
-                        ui.h4("Scaled Dot-Product Attention")
-                    ),
-                    ui.p("Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                    get_scaled_attention_view(res, att_layer, att_head, focus_token_idx, top_k=top_k)
-                ),
-                ui.div(
-                    {"class": "card"}, 
-                    ui.h4("Feed-Forward Network"), 
-                    ui.p("Expansion -> Activation -> Projection", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                    get_ffn_view(res, att_layer)
+                    viz_header("Multi-Head Attention", "Grid of all heads in this layer. See global patterns.", 
+                               "<b>Standard Attention Matrix Visualization.</b><br>Each cell (i,j) is the attention weight query i pays to key j.",
+                               controls=[
+                                   ui.download_button("export_multi_head_data", "JSON", style="padding: 2px 8px; font-size: 10px; height: 24px;")
+                               ]),
+                    ui.output_ui(f"multi_head_view{suffix}")
                 ),
                 col_widths=[4, 4, 4]
             ),
@@ -1495,7 +1868,7 @@ def server(input, output, session):
 
     @output
     @render.ui
-    def render_scaled_attention():
+    def render_scaled_attention_dashboard():
         res = get_active_result()
         if not res: return None
         
@@ -1532,8 +1905,67 @@ def server(input, output, session):
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
-            ui.h4("Scaled Dot-Product Attention"),
-            ui.p("Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            viz_header(
+                "Scaled Dot-Product Attention", 
+                "Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.",
+                "<b>Formula:</b> Attention(Q, K, V) = softmax(QK<sup>T</sup> / √d<sub>k</sub>)V",
+                subtitle=f"(Layer {layer_idx} · Head {head_idx})",
+                controls=[
+                    ui.download_button("export_attention_metrics_dashboard", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
+                ]
+            ),
+            get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k, norm_mode=norm_mode, use_global=use_global)
+        )
+
+    @output
+    @render.ui
+    def render_scaled_attention():
+        """Scaled Dot-Product Attention for non-compare mode (Advanced view in single model mode)."""
+        res = get_active_result()
+        if not res: return None
+
+        # Use global_selected_tokens for span support
+        selected_indices = []
+        try:
+            val = input.global_selected_tokens()
+            if val:
+                selected_indices = json.loads(val)
+        except:
+            pass
+
+        # Fallback
+        if not selected_indices:
+            try:
+                global_token = int(input.global_focus_token())
+                if global_token >= 0:
+                    selected_indices = [global_token]
+            except:
+                pass
+
+        focus_indices = selected_indices if selected_indices else [0]
+
+        try: layer_idx = int(input.global_layer())
+        except: layer_idx = 0
+        try: head_idx = int(input.global_head())
+        except: head_idx = 0
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+
+        # Get normalization mode
+        norm_mode = global_norm_mode.get()
+        use_global = global_metrics_mode.get() == "all"
+
+        return ui.div(
+            {"class": "card", "style": "height: 100%;"},
+            viz_header(
+                "Scaled Dot-Product Attention",
+                "Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.",
+                "<b>Formula:</b> Attention(Q, K, V) = softmax(QK<sup>T</sup> / √d<sub>k</sub>)V",
+                subtitle=f"(Layer {layer_idx} · Head {head_idx})",
+                controls=[
+                    ui.download_button("export_scaled_attention", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
+                ]
+            ),
             get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k, norm_mode=norm_mode, use_global=use_global)
         )
 
@@ -1987,7 +2419,7 @@ def server(input, output, session):
 
     @output
     @render.ui
-    def render_radar_view():
+    def render_radar_dashboard():
         res = get_active_result()
         if not res: return None
         try: layer_idx = int(input.global_layer())
@@ -1999,20 +2431,21 @@ def server(input, output, session):
 
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
-            ui.div(
-                {"class": "header-controls-stacked"},
-                ui.div(
-                    {"class": "header-row-top"},
-                    ui.h4("Head Specialization"),
-                    ui.div(
-                        {"style": "display: flex; align-items: center; gap: 12px;"},
-                        ui.span("MODE:", style="font-size: 11px; font-weight: 600; color: #64748b; letter-spacing: 0.5px;"),
-                        ui.input_radio_buttons("radar_mode", None, {"single": "Single Head", "all": "All Heads"}, inline=True, selected=mode)
+            viz_header(
+                "Head Specialization", 
+                "Each axis represents a linguistic function. The shape shows what this head focuses on.",
+                "<b>Calculated by aggregating attention mass on specific token types.</b><br>e.g., Syntax score = % of attention directed to functional words (DET, PREP, etc.).",
+                limitation="Approximation based on POS tags.",
+                controls=[
+                    ui.download_button("export_head_spec_unique", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
+                    ui.tags.button(
+                        ui.HTML('<i class="fa-solid fa-download"></i> PNG'),
+                        onclick="downloadPlotlyPNG('radar-chart-container', 'head_specialization')",
+                        style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
-                ),
-                ui.p("Analyzes the linguistic roles (syntax, semantics, etc.) performed by each attention head.", style="font-size:11px; color:#6b7280; margin: 4px 0 0 0;"),
+                ]
             ),
-            head_specialization_radar(res, layer_idx, head_idx, mode),
+            ui.div({"id": "radar-chart-container"}, head_specialization_radar(res, layer_idx, head_idx, mode)),
             ui.HTML(f"""
                 <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
                     <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
@@ -2047,11 +2480,22 @@ def server(input, output, session):
         norm_mode = global_norm_mode.get()
         use_global = global_metrics_mode.get() == "all"
 
+        tree_png_filename = generate_export_filename("attention_tree", "png", is_b=False, incl_timestamp=False, data_type="dependency")
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
-            ui.h4("Attention Dependency Tree"),
-            ui.p("Visualizes the hierarchical influence of tokens on the selected focus token.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, use_global=use_global, norm_mode=norm_mode)
+            viz_header("Attention Dependency Tree",
+                       "Visualizes the hierarchical influence of tokens on the selected focus token.",
+                       "<b>Tree built from attention weights.</b><br>Each branch shows which tokens the focus token attends to most.",
+                       controls=[
+                           ui.download_button("export_tree_data", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
+                           ui.download_button("export_topk_attention", "Top-K CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
+                           ui.tags.button(
+                               ui.HTML('<i class="fa-solid fa-image"></i> PNG'),
+                               onclick=f"downloadD3PNG('tree-viz-container', '{tree_png_filename}')",
+                               style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
+                           )
+                       ]),
+            ui.div({"id": "tree-viz-container"}, get_influence_tree_ui(res, root_idx, layer_idx, head_idx, use_global=use_global, norm_mode=norm_mode))
         )
 
     @output
@@ -2083,35 +2527,13 @@ def server(input, output, session):
 
         return ui.div(
             {"class": "card"},
-            ui.div(
-                {"style": "display: flex; align-items: center; gap: 8px; margin-bottom: 12px;"},
-                ui.h4("Attention Metrics", style="margin: 0;"),
-                ui.div(
-                    {"class": "info-tooltip-wrapper"},
-                    ui.span({"class": "info-tooltip-icon"}, "i"),
-                    ui.div(
-                        {"class": "info-tooltip-content"},
-                        ui.HTML("""
-                            <strong style='color:#3b82f6;font-size:13px;display:block;margin-bottom:8px'>Attention Metrics</strong>
-                            
-                            <p style='margin:0 0 10px 0'>Evaluates the properties of the attention mechanism for the selected layer/head.</p>
-                            
-                            <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-bottom:8px'>
-                                <strong style='color:#60a5fa;font-size:11px'>Context Indicators:</strong>
-                                <ul style='margin:6px 0 0 0;padding-left:14px;font-size:10px'>
-                                    <li><b>Layer Rank:</b> Percentile of this head's value compared to all other heads in the same layer.</li>
-                                    <li><b>Avg:</b> The average value for this metric across all heads in this layer.</li>
-                                    <li><b>Ref:</b> Average value computed from a baseline set of 10 neutral sentences.</li>
-                                </ul>
-                            </div>
-
-                            <p style='margin:0 0 10px 0'><strong style='color:#60a5fa'>Scale Toggle:</strong> Switch between "Optimized" (zoomed to data range) and "Full" (0-1) scales for absolute comparison.</p>
-                        """)
-                    )
-                ),
-                ui.span(subtitle, style="font-size: 11px; color: #94a3b8; font-weight: 500;")
-            ),
-            get_metrics_display(res, layer_idx=layer_idx, head_idx=head_idx, use_full_scale=use_full_scale, baseline_stats=baseline_stats.get(), norm_mode=norm_mode)
+            viz_header("Attention Metrics", "Quantitative measures of attention behavior for the selected head.", 
+                               "<b>Formulas from 'From Attention to Assurance' paper.</b><br>Includes Confidence, Focus (Entropy), and more.",
+                               subtitle=subtitle,
+                               controls=[
+                                   ui.download_button("export_attention_metrics_single", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
+                               ]),
+            ui.div({"id": "metrics-chart-container"}, get_metrics_display(res, layer_idx=layer_idx, head_idx=head_idx, use_full_scale=use_full_scale, baseline_stats=baseline_stats.get(), norm_mode=norm_mode))
         )
 
     def dashboard_layout_helper(is_gpt2, num_layers, num_heads, clean_tokens, suffix=""):
@@ -3231,57 +3653,69 @@ def server(input, output, session):
         if plot_only:
             return ui.HTML(plot_html + js)
 
+        # Determine export button IDs based on suffix
+        export_csv_id = "export_isa_csv_B" if suffix == "_B" else "export_isa_csv"
+        export_json_id = "export_isa_json_B" if suffix == "_B" else "export_isa_json"
+        png_filename = generate_export_filename("isa", "png", is_b=(suffix == "_B"), incl_timestamp=False, data_type="heatmap")
+        token_png_filename = generate_export_filename("isa", "png", is_b=(suffix == "_B"), incl_timestamp=False, data_type="token2token")
+
         return ui.div(
             {"class": "card"},
-            ui.div(
-                {"class": "viz-header-with-info", "style": "margin-bottom: 8px;"},
-                ui.h4(
-                    "Inter-Sentence Attention (ISA)", 
-                    style="margin: 0;"
-                ),
-                ui.div(
-                    {"class": "info-tooltip-wrapper"},
-                    ui.span({
-                        "class": "info-tooltip-icon", 
-                        "onclick": f"showISACalcExplanation('{model_type}')",
-                        "style": "cursor: pointer;"
-                    }, "i"),
-                    ui.div(
-                        {"class": "info-tooltip-content"},
-                        ui.HTML("""
-                            <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Inter-Sentence Attention (ISA)</strong>
-                            
-                            <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures how strongly tokens in one sentence attend to tokens in another sentence, aggregating across all layers and attention heads.</p>
-                            
-                            <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Three-step max aggregation:<br>
-                            <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>ISA = max<sub>heads</sub>(max<sub>tokens</sub>(max<sub>layers</sub>(α)))</code></p>
-                            
-                            <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                                <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
-                                <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
-                                    <span style='color:#22c55e'>● High (>0.8): Strong dependency</span>
-                                    <span style='color:#eab308'>● Mid (0.4-0.8): Moderate</span>
-                                    <span style='color:#ef4444'>● Low (<0.4): Weak link</span>
-                                </div>
+            viz_header("Inter-Sentence Attention (ISA)",
+                        "Heatmap showing the strength of attention between every pair of sentences.",
+                        """
+                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Inter-Sentence Attention (ISA)</strong>
+
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures how strongly tokens in one sentence attend to tokens in another sentence, aggregating across all layers and attention heads.</p>
+
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Three-step max aggregation:<br>
+                        <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>ISA = max<sub>heads</sub>(max<sub>tokens</sub>(max<sub>layers</sub>(α)))</code></p>
+
+                        <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                            <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
+                            <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                                <span style='color:#22c55e'>● High (>0.8): Strong dependency</span>
+                                <span style='color:#eab308'>● Mid (0.4-0.8): Moderate</span>
+                                <span style='color:#ef4444'>● Low (<0.4): Weak link</span>
                             </div>
-                            
-                            <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                                <em>Click icon for formulas & details</em>
-                            </p>
-                        """)
-                    )
-                )
-            ),
+                        </div>
+
+                        <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                            <em>Click icon for formulas & details</em>
+                        </p>
+                        """,
+                        controls=[
+                            ui.download_button(export_csv_id, "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
+                            ui.download_button(export_json_id, "JSON", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
+                            ui.tags.button(
+                                ui.HTML('<i class="fa-solid fa-image"></i> PNG'),
+                                onclick=f"downloadPlotlyPNG('isa-plot-container{suffix}', '{png_filename}')",
+                                style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
+                            ),
+                        ]
+                    ),
             ui.div({"class": "viz-description"}, "Visualizes attention strength between sentence pairs. Click any point to see token-level attention details. ⚠️ Higher ISA scores indicate stronger cross-sentence attention, not necessarily semantic similarity."),
             ui.layout_columns(
                 ui.div(
-                    {"style": "width: 100%; display: flex; justify-content: center; align-items: center; margin-bottom: 20px;" if vertical_layout else "height: 500px; width: 100%; display: flex; justify-content: center; align-items: center;"},
+                    {"id": f"isa-plot-container{suffix}", "style": "width: 100%; display: flex; justify-content: center; align-items: center; margin-bottom: 20px;" if vertical_layout else "height: 500px; width: 100%; display: flex; justify-content: center; align-items: center;"},
                     ui.HTML(plot_html + js)
                 ),
                 ui.div(
                     {"style": "display: flex; flex-direction: column; justify-content: flex-start; height: 100%;"},
                     ui.div(ui.output_ui(f"isa_detail_info{suffix}"), style="flex: 0 0 auto; margin-bottom: 10px;"),
-                    ui.div(ui.output_ui(f"isa_token_view{suffix}"), style="flex: 1; display: flex; flex-direction: column;"),
+                    ui.div(
+                        {"id": f"isa-token-container{suffix}"},
+                        ui.div(
+                            {"style": "display: flex; justify-content: flex-end; margin-bottom: 4px;"},
+                            ui.tags.button(
+                                ui.HTML('<i class="fa-solid fa-image"></i> Token PNG'),
+                                onclick=f"downloadPlotlyPNG('isa-token-container{suffix}', '{token_png_filename}')",
+                                style="padding: 2px 6px; font-size: 9px; height: 20px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
+                            ),
+                        ),
+                        ui.output_ui(f"isa_token_view{suffix}"),
+                        style="flex: 1; display: flex; flex-direction: column;"
+                    ),
                 ),
                 col_widths=col_layout,
             ),
@@ -4162,39 +4596,18 @@ def server(input, output, session):
         )
         return ui.div(
             {"class": "card", "style": "height: 100%; display: flex; flex-direction: column;"},
-            ui.div(
-                {"class": "header-simple"},
-                ui.div(
-                    {"class": "viz-header-with-info"},
-                    ui.h4("Multi-Head Attention"),
-                    ui.div(
-                        {"class": "info-tooltip-wrapper"},
-                        ui.span({"class": "info-tooltip-icon"}, "i"),
-                        ui.div(
-                            {"class": "info-tooltip-content"},
-                            ui.HTML("""
-                                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention</strong>
-                                
-                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how each token distributes its attention across all other tokens. Each cell (i,j) represents the attention weight from query token i to key token j.</p>
-                                
-                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>Attention = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V</code></p>
-                                
-                                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                                    <strong style='color:#8b5cf6;font-size:11px'>Color Scale (Blue):</strong>
-                                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
-                                        <span style='color:#1e40af'>● Dark blue: High weight</span>
-                                        <span style='color:#3b82f6'>● Medium: Moderate</span>
-                                        <span style='color:#93c5fd'>● Light: Low weight</span>
-                                    </div>
-                                </div>
-                                
-                                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                                    High attention ≠ importance
-                                </p>
-                            """)
-                        )
+            viz_header(
+                "Multi-Head Attention",
+                "Shows how each token distributes its attention across all other tokens. Each cell (i,j) represents the attention weight from query token i to key token j.",
+                "<b>Calculation:</b> Attention = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V<br><br><b>Color Scale:</b> Dark blue indicates high attention weight.",
+                controls=[
+                    ui.download_button("export_multi_head_data", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
+                    ui.tags.button(
+                        ui.HTML('<i class="fa-solid fa-download"></i> PNG'),
+                        onclick=f"downloadPlotlyPNG('multi-head-plot', 'multi_head_attention')",
+                        style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
-                ),
+                ]
             ),
             ui.div({"class": "viz-description", "style": "margin-top: 20px; flex-shrink: 0;"}, ui.HTML(
                 f"<strong style='color:#64748b'>{norm_label}</strong><br>" +
@@ -4204,7 +4617,7 @@ def server(input, output, session):
                 f" Brighter cells indicate stronger weights. ⚠️ Note that high attention ≠ importance or influence.{causal_desc}"
             )),
             ui.div(
-                {"style": "flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%;"},
+                {"id": "multi-head-plot", "style": "flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_map_plot"))
             ),
             # JavaScript to suppress hover on masked cells for causal models
@@ -4405,46 +4818,24 @@ def server(input, output, session):
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
-            ui.div(
-                {"class": "header-with-selectors"},
-                ui.div(
-                    {"class": "viz-header-with-info"},
-                    ui.h4("Attention Flow"),
-                    ui.div(
-                        {"class": "info-tooltip-wrapper"},
-                        ui.span({"class": "info-tooltip-icon"}, "i"),
-                        ui.div(
-                            {"class": "info-tooltip-content"},
-                            ui.HTML("""
-                                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Flow</strong>
-                                
-                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Sankey-style diagram showing attention distribution. Line width is proportional to attention weight α<sub>ij</sub> between token pairs.</p>
-                                
-                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Threshold:</strong> Only connections with weight ≥ 0.04 are shown to reduce clutter.</p>
-                                
-                                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                                    <strong style='color:#8b5cf6;font-size:11px'>Line Width:</strong>
-                                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
-                                        <span style='color:#22c55e'>● Wide: High weight</span>
-                                        <span style='color:#eab308'>● Medium: Moderate</span>
-                                        <span style='color:#ef4444'>● Thin: Low weight</span>
-                                    </div>
-                                </div>
-                                
-                                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                                    Shows Query→Key, not information flow
-                                </p>
-                            """)
-                        )
+            viz_header(
+                "Attention Flow",
+                "Sankey-style diagram showing attention distribution. Line width is proportional to attention weight.",
+                "<b>Threshold:</b> Connections < 0.04 hidden.<br><br><b>Line Width:</b> Proportional to attention weight.", controls=[
+                    ui.download_button("export_attention_flow_data", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
+                    ui.tags.button(
+                        ui.HTML('<i class="fa-solid fa-download"></i> PNG'),
+                        onclick=f"downloadPlotlyPNG('attention-flow-plot', 'attention_flow')",
+                        style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
-                )
+                ]
             ),
             ui.div({"class": "viz-description"}, ui.HTML(
                 f"<strong style='color:#64748b'>{get_norm_mode_label(norm_mode, layer_idx, use_all_layers=use_all_layers, total_layers=num_layers)}</strong><br>" +
                 "Traces attention weight patterns between tokens. Thicker lines indicate stronger attention. ⚠️ This shows weight distribution, not actual information flow through the network."
             )),
             ui.div(
-                {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
+                {"id": "attention-flow-plot", "style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_flow_plot"))
             )
         )
@@ -4589,7 +4980,7 @@ def server(input, output, session):
             ),
              ui.p("Visualizes how information flows between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
             ui.div(
-                {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
+                {"id": "attention-flow-plot-B", "style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_flow_plot_B"))
             )
         )
@@ -4614,56 +5005,25 @@ def server(input, output, session):
             num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
         
         return ui.div(
-             {"class": "card card-compact-height", "style": "height: 100%; display: flex; flex-direction: column;"},
-             ui.div(
-                {"class": "header-controls-stacked"},
-                 ui.div(
-                    {"class": "header-row-top"},
-                    ui.div(
-                        {"class": "viz-header-with-info"},
-                        ui.h4("Head Specialization"),
-                        ui.div(
-                            {"class": "info-tooltip-wrapper"},
-                            ui.span({"class": "info-tooltip-icon"}, "i"),
-                            ui.div(
-                                {"class": "info-tooltip-content"},
-                                ui.HTML("""
-                                    <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Head Specialization</strong>
-                                    
-                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Profiles each attention head across 7 dimensions using heuristic metrics from attention pattern analysis.</p>
-                                    
-                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Dimensions:</strong> Syntax, Semantics, Positional, Long-range, CLS Focus, Local, SEP Focus</p>
-                                    
-                                    <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                                        <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
-                                        <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
-                                            <span style='color:#22c55e'>● High (>0.7): Specialized</span>
-                                            <span style='color:#eab308'>● Mid: Mixed role</span>
-                                            <span style='color:#ef4444'>● Low (<0.3): Not focused</span>
-                                        </div>
-                                    </div>
-                                    
-                                    <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                                        Labels are approximations, not verified roles
-                                    </p>
-                                """)
-                            )
-                        )
-                    ),
-
-                ),
-                ui.div(
-                    {"class": "header-row-bottom", "style": "margin-top: 4px;"},
-                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Analyzes attention patterns to identify potential linguistic roles of each head. Each dimension represents a heuristic score for different attention behaviors. ⚠️ Labels like 'Syntax' and 'Semantics' are approximations based on attention patterns, not verified functional roles.")
-                )
-             ),
-             ui.div(
-                 {"style": "flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0;"},
-                 ui.output_ui("radar_plot_internal")
-             ),
+            {"class": "card card-compact-height", "style": "height: 100%;"},
+            viz_header(
+                "Head Specialization", 
+                "Each axis represents a linguistic function. The shape shows what this head focuses on.",
+                "<b>Calculated by aggregating attention mass on specific token types.</b><br>e.g., Syntax score = % of attention directed to functional words (DET, PREP, etc.).",
+                limitation="Approximation based on POS tags.",
+                controls=[
+                    ui.download_button("export_head_spec_unique_legacy", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
+                    ui.tags.button(
+                        ui.HTML('<i class="fa-solid fa-download"></i> PNG'),
+                        onclick="downloadPlotlyPNG('radar-chart-container-legacy', 'head_specialization')",
+                        style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
+                    )
+                ]
+            ),
+            ui.div({"id": "radar-chart-container-legacy"}, head_specialization_radar(res, 0, 0, "single")), # Defaulting to 0/0/single as fallback since inputs were removed in legacy
              ui.HTML(f"""
-                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center; flex-shrink: 0;">
-                    <strong style="color: #ff5ca9;">Specialization Dimensions</strong> — click any to see detailed explanation:<br>
+                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
+                    <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: center;">
                         <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
                         <span class="metric-tag" onclick="showMetricModal('Semantics', 0, 0)">Semantics</span>
@@ -4674,7 +5034,7 @@ def server(input, output, session):
                         <span class="metric-tag" onclick="showMetricModal('Self-attention', 0, 0)">Self-attention</span>
                     </div>
                 </div>
-            """) 
+            """)
         )
 
 
@@ -5031,50 +5391,22 @@ def server(input, output, session):
         # Get normalization mode
         norm_mode = global_norm_mode.get()
 
+        tree_png_filename = generate_export_filename("attention_tree", "png", is_b=False, incl_timestamp=False, data_type="dependency")
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
-            ui.div(
-                {"class": "header-controls-stacked"},
-                ui.div(
-                    {"class": "header-row-top"},
-                    ui.div(
-                        {"class": "viz-header-with-info"},
-                        ui.h4("Attention Dependency Tree"),
-                        ui.div(
-                            {"class": "info-tooltip-wrapper"},
-                            ui.span({"class": "info-tooltip-icon"}, "i"),
-                            ui.div(
-                                {"class": "info-tooltip-content"},
-                                ui.HTML("""
-                                    <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
-                                    
-                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of attention dependencies starting from a root token. Shows which tokens the root attends to (depth 1) and their dependencies (depth 2).</p>
-                                    
-                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Construction:</strong> Edges connect to top-k most attended tokens at each level recursively.</p>
-                                    
-                                    <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                                        <strong style='color:#8b5cf6;font-size:11px'>Key Insights:</strong>
-                                        <ul style='margin:6px 0 0 0;padding-left:14px;font-size:10px'>
-                                            <li>Identify which tokens a word "looks at"</li>
-                                            <li>Discover multi-hop attention chains</li>
-                                            <li>Find syntactic or semantic clusters</li>
-                                        </ul>
-                                    </div>
-                                    
-                                    <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                                        Not a syntactic parse tree
-                                    </p>
-                                """)
+            viz_header("Attention Dependency Tree",
+                        "Visualizes the hierarchical influence of tokens on the selected focus token.",
+                        "<b>Tree built from attention weights.</b><br>Each branch shows which tokens the focus token attends to most.",
+                        controls=[
+                            ui.download_button("export_tree_data_legacy", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
+                            ui.tags.button(
+                                ui.HTML('<i class="fa-solid fa-image"></i> PNG'),
+                                onclick=f"downloadD3PNG('tree-viz-container-legacy', '{tree_png_filename}')",
+                                style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                             )
-                        )
-                    )
-                ),
-                ui.div(
-                    {"class": "header-row-bottom", "style": "margin-top: 4px;"},
-                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
-                )
+                        ]
             ),
-            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="", use_global=use_global, max_depth=top_k_val, top_k=top_k_val, norm_mode=norm_mode)
+            ui.div({"id": "tree-viz-container-legacy"}, get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="", use_global=use_global, max_depth=top_k_val, top_k=top_k_val, norm_mode=norm_mode))
         )
 
     # -------------------------------------------------------------------------
@@ -5194,11 +5526,15 @@ def server(input, output, session):
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
-            ui.div(
-                {"class": "header-simple"},
-                ui.h4("Scaled Dot-Product Attention")
+            viz_header(
+                "Scaled Dot-Product Attention",
+                "Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.",
+                "<b>Formula:</b> Attention(Q, K, V) = softmax(QK<sup>T</sup> / √d<sub>k</sub>)V",
+                subtitle=f"(Layer {layer_idx} · Head {head_idx})",
+                controls=[
+                    ui.download_button("export_scaled_attention_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
+                ]
             ),
-            ui.p("Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
             get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k, norm_mode=norm_mode, use_global=use_global)
         )
 
@@ -5320,87 +5656,34 @@ def server(input, output, session):
         </script>
         """)
 
-        controls = []
-
+        # Prepare viz_header arguments
         if is_bert:
-            use_mlm_B = True
-
-            # Interactive Mode Logic (like Model A)
-            try: manual_mode = input.mlm_interactive_mode_B()
-            except: manual_mode = False
-
-            custom_mask_indices = None
-            if manual_mode:
-                try: custom_mask_indices = input.manual_mask_indices_B()
-                except: custom_mask_indices = None
-
-            # Toggle Masks button (same style as Model A)
-            active_class = "active" if manual_mode else ""
-            button_label = "Go back" if manual_mode else "Toggle Masks"
-
-            controls.append(ui.HTML(f"""
-            <div class='control-group' style='display:flex; align-items:center;'>
-                <div class='radio-group'>
-                    <span class='toggle-masks-btn {active_class}'
-                          onclick="Shiny.setInputValue('mlm_interactive_mode_B', !{str(manual_mode).lower()}, {{priority: 'event'}});">
-                        {button_label}
-                    </span>
-                </div>
-            </div>
-            """))
-
-            # Tooltip for BERT
-            tooltip_html = """
-                <div class='info-tooltip-wrapper' style='display:flex; align-items:center; margin-left:2px;'>
-                    <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
-                    <div class='info-tooltip-content'>
-                        <strong>Masked Language Modeling</strong>
-                        <p>We use BERT's Masked Language Modeling capability. To get these results, we iteratively mask each token in the sequence one by one and ask the model to predict the most likely original token based on the surrounding context (left and right).</p>
-                    </div>
-                </div>
-            """
-
-            title_header = ui.h4(
-                "Masked Token Predictions (MLM)",
-                ui.HTML(tooltip_html),
-                style="margin:0; display:flex; align-items:center;"
-            )
+            title = "Masked Token Predictions (MLM)"
             desc = "Predicts the masked token using bidirectional context."
+            tooltip = "<b>Iterative Masking (BERT):</b> Replaces token with [MASK] and computes logits."
+            extra_controls = [
+                ui.tags.button(
+                    ui.HTML('<i class="fa-solid fa-play"></i> Predict Masked'),
+                    id="run_custom_mask_B",
+                    class_="btn btn-secondary-sm custom-mask-btn action-button",
+                    style="padding: 2px 8px; font-size: 10px; height: 24px;"
+                )
+            ]
         else:
-            use_mlm_B = True
-            manual_mode = False
-            custom_mask_indices = None
-
-            tooltip_html = """
-                <div class='info-tooltip-wrapper' style='display:flex; align-items:center; margin-left:2px;'>
-                    <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
-                    <div class='info-tooltip-content'>
-                        <strong>Causal Language Modeling</strong>
-                        <p>We use GPT-2's Causal Language Modeling. The model predicts the <strong>next token</strong> in the sequence based on all previous tokens.</p>
-                    </div>
-                </div>
-            """
-            title_header = ui.h4(
-                "Next Token Predictions (Causal)",
-                ui.HTML(tooltip_html),
-                style="margin:0; display:flex; align-items:center;"
-            )
+            title = "Next Token Predictions (Causal)"
             desc = "Predicting the probability of the next token appearing after the sequence."
-
-        # Header Container (same layout as Model A)
-        header_row = ui.div(
-            {"style": "display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 4px;"},
-            title_header,
-            ui.div(*controls)
-        )
-
-        description_row = ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px; min-height: 20px; line-height: 1.4;")
+            tooltip = "<b>Causal (GPT-2):</b> Predicts next token given previous context (unidirectional)."
+            extra_controls = None
 
         return ui.div(
-            {"class": "card", "style": "height: 100%;"},
+            {"class": "card card-compact-height", "style": "height: 100%;"},
             js_script_B,
-            header_row,
-            description_row,
+            viz_header(
+                title, 
+                desc, 
+                tooltip, 
+                controls=extra_controls
+            ),
             get_output_probabilities(res, use_mlm_B, text, suffix="_B", top_k=top_k, manual_mode=manual_mode, custom_mask_indices=custom_mask_indices)
         )
 
@@ -5420,49 +5703,22 @@ def server(input, output, session):
         mode = "cluster" if use_global else "single"
         
         return ui.div(
-            {"class": "card card-compact-height", "style": "height: 100%; display: flex; flex-direction: column;"},
-            ui.div(
-                {"class": "header-controls-stacked"},
-                ui.div(
-                    {"class": "header-row-top"},
-                    ui.div(
-                        {"class": "viz-header-with-info"},
-                        ui.h4("Head Specialization"),
-                        ui.div(
-                            {"class": "info-tooltip-wrapper"},
-                            ui.span({"class": "info-tooltip-icon"}, "i"),
-                            ui.div(
-                                {"class": "info-tooltip-content"},
-                                ui.HTML("""
-                                    <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Head Specialization</strong>
-                                    
-                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Profiles each attention head across 7 dimensions using heuristic metrics from attention pattern analysis.</p>
-                                    
-                                    <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Dimensions:</strong> Syntax, Semantics, Positional, Long-range, CLS Focus, Local, SEP Focus</p>
-                                    
-                                    <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                                        <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
-                                        <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
-                                            <span style='color:#22c55e'>● High (>0.7): Specialized</span>
-                                            <span style='color:#eab308'>● Mid: Mixed role</span>
-                                            <span style='color:#ef4444'>● Low (<0.3): Not focused</span>
-                                        </div>
-                                    </div>
-                                    
-                                    <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                                        Labels are approximations, not verified roles
-                                    </p>
-                                """)
-                            )
-                        )
+            {"class": "card card-compact-height", "style": "height: 100%;"},
+            viz_header(
+                "Head Specialization", 
+                "Each axis represents a linguistic function. The shape shows what this head focuses on.",
+                "<b>Calculated by aggregating attention mass on specific token types.</b><br>e.g., Syntax score = % of attention directed to functional words (DET, PREP, etc.).",
+                limitation="Approximation based on POS tags.",
+                controls=[
+                    ui.download_button("export_head_spec_unique_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
+                    ui.tags.button(
+                        ui.HTML('<i class="fa-solid fa-download"></i> PNG'),
+                        onclick="downloadPlotlyPNG('radar-chart-container-B', 'head_specialization_B')",
+                        style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
-                ),
-                ui.div(
-                    {"class": "header-row-bottom", "style": "margin-top: 4px;"},
-                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Analyzes attention patterns to identify potential linguistic roles of each head. Each dimension represents a heuristic score for different attention behaviors. ⚠️ Labels like 'Syntax' and 'Semantics' are approximations based on attention patterns, not verified functional roles.")
-                )
-             ),
-            head_specialization_radar(res, layer_idx, head_idx, mode, suffix="_B"),
+                ]
+            ),
+            ui.div({"id": "radar-chart-container-B"}, head_specialization_radar(res, layer_idx, head_idx, mode, suffix="_B")),
             ui.HTML(f"""
                 <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: 16px; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
                     <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
@@ -5476,8 +5732,9 @@ def server(input, output, session):
                         <span class="metric-tag" onclick="showMetricModal('Self-attention', 0, 0)">Self-attention</span>
                     </div>
                 </div>
-            """) 
+            """)
         )
+
 
     @output
     @render.ui
@@ -5528,51 +5785,26 @@ def server(input, output, session):
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens_B]
         choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
 
+        tree_png_filename_b = generate_export_filename("attention_tree", "png", is_b=True, incl_timestamp=False, data_type="dependency")
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
-            ui.div(
-                {"class": "header-controls-stacked"},
-                    ui.div(
-                        {"class": "header-simple"},
-                        ui.div(
-                            {"class": "viz-header-with-info"},
-                            ui.h4("Attention Dependency Tree"),
-                            ui.div(
-                                {"class": "info-tooltip-wrapper"},
-                                ui.span({"class": "info-tooltip-icon"}, "i"),
-                                ui.div(
-                                    {"class": "info-tooltip-content"},
-                                    ui.HTML("""
-                                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
-                                        
-                                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of attention dependencies starting from a root token. Shows which tokens the root attends to (depth 1) and their dependencies (depth 2).</p>
-                                        
-                                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Construction:</strong> Edges connect to top-k most attended tokens at each level recursively.</p>
-                                        
-                                        <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                                            <strong style='color:#8b5cf6;font-size:11px'>Key Insights:</strong>
-                                            <ul style='margin:6px 0 0 0;padding-left:14px;font-size:10px'>
-                                                <li>Identify which tokens a word "looks at"</li>
-                                                <li>Discover multi-hop attention chains</li>
-                                                <li>Find syntactic or semantic clusters</li>
-                                            </ul>
-                                        </div>
-                                        
-                                        <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                                            Not a syntactic parse tree
-                                        </p>
-                                    """)
-                                )
-                            )
-                        )
-                    ),
-                ui.div(
-                    {"class": "header-row-bottom", "style": "margin-top: 4px;"},
-                    ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
-                )
+            viz_header(
+                "Attention Dependency Tree",
+                "Visualizes the hierarchical influence of tokens on the selected focus token.",
+                "<b>Tree built from attention weights.</b><br>Each branch shows which tokens the focus token attends to most.",
+                controls=[
+                    ui.download_button("export_tree_data_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
+                    ui.download_button("export_topk_attention_B", "Top-K CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
+                    ui.tags.button(
+                        ui.HTML('<i class="fa-solid fa-image"></i> PNG'),
+                        onclick=f"downloadD3PNG('tree-viz-container-B', '{tree_png_filename_b}')",
+                        style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
+                    )
+                ]
             ),
-            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="_B", use_global=use_global, top_k=top_k, max_depth=top_k, norm_mode=norm_mode)
+            ui.div({"id": "tree-viz-container-B"}, get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="_B", use_global=use_global, top_k=top_k, max_depth=top_k, norm_mode=norm_mode))
         )
+
 
     @output
     @render.ui
@@ -6121,7 +6353,7 @@ def server(input, output, session):
                 "Traces attention weight patterns between tokens. Thicker lines indicate stronger attention. ⚠️ This shows weight distribution, not actual information flow through the network."
             )),
             ui.div(
-                {"style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
+                {"id": "attention-flow-plot-B-legacy", "style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
                 ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_flow_plot_B"))
             )
         )
@@ -6459,5 +6691,601 @@ def server(input, output, session):
                 ),
             ),
         )
+
+    @render.download(
+        filename=lambda: generate_export_filename("attention_heatmap", "csv")
+    )
+    def export_attention_metrics_dashboard():
+        res = get_active_result()
+        if not res: 
+            return None # Should handle "No data" gracefully instead of crashing
+        try:
+            tokens, _, _, attentions, _, _, _, encoder_model, *_ = res
+            
+            try: layer_idx = int(input.global_layer())
+            except: layer_idx = 0
+            try: head_idx = int(input.global_head())
+            except: head_idx = 0
+            
+            norm_mode = global_norm_mode.get()
+            use_global = global_metrics_mode.get() == "all"
+            use_all_layers = global_rollout_layers.get() == "all"
+            
+            is_causal = not hasattr(encoder_model, "encoder")
+            
+            if use_global:
+                att_layers = [layer[0].cpu().numpy() for layer in attentions]
+                raw_att = np.mean(att_layers, axis=(0, 1))
+            else:
+                # Fix: Access raw_att correctly for single head. 
+                # attentions[layer_idx] is (batch, num_heads, seq, seq). We need [0, head_idx]
+                # If attentions is a list of tensors
+                raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+                
+            att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=is_causal, use_all_layers=use_all_layers)
+            
+            # Clean tokens for CSV headers/indices
+            clean_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
+            
+            import pandas as pd
+            df = pd.DataFrame(att, index=clean_tokens, columns=clean_tokens)
+            yield df.to_csv(index=True)
+        except Exception as e:
+            traceback.print_exc()
+            yield f"Error exporting metrics: {str(e)}"
+
+    @render.download(
+        filename=lambda: generate_export_filename("scaled_attention", "csv", data_type="qkv_scores")
+    )
+    def export_scaled_attention():
+        """Export scaled dot-product attention data as CSV."""
+        res = get_active_result()
+        if not res:
+            yield "No data available"
+            return
+
+        try:
+            tokens, _, _, attentions, _, _, _, encoder_model, *_ = res
+
+            try: layer_idx = int(input.global_layer())
+            except: layer_idx = 0
+            try: head_idx = int(input.global_head())
+            except: head_idx = 0
+
+            norm_mode = global_norm_mode.get()
+            use_global = global_metrics_mode.get() == "all"
+            is_causal = not hasattr(encoder_model, "encoder")
+
+            if use_global:
+                att_layers = [layer[0].cpu().numpy() for layer in attentions]
+                raw_att = np.mean(att_layers, axis=(0, 1))
+            else:
+                raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+
+            att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=is_causal)
+
+            clean_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
+
+            import pandas as pd
+            df = pd.DataFrame(att, index=clean_tokens, columns=clean_tokens)
+            df.index.name = "Query_Token"
+            yield df.to_csv(index=True)
+        except Exception as e:
+            traceback.print_exc()
+            yield f"Error exporting data: {str(e)}"
+
+    @render.download(
+        filename=lambda: generate_export_filename("scaled_attention", "csv", is_b=True, data_type="qkv_scores")
+    )
+    def export_scaled_attention_B():
+        """Export scaled dot-product attention data as CSV for Model B."""
+        res = get_active_result("_B")
+        if not res:
+            yield "No data available"
+            return
+
+        try:
+            tokens, _, _, attentions, _, _, _, encoder_model, *_ = res
+
+            try: layer_idx = int(input.global_layer())
+            except: layer_idx = 0
+            try: head_idx = int(input.global_head())
+            except: head_idx = 0
+
+            norm_mode = global_norm_mode.get()
+            use_global = global_metrics_mode.get() == "all"
+            is_causal = not hasattr(encoder_model, "encoder")
+
+            if use_global:
+                att_layers = [layer[0].cpu().numpy() for layer in attentions]
+                raw_att = np.mean(att_layers, axis=(0, 1))
+            else:
+                raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+
+            att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=is_causal)
+
+            clean_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
+
+            import pandas as pd
+            df = pd.DataFrame(att, index=clean_tokens, columns=clean_tokens)
+            df.index.name = "Query_Token"
+            yield df.to_csv(index=True)
+        except Exception as e:
+            traceback.print_exc()
+            yield f"Error exporting data: {str(e)}"
+
+    def get_head_spec_csv(is_b=False):
+        if is_b:
+            res = get_active_result("_B")
+        else:
+            res = get_active_result()
+            
+        if not res: return None
+        tokens, _, _, attentions, _, _, tokenizer, encoder_model, *_ = res
+        
+        # Determine logical params (layer/head)
+        try: layer_idx = int(input.global_layer())
+        except: layer_idx = 0
+        try: head_idx = int(input.global_head())
+        except: head_idx = 0
+        
+        is_gpt2 = not hasattr(encoder_model, "encoder")
+        
+        # We need text for POS tagging
+        if hasattr(tokenizer, "convert_tokens_to_string"):
+            text = tokenizer.convert_tokens_to_string(tokens)
+        else:
+            # Fallback for some tokenizers
+            text = tokenizer.decode(tokenizer.convert_tokens_to_ids(tokens))
+        
+        from ..head_specialization import compute_all_heads_specialization
+        import nltk
+        try:
+            nltk.data.find('tokenizers/punkt')
+        except LookupError:
+            nltk.download('punkt')
+            nltk.download('averaged_perceptron_tagger')
+            nltk.download('universal_tagset')
+
+        # Compute metrics for ALL heads (User Request)
+        all_metrics = compute_all_heads_specialization(attentions, tokens, text)
+        
+        # Flatten to DataFrame
+        rows = []
+        # Structure: {layer_idx: {head_idx: {metric: val}}}
+        for l_idx, heads in all_metrics.items():
+            for h_idx, metrics in heads.items():
+                row = {
+                    "Layer": l_idx,
+                    "Head": h_idx,
+                    **metrics
+                }
+                rows.append(row)
+
+        import pandas as pd
+        df = pd.DataFrame(rows)
+        # Reorder columns slightly for readability
+        cols = ["Layer", "Head"] + [c for c in df.columns if c not in ["Layer", "Head"]]
+        df = df[cols]
+        return df.to_csv(index=False)
+
+    @render.download(
+        filename=lambda: generate_export_filename("head_specialization", "csv")
+    )
+    def export_head_spec_unique():
+        yield get_head_spec_csv()
+
+    @render.download(
+        filename=lambda: generate_export_filename("head_specialization_legacy", "csv")
+    )
+    def export_head_spec_unique_legacy():
+        yield get_head_spec_csv()
+
+    @render.download(
+        filename=lambda: generate_export_filename("head_specialization", "csv", is_b=True)
+    )
+    def export_head_spec_unique_B():
+        yield get_head_spec_csv(is_b=True)
+    
+    def get_tree_csv(res, suffix="", all_layers_heads=True):
+        """
+        Export attention dependency tree as CSV.
+
+        If all_layers_heads=True, exports data for ALL layers, heads, and global mode.
+        Format: Layer, Head, Mode, Parent, Child, Attention, Depth
+        """
+        if not res: return None
+
+        try: root_idx = int(input.global_focus_token())
+        except: root_idx = 0
+        if root_idx == -1: root_idx = 0
+
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+
+        norm_mode = global_norm_mode.get()
+
+        from .renderers import get_influence_tree_data
+        import pandas as pd
+
+        # Get model dimensions
+        # res = (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, ...)
+        tokens = res[0]
+        attentions = res[3]
+        num_layers = len(attentions)
+        # attentions[layer] has shape (batch, num_heads, seq_len, seq_len)
+        num_heads = attentions[0].shape[1] if num_layers > 0 else 12
+
+        all_rows = []
+
+        def traverse(node, layer_label, head_label, mode_label, depth=0, parent_name="ROOT"):
+            name = node.get("name", "Unknown")
+            att = node.get("att", 0.0)
+
+            if depth > 0:
+                all_rows.append({
+                    "Layer": layer_label,
+                    "Head": head_label,
+                    "Mode": mode_label,
+                    "Parent": parent_name,
+                    "Child": name,
+                    "Attention": att,
+                    "Depth": depth
+                })
+
+            if "children" in node and node["children"]:
+                for child in node["children"]:
+                    traverse(child, layer_label, head_label, mode_label, depth + 1, name)
+
+        if all_layers_heads:
+            # Export ALL layers and heads
+            for layer_idx in range(num_layers):
+                for head_idx in range(num_heads):
+                    tree_data = get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, top_k, norm_mode, att_matrix_override=None)
+                    if tree_data:
+                        traverse(tree_data, layer_idx, head_idx, "per_head", depth=0, parent_name="ROOT")
+
+            # Export GLOBAL mode (averaged across all heads)
+            for layer_idx in range(num_layers):
+                # For global, we average across heads - using layer's mean attention
+                layer_att = attentions[layer_idx]
+                # Handle both PyTorch tensors and numpy arrays
+                if hasattr(layer_att, 'cpu'):
+                    avg_att = layer_att.mean(dim=1).squeeze().cpu().numpy()
+                else:
+                    avg_att = np.mean(layer_att, axis=1).squeeze()
+
+                tree_data_global = get_influence_tree_data(res, layer_idx, 0, root_idx, top_k, top_k, norm_mode, att_matrix_override=avg_att)
+                if tree_data_global:
+                    traverse(tree_data_global, layer_idx, "all", "global", depth=0, parent_name="ROOT")
+        else:
+            # Single layer/head export (legacy)
+            try: layer_idx = int(input.global_layer())
+            except: layer_idx = 0
+            try: head_idx = int(input.global_head())
+            except: head_idx = 0
+
+            tree_data = get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, top_k, norm_mode, att_matrix_override=None)
+            if tree_data:
+                traverse(tree_data, layer_idx, head_idx, "per_head", depth=0, parent_name="ROOT")
+
+        if not all_rows:
+            return None
+
+        df = pd.DataFrame(all_rows)
+        return df.to_csv(index=False)
+
+    @render.download(
+        filename=lambda: generate_export_filename("attention_tree", "csv", data_type="all_layers_heads")
+    )
+    def export_tree_data():
+        res = get_active_result()
+        csv_content = get_tree_csv(res, all_layers_heads=True)
+        if csv_content:
+            yield csv_content
+        else:
+            yield "No data available"
+
+    @render.download(
+        filename=lambda: generate_export_filename("attention_tree", "csv", is_b=True, data_type="all_layers_heads")
+    )
+    def export_tree_data_B():
+        res = get_active_result("_B")
+        csv_content = get_tree_csv(res, suffix="_B", all_layers_heads=True)
+        if csv_content:
+            yield csv_content
+        else:
+            yield "No data available"
+
+    @render.download(
+        filename=lambda: generate_export_filename("attention_tree", "csv", data_type="all_layers_heads")
+    )
+    def export_tree_data_legacy():
+        res = get_active_result()
+        csv_content = get_tree_csv(res, suffix="", all_layers_heads=True)
+        if csv_content:
+            yield csv_content
+        else:
+            yield "No data available"
+
+    # --- Top K Attention Targets CSV ---
+    def get_topk_attention_csv(res, suffix=""):
+        """
+        Export top K tokens that each token attends to most, across ALL layers, heads, and global.
+        Format: Token_Idx, Token, Layer, Head, Mode, Rank, Target_Idx, Target_Token, Attention
+        """
+        if not res: return None
+
+        try: top_k = int(input.global_topk())
+        except: top_k = 3
+
+        import pandas as pd
+        import numpy as np
+
+        # res = (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, ...)
+        tokens = res[0]
+        attentions = res[3]
+        num_layers = len(attentions)
+        # attentions[layer] has shape (batch, num_heads, seq_len, seq_len)
+        num_heads = attentions[0].shape[1] if num_layers > 0 else 12
+        num_tokens = len(tokens)
+
+        all_rows = []
+
+        # Per-head attention
+        for layer_idx in range(num_layers):
+            for head_idx in range(num_heads):
+                layer_att = attentions[layer_idx][0, head_idx]
+                # Handle CUDA tensors
+                if hasattr(layer_att, 'cpu'):
+                    att_matrix = layer_att.cpu().numpy()
+                else:
+                    att_matrix = np.array(layer_att)
+
+                for token_idx in range(num_tokens):
+                    att_row = att_matrix[token_idx]
+                    top_indices = np.argsort(att_row)[::-1][:top_k]
+
+                    for rank, target_idx in enumerate(top_indices):
+                        all_rows.append({
+                            "Token_Idx": token_idx,
+                            "Token": tokens[token_idx],
+                            "Layer": layer_idx,
+                            "Head": head_idx,
+                            "Mode": "per_head",
+                            "Rank": rank + 1,
+                            "Target_Idx": target_idx,
+                            "Target_Token": tokens[target_idx],
+                            "Attention": float(att_row[target_idx])
+                        })
+
+        # Global mode (average across heads per layer)
+        for layer_idx in range(num_layers):
+            layer_att = attentions[layer_idx][0]
+            # Handle CUDA tensors
+            if hasattr(layer_att, 'cpu'):
+                att_matrix = layer_att.mean(dim=0).cpu().numpy()
+            else:
+                att_matrix = np.mean(layer_att, axis=0)
+
+            for token_idx in range(num_tokens):
+                att_row = att_matrix[token_idx]
+                top_indices = np.argsort(att_row)[::-1][:top_k]
+
+                for rank, target_idx in enumerate(top_indices):
+                    all_rows.append({
+                        "Token_Idx": token_idx,
+                        "Token": tokens[token_idx],
+                        "Layer": layer_idx,
+                        "Head": "all",
+                        "Mode": "global",
+                        "Rank": rank + 1,
+                        "Target_Idx": target_idx,
+                        "Target_Token": tokens[target_idx],
+                        "Attention": float(att_row[target_idx])
+                    })
+
+        if not all_rows:
+            return None
+
+        df = pd.DataFrame(all_rows)
+        return df.to_csv(index=False)
+
+    @render.download(
+        filename=lambda: generate_export_filename("attention_topk", "csv", data_type="all_layers_heads")
+    )
+    def export_topk_attention():
+        res = get_active_result()
+        csv_content = get_topk_attention_csv(res)
+        if csv_content:
+            yield csv_content
+        else:
+            yield "No data available"
+
+    @render.download(
+        filename=lambda: generate_export_filename("attention_topk", "csv", is_b=True, data_type="all_layers_heads")
+    )
+    def export_topk_attention_B():
+        res = get_active_result("_B")
+        csv_content = get_topk_attention_csv(res, suffix="_B")
+        if csv_content:
+            yield csv_content
+        else:
+            yield "No data available"
+
+    # --- ISA Export with Token-to-Token ---
+    @render.download(
+        filename=lambda: generate_export_filename("isa", "json", data_type="with_token2token")
+    )
+    def export_isa_json():
+        """Export ISA data as JSON including token-to-token attention."""
+        res = get_active_result()
+        if not res:
+            yield json.dumps({"error": "No data available"})
+            return
+
+        try:
+            # res = (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, ...)
+            tokens = res[0]
+            attentions = res[3]
+            isa_data = res[10] if len(res) > 10 else None
+
+            export_data = {
+                "tokens": list(tokens),
+                "model": input.model_family() or "model",
+            }
+
+            # Handle ISA data
+            if isinstance(isa_data, dict):
+                for key, value in isa_data.items():
+                    if isinstance(value, np.ndarray):
+                        export_data[key] = value.tolist()
+                    else:
+                        export_data[key] = value
+
+                # Add token-to-token attention for selected sentence pair
+                if "sentence_boundaries" in isa_data:
+                    boundaries = isa_data["sentence_boundaries"]
+                    token2token = {}
+
+                    # Compute token-to-token for each sentence pair
+                    for i, (start_i, end_i) in enumerate(boundaries):
+                        for j, (start_j, end_j) in enumerate(boundaries):
+                            if i != j:
+                                # Get max attention across layers and heads
+                                max_att = None
+                                for layer_att in attentions:
+                                    att = layer_att[0].numpy() if hasattr(layer_att[0], 'numpy') else np.array(layer_att[0])
+                                    att_slice = att[:, start_i:end_i, start_j:end_j].max(axis=0)
+                                    if max_att is None:
+                                        max_att = att_slice
+                                    else:
+                                        max_att = np.maximum(max_att, att_slice)
+
+                                if max_att is not None:
+                                    token2token[f"sent{i}_to_sent{j}"] = {
+                                        "source_tokens": tokens[start_i:end_i],
+                                        "target_tokens": tokens[start_j:end_j],
+                                        "attention_matrix": max_att.tolist()
+                                    }
+
+                    export_data["token_to_token"] = token2token
+
+            yield json.dumps(export_data, indent=2, default=str)
+        except Exception as e:
+            yield json.dumps({"error": str(e)})
+
+    @render.download(
+        filename=lambda: generate_export_filename("isa", "json", is_b=True, data_type="with_token2token")
+    )
+    def export_isa_json_B():
+        """Export ISA data as JSON for Model B."""
+        res = get_active_result("_B")
+        if not res:
+            yield json.dumps({"error": "No data available"})
+            return
+
+        try:
+            # res = (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, ...)
+            tokens = res[0]
+            attentions = res[3]
+            isa_data = res[10] if len(res) > 10 else None
+
+            export_data = {
+                "tokens": list(tokens),
+                "model": input.model_family_B() or "model",
+            }
+
+            if isinstance(isa_data, dict):
+                for key, value in isa_data.items():
+                    if isinstance(value, np.ndarray):
+                        export_data[key] = value.tolist()
+                    else:
+                        export_data[key] = value
+
+                if "sentence_boundaries" in isa_data:
+                    boundaries = isa_data["sentence_boundaries"]
+                    token2token = {}
+
+                    for i, (start_i, end_i) in enumerate(boundaries):
+                        for j, (start_j, end_j) in enumerate(boundaries):
+                            if i != j:
+                                max_att = None
+                                for layer_att in attentions:
+                                    att = layer_att[0].numpy() if hasattr(layer_att[0], 'numpy') else np.array(layer_att[0])
+                                    att_slice = att[:, start_i:end_i, start_j:end_j].max(axis=0)
+                                    if max_att is None:
+                                        max_att = att_slice
+                                    else:
+                                        max_att = np.maximum(max_att, att_slice)
+
+                                if max_att is not None:
+                                    token2token[f"sent{i}_to_sent{j}"] = {
+                                        "source_tokens": tokens[start_i:end_i],
+                                        "target_tokens": tokens[start_j:end_j],
+                                        "attention_matrix": max_att.tolist()
+                                    }
+
+                    export_data["token_to_token"] = token2token
+
+            yield json.dumps(export_data, indent=2, default=str)
+        except Exception as e:
+            yield json.dumps({"error": str(e)})
+
+    # --- ISA CSV Export ---
+    @render.download(
+        filename=lambda: generate_export_filename("isa", "csv", data_type="sentence_matrix")
+    )
+    def export_isa_csv():
+        """Export ISA sentence attention matrix as CSV."""
+        res = get_active_result()
+        if not res:
+            yield "No data available"
+            return
+
+        try:
+            import pandas as pd
+            isa_data = res[10] if len(res) > 10 else None
+
+            if not isa_data or "sentence_attention_matrix" not in isa_data:
+                yield "No ISA data available"
+                return
+
+            matrix = isa_data["sentence_attention_matrix"]
+            sentences = isa_data.get("sentence_texts", [f"Sent_{i}" for i in range(len(matrix))])
+
+            # Create DataFrame with sentence labels
+            df = pd.DataFrame(matrix, index=sentences, columns=sentences)
+            df.index.name = "Source_Sentence"
+            yield df.to_csv()
+        except Exception as e:
+            yield f"Error: {str(e)}"
+
+    @render.download(
+        filename=lambda: generate_export_filename("isa", "csv", is_b=True, data_type="sentence_matrix")
+    )
+    def export_isa_csv_B():
+        """Export ISA sentence attention matrix as CSV for Model B."""
+        res = get_active_result("_B")
+        if not res:
+            yield "No data available"
+            return
+
+        try:
+            import pandas as pd
+            isa_data = res[10] if len(res) > 10 else None
+
+            if not isa_data or "sentence_attention_matrix" not in isa_data:
+                yield "No ISA data available"
+                return
+
+            matrix = isa_data["sentence_attention_matrix"]
+            sentences = isa_data.get("sentence_texts", [f"Sent_{i}" for i in range(len(matrix))])
+
+            df = pd.DataFrame(matrix, index=sentences, columns=sentences)
+            df.index.name = "Source_Sentence"
+            yield df.to_csv()
+        except Exception as e:
+            yield f"Error: {str(e)}"
 
 __all__ = ["server"]

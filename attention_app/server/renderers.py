@@ -2126,3 +2126,42 @@ __all__ = [
     "get_metrics_display",
     "get_influence_tree_data",
 ]
+def compute_attention_rollout(attentions, discard_ratio=0.9, head_fusion="mean"):
+    """
+    Compute attention rollout (Abnar & Zuidema, 2020).
+    Assumes attentions is a list of (batch_size, num_heads, seq_len, seq_len) tensors.
+    """
+    result = None
+    
+    # Process layer by layer
+    for layer_att in attentions:
+        # layer_att shape: (batch_size, num_heads, seq_len, seq_len)
+        # Taking batch 0 for visualization
+        att = layer_att[0] 
+        
+        # Fuse heads
+        if head_fusion == "mean":
+            att = att.mean(dim=0) # (seq_len, seq_len)
+        elif head_fusion == "max":
+            att = att.max(dim=0)[0]
+        elif head_fusion == "min":
+            att = att.min(dim=0)[0]
+            
+        # To numpy
+        att = att.cpu().numpy()
+        
+        # Add residual connection (identity matrix)
+        # "To account for residual connections... we add the identity matrix to the attention matrix"
+        eye = np.eye(att.shape[0])
+        att = 0.5 * att + 0.5 * eye
+        
+        # Normalize rows to sum to 1
+        att = att / att.sum(axis=1, keepdims=True)
+        
+        if result is None:
+            result = att
+        else:
+            # Recursive multiplication: joint_attention(l) = attention(l) * joint_attention(l-1)
+            result = np.matmul(att, result)
+            
+    return result

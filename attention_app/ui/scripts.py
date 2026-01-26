@@ -37,6 +37,208 @@ JS_CODE = """
             }
         };
 
+        // Download SVG as file (for D3 visualizations)
+        window.downloadSVG = function(containerId, filename) {
+            var container = document.getElementById(containerId);
+            if (!container) {
+                console.error('Container not found:', containerId);
+                return;
+            }
+
+            var svg = container.querySelector('svg');
+            if (!svg) {
+                console.error('No SVG found in container:', containerId);
+                return;
+            }
+
+            // Clone the SVG to avoid modifying the original
+            var svgClone = svg.cloneNode(true);
+
+            // Add necessary namespaces
+            svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            svgClone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+
+            // Get computed styles and inline them
+            var styles = document.createElement('style');
+            styles.textContent = `
+                text { font-family: 'Inter', sans-serif; }
+                .node-circle { stroke-width: 2px; }
+                .link { fill: none; }
+            `;
+            svgClone.insertBefore(styles, svgClone.firstChild);
+
+            // Serialize and download
+            var serializer = new XMLSerializer();
+            var svgString = serializer.serializeToString(svgClone);
+            var blob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+            var url = URL.createObjectURL(blob);
+
+            var link = document.createElement('a');
+            link.href = url;
+            link.download = filename || 'visualization.svg';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        };
+
+        // Helper to formatting timestamp
+        function getTimestampedFilename(baseName) {
+            baseName = baseName || 'export';
+            // Remove extension if present to append timestamp before it
+            var ext = '';
+            if (baseName.lastIndexOf('.') !== -1) {
+                ext = baseName.substring(baseName.lastIndexOf('.'));
+                baseName = baseName.substring(0, baseName.lastIndexOf('.'));
+            }
+            
+            var now = new Date();
+            var year = now.getFullYear();
+            var month = String(now.getMonth() + 1).padStart(2, '0');
+            var day = String(now.getDate()).padStart(2, '0');
+            var hour = String(now.getHours()).padStart(2, '0');
+            var min = String(now.getMinutes()).padStart(2, '0');
+            var sec = String(now.getSeconds()).padStart(2, '0');
+            
+            return `${baseName}_${year}-${month}-${day}_${hour}-${min}-${sec}${ext}`;
+        }
+
+        // Download D3 SVG as PNG
+        window.downloadD3PNG = function(containerId, filename) {
+            filename = getTimestampedFilename(filename || 'visualization.png');
+            var container = document.getElementById(containerId);
+            if (!container) return;
+            var svg = container.querySelector('svg');
+            if (!svg) return;
+
+            // Clone to avoid modifying
+            var svgClone = svg.cloneNode(true);
+            svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            
+            // Inline styles (borrowed from downloadSVG)
+            var styles = document.createElement('style');
+            styles.textContent = `
+                text { font-family: 'Inter', sans-serif; }
+                .node-circle { stroke-width: 2px; }
+                .link { fill: none; }
+            `;
+            svgClone.insertBefore(styles, svgClone.firstChild);
+
+            // Serialize
+            var serializer = new XMLSerializer();
+            var svgString = serializer.serializeToString(svgClone);
+            
+            // Create Image
+            var img = new Image();
+            var svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+            var url = URL.createObjectURL(svgBlob);
+            
+            img.onload = function() {
+                var canvas = document.createElement('canvas');
+                // Use actual SVG attributes for dimensions, or falling back to bbox
+                var w = parseInt(svg.getAttribute('width')) || svg.getBoundingClientRect().width || 800;
+                var h = parseInt(svg.getAttribute('height')) || svg.getBoundingClientRect().height || 600;
+
+                // Ensure minimum dimensions
+                if (w < 100) w = 800;
+                if (h < 100) h = 600;
+
+                canvas.width = w * 2; // 2x density for sharpness
+                canvas.height = h * 2;
+                var ctx = canvas.getContext('2d');
+                ctx.scale(2, 2);
+
+                // White background
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, w, h);
+
+                // Draw image at original size (scale is already applied via ctx.scale)
+                ctx.drawImage(img, 0, 0, w, h);
+
+                var pngUrl = canvas.toDataURL('image/png');
+
+                var link = document.createElement('a');
+                link.href = pngUrl;
+                link.download = filename || 'visualization.png';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            };
+            img.onerror = function(e) {
+                console.error('Error loading SVG for PNG conversion:', e);
+                URL.revokeObjectURL(url);
+            };
+            img.src = url;
+        };
+
+        // Download Plotly chart as PNG
+        window.downloadPlotlyPNG = function(containerId, filename) {
+            filename = getTimestampedFilename(filename || 'chart.png');
+            var container = document.getElementById(containerId);
+            if (!container) {
+                console.error('Container not found:', containerId);
+                return;
+            }
+
+            var plotlyDiv = container.querySelector('.js-plotly-plot');
+            if (!plotlyDiv) {
+                plotlyDiv = container.querySelector('[class*="plotly"]');
+            }
+            if (!plotlyDiv) {
+                console.error('No Plotly chart found in container:', containerId);
+                return;
+            }
+
+            Plotly.toImage(plotlyDiv, {
+                format: 'png',
+                width: 1200,
+                height: 800
+            }).then(function(dataUrl) {
+                var img = new Image();
+                img.onload = function() {
+                    var canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    var ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                    
+                    var finalUrl = canvas.toDataURL('image/png');
+                    var link = document.createElement('a');
+                    link.href = finalUrl;
+                    link.download = filename || 'chart.png';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                };
+                img.src = dataUrl;
+            }).catch(function(error) {
+                console.error('Error exporting plot:', error);
+            });
+        };
+
+        // Session restoration handler - restores custom textareas
+        $(document).ready(function() {
+            Shiny.addCustomMessageHandler('restore_session_text', function(data) {
+                if (data.text_input) {
+                    var textInput = document.getElementById('text_input');
+                    if (textInput) {
+                        textInput.value = data.text_input;
+                        Shiny.setInputValue('text_input', data.text_input, {priority: 'event'});
+                    }
+                }
+                if (data.text_input_B) {
+                    var textInputB = document.getElementById('text_input_B');
+                    if (textInputB) {
+                        textInputB.value = data.text_input_B;
+                        Shiny.setInputValue('text_input_B', data.text_input_B, {priority: 'event'});
+                    }
+                }
+            });
+        });
+
         // Dynamic tooltip positioning for fixed-position tooltips
         (function() {
             function positionTooltip(wrapper, tooltip) {
