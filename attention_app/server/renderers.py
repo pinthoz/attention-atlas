@@ -732,55 +732,136 @@ def get_sum_layernorm_view(res, encoder_model):
     return _render_dual_tab_view(unique_id, html_heatmap, tokens, combined_vectors, controls_style="justify-content: center; padding: 8px 0;")
 
 
-def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw"):
+def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw", use_global=False):
     """
     Generate Q/K/V projection table with multiple views.
 
     Args:
-        res: Result tuple from model computation
-        layer_idx: Layer index to visualize
+    layer_idx: Layer index to visualize
         top_k: Number of top neighbors to show
         suffix: Suffix for unique IDs (for comparison mode)
         norm_mode: Normalization mode for attention weights ("raw", "col", "rollout")
+        use_global: Whether to compute metrics across all layers (averaged)
     """
     tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
-    layer_block = get_layer_block(encoder_model, layer_idx)
-    hs_in = hidden_states[layer_idx]
     unique_id = f"qkv_tab{suffix}"
+    
+    # Determine if causal (GPT-2) - check first layer
+    layer_block_0 = get_layer_block(encoder_model, 0)
+    is_causal = not hasattr(layer_block_0, "attention")
 
-    # Determine if causal (GPT-2)
-    is_causal = not hasattr(layer_block, "attention")
+    if is_causal:
+        num_layers = len(encoder_model.h)
+    else:
+        num_layers = len(encoder_model.encoder.layer)
 
-    Q, K, V = extract_qkv(layer_block, hs_in)
-    n = len(tokens)
+    # --- Global Mode Logic ---
+    if use_global:
+        # Iterate over ALL layers and average the metrics
+        # Note: We cannot average Q/K/V vectors themselves (different spaces)
+        # But we CAN average their Norms and Similarity matrices.
+        
+        avg_q_norms = np.zeros(len(tokens))
+        avg_k_norms = np.zeros(len(tokens))
+        avg_v_norms = np.zeros(len(tokens))
+        avg_dir_alignment = np.zeros((len(tokens), len(tokens)))
+        avg_qk_sim = np.zeros((len(tokens), len(tokens))) # For alignment view
+        
+        valid_layers = 0
+        
+        for l_idx in range(num_layers):
+            try:
+                lb = get_layer_block(encoder_model, l_idx)
+                hs = hidden_states[l_idx]
+                Q_l, K_l, V_l = extract_qkv(lb, hs)
+                
+                # Norms
+                avg_q_norms += np.linalg.norm(Q_l, axis=1)
+                avg_k_norms += np.linalg.norm(K_l, axis=1)
+                avg_v_norms += np.linalg.norm(V_l, axis=1)
+                
+                # Directional Alignment
+                q_normed = Q_l / (np.linalg.norm(Q_l, axis=1, keepdims=True) + 1e-8)
+                k_normed = K_l / (np.linalg.norm(K_l, axis=1, keepdims=True) + 1e-8)
+                avg_dir_alignment += np.dot(q_normed, k_normed.T)
+                
+                # QK Sim (for table)
+                avg_qk_sim += _compute_cosine_similarity_matrix(Q_l) @ _compute_cosine_similarity_matrix(K_l).T
+                
+                valid_layers += 1
+            except:
+                continue
+                
+        if valid_layers > 0:
+            q_norms = (avg_q_norms / valid_layers).tolist()
+            k_norms = (avg_k_norms / valid_layers).tolist()
+            v_norms = (avg_v_norms / valid_layers).tolist()
+            dir_alignment = avg_dir_alignment / valid_layers
+            qk_sim = (avg_qk_sim / valid_layers)
+            qk_sim = (qk_sim + 1) / 2 # Normalize to 0-1 range roughly
+        else:
+             return ui.HTML("Error computing global metrics.")
+             
+        # Average Attention Weights across ALL layers/heads
+        att_layers = [layer[0].cpu().numpy() for layer in attentions]
+        att_avg = np.mean(att_layers, axis=(0, 1))
 
-    # Compute L2 norms for Q, K, V
-    q_norms = [np.linalg.norm(Q[i]) for i in range(n)]
-    k_norms = [np.linalg.norm(K[i]) for i in range(n)]
-    v_norms = [np.linalg.norm(V[i]) for i in range(n)]
+        # Title adjustments
+        att_label = "Average Attention (all layers)"
+        layer_desc = "Averaged across all layers"
+        
+        # Disable Vector views for Global mode (meaningless to show one)
+        # We'll hide the buttons/tabs logic below
+        show_vectors = False
 
-    # Compute Q-K cosine similarity (which tokens align in attention space)
-    qk_sim = _compute_cosine_similarity_matrix(Q) @ _compute_cosine_similarity_matrix(K).T
-    # Normalize to [0,1] range approximately
-    qk_sim = (qk_sim + 1) / 2
+    else:
+        # --- Single Layer Logic (Existing) ---
+        layer_block = get_layer_block(encoder_model, layer_idx)
+        hs_in = hidden_states[layer_idx]
+        Q, K, V = extract_qkv(layer_block, hs_in)
+        n = len(tokens)
 
-    # Compute TRUE directional alignment: cosine similarity between Q[i] and K[j]
-    # This shows how aligned Q and K vectors are, independent of magnitude
-    q_normalized = Q / (np.linalg.norm(Q, axis=1, keepdims=True) + 1e-8)
-    k_normalized = K / (np.linalg.norm(K, axis=1, keepdims=True) + 1e-8)
-    dir_alignment = np.dot(q_normalized, k_normalized.T)  # Range: [-1, 1]
+        # Compute L2 norms for Q, K, V
+        q_norms = [np.linalg.norm(Q[i]) for i in range(n)]
+        k_norms = [np.linalg.norm(K[i]) for i in range(n)]
+        v_norms = [np.linalg.norm(V[i]) for i in range(n)]
 
-    # Get attention weights for this layer (averaged across heads for comparison)
-    att_layer = attentions[layer_idx][0].cpu().numpy()  # Shape: (num_heads, seq_len, seq_len)
-    att_avg = np.mean(att_layer, axis=0)  # Average across heads
+        # Compute Q-K cosine similarity (which tokens align in attention space)
+        qk_sim = _compute_cosine_similarity_matrix(Q) @ _compute_cosine_similarity_matrix(K).T
+        # Normalize to [0,1] range approximately
+        qk_sim = (qk_sim + 1) / 2
+
+        # Compute TRUE directional alignment: cosine similarity between Q[i] and K[j]
+        # This shows how aligned Q and K vectors are, independent of magnitude
+        q_normalized = Q / (np.linalg.norm(Q, axis=1, keepdims=True) + 1e-8)
+        k_normalized = K / (np.linalg.norm(K, axis=1, keepdims=True) + 1e-8)
+        dir_alignment = np.dot(q_normalized, k_normalized.T)  # Range: [-1, 1]
+
+        # Get attention weights for this layer (averaged across heads for comparison)
+        att_layer = attentions[layer_idx][0].cpu().numpy()  # Shape: (num_heads, seq_len, seq_len)
+        att_avg = np.mean(att_layer, axis=0)  # Average across heads
+        
+        att_label = "Attention Weights (query perspective)"
+        layer_desc = f"Layer {layer_idx}"
+        show_vectors = True
+
+    # Common Logic continues...
+    tokens_len = len(tokens) # used later for loops
+    
+    # -------------------------------------------------------------
+    # (Rest of normalization/display logic, reusing variables)
+    # -------------------------------------------------------------
+
 
     # Apply normalization to attention weights based on mode
+    # Note: In global mode, att_avg is already the average across all layers
     if norm_mode == "col":
         # Column normalization: each column sums to 1
         col_sums = att_avg.sum(axis=0, keepdims=True)
         att_avg = att_avg / (col_sums + 1e-8)
-    elif norm_mode == "rollout":
+    elif norm_mode == "rollout" and not use_global:
         # Attention rollout: accumulated attention flow through layers
+        # (Only applies in single-layer mode - in global mode we use the average)
         att_per_layer = []
         for l_idx in range(layer_idx + 1):
             layer_att = attentions[l_idx][0].cpu().numpy()
@@ -801,14 +882,41 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw"):
             rollout = np.matmul(attention_with_residual, rollout)
 
         att_avg = rollout
+    elif norm_mode == "rollout" and use_global:
+        # In global mode with rollout, compute rollout across ALL layers
+        att_per_layer = []
+        for l_idx in range(num_layers):
+            layer_att = attentions[l_idx][0].cpu().numpy()
+            layer_att_avg = np.mean(layer_att, axis=0)
+            att_per_layer.append(layer_att_avg)
+
+        seq_len = att_per_layer[0].shape[0]
+        rollout = np.eye(seq_len)
+
+        for l_idx in range(num_layers):
+            attention = att_per_layer[l_idx]
+            attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
+            row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
+            attention_with_residual = attention_with_residual / (row_sums + 1e-8)
+            rollout = np.matmul(attention_with_residual, rollout)
+
+        att_avg = rollout
 
     # Get normalization mode label for display
-    if norm_mode == "raw":
-        att_label = "Attention Weights (query perspective)"
-    elif norm_mode == "col":
-        att_label = "Attention Weights (key perspective)"
+    if use_global:
+        if norm_mode == "raw":
+            att_label = "Average Attention (all layers)"
+        elif norm_mode == "col":
+            att_label = "Average Attention - Key Perspective (all layers)"
+        else:
+            att_label = f"Accumulated Attention Flow (0→{num_layers-1})"
     else:
-        att_label = f"Accumulated Attention Flow (0→{layer_idx})"
+        if norm_mode == "raw":
+            att_label = "Attention Weights (query perspective)"
+        elif norm_mode == "col":
+            att_label = "Attention Weights (key perspective)"
+        else:
+            att_label = f"Accumulated Attention Flow (0→{layer_idx})"
 
     # 1. Norm View
     norm_rows = []
@@ -853,35 +961,35 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw"):
     </table>
     """
 
-    # 3. PCA View
-    html_pca = _render_qkv_pca_scatter(tokens, Q, K, V)
+    # 3. PCA View (Only if show_vectors is True)
+    if show_vectors:
+        html_pca = _render_qkv_pca_scatter(tokens, Q, K, V)
+    else:
+        html_pca = "<div style='text-align:center;padding:20px;color:#94a3b8;'>PCA not available in Global Mode (vectors differ per layer).</div>"
 
-    # 4. Raw Vector View (Table based for consistency)
-    vec_rows = []
-    for i, tok in enumerate(tokens):
-        display_tok = tok.replace("##", "").replace("Ġ", "")
-        q_strip = array_to_base64_img(Q[i][:48], "Greens", 0.12)
-        k_strip = array_to_base64_img(K[i][:48], "Oranges", 0.12)
-        v_strip = array_to_base64_img(V[i][:48], "Purples", 0.12)
-        q_tip = "Query: " + ", ".join(f"{x:.3f}" for x in Q[i][:24])
-        k_tip = "Key: " + ", ".join(f"{x:.3f}" for x in K[i][:24])
-        v_tip = "Value: " + ", ".join(f"{x:.3f}" for x in V[i][:24])
+    # 4. Raw Vector View (Only if show_vectors is True)
+    if show_vectors:
+        vec_rows = []
+        for i, tok in enumerate(tokens):
+            display_tok = tok.replace("##", "").replace("Ġ", "")
+            q_strip = array_to_base64_img(Q[i][:48], "Greens", 0.12)
+            k_strip = array_to_base64_img(K[i][:48], "Oranges", 0.12)
+            v_strip = array_to_base64_img(V[i][:48], "Purples", 0.12)
+            q_tip = "Query: " + ", ".join(f"{x:.3f}" for x in Q[i][:24])
+            k_tip = "Key: " + ", ".join(f"{x:.3f}" for x in K[i][:24])
+            v_tip = "Value: " + ", ".join(f"{x:.3f}" for x in V[i][:24])
 
-        vec_rows.append(
-            f"<tr>"
-            f"<td class='token-name'>{display_tok}</td>"
-            f"<td><img class='heatmap' src='data:image/png;base64,{q_strip}' title='{q_tip}'></td>"
-            f"<td><img class='heatmap' src='data:image/png;base64,{k_strip}' title='{k_tip}'></td>"
-            f"<td><img class='heatmap' src='data:image/png;base64,{v_strip}' title='{v_tip}'></td>"
-            f"</tr>"
-        )
-    
-    html_vec = f"""
-    <table class='combined-summary-table'>
-        <tr><th>Token</th><th>Q Vector</th><th>K Vector</th><th>V Vector</th></tr>
-        {''.join(vec_rows)}
-    </table>
-    """
+            vec_rows.append(
+                f"<tr>"
+                f"<td class='token-name'>{display_tok}</td>"
+                f"<td><img class='heatmap' src='data:image/png;base64,{q_strip}' title='{q_tip}'></td>"
+                f"<td><img class='heatmap' src='data:image/png;base64,{k_strip}' title='{k_tip}'></td>"
+                f"<td><img class='heatmap' src='data:image/png;base64,{v_strip}' title='{v_tip}'></td>"
+                f"</tr>"
+            )
+        html_vec = f"<table class='combined-summary-table'><tr><th>Token</th><th>Q Vector</th><th>K Vector</th><th>V Vector</th></tr>{''.join(vec_rows)}</table>"
+    else:
+        html_vec = "<div style='text-align:center;padding:20px;color:#94a3b8;'>Raw vectors not available in Global Mode.</div>"
 
     # 5. Directional Alignment View (Cosine Similarity Q vs K)
     # Generate heatmap images for side-by-side comparison
@@ -993,17 +1101,14 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw"):
     return ui.HTML(html)
 
 
-def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, norm_mode="raw"):
+def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, norm_mode="raw", use_global=False):
     """
     Generate scaled attention view showing attention computation details.
 
-    Args:
-        res: Result tuple from model computation
-        layer_idx: Layer index
-        head_idx: Head index
         focus_indices: Token indices to show attention for
         top_k: Number of top attention targets to show
         norm_mode: Normalization mode ("raw", "col", "rollout") - affects ranking
+        use_global: Whether to average across all heads/layers (hides Q/K details)
     """
     tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
     if attentions is None or len(attentions) == 0:
@@ -1020,18 +1125,46 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, 
     if len(focus_indices) > 5:
         focus_indices = focus_indices[:5]
 
-    att_head = attentions[layer_idx][0, head_idx].cpu().numpy()
-    layer_block = get_layer_block(encoder_model, layer_idx)
-    hs_in = hidden_states[layer_idx]
-    Q, K, V = extract_qkv(layer_block, hs_in)
+    if use_global:
+        # Global Mode: Average attention across ALL layers/heads
+        att_layers = [layer[0].cpu().numpy() for layer in attentions]
+        # att_layers shape: list of (heads, seq, seq)
+        # mean over layers -> (heads, seq, seq)
+        # mean over heads -> (seq, seq)
+        att_head = np.mean([np.mean(l, axis=0) for l in att_layers], axis=0)
+        
+        # Determine number of heads from first layer just for d_k calc (unused but needed for var init)
+        layer_block_0 = get_layer_block(encoder_model, 0)
+        if hasattr(layer_block_0, "attention"): # BERT
+            num_heads = layer_block_0.attention.self.num_attention_heads
+            dim = hidden_states[0].shape[-1]
+            is_causal = False
+        else: # GPT-2
+            num_heads = layer_block_0.attn.num_heads
+            dim = hidden_states[0].shape[-1]
+            is_causal = True
+        
+        # d_k, Q, K are not valid for global average
+        d_k = 1
+        Q, K = None, None
+        
+        note_html = "<div style='font-size:10px;color:#6b7280;margin-bottom:8px;font-style:italic;'>Values averaged across all layers and heads. Calculation details hidden.</div>"
+    
+    else:
+        # Standard Single Head Mode
+        att_head = attentions[layer_idx][0, head_idx].cpu().numpy()
+        layer_block = get_layer_block(encoder_model, layer_idx)
+        hs_in = hidden_states[layer_idx]
+        Q, K, V = extract_qkv(layer_block, hs_in)
 
-    is_causal = not hasattr(layer_block, "attention")
+        is_causal = not hasattr(layer_block, "attention")
 
-    if hasattr(layer_block, "attention"): # BERT
-        num_heads = layer_block.attention.self.num_attention_heads
-    else: # GPT-2
-        num_heads = layer_block.attn.num_heads
-    d_k = Q.shape[-1] // num_heads
+        if hasattr(layer_block, "attention"): # BERT
+            num_heads = layer_block.attention.self.num_attention_heads
+        else: # GPT-2
+            num_heads = layer_block.attn.num_heads
+        d_k = Q.shape[-1] // num_heads
+        note_html = ""
 
     # Compute normalized attention if needed
     if norm_mode == "col":
@@ -1080,16 +1213,22 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, 
 
         computations = causal_note
         for rank, j in enumerate(top_idx, 1):
-            dot = float(np.dot(Q[f_idx], K[j]))
-            scaled = dot / np.sqrt(d_k)
             prob = att_head[f_idx, j]  # Raw softmax value
 
             # Build the values row
-            values_html = f"""
+            if use_global:
+                 # Simplified view for global
+                 values_html = f"""
+                        <span class='scaled-step'>Avg Attention = <b>{prob:.3f}</b></span>
+                 """
+            else:
+                dot = float(np.dot(Q[f_idx], K[j]))
+                scaled = dot / np.sqrt(d_k)
+                values_html = f"""
                         <span class='scaled-step'>Q·K = <b>{dot:.2f}</b></span>
                         <span class='scaled-step'>÷√d<sub>k</sub> = <b>{scaled:.2f}</b></span>
                         <span class='scaled-step'>softmax = <b>{prob:.3f}</b></span>
-            """
+                """
 
             # Add normalized value if not raw mode
             if norm_label:
@@ -1120,8 +1259,9 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, 
         # Wrap each token's block
         all_blocks += f"""
         <div class='scaled-attention-box' style='margin-bottom: 16px; border-bottom: 1px solid #f1f5f9; padding-bottom: 16px;'>
+            {note_html}
             <div class='scaled-formula' style='margin-bottom:8px;'>
-                <span style='color:#ff5ca9;font-weight:bold;'>{tokens[f_idx].replace("##", "").replace("Ġ", "")}</span>: softmax(Q·K<sup>T</sup>/√d<sub>k</sub>){formula_suffix}
+                <span style='color:#ff5ca9;font-weight:bold;'>{tokens[f_idx].replace("##", "").replace("Ġ", "")}</span>: { "softmax(Q·K<sup>T</sup>/√d<sub>k</sub>)" if not use_global else "Top tokens by average attention"} {formula_suffix}
             </div>
             <div class='scaled-computations'>
                 {computations}
@@ -1885,7 +2025,7 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
     return ui.HTML(cards_html)
 
 
-def get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth, norm_mode="raw"):
+def get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth, norm_mode="raw", att_matrix_override=None):
     """
     Generate JSON tree data for D3.js visualization.
 
@@ -1897,28 +2037,42 @@ def get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth
         top_k: Number of top children to show per node
         max_depth: Maximum depth of the tree
         norm_mode: Normalization mode ("raw", "col", "rollout")
+        att_matrix_override: Optional pre-computed attention matrix (e.g. for global view)
     """
     tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
     if attentions is None or len(attentions) == 0:
         return None
 
-    # Get raw attention matrix for selected layer and head
-    raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+    if att_matrix_override is not None:
+        # Use provided matrix (Global Mode)
+        raw_att = att_matrix_override
+        # Q, K not valid for global average
+        Q, K = None, None
+        d_k = 1.0 
+        is_causal = False # or check model?
+        
+        # Basic check for causal logic if needed
+        layer_block = get_layer_block(encoder_model, 0)
+        is_causal = not hasattr(layer_block, "attention")
+        
+    else:
+        # Get raw attention matrix for selected layer and head
+        raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
 
-    # Get Q and K for computing dot products
-    layer_block = get_layer_block(encoder_model, layer_idx)
-    hs_in = hidden_states[layer_idx]
+        # Get Q and K for computing dot products
+        layer_block = get_layer_block(encoder_model, layer_idx)
+        hs_in = hidden_states[layer_idx]
 
-    Q, K, V = extract_qkv(layer_block, hs_in)
+        Q, K, V = extract_qkv(layer_block, hs_in)
 
-    if hasattr(layer_block, "attention"): # BERT
-        num_heads = layer_block.attention.self.num_attention_heads
-        is_causal = False
-    else: # GPT-2
-        num_heads = layer_block.attn.num_heads
-        is_causal = True
+        if hasattr(layer_block, "attention"): # BERT
+            num_heads = layer_block.attention.self.num_attention_heads
+            is_causal = False
+        else: # GPT-2
+            num_heads = layer_block.attn.num_heads
+            is_causal = True
 
-    d_k = Q.shape[-1] // num_heads
+        d_k = Q.shape[-1] // num_heads
 
     # Apply normalization based on mode
     if norm_mode == "col":

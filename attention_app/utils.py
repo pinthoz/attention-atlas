@@ -72,9 +72,9 @@ def compute_influence_tree(attention_matrix, tokens, Q_matrix, K_matrix, d_k, ro
         # Get attention scores from this token
         attention_scores = attention_matrix[token_idx]
         
-        # Compute Q·K similarity if we have a parent
+        # Compute Q·K similarity if we have a parent and Q/K matrices are available
         qk_sim = 0.0
-        if parent_idx is not None:
+        if parent_idx is not None and Q_matrix is not None and K_matrix is not None:
             qk_dot = float(np.dot(Q_matrix[parent_idx], K_matrix[token_idx]))
             qk_sim = qk_dot / np.sqrt(d_k)
         

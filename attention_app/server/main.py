@@ -49,6 +49,52 @@ def server(input, output, session):
     running = reactive.value(False)
     cached_result = reactive.value(None)
     cached_result_B = reactive.value(None) # For comparison
+
+    # Inject JavaScript for scroll position preservation
+    scroll_preservation_js = """
+    (function() {
+        // Save scroll position before DOM updates
+        let savedScrollTop = 0;
+        let pendingRestore = false;
+
+        // Save current scroll position
+        function saveScroll() {
+            savedScrollTop = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+            pendingRestore = true;
+        }
+
+        // Restore scroll position after a short delay (after DOM update)
+        function restoreScroll() {
+            if (!pendingRestore) return;
+            setTimeout(function() {
+                if (savedScrollTop > 0) {
+                    window.scrollTo({top: savedScrollTop, behavior: 'instant'});
+                }
+                pendingRestore = false;
+            }, 50);
+        }
+
+        // Listen for Shiny input changes on layer/head/view controls
+        $(document).on('shiny:inputchanged', function(event) {
+            if (event.name === 'global_layer' || event.name === 'global_head' ||
+                event.name === 'global_topk' || event.name === 'global_norm' ||
+                event.name === 'trigger_global_view' || event.name === 'global_rollout_layers') {
+                saveScroll();
+            }
+        });
+
+        // Restore scroll after Shiny value/output updates
+        $(document).on('shiny:value', function(event) {
+            if (pendingRestore) restoreScroll();
+        });
+
+        // Also restore on idle (backup)
+        $(document).on('shiny:idle', function(event) {
+            if (pendingRestore) restoreScroll();
+        });
+    })();
+    """
+    ui.insert_ui(selector="body", where="beforeEnd", ui=ui.tags.script(scroll_preservation_js))
     # Store the text used for generation to avoid reading input.text_input() in renderers
     cached_text_A = reactive.value("")
     cached_text_B = reactive.value("")
@@ -517,11 +563,50 @@ def server(input, output, session):
     # Reactive value for rollout layers mode ("current" = 0→selected layer, "all" = all layers)
     global_rollout_layers = reactive.Value("current")
 
-    # Reset to specific when sliders change
+    # Reactive values to preserve accordion state across re-renders
+    accordion_state_single = reactive.Value(["overview"])  # Default: overview open
+    accordion_state_compare = reactive.Value(["overview"])  # Default: overview open
+
+    # Track accordion changes and save state
+    @reactive.Effect
+    @reactive.event(input.dashboard_accordion)
+    def save_accordion_state_single():
+        try:
+            state = input.dashboard_accordion()
+            if state is not None:
+                accordion_state_single.set(list(state) if state else [])
+        except:
+            pass
+
+    @reactive.Effect
+    @reactive.event(input.dashboard_accordion_compare)
+    def save_accordion_state_compare():
+        try:
+            state = input.dashboard_accordion_compare()
+            if state is not None:
+                accordion_state_compare.set(list(state) if state else [])
+        except:
+            pass
+
+    # Reset Global view mode when layer/head sliders change
     @reactive.Effect
     @reactive.event(input.global_layer, input.global_head)
     def reset_metrics_mode():
-        global_metrics_mode.set("specific")
+        if global_metrics_mode.get() == "all":
+            global_metrics_mode.set("specific")
+            # Also update radar mode radio buttons
+            is_comparing = active_compare_models.get() or active_compare_prompts.get()
+            ui.update_radio_buttons("radar_mode", selected="single")
+            if is_comparing:
+                ui.update_radio_buttons("radar_mode_B", selected="single")
+            # Force update button visual state after a delay to ensure it runs after re-renders
+            js_code = """
+            setTimeout(function() {
+                var btn = document.getElementById('trigger_global_view');
+                if (btn) btn.classList.remove('active');
+            }, 100);
+            """
+            ui.insert_ui(selector="body", where="beforeEnd", ui=ui.tags.script(js_code))
 
     # Update norm mode when radio button changes
     @reactive.Effect
@@ -817,13 +902,14 @@ def server(input, output, session):
             bindSlider('head-slider', setHead, 'head-value');
             bindSlider('topk-slider', setTopK, 'topk-value');
             
-            // Global View Toggle
-             const globalBtn = document.getElementById('trigger_global_view');
-             if (globalBtn) {{
-                globalBtn.addEventListener('click', function() {{
+            // Global View Toggle - toggle visual state immediately on click
+            // Using onclick (not addEventListener) to prevent multiple handlers on re-render
+            const globalBtn = document.getElementById('trigger_global_view');
+            if (globalBtn) {{
+                globalBtn.onclick = function() {{
                     this.classList.toggle('active');
-                }});
-             }}
+                }};
+            }}
 
              // Scale Toggle
              const scaleToggle = document.getElementById('scale-toggle');
@@ -916,11 +1002,11 @@ def server(input, output, session):
             ui.div(
                 {"class": "controls-row"},
                 
-                # Global View
+                # Global View - class managed by JavaScript only to avoid render timing issues
                 ui.div(
                     {"class": "control-group"},
                     ui.span("View", class_="control-label"),
-                    ui.input_action_button("trigger_global_view", "Global", class_=f"btn-global{' active' if global_metrics_mode.get() == 'all' else ''}")
+                    ui.input_action_button("trigger_global_view", "Global", class_="btn-global")
                 ),
 
                 # Layer
@@ -1397,11 +1483,14 @@ def server(input, output, session):
         # Get normalization mode for the alignment view
         norm_mode = global_norm_mode.get()
 
+        # Check if global mode is active
+        use_global = global_metrics_mode.get() == "all"
+
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Q/K/V Projections"),
             ui.p("Query, Key, Value projections with magnitude, alignment, and directional analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-            get_qkv_table(res, layer_idx, top_k=top_k, norm_mode=norm_mode)
+            get_qkv_table(res, layer_idx, top_k=top_k, norm_mode=norm_mode, use_global=use_global)
         )
 
     @output
@@ -1439,12 +1528,13 @@ def server(input, output, session):
 
         # Get normalization mode
         norm_mode = global_norm_mode.get()
+        use_global = global_metrics_mode.get() == "all"
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Scaled Dot-Product Attention"),
             ui.p("Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k, norm_mode=norm_mode)
+            get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k, norm_mode=norm_mode, use_global=use_global)
         )
 
     @output
@@ -1953,14 +2043,15 @@ def server(input, output, session):
         try: head_idx = int(input.global_head())
         except: head_idx = 0
 
-        # Get normalization mode
+        # Get normalization mode and global mode
         norm_mode = global_norm_mode.get()
+        use_global = global_metrics_mode.get() == "all"
 
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
             ui.h4("Attention Dependency Tree"),
             ui.p("Visualizes the hierarchical influence of tokens on the selected focus token.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, norm_mode=norm_mode)
+            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, use_global=use_global, norm_mode=norm_mode)
         )
 
     @output
@@ -2171,7 +2262,7 @@ def server(input, output, session):
                             {"class": "card", "style": "height: 100%;"},
                             ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
                             ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-                            get_qkv_table(res, layer_idx_val, top_k=top_k_val, suffix=suffix, norm_mode=norm_mode_val)
+                            get_qkv_table(res, layer_idx_val, top_k=top_k_val, suffix=suffix, norm_mode=norm_mode_val, use_global=(global_metrics_mode.get() == "all"))
                         ),
                     ),
                 ),
@@ -2239,7 +2330,7 @@ def server(input, output, session):
                             {"class": "card", "style": "height: 100%;"},
                             ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
                             ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-                            get_qkv_table(res, layer_idx_val, top_k=top_k_val, suffix=suffix, norm_mode=norm_mode_val)
+                            get_qkv_table(res, layer_idx_val, top_k=top_k_val, suffix=suffix, norm_mode=norm_mode_val, use_global=(global_metrics_mode.get() == "all"))
                         ),
                     ),
                 ),
@@ -2289,10 +2380,13 @@ def server(input, output, session):
                 )
             )
 
+        # Use stored accordion state to preserve open panels across re-renders
+        current_accordion_state = accordion_state_single.get()
+
         dashboard_accordion = ui.accordion(
             *accordion_panels,
             id=f"dashboard_accordion{suffix}",
-            open=["overview"],
+            open=current_accordion_state if current_accordion_state else ["overview"],
             multiple=True,
         )
 
@@ -2781,6 +2875,7 @@ def server(input, output, session):
                  try: layer_idx = int(input.global_layer())
                  except: layer_idx = 0
                  norm_mode = global_norm_mode.get()
+                 use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
 
                  rows = []
 
@@ -2839,8 +2934,8 @@ def server(input, output, session):
                  rows.append(ui.div(paired_arrows("Sum & Layer Normalization", "Q/K/V Projections"), class_="arrow-row"))
                  qkv_desc = "Query, Key, Value projections analysis."
                  rows.append(ui.layout_columns(
-                     make_card("Q/K/V Projections", qkv_desc, get_qkv_table(res_A, layer_idx, top_k=top_k, norm_mode=norm_mode), "a"),
-                     make_card("Q/K/V Projections", qkv_desc, get_qkv_table(res_B, layer_idx, top_k=top_k, suffix="_B", norm_mode=norm_mode), "b"),
+                     make_card("Q/K/V Projections", qkv_desc, get_qkv_table(res_A, layer_idx, top_k=top_k, norm_mode=norm_mode, use_global=use_global), "a"),
+                     make_card("Q/K/V Projections", qkv_desc, get_qkv_table(res_B, layer_idx, top_k=top_k, suffix="_B", norm_mode=norm_mode, use_global=use_global), "b"),
                      col_widths=[6, 6]
                  ))
 
@@ -2954,11 +3049,11 @@ def server(input, output, session):
                     col_widths=[6, 6]
                 ),
                 
-                # Accordion
+                # Accordion - use stored state to preserve open panels
                 ui.accordion(
                     *accordion_items,
                     id="dashboard_accordion_compare",
-                    open=["overview"],
+                    open=accordion_state_compare.get() if accordion_state_compare.get() else ["overview"],
                     multiple=True,
                 )
             )
@@ -4840,7 +4935,16 @@ def server(input, output, session):
         root_idx = max(0, min(root_idx, len(tokens) - 1))
 
         try:
-            tree_data = get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth, norm_mode=norm_mode)
+            att_override = None
+            if use_global:
+                # Calculate average attention matrix across all layers/heads
+                # attentions is list of (1, heads, seq, seq) tensors
+                att_layers = [layer[0].cpu().numpy() for layer in attentions]
+                # mean over layers -> (heads, seq, seq)
+                # mean over heads -> (seq, seq)
+                att_override = np.mean([np.mean(l, axis=0) for l in att_layers], axis=0)
+            
+            tree_data = get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth, norm_mode=norm_mode, att_matrix_override=att_override)
             
             if tree_data is None:
                 return ui.HTML("<p style='font-size:11px;color:#6b7280;'>Unable to generate tree.</p>")
@@ -5042,6 +5146,7 @@ def server(input, output, session):
 
         # Get normalization mode
         norm_mode = global_norm_mode.get()
+        use_global = global_metrics_mode.get() == "all"
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
@@ -5050,7 +5155,7 @@ def server(input, output, session):
                 ui.h4("Q/K/V Projections")
             ),
             ui.p("Query, Key, Value projections with magnitude, alignment, and directional analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-            get_qkv_table(res, layer_idx, top_k=top_k, suffix="_B", norm_mode=norm_mode)
+            get_qkv_table(res, layer_idx, top_k=top_k, suffix="_B", norm_mode=norm_mode, use_global=use_global)
         )
 
     @output
@@ -5085,6 +5190,7 @@ def server(input, output, session):
 
         # Get normalization mode
         norm_mode = global_norm_mode.get()
+        use_global = global_metrics_mode.get() == "all"
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
@@ -5093,7 +5199,7 @@ def server(input, output, session):
                 ui.h4("Scaled Dot-Product Attention")
             ),
             ui.p("Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k, norm_mode=norm_mode)
+            get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=top_k, norm_mode=norm_mode, use_global=use_global)
         )
 
     @output
@@ -5415,8 +5521,9 @@ def server(input, output, session):
         try: top_k = int(input.global_topk())
         except: top_k = 3
 
-        # Get normalization mode
+        # Get normalization mode and global mode
         norm_mode = global_norm_mode.get()
+        use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
 
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens_B]
         choices = {str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}
@@ -5464,7 +5571,7 @@ def server(input, output, session):
                     ui.div({"class": "viz-description", "style": "margin: 0;"}, "Visualizes how the root token attends to other tokens (Depth 1), and how those tokens attend to others (Depth 2). Click nodes to collapse/expand. Thicker edges = stronger influence. ⚠️ This represents attention patterns, not syntactic parse structure.")
                 )
             ),
-            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="_B", top_k=top_k, max_depth=top_k, norm_mode=norm_mode)
+            get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="_B", use_global=use_global, top_k=top_k, max_depth=top_k, norm_mode=norm_mode)
         )
 
     @output
@@ -6029,12 +6136,13 @@ def server(input, output, session):
                 style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;"
             )
         suffix = ""
-        
+
         try: top_k = int(input.global_topk())
         except: top_k = 3
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         norm_mode = global_norm_mode.get()
+        use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
         _, _, _, _, _, _, _, encoder_model, *_ = res
         model_type = getattr(encoder_model.config, 'model_type', 'bert')
 
@@ -6078,7 +6186,7 @@ def server(input, output, session):
                         {"class": "card", "style": "height: 100%;"},
                         ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
                         ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-                        get_qkv_table(res, layer_idx, top_k=top_k, suffix=suffix, norm_mode=norm_mode)
+                        get_qkv_table(res, layer_idx, top_k=top_k, suffix=suffix, norm_mode=norm_mode, use_global=(global_metrics_mode.get() == "all"))
                     ),
 
                 ),
@@ -6109,18 +6217,19 @@ def server(input, output, session):
     @render.ui
     def render_deep_dive_bert_atomic_B():
         res = get_active_result("_B")
-        if not res: 
+        if not res:
             return ui.div(
                 "Loading...",
                 style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;"
             )
         suffix = "_B"
-        
+
         try: top_k = int(input.global_topk())
         except: top_k = 3
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         norm_mode = global_norm_mode.get()
+        use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
         _, _, _, _, _, _, _, encoder_model, *_ = res
         model_type = getattr(encoder_model.config, 'model_type', 'bert')
 
@@ -6195,18 +6304,19 @@ def server(input, output, session):
     @render.ui
     def render_deep_dive_gpt2_atomic():
         res = get_active_result()
-        if not res: 
+        if not res:
             return ui.div(
                 "Loading...",
                 style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;"
             )
         suffix = ""
-        
+
         try: top_k = int(input.global_topk())
         except: top_k = 3
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         norm_mode = global_norm_mode.get()
+        use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
         _, _, _, _, _, _, _, encoder_model, *_ = res
         model_type = getattr(encoder_model.config, 'model_type', 'gpt2')
 
@@ -6243,7 +6353,7 @@ def server(input, output, session):
                         {"class": "card", "style": "height: 100%;"},
                         ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
                         ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-                        get_qkv_table(res, layer_idx, top_k=top_k, suffix=suffix, norm_mode=norm_mode)
+                        get_qkv_table(res, layer_idx, top_k=top_k, suffix=suffix, norm_mode=norm_mode, use_global=(global_metrics_mode.get() == "all"))
                     ),
 
                 ),
@@ -6274,18 +6384,19 @@ def server(input, output, session):
     @render.ui
     def render_deep_dive_gpt2_atomic_B():
         res = get_active_result("_B")
-        if not res: 
+        if not res:
             return ui.div(
                 "Loading...",
                 style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;"
             )
         suffix = "_B"
-        
+
         try: top_k = int(input.global_topk())
         except: top_k = 3
         try: layer_idx = int(input.global_layer())
         except: layer_idx = 0
         norm_mode = global_norm_mode.get()
+        use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
         _, _, _, _, _, _, _, encoder_model, *_ = res
         model_type = getattr(encoder_model.config, 'model_type', 'gpt2')
 
@@ -6322,7 +6433,7 @@ def server(input, output, session):
                         {"class": "card", "style": "height: 100%;"},
                         ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
                         ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-                        get_qkv_table(res, layer_idx, top_k=top_k, suffix=suffix, norm_mode=norm_mode)
+                        get_qkv_table(res, layer_idx, top_k=top_k, suffix=suffix, norm_mode=norm_mode, use_global=(global_metrics_mode.get() == "all"))
                     ),
 
                 ),
