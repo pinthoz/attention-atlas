@@ -1153,6 +1153,8 @@ CSS = """
             margin: 0 0 16px;
             font-size: 16px;
             font-weight: 600;
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
+            letter-spacing: -0.01em;
             color: var(--text-main);
             display: flex;
             align-items: center;
@@ -1919,6 +1921,44 @@ CSS = """
 
         .viz-header-with-info h4 {
             margin: 0 !important;
+        }
+
+        /* Export Buttons in Visualization Headers */
+        .header-controls .shiny-download-link,
+        .header-controls button {
+            padding: 4px 10px !important;
+            font-size: 10px !important;
+            height: 26px !important;
+            background: #f8fafc !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 6px !important;
+            color: #475569 !important;
+            font-weight: 500 !important;
+            cursor: pointer !important;
+            transition: all 0.15s ease !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 4px !important;
+            white-space: nowrap !important;
+        }
+
+        .header-controls .shiny-download-link:hover,
+        .header-controls button:hover {
+            background: #f1f5f9 !important;
+            border-color: #cbd5e1 !important;
+            color: #334155 !important;
+        }
+
+        .header-controls .shiny-download-link:active,
+        .header-controls button:active {
+            background: #e2e8f0 !important;
+            transform: translateY(1px);
+        }
+
+        .header-controls .shiny-download-link i,
+        .header-controls button i {
+            font-size: 10px;
+            opacity: 0.8;
         }
 
         .info-tooltip-icon {
@@ -2987,7 +3027,52 @@ __all__ = ["CSS"]
             position: absolute;
             top: -26px;
             left: 0;
+            right: 0;
             z-index: 50;
+        }
+
+        /* Session Controls (Save/Load) - Right Side */
+        .session-controls {
+            display: flex;
+            gap: 4px;
+            align-items: flex-end;
+            margin-left: auto;
+        }
+
+        .session-btn-custom {
+            background: #1e293b !important;
+            color: white !important;
+            padding: 4px 8px !important;
+            border-top-left-radius: 8px !important;
+            border-top-right-radius: 8px !important;
+            border-bottom-left-radius: 0 !important;
+            border-bottom-right-radius: 0 !important;
+            border: none !important;
+            font-size: 11px !important;
+            font-weight: 600 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            cursor: pointer !important;
+            height: 26px !important;
+            line-height: 1 !important;
+            transition: background 0.2s ease !important;
+            box-shadow: 2px -2px 5px rgba(0,0,0,0.1) !important;
+            min-width: 26px !important;
+            margin-bottom: 0 !important;
+        }
+
+        .session-btn-custom:hover {
+            background: #334155 !important;
+        }
+
+        .session-btn-custom i {
+            font-size: 12px;
+        }
+
+        /* Hide the label text inside download button, show only icon */
+        .session-btn-custom .shiny-download-link-label {
+            display: none !important;
         }
 
         /* The Tab */

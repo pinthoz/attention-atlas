@@ -37,8 +37,8 @@ except Exception:
     ICON_DATA_URL = ""
 
 
-def viz_header(title, definition, tooltip_text, limitation=None):
-    """Create a visualization header with semantic documentation.
+def viz_header(title, definition, tooltip_text, limitation=None, controls=None, subtitle=None):
+    """Create a visualization header with semantic documentation and optional controls.
     
     This provides clear explanations of what visualizations show and don't show,
     helping users correctly interpret attention-based visualizations.
@@ -48,13 +48,15 @@ def viz_header(title, definition, tooltip_text, limitation=None):
         definition: Brief "This shows X, not Y" explanation
         tooltip_text: Technical calculation explanation for hover
         limitation: Optional 1-line limitation note
+        controls: Optional list of UI elements (buttons, etc.) to display in the header
+        subtitle: Optional text to display after the info icon (e.g. "(Layer 0 · Head 0)")
     
     Returns:
-        A Shiny UI div containing the header, info icon, definition, and limitation
+        A Shiny UI div containing the header, info icon, definition, limitation, and controls
     """
     info_icon = ui.div(
         {"class": "info-tooltip-wrapper"},
-        ui.span({"class": "info-tooltip-icon"}, "ⓘ"),
+        ui.span({"class": "info-tooltip-icon"}, "i"),
         ui.div(
             {"class": "info-tooltip-content"},
             ui.tags.strong("How is this calculated?"),
@@ -62,14 +64,29 @@ def viz_header(title, definition, tooltip_text, limitation=None):
         )
     )
     
+    # Header row with title, info icon, subtitle, and optional controls
+    header_content = [ui.h4(ui.HTML(title)), info_icon]
+    
+    if subtitle:
+        header_content.append(
+            ui.span(subtitle, style="font-size: 13px; color: #64748b; font-weight: 500; margin-left: 4px;")
+        )
+    
+    if controls:
+        header_content.append(
+            ui.div(
+                *controls,
+                {"class": "header-controls", "style": "margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end;"}
+            )
+        )
+    
     header_row = ui.div(
-        {"class": "viz-header-with-info"},
-        ui.h4(title),
-        info_icon
+        {"class": "viz-header-with-info", "style": "display: flex; align-items: center; gap: 8px; width: 100%; flex-wrap: wrap;"},
+        *header_content
     )
     
     definition_box = ui.div(
-        {"class": "viz-definition"},
+        {"class": "viz-definition", "style": "font-size:11px; color:#6b7280; margin-bottom:8px;"},
         definition
     )
     
