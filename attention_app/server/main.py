@@ -249,6 +249,13 @@ def server(input, output, session):
         ui.update_select("model_name_B", choices=choices, selected=selected)
 
 
+    # EXCEPTION: Sync View Mode immediately (User Request)
+    @reactive.Effect
+    @reactive.event(input.view_mode)
+    def sync_view_mode_live():
+         active_view_mode.set(input.view_mode())
+
+
 
 
 
@@ -5552,7 +5559,13 @@ def server(input, output, session):
         use_all_layers = global_rollout_layers.get() == "all"
 
         # Get raw attention
-        raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+        use_global = global_metrics_mode.get() == "all"
+        if use_global:
+            # Average attention across all layers and all heads
+            att_layers = [layer[0].cpu().numpy() for layer in attentions]
+            raw_att = np.mean(att_layers, axis=(0, 1))
+        else:
+            raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
 
         # Apply normalization
         att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=is_causal, use_all_layers=use_all_layers)
@@ -5684,7 +5697,29 @@ def server(input, output, session):
                  )
 
         # Consistent Layout
+        # Dynamic title based on mode and normalization
+        norm_label = get_norm_mode_label(norm_mode, layer_idx, use_all_layers=use_all_layers, total_layers=num_layers)
+        if use_global:
+            title_text = f"Attention Heatmap — Averaged (All Layers · Heads)"
+        else:
+            title_text = f"Attention Heatmap — Layer {layer_idx}, Head {head_idx}"
+
+        # Add normalization indicator to title
+        if norm_mode == "col":
+            title_text += " · <span style='color:#8b5cf6'>Column-normalized</span>"
+        elif norm_mode == "rollout":
+            rollout_end = num_layers - 1 if use_all_layers else layer_idx
+            title_text += f" · <span style='color:#06b6d4'>Rollout (0→{rollout_end})</span>"
+        
         fig.update_layout(
+             title=dict(
+                text=title_text,
+                x=0.5,
+                y=0.98,
+                xanchor='center',
+                yanchor='top',
+                font=dict(size=14, color="#334155")
+            ),
             xaxis_title="Key (attending to)",
             yaxis_title="Query (attending from)",
             margin=dict(l=40, r=10, t=40, b=40),
@@ -5704,16 +5739,7 @@ def server(input, output, session):
                 autorange='reversed',
                 title=dict(font=dict(size=11))
             ),
-            title=dict(
-                text=f"Attention Heatmap — Layer {layer_idx}, Head {head_idx}" +
-                     (" · <span style='color:#8b5cf6'>Column-normalized</span>" if norm_mode == "col" else
-                      f" · <span style='color:#06b6d4'>Rollout (0→{num_layers - 1 if use_all_layers else layer_idx})</span>" if norm_mode == "rollout" else ""),
-                x=0.5,
-                y=0.98,
-                xanchor='center',
-                yanchor='top',
-                font=dict(size=14, color="#334155")
-            )
+
         )
 
         # Get normalization label
@@ -5844,8 +5870,15 @@ def server(input, output, session):
 
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
 
-        # Get raw attention and apply normalization
-        raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+        # Get raw attention and apply normalization - check global mode
+        use_global = global_metrics_mode.get() == "all"
+        if use_global:
+            # Average attention across all layers and all heads
+            att_layers = [layer[0].cpu().numpy() for layer in attentions]
+            raw_att = np.mean(att_layers, axis=(0, 1))
+        else:
+            raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+
         att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=False, use_all_layers=use_all_layers)
         n_tokens = len(tokens)
         color_palette = ['#ff5ca9', '#3b82f6', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e', '#a855f7', '#0ea5e9']
