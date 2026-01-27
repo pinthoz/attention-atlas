@@ -111,6 +111,10 @@ def server(input, output, session):
     active_compare_prompts = reactive.Value(False)
     active_view_mode = reactive.Value("basic")
     
+    # Session Load Force Flags (to override UI lag)
+    session_force_compare_mode = reactive.Value(False)
+    session_force_compare_prompts_mode = reactive.Value(False)
+    
     isa_selected_pair = reactive.Value(None)
     isa_selected_pair = reactive.Value(None)
     isa_selected_pair_B = reactive.Value(None) # For comparison
@@ -265,17 +269,25 @@ def server(input, output, session):
 
             # 1. Update Layout/Model Controls first (triggers UI rebuild)
             if "compare_mode" in data:
-                 ui.update_switch("compare_mode", value=data.get("compare_mode"))
+                 val = data.get("compare_mode")
+                 ui.update_switch("compare_mode", value=val)
+                 if val:
+                     active_compare_models.set(True)
+                     session_force_compare_mode.set(True)
             
             if "compare_prompts_mode" in data:
                  val = data.get("compare_prompts_mode")
                  ui.update_switch("compare_prompts_mode", value=val)
                  if val:
+                     active_compare_prompts.set(True)
+                     session_force_compare_prompts_mode.set(True)
                      # Force Wizard to DONE so generation can proceed (overriding default "A" from effect)
                      prompt_entry_step.set("DONE")
             
             if "view_mode" in data:
-                 ui.update_radio_buttons("view_mode", selected=data.get("view_mode"))
+                 val = data.get("view_mode")
+                 ui.update_radio_buttons("view_mode", selected=val)
+                 active_view_mode.set(val)
 
             # Update Models
             if "model_family" in data:
@@ -941,6 +953,19 @@ def server(input, output, session):
         try: vm = input.view_mode()
         except: vm = "basic"
         
+        # Force Flags Override (Session Load Fix)
+        # Prioritize session load flags over potentially stale UI inputs
+        if session_force_compare_mode.get():
+             cm = True
+             session_force_compare_mode.set(False)
+             print("DEBUG: Force Compare Mode Applied")
+             
+        if session_force_compare_prompts_mode.get():
+             cpm = True
+             session_force_compare_prompts_mode.set(False)
+             prompt_entry_step.set("DONE") # Ensure wizard doesn't block
+             print("DEBUG: Force Compare Prompts Mode Applied")
+        
         active_compare_models.set(cm)
         active_compare_prompts.set(cpm)
         active_view_mode.set(vm)
@@ -987,12 +1012,10 @@ def server(input, output, session):
         model_name = input.model_name()
         print(f"DEBUG: Model name A: {model_name}")
         
-        # Check compare modes
-        try: compare_models = input.compare_mode()
-        except: compare_models = False
-        
-        try: compare_prompts = input.compare_prompts_mode()
-        except: compare_prompts = False
+        # Check compare modes - Use the values we determined at the start (cm, cpm)
+        # which account for the force flags.
+        compare_models = cm
+        compare_prompts = cpm
         
         try:
             loop = asyncio.get_running_loop()
@@ -1006,7 +1029,11 @@ def server(input, output, session):
                 # Compute Second Result if needed
                 if compare_models:
                     # Case 1: Same Prompt (A), Different Model (B)
-                    model_name_B = input.model_name_B()
+                    try: 
+                        model_name_B = input.model_name_B()
+                        if not model_name_B: model_name_B = "gpt2"
+                    except: model_name_B = "gpt2"
+                    
                     print(f"DEBUG: Starting heavy_compute B ({model_name_B}) for Compare Models")
                     result_B = await loop.run_in_executor(pool, heavy_compute, text, model_name_B)
                     cached_result_B.set(result_B)
@@ -5186,9 +5213,15 @@ def server(input, output, session):
     def render_radar_view():
         res = get_active_result()
         if not res: return None
-        if not res: return None
-        # Removed dependency on input.radar_layer/head/mode to break infinite loop
-
+        # Restore input dependency for interactive updates
+        try: layer_idx = int(input.global_layer())
+        except: layer_idx = 0
+        try: head_idx = int(input.global_head())
+        except: head_idx = 0
+        
+        # Use global mode from floating bar
+        use_global = global_metrics_mode.get() == "all"
+        mode = "cluster" if use_global else "single"
 
         # Get num_layers/heads for selector
         _, _, _, _, _, _, _, encoder_model, *_ = res
@@ -5216,7 +5249,7 @@ def server(input, output, session):
                     )
                 ]
             ),
-            ui.div({"id": "radar-chart-container-legacy"}, head_specialization_radar(res, 0, 0, "single")), # Defaulting to 0/0/single as fallback since inputs were removed in legacy
+            ui.div({"id": "radar-chart-container-legacy"}, head_specialization_radar(res, layer_idx, head_idx, mode)),
              ui.HTML(f"""
                 <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
                     <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
