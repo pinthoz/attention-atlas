@@ -3042,7 +3042,7 @@ __all__ = ["CSS"]
         .session-btn-custom {
             background: #1e293b !important;
             color: white !important;
-            padding: 4px 8px !important;
+            padding: 4px 12px !important;
             border-top-left-radius: 8px !important;
             border-top-right-radius: 8px !important;
             border-bottom-left-radius: 0 !important;
@@ -3067,7 +3067,7 @@ __all__ = ["CSS"]
         }
 
         .session-btn-custom i {
-            font-size: 12px;
+            font-size: 14px;
         }
 
         /* Hide the label text inside download button, show only icon */
@@ -3169,7 +3169,7 @@ __all__ = ["CSS"]
             background: white;
             color: #1e293b;
             border: 2px solid white;
-            border-radius: 0 8px 8px 8px; /* Top-left sharp to join with tab */
+            border-radius: 0 0 8px 8px; /* Top-left & Top-right sharp */
             border-top-left-radius: 0;
             font-size: 14px;
             line-height: 1.6;

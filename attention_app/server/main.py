@@ -199,21 +199,32 @@ def server(input, output, session):
         filename=lambda: generate_export_filename("attention_atlas_session", "json")
     )
     def save_session():
+        def safe_get(input_fn, default=None):
+            try:
+                val = input_fn()
+                # If silent exception occurs, it might return None or raise.
+                # Just return val if no exception.
+                return val
+            except:
+                return default
+
         session_data = {
-            "text_input": input.text_input(),
-            "model_family": input.model_family(),
-            "model_name": input.model_name(),
-            "layer": input.global_layer(),
-            "head": input.global_head(),
-            "topk": input.global_topk(),
-            "norm": input.global_norm(),
-            "view_mode": input.view_mode(),
-            "compare_mode": input.compare_mode(),
-            # Include Model B data if needed
-            "text_input_B": input.text_input_B(),
-            "model_family_B": input.model_family_B(),
-            "model_name_B": input.model_name_B(),
-            "compare_prompts_mode": input.compare_prompts_mode()
+            "text_input": safe_get(input.text_input, ""),
+            "model_family": safe_get(input.model_family, "bert"),
+            "model_name": safe_get(input.model_name, "bert-base-uncased"),
+            # Global inputs might not exist if dashboard not rendered
+            "layer": safe_get(input.global_layer, 0),
+            "head": safe_get(input.global_head, 0),
+            "topk": safe_get(input.global_topk, 3),
+            "norm": safe_get(input.global_norm, "raw"),
+            "view_mode": safe_get(input.view_mode, "basic"),
+            "compare_mode": safe_get(input.compare_mode, False),
+            
+            # Model B data
+            "text_input_B": safe_get(input.text_input_B, ""),
+            "model_family_B": safe_get(input.model_family_B, "bert"),
+            "model_name_B": safe_get(input.model_name_B, "gpt2"),
+            "compare_prompts_mode": safe_get(input.compare_prompts_mode, False)
         }
         
         yield json.dumps(session_data, indent=2)
@@ -530,6 +541,148 @@ def server(input, output, session):
                         lines.append(f"global,rollout,{i},{j},{tokens[i]},{tokens[j]},{val:.6f}")
 
             yield "\n".join(lines)
+        except Exception as e:
+            yield f"Error exporting data: {str(e)}"
+
+    @render.download(filename=lambda: generate_export_filename("multi_head_attention_B", "csv", data_type="all_layers_heads", is_b=True))
+    def export_heatmap_data_B():
+        """Export multi-head attention matrices for Prompt B as CSV - ALL layers and heads."""
+        res = get_active_result("_B")
+        if not res:
+            yield "No data available"
+            return
+
+        try:
+            tokens = res[0]
+            attentions = res[3]
+
+            if attentions is None or len(attentions) == 0:
+                yield "No attention data available"
+                return
+
+            # Build CSV: layer,head,query_token_idx,key_token_idx,query_token,key_token,weight
+            lines = ["layer,head,query_idx,key_idx,query_token,key_token,weight"]
+            seq_len = len(tokens)
+
+            # Export ALL layers and ALL heads
+            for layer_idx, layer_att in enumerate(attentions):
+                if isinstance(layer_att, torch.Tensor):
+                    layer_att_np = layer_att[0].detach().cpu().numpy()
+                else:
+                    layer_att_np = layer_att[0] if len(layer_att.shape) == 4 else layer_att
+
+                num_heads = layer_att_np.shape[0]
+                for h in range(num_heads):
+                    for i in range(seq_len):
+                        for j in range(seq_len):
+                            weight = layer_att_np[h, i, j]
+                            if weight > 1e-4:
+                                lines.append(f"{layer_idx},{h},{i},{j},{tokens[i]},{tokens[j]},{weight:.6f}")
+
+            yield "\\n".join(lines)
+        except Exception as e:
+            yield f"Error exporting data: {str(e)}"
+
+    @render.download(filename=lambda: generate_export_filename("attention_metrics_B", "csv", data_type="all_layers_heads", is_b=True))
+    def export_attention_metrics_single_B():
+        """Export attention metrics for Prompt B for ALL layers and heads as CSV."""
+        res = get_active_result("_B")
+        if not res:
+            yield "No data available"
+            return
+
+        try:
+            tokens = res[0]
+            attentions = res[3]
+
+            if attentions is None or len(attentions) == 0:
+                yield "No attention data available"
+                return
+
+            # Get metric names from first computation
+            first_layer_att = attentions[0]
+            if isinstance(first_layer_att, torch.Tensor):
+                sample_matrix = first_layer_att[0, 0].detach().cpu().numpy()
+            else:
+                sample_matrix = first_layer_att[0, 0]
+            sample_metrics = compute_all_attention_metrics(sample_matrix)
+            metric_names = list(sample_metrics.keys())
+
+            lines = ["layer,head," + ",".join(metric_names)]
+
+            for layer_idx, layer_att in enumerate(attentions):
+                if isinstance(layer_att, torch.Tensor):
+                    layer_att_np = layer_att[0].detach().cpu().numpy()
+                else:
+                    layer_att_np = layer_att[0]
+
+                num_heads = layer_att_np.shape[0]
+                for head_idx in range(num_heads):
+                    att_matrix = layer_att_np[head_idx]
+                    metrics = compute_all_attention_metrics(att_matrix)
+                    values = ",".join([f"{metrics.get(m, 0):.6f}" for m in metric_names])
+                    lines.append(f"{layer_idx},{head_idx},{values}")
+
+            # Global metrics
+            all_weights = []
+            for layer_att in attentions:
+                if isinstance(layer_att, torch.Tensor):
+                    all_weights.append(layer_att[0].detach().cpu().numpy().mean(axis=0))
+                else:
+                    all_weights.append(layer_att[0].mean(axis=0))
+            global_matrix = np.mean(all_weights, axis=0)
+            global_metrics = compute_all_attention_metrics(global_matrix)
+            global_values = ",".join([f"{global_metrics.get(m, 0):.6f}" for m in metric_names])
+            lines.append(f"global,all,{global_values}")
+
+            yield "\\n".join(lines)
+        except Exception as e:
+            yield f"Error exporting data: {str(e)}"
+
+    @render.download(filename=lambda: generate_export_filename("attention_flow_B", "csv", data_type="all_layers", is_b=True))
+    def export_flow_data_B():
+        """Export attention flow data for Prompt B as CSV - ALL layers."""
+        res = get_active_result("_B")
+        if not res:
+            yield "No data available"
+            return
+
+        try:
+            tokens = res[0]
+            attentions = res[3]
+
+            if attentions is None or len(attentions) == 0:
+                yield "No attention data available"
+                return
+
+            from .renderers import compute_attention_rollout
+
+            lines = ["layer,head,source_idx,target_idx,source_token,target_token,weight"]
+            seq_len = len(tokens)
+
+            for l_idx, layer_att in enumerate(attentions):
+                if isinstance(layer_att, torch.Tensor):
+                    layer_att_np = layer_att[0].detach().cpu().numpy()
+                else:
+                    layer_att_np = layer_att[0]
+
+                num_heads = layer_att_np.shape[0]
+                for h_idx in range(num_heads):
+                    att_matrix = layer_att_np[h_idx]
+                    for i in range(seq_len):
+                        for j in range(seq_len):
+                            val = att_matrix[i, j]
+                            if val > 1e-4:
+                                lines.append(f"{l_idx},{h_idx},{i},{j},{tokens[i]},{tokens[j]},{val:.6f}")
+
+            rollout_matrix = compute_attention_rollout(attentions)
+            for i in range(seq_len):
+                for j in range(seq_len):
+                    val = rollout_matrix[i, j]
+                    if val > 1e-4:
+                        lines.append(f"global,rollout,{i},{j},{tokens[i]},{tokens[j]},{val:.6f}")
+
+            yield "\\n".join(lines)
         except Exception as e:
             yield f"Error exporting data: {str(e)}"
 
@@ -2439,8 +2592,8 @@ def server(input, output, session):
                 controls=[
                     ui.download_button("export_head_spec_unique", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
-                        ui.HTML('<i class="fa-solid fa-download"></i> PNG'),
-                        onclick="downloadPlotlyPNG('radar-chart-container', 'head_specialization')",
+                        "PNG",
+                        onclick=f"downloadPlotlyPNG('radar-chart-container', 'head_specialization_L{layer_idx}_H{head_idx}')" if mode == "single" else "downloadPlotlyPNG('radar-chart-container', 'head_specialization_all')",
                         style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
                 ]
@@ -2490,7 +2643,7 @@ def server(input, output, session):
                            ui.download_button("export_tree_data", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                            ui.download_button("export_topk_attention", "Top-K CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                            ui.tags.button(
-                               ui.HTML('<i class="fa-solid fa-image"></i> PNG'),
+                               "PNG",
                                onclick=f"downloadD3PNG('tree-viz-container', '{tree_png_filename}')",
                                style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                            )
@@ -3322,7 +3475,7 @@ def server(input, output, session):
                      {"style": "position: relative; height: 100%;"},
                      arrow("Input", "Token Embeddings", "vertical", suffix="_B", model_type=model_type_B,
                            style="position: absolute; top: -32px; left: 50%; transform: translateX(-50%); width: auto; margin: 0; z-index: 100;"),
-                     make_card("Token Embeddings", "Token Lookup (Meaning)", get_embedding_table(res_B, top_k=top_k), "b")
+                     make_card("Token Embeddings", "Token Lookup (Meaning)", get_embedding_table(res_B, top_k=top_k, suffix="_B"), "b")
                  )
                  rows.append(ui.layout_columns(row_A, row_B, col_widths=[6, 6]))
 
@@ -3341,14 +3494,14 @@ def server(input, output, session):
 
                  # Positional
                  rows.append(ui.div(paired_arrows(next_from, "Positional Embeddings", model_type_A=model_type_A, model_type_B=model_type_B), class_="arrow-row"))
-                 rows.append(paired_with_card("Positional Embeddings", get_posenc_table(res_A, top_k=top_k), get_posenc_table(res_B, top_k=top_k)))
+                 rows.append(paired_with_card("Positional Embeddings", get_posenc_table(res_A, top_k=top_k), get_posenc_table(res_B, top_k=top_k, suffix="_B")))
 
                  # Sum & Norm
                  rows.append(ui.div(paired_arrows("Positional Embeddings", "Sum & Layer Normalization"), class_="arrow-row"))
                  sum_desc = "Combines token, position, and segment embeddings with layer normalization."
                  rows.append(ui.layout_columns(
                      make_card("Sum & Layer Normalization", sum_desc, get_sum_layernorm_view(res_A, encoder_model_A), "a"),
-                     make_card("Sum & Layer Normalization", sum_desc, get_sum_layernorm_view(res_B, encoder_model_B), "b"),
+                     make_card("Sum & Layer Normalization", sum_desc, get_sum_layernorm_view(res_B, encoder_model_B, suffix="_B"), "b"),
                      col_widths=[6, 6]
                  ))
 
@@ -3366,7 +3519,7 @@ def server(input, output, session):
                  addnorm_desc = "Residual Connection + Layer Normalization"
                  rows.append(ui.layout_columns(
                      make_card("Add & Norm", addnorm_desc, get_add_norm_view(res_A, layer_idx), "a"),
-                     make_card("Add & Norm", addnorm_desc, get_add_norm_view(res_B, layer_idx), "b"),
+                     make_card("Add & Norm", addnorm_desc, get_add_norm_view(res_B, layer_idx, suffix="_B"), "b"),
                      col_widths=[6, 6]
                  ))
 
@@ -3375,7 +3528,7 @@ def server(input, output, session):
                  ffn_desc = "Expansion -> Activation -> Projection"
                  rows.append(ui.layout_columns(
                      make_card("Feed-Forward Network", ffn_desc, get_ffn_view(res_A, layer_idx), "a"),
-                     make_card("Feed-Forward Network", ffn_desc, get_ffn_view(res_B, layer_idx), "b"),
+                     make_card("Feed-Forward Network", ffn_desc, get_ffn_view(res_B, layer_idx, suffix="_B"), "b"),
                      col_widths=[6, 6]
                  ))
 
@@ -3383,7 +3536,7 @@ def server(input, output, session):
                  rows.append(ui.div(paired_arrows("Feed-Forward Network", "Add & Norm (Post-FFN)"), class_="arrow-row"))
                  rows.append(ui.layout_columns(
                      make_card("Add & Norm (Post-FFN)", addnorm_desc, get_add_norm_post_ffn_view(res_A, layer_idx), "a"),
-                     make_card("Add & Norm (Post-FFN)", addnorm_desc, get_add_norm_post_ffn_view(res_B, layer_idx), "b"),
+                     make_card("Add & Norm (Post-FFN)", addnorm_desc, get_add_norm_post_ffn_view(res_B, layer_idx, suffix="_B"), "b"),
                      col_widths=[6, 6]
                  ))
 
@@ -3662,7 +3815,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card"},
             viz_header("Inter-Sentence Attention (ISA)",
-                        "Heatmap showing the strength of attention between every pair of sentences.",
+                        "",
                         """
                         <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Inter-Sentence Attention (ISA)</strong>
 
@@ -3688,7 +3841,7 @@ def server(input, output, session):
                             ui.download_button(export_csv_id, "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
                             ui.download_button(export_json_id, "JSON", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
                             ui.tags.button(
-                                ui.HTML('<i class="fa-solid fa-image"></i> PNG'),
+                                "PNG",
                                 onclick=f"downloadPlotlyPNG('isa-plot-container{suffix}', '{png_filename}')",
                                 style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                             ),
@@ -3708,7 +3861,7 @@ def server(input, output, session):
                         ui.div(
                             {"style": "display: flex; justify-content: flex-end; margin-bottom: 4px;"},
                             ui.tags.button(
-                                ui.HTML('<i class="fa-solid fa-image"></i> Token PNG'),
+                                "Token PNG",
                                 onclick=f"downloadPlotlyPNG('isa-token-container{suffix}', '{token_png_filename}')",
                                 style="padding: 2px 6px; font-size: 9px; height: 20px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                             ),
@@ -4598,12 +4751,12 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%; display: flex; flex-direction: column;"},
             viz_header(
                 "Multi-Head Attention",
-                "Shows how each token distributes its attention across all other tokens. Each cell (i,j) represents the attention weight from query token i to key token j.",
+                "",
                 "<b>Calculation:</b> Attention = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V<br><br><b>Color Scale:</b> Dark blue indicates high attention weight.",
                 controls=[
                     ui.download_button("export_multi_head_data", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
                     ui.tags.button(
-                        ui.HTML('<i class="fa-solid fa-download"></i> PNG'),
+                        "PNG",
                         onclick=f"downloadPlotlyPNG('multi-head-plot', 'multi_head_attention')",
                         style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
@@ -4820,11 +4973,11 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             viz_header(
                 "Attention Flow",
-                "Sankey-style diagram showing attention distribution. Line width is proportional to attention weight.",
+                "",
                 "<b>Threshold:</b> Connections < 0.04 hidden.<br><br><b>Line Width:</b> Proportional to attention weight.", controls=[
                     ui.download_button("export_attention_flow_data", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
                     ui.tags.button(
-                        ui.HTML('<i class="fa-solid fa-download"></i> PNG'),
+                        "PNG",
                         onclick=f"downloadPlotlyPNG('attention-flow-plot', 'attention_flow')",
                         style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
@@ -5014,7 +5167,7 @@ def server(input, output, session):
                 controls=[
                     ui.download_button("export_head_spec_unique_legacy", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
-                        ui.HTML('<i class="fa-solid fa-download"></i> PNG'),
+                        "PNG",
                         onclick="downloadPlotlyPNG('radar-chart-container-legacy', 'head_specialization')",
                         style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
@@ -5400,7 +5553,7 @@ def server(input, output, session):
                         controls=[
                             ui.download_button("export_tree_data_legacy", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                             ui.tags.button(
-                                ui.HTML('<i class="fa-solid fa-image"></i> PNG'),
+                                "PNG",
                                 onclick=f"downloadD3PNG('tree-viz-container-legacy', '{tree_png_filename}')",
                                 style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                             )
@@ -5421,7 +5574,7 @@ def server(input, output, session):
             return None
         try: top_k = int(input.global_topk())
         except: top_k = 3
-        return get_embedding_table(res, top_k=top_k)
+        return get_embedding_table(res, top_k=top_k, suffix="_B")
 
     @output
     @render.ui
@@ -5448,7 +5601,7 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Positional Embeddings"),
             ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_posenc_table(res, top_k=top_k)
+            get_posenc_table(res, top_k=top_k, suffix="_B")
         )
 
     @output
@@ -5462,7 +5615,7 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Sum & Layer Normalization"),
             ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-            get_sum_layernorm_view(res, encoder_model)
+            get_sum_layernorm_view(res, encoder_model, suffix="_B")
         )
 
     @output
@@ -5550,7 +5703,7 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"}, 
             ui.h4("Feed-Forward Network"), 
             ui.p("Expansion -> Activation -> Projection", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_ffn_view(res, layer)
+            get_ffn_view(res, layer, suffix="_B")
         )
 
     @output
@@ -5565,7 +5718,7 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Add & Norm"),
             ui.p("Residual Connection + Layer Normalization", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_add_norm_view(res, layer)
+            get_add_norm_view(res, layer, suffix="_B")
         )
 
     @output
@@ -5580,7 +5733,7 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Add & Norm (Post-FFN)"),
             ui.p("Residual Connection + Layer Normalization", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_add_norm_post_ffn_view(res, layer)
+            get_add_norm_post_ffn_view(res, layer, suffix="_B")
         )
 
     @output
@@ -5598,7 +5751,7 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Hidden States"),
             ui.p("Final vector representation before projection.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            get_layer_output_view(res, num_layers - 1)
+            get_layer_output_view(res, num_layers - 1, suffix="_B")
         )
 
     @output
@@ -5625,9 +5778,22 @@ def server(input, output, session):
         text = tokenizer.convert_tokens_to_string(tokens)
 
         is_bert = model_family != "gpt2"
+        use_mlm = True  # Always show predictions
 
         try: top_k = int(input.global_topk())
         except: top_k = 3
+
+        # Interactive Mode Logic (BERT only)
+        manual_mode = False
+        custom_mask_indices = None
+
+        if is_bert:
+            try: manual_mode = input.mlm_interactive_mode_B()
+            except: manual_mode = False
+
+            if manual_mode:
+                try: custom_mask_indices = input.manual_mask_indices_B()
+                except: custom_mask_indices = None
 
         # JS for Interactive Masking (Model B)
         js_script_B = ui.HTML("""
@@ -5661,14 +5827,65 @@ def server(input, output, session):
             title = "Masked Token Predictions (MLM)"
             desc = "Predicts the masked token using bidirectional context."
             tooltip = "<b>Iterative Masking (BERT):</b> Replaces token with [MASK] and computes logits."
-            extra_controls = [
-                ui.tags.button(
-                    ui.HTML('<i class="fa-solid fa-play"></i> Predict Masked'),
-                    id="run_custom_mask_B",
-                    class_="btn btn-secondary-sm custom-mask-btn action-button",
-                    style="padding: 2px 8px; font-size: 10px; height: 24px;"
-                )
-            ]
+            
+            # Interactive Mode Toggle
+            try: manual_mode = input.mlm_interactive_mode_B()
+            except: manual_mode = False
+            
+            if manual_mode:
+                try: custom_mask_indices = input.manual_mask_indices_B()
+                except: custom_mask_indices = None
+            
+            # Custom Toggle Button for Interactive Mode (Style: Norm/Similarity)
+            # User wants "Toggle Masks" text, pink style like Norm buttons.
+            # We use radio-group styling for consistency.
+            active_class = "active" if manual_mode else ""
+            
+            # Inject CSS for the button to ensure it looks correct even if classes are missing
+            # Note: We reuse the same class names but ensure style is present
+            button_style = """
+            <style>
+            .toggle-masks-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 4px 12px;
+                background: #f1f5f9;
+                color: #64748b;
+                border-radius: 6px;
+                font-size: 11px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+                border: 1px solid transparent;
+                user-select: none;
+            }
+            .toggle-masks-btn:hover {
+                background: #e2e8f0;
+                color: #334155;
+            }
+            .toggle-masks-btn.active {
+                background: #ff5ca9; /* Pink */
+                color: white;
+                box-shadow: 0 2px 6px rgba(255, 92, 169, 0.3);
+            }
+            .toggle-masks-btn.active:hover {
+                background: #f43f8e;
+            }
+            </style>
+            """
+            
+            extra_controls = [ui.HTML(f"""
+            {button_style}
+            <div class='control-group' style='display:flex; align-items:center;'>
+                <div class='radio-group'>
+                    <span class='toggle-masks-btn {active_class}' 
+                          onclick="Shiny.setInputValue('mlm_interactive_mode_B', !{str(manual_mode).lower()}, {{priority: 'event'}});">
+                        {'Go back' if manual_mode else 'Toggle Masks'}
+                    </span>
+                </div>
+            </div>
+            """)]
         else:
             title = "Next Token Predictions (Causal)"
             desc = "Predicting the probability of the next token appearing after the sequence."
@@ -5684,7 +5901,7 @@ def server(input, output, session):
                 tooltip, 
                 controls=extra_controls
             ),
-            get_output_probabilities(res, use_mlm_B, text, suffix="_B", top_k=top_k, manual_mode=manual_mode, custom_mask_indices=custom_mask_indices)
+            get_output_probabilities(res, use_mlm, text, suffix="_B", top_k=top_k, manual_mode=manual_mode, custom_mask_indices=custom_mask_indices)
         )
 
     @output
@@ -5712,7 +5929,7 @@ def server(input, output, session):
                 controls=[
                     ui.download_button("export_head_spec_unique_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
-                        ui.HTML('<i class="fa-solid fa-download"></i> PNG'),
+                        "PNG",
                         onclick="downloadPlotlyPNG('radar-chart-container-B', 'head_specialization_B')",
                         style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
@@ -5794,9 +6011,8 @@ def server(input, output, session):
                 "<b>Tree built from attention weights.</b><br>Each branch shows which tokens the focus token attends to most.",
                 controls=[
                     ui.download_button("export_tree_data_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
-                    ui.download_button("export_topk_attention_B", "Top-K CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
-                        ui.HTML('<i class="fa-solid fa-image"></i> PNG'),
+                        "PNG",
                         onclick=f"downloadD3PNG('tree-viz-container-B', '{tree_png_filename_b}')",
                         style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
@@ -5836,34 +6052,16 @@ def server(input, output, session):
 
         return ui.div(
             {"class": "card"},
-            ui.div(
-                {"style": "display: flex; align-items: center; gap: 8px; margin-bottom: 12px;"},
-                ui.h4("Attention Metrics", style="margin: 0;"),
-                ui.div(
-                    {"class": "info-tooltip-wrapper"},
-                    ui.span({"class": "info-tooltip-icon"}, "i"),
-                    ui.div(
-                        {"class": "info-tooltip-content"},
-                        ui.HTML("""
-                            <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Metrics</strong>
-
-                            <p style='margin:0 0 10px 0'>Evaluates the properties of the attention mechanism for the selected layer/head.</p>
-
-                            <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-bottom:8px'>
-                                <strong style='color:#f472b6;font-size:11px'>Context Indicators:</strong>
-                                <ul style='margin:6px 0 0 0;padding-left:14px;font-size:10px'>
-                                    <li><b>Layer Rank:</b> Percentile of this head's value compared to all other heads in the same layer.</li>
-                                    <li><b>Avg:</b> The average value for this metric across all heads in this layer.</li>
-                                    <li><b>Ref:</b> Average value computed from a baseline set of 10 neutral sentences.</li>
-                                </ul>
-                            </div>
-
-                            <p style='margin:0 0 10px 0'><strong style='color:#f472b6'>Scale Toggle:</strong> Switch between "Optimized" (zoomed to data range) and "Full" (0-1) scales for absolute comparison.</p>
-                        """)
-                    )
-                ),
-                ui.span(subtitle, style="font-size: 11px; color: #94a3b8; font-weight: 500;")
+            viz_header(
+                "Attention Metrics", 
+                "Quantitative measures of attention behavior for the selected head.", 
+                "<b>Formulas from 'From Attention to Assurance' paper.</b><br>Includes Confidence, Focus (Entropy), and more.",
+                subtitle=subtitle,
+                controls=[
+                    ui.download_button("export_attention_metrics_single_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
+                ]
             ),
+
             get_metrics_display(res, layer_idx=layer_idx, head_idx=head_idx, use_full_scale=use_full_scale, baseline_stats=baseline_stats.get(), norm_mode=norm_mode)
         )
 
@@ -6086,17 +6284,10 @@ def server(input, output, session):
 
         return ui.div(
             {"class": "card", "style": "height: 100%; display: flex; flex-direction: column;"},
-            ui.div(
-                {"class": "header-simple"},
-                ui.div(
-                    {"class": "viz-header-with-info"},
-                    ui.h4("Multi-Head Attention"),
-                    ui.div(
-                        {"class": "info-tooltip-wrapper"},
-                        ui.span({"class": "info-tooltip-icon"}, "i"),
-                        ui.div(
-                            {"class": "info-tooltip-content"},
-                            ui.HTML("""
+            viz_header(
+                "Multi-Head Attention",
+                "",
+                ui.HTML("""
                                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention</strong>
                                 
                                 <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how each token distributes its attention across all other tokens. Each cell (i,j) represents the attention weight from query token i to key token j.</p>
@@ -6115,10 +6306,15 @@ def server(input, output, session):
                                 <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
                                     High attention ≠ importance
                                 </p>
-                            """)
-                        )
+                            """),
+                controls=[
+                    ui.download_button("export_heatmap_data_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
+                    ui.tags.button(
+                        "PNG",
+                        onclick="downloadPlotlyPNG('attention_heatmap_B', 'multi_head_attention_B')",
+                        style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
-                ),
+                ]
             ),
             ui.div({"class": "viz-description", "style": "margin-top: 20px; flex-shrink: 0;"}, ui.HTML(
                 f"<strong style='color:#64748b'>{norm_label}</strong><br>" +
@@ -6306,17 +6502,10 @@ def server(input, output, session):
 
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
-            ui.div(
-                {"class": "header-with-selectors"},
-                ui.div(
-                    {"class": "viz-header-with-info"},
-                    ui.h4("Attention Flow"),
-                    ui.div(
-                        {"class": "info-tooltip-wrapper"},
-                        ui.span({"class": "info-tooltip-icon"}, "i"),
-                        ui.div(
-                            {"class": "info-tooltip-content"},
-                            ui.HTML("""
+            viz_header(
+                "Attention Flow",
+                "",
+                ui.HTML("""
                                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Flow</strong>
                                 
                                 <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Sankey-style diagram showing attention distribution. Line width is proportional to attention weight α<sub>ij</sub> between token pairs.</p>
@@ -6335,18 +6524,15 @@ def server(input, output, session):
                                 <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
                                     Shows Query→Key, not information flow
                                 </p>
-                            """)
-                        )
+                            """),
+                controls=[
+                    ui.download_button("export_flow_data_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
+                    ui.tags.button(
+                        "PNG",
+                        onclick="downloadPlotlyPNG('attention_flow_plot_B', 'attention_flow_B')",
+                        style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                     )
-                ),
-                ui.div(
-                    {"class": "selection-boxes-container", "style": "visibility: hidden; pointer-events: none;"},
-                    ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div({"class": "select-compact", "style": "height: 24px; width: 100px;"}) # Dummy spacer
-                    )
-                )
+                ]
             ),
             ui.div({"class": "viz-description", "style": "margin-top: -5px;"}, ui.HTML(
                 f"<strong style='color:#64748b'>{get_norm_mode_label(norm_mode, layer_idx)}</strong><br>" +
@@ -6472,7 +6658,7 @@ def server(input, output, session):
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
                     arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k, suffix=suffix))
                 ),
                 arrow("Token Embeddings", "Segment Embeddings", "horizontal", suffix=suffix),
                 ui.div(
@@ -6488,7 +6674,7 @@ def server(input, output, session):
                 arrow("Segment Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k, suffix=suffix))
                 ),
             ),
             # Sum & Norm Row
@@ -6496,7 +6682,7 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model, suffix=suffix))
                 ),
                 arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
                 ui.div(
@@ -6515,18 +6701,18 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 25px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx, suffix=suffix))
                 ),
                 arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
                     arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -35px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx, suffix=suffix))
                 ),
                 arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx)),
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx, suffix=suffix)),
                     arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
                 ),
             ),
@@ -6559,7 +6745,7 @@ def server(input, output, session):
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
                     arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k, suffix=suffix))
                 ),
                 ui.div(
                     {"style": "position: relative; display: flex; align-items: center; justify-content: center;"},
@@ -6568,7 +6754,7 @@ def server(input, output, session):
                 ),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k, suffix=suffix))
                 ),
             ),
             # Sum & Norm Row
@@ -6576,7 +6762,7 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model, suffix=suffix))
                 ),
                 arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
                 ui.div(
@@ -6595,18 +6781,18 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 25px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx, suffix=suffix))
                 ),
                 arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
                     arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -35px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx, suffix=suffix))
                 ),
                 arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx)),
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx, suffix=suffix)),
                     arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
                 ),
             ),
@@ -6639,7 +6825,7 @@ def server(input, output, session):
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
                     arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k, suffix=suffix))
                 ),
                 ui.div(
                     {"style": "position: relative; display: flex; align-items: center; justify-content: center;"},
@@ -6648,7 +6834,7 @@ def server(input, output, session):
                 ),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k, suffix=suffix))
                 ),
             ),
             # Sum & Norm Row
@@ -6656,7 +6842,7 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model, suffix=suffix))
                 ),
                 arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
                 ui.div(
@@ -6675,18 +6861,18 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 25px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx, suffix=suffix))
                 ),
                 arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
                     arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -35px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx, suffix=suffix))
                 ),
                 arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx)),
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx, suffix=suffix)),
                     arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
                 ),
             ),

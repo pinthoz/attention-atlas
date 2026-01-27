@@ -341,10 +341,11 @@ def matrix_to_base64_img(matrix, cmap="Blues", figsize=(5, 5)):
     return base64.b64encode(buf.getvalue()).decode('utf-8')
 
 
-def get_embedding_table(res, top_k=3):
+def get_embedding_table(res, top_k=3, suffix=""):
     tokens, embeddings, *_ = res
     n = len(tokens)
-    unique_id = "embed_tab"
+    unique_id = f"embed_tab{suffix}"
+    print(f"DEBUG: get_embedding_table called with suffix='{suffix}', unique_id='{unique_id}'")
 
     # Compute norms and cosine similarity
     norms = [np.linalg.norm(embeddings[i]) for i in range(n)]
@@ -495,10 +496,10 @@ def get_segment_embedding_view(res):
     )
 
 
-def get_posenc_table(res, top_k=3):
+def get_posenc_table(res, top_k=3, suffix=""):
     tokens, _, pos_enc, *_ = res
     n = len(tokens)
-    unique_id = "pos_tab"
+    unique_id = f"pos_tab{suffix}"
 
     # Compute norms and cosine similarity
     norms = [np.linalg.norm(pos_enc[i]) for i in range(n)]
@@ -631,8 +632,8 @@ def _render_dual_tab_view(unique_id, html_heatmap, tokens, vectors_for_pca, html
     <div id='{unique_id}'>
         <div class='view-controls' style='{controls_style}'>
             {change_btn}
-            <button class='view-btn {heat_active_class}' data-tab='heat' onclick="switchView('{unique_id}\', \'heat\')" title="Visual heatmap of vector values" style="flex: 0 1 auto; width: 25%;">Raw Vectors</button>
-            <button class='view-btn' data-tab='pca' onclick="switchView('{unique_id}\', \'pca\')" title="2D Principal Component Analysis projection" style="flex: 0 1 auto; width: 25%;">PCA</button>
+            <button class='view-btn {heat_active_class}' data-tab='heat' onclick="switchView('{unique_id}', 'heat')" title="Visual heatmap of vector values" style="flex: 0 1 auto; width: 25%;">Raw Vectors</button>
+            <button class='view-btn' data-tab='pca' onclick="switchView('{unique_id}', 'pca')" title="2D Principal Component Analysis projection" style="flex: 0 1 auto; width: 25%;">PCA</button>
         </div>
         <div class='card-scroll vector-summary-container'>
             {change_pane}
@@ -649,9 +650,9 @@ def _render_dual_tab_view(unique_id, html_heatmap, tokens, vectors_for_pca, html
     </div>
     """)
 
-def get_sum_layernorm_view(res, encoder_model):
+def get_sum_layernorm_view(res, encoder_model, suffix=""):
     tokens, _, _, _, hidden_states, inputs, *_ = res
-    unique_id = "sumnorm_tab"
+    unique_id = f"sumnorm_tab{suffix}"
     
     # Text aggregation check
     input_ids = inputs["input_ids"]
@@ -1277,13 +1278,13 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, 
     return ui.HTML(html)
 
 
-def get_add_norm_view(res, layer_idx):
+def get_add_norm_view(res, layer_idx, suffix=""):
     tokens, _, _, _, hidden_states, *_ = res
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
     hs_in = hidden_states[layer_idx][0].cpu().numpy()
     hs_out = hidden_states[layer_idx + 1][0].cpu().numpy()
-    unique_id = f"addnorm_{layer_idx}"
+    unique_id = f"addnorm_{layer_idx}{suffix}"
     
     # 1. Change View (Bars)
     change_rows = []
@@ -1318,11 +1319,11 @@ def get_add_norm_view(res, layer_idx):
     return _render_dual_tab_view(unique_id, html_heatmap, tokens, hs_out, html_change=html_change)
 
 
-def get_ffn_view(res, layer_idx):
+def get_ffn_view(res, layer_idx, suffix=""):
     tokens, _, _, _, hidden_states, _, _, encoder_model, *_ = res
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
-    unique_id = f"ffn_{layer_idx}"
+    unique_id = f"ffn_{layer_idx}{suffix}"
     layer_block = get_layer_block(encoder_model, layer_idx)
     hs_in = hidden_states[layer_idx][0]
     with torch.no_grad():
@@ -1357,13 +1358,13 @@ def get_ffn_view(res, layer_idx):
     return _render_dual_tab_view(unique_id, html_heatmap, tokens, proj_np)
 
 
-def get_add_norm_post_ffn_view(res, layer_idx):
+def get_add_norm_post_ffn_view(res, layer_idx, suffix=""):
     tokens, _, _, _, hidden_states, *_ = res
     if layer_idx + 2 >= len(hidden_states):
         return ui.HTML("")
     hs_mid = hidden_states[layer_idx + 1][0].cpu().numpy()
     hs_out = hidden_states[layer_idx + 2][0].cpu().numpy()
-    unique_id = f"addnormpost_{layer_idx}"
+    unique_id = f"addnormpost_{layer_idx}{suffix}"
     
     # 1. Change View (Bars)
     change_rows = []
@@ -1399,7 +1400,7 @@ def get_add_norm_post_ffn_view(res, layer_idx):
     return _render_dual_tab_view(unique_id, html_heatmap, tokens, hs_out, html_change=html_change)
 
 
-def get_layer_output_view(res, layer_idx):
+def get_layer_output_view(res, layer_idx, suffix=""):
     tokens, _, _, _, hidden_states, *_ = res
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
