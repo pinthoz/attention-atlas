@@ -1172,23 +1172,40 @@ JS_TRANSITION_MODAL = """
             if (from === 'Input' && to === 'Token Embeddings') {
                 if (modelType === 'gpt2') {
                     return `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Tokenization & Embedding Lookup</h4>
-                    <p>The input text is first processed by the <strong>Byte-Pair Encoding (BPE) tokenizer</strong>, which breaks words into subword units (tokens) based on frequency patterns. Each token is mapped to a unique integer ID.</p>
-                    <p>These IDs are then used to look up dense vectors from the <strong>Token Embedding Matrix</strong> (size: <code>vocab_size × hidden_dim</code>).</p>
-                    <p>GPT-2 uses no special start token — generation begins directly from the input. The end-of-text token <code>&lt;|endoftext|&gt;</code> marks sequence boundaries.</p>
-                    <ul>
-                        <li><strong>Output Shape:</strong> <code>(batch_size, seq_len, hidden_dim)</code></li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Tokenization & Embedding Lookup</h4>
+                    <p>GPT-2 uses <strong>Byte-Pair Encoding (BPE)</strong>, a compression-based subword algorithm operating on UTF-8 byte sequences. This ensures complete coverage of any input without unknown tokens.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
+                        <strong style="color:#3b82f6;">BPE Algorithm:</strong><br>
+                        <span style="font-size:12px; color:#94a3b8;">1. Initialize with 256 byte tokens → 2. Merge most frequent pairs → 3. Repeat to 50,257 tokens</span>
+                    </div>
+
+                    <p>Token IDs index into the <strong>Token Embedding Matrix</strong> <code>E ∈ ℝ<sup>50,257 × 768</sup></code>.</p>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Special Token:</strong> <code>&lt;|endoftext|&gt;</code> marks sequence boundaries</li>
+                        <li><strong>No start token</strong> — generation begins directly from context</li>
+                        <li><strong>Output:</strong> <code>(batch, seq_len, 768)</code> — context-independent vectors</li>
                     </ul>
                     `;
                 } else {
                     // Default / BERT
                     return `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Tokenization & Embedding Lookup</h4>
-                    <p>The input text is first processed by the <strong>WordPiece tokenizer</strong>, which breaks words into subword units (tokens). Each token is mapped to a unique integer ID.</p>
-                    <p>These IDs are then used to look up dense vectors from the <strong>Token Embedding Matrix</strong> (size: <code>vocab_size × hidden_dim</code>).</p>
-                    <p>Special tokens <code>[CLS]</code> (start) and <code>[SEP]</code> (separator) are added.</p>
-                    <ul>
-                        <li><strong>Output Shape:</strong> <code>(batch_size, seq_len, hidden_dim)</code></li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Tokenization & Embedding Lookup</h4>
+                    <p>BERT uses <strong>WordPiece tokenization</strong>, a subword segmentation that balances vocabulary size with rare word coverage.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
+                        <strong style="color:#3b82f6;">WordPiece Process:</strong><br>
+                        <span style="font-size:12px; color:#94a3b8;">1. Normalize text → 2. Split by whitespace → 3. Decompose into subwords (## prefix for continuations)</span><br>
+                        <span style="font-size:11px; color:#64748b;">Example: "unbelievable" → ["un", "##believ", "##able"]</span>
+                    </div>
+
+                    <p>Token IDs index into the <strong>Token Embedding Matrix</strong> <code>E ∈ ℝ<sup>30,522 × 768</sup></code>.</p>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>[CLS]:</strong> Prepended to every sequence — aggregates sequence-level info</li>
+                        <li><strong>[SEP]:</strong> Appended after each sentence — demarcates boundaries</li>
+                        <li><strong>Output:</strong> <code>(batch, seq_len, 768)</code> — context-independent vectors</li>
                     </ul>
                     `;
                 }
@@ -1198,19 +1215,36 @@ JS_TRANSITION_MODAL = """
             if (from === 'Add & Norm (post-FFN)' && to === 'Exit') {
                 if (modelType === 'gpt2') {
                     return `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Final Prediction</h4>
-                    <p>The <strong>Add & Norm</strong> layer outputs the final <strong>Hidden States</strong>.</p>
-                    <p>These vectors are then projected to the vocabulary size to predict the <strong>Next Token</strong> in the sequence (Causal Language Modeling).</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">P(token_{t+1}) = Softmax(Hidden · W_vocab)</div>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Hidden States → Token Predictions (Causal LM)</h4>
+                    <p>The final layer outputs <strong>contextualized hidden states</strong> — dense vectors encoding both the token's meaning and information gathered from all preceding tokens.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #f97316;">
+                        <strong style="color:#f97316;">Autoregressive Prediction:</strong><br>
+                        <code style="font-size:11px;">P(token<sub>t+1</sub> | token<sub>1</sub>...token<sub>t</sub>) = Softmax(H<sub>t</sub> · W<sub>vocab</sub>)</code>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Generation:</strong> Sample next token → append → repeat</li>
+                        <li><strong>Loss:</strong> Cross-entropy summed over all positions</li>
+                        <li>Each token can only see <em>left context</em> (causal mask)</li>
+                    </ul>
                     `;
                 } else {
                     // BERT
                     return `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Final Output & Prediction</h4>
-                    <p>The <strong>Add & Norm</strong> layer outputs the final <strong>Hidden States</strong>.</p>
-                    <p>In the pre-training phase, these are used for <strong>Masked Token Predictions (MLM)</strong>, reconstructing masked words from context.</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">P(mask) = Softmax(Hidden · W_vocab)</div>
-                    <p>For fine-tuning tasks (e.g., classification), the [CLS] token's hidden state is typically used.</p>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Hidden States → Token Predictions (MLM)</h4>
+                    <p>The final layer outputs <strong>contextualized hidden states</strong> — dense vectors encoding both the token's meaning and information from the entire sequence (bidirectional).</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
+                        <strong style="color:#3b82f6;">MLM Head Architecture:</strong><br>
+                        <span style="font-size:11px; color:#94a3b8;">Hidden → Linear → GELU → LayerNorm → Projection → Softmax</span>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Pre-training:</strong> 15% tokens masked (80% [MASK], 10% random, 10% unchanged)</li>
+                        <li><strong>Fine-tuning:</strong> [CLS] hidden state used for classification tasks</li>
+                        <li><strong>W<sub>vocab</sub></strong> often shared (tied) with input embeddings</li>
+                    </ul>
                     `;
                 }
             }
@@ -1219,25 +1253,36 @@ JS_TRANSITION_MODAL = """
             if (from === 'Token Embeddings' && to === 'Positional Embeddings') {
                 if (modelType === 'gpt2') {
                     return `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Adding Position Information</h4>
-                    <p>In GPT-2, <strong>Positional Embeddings</strong> are added directly to the Token Embeddings. Unlike BERT, there are no Segment Embeddings because GPT-2 is typically trained on a continuous stream of text.</p>
-                    <ul>
-                        <li><strong>Token Embeddings:</strong> Represent the meaning of each word/subword.</li>
-                        <li><strong>Positional Embeddings:</strong> Indicate the order of tokens in the sequence.</li>
-                        <li><strong>Summation:</strong> The two vectors are added element-wise to create the initial input representation.</li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Adding Positional Information</h4>
+                    <p>Self-attention is <strong>permutation-equivariant</strong> — it has no inherent sense of token order. Positional embeddings inject sequence position information.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #f97316;">
+                        <strong style="color:#f97316;">GPT-2 Embedding Sum:</strong><br>
+                        <code style="font-size:12px;">Input[i] = Token_Embed[i] + Position_Embed[i]</code>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Position Matrix:</strong> <code>E<sub>pos</sub> ∈ ℝ<sup>1024 × 768</sup></code> (learned, not sinusoidal)</li>
+                        <li><strong>No Segment Embeddings:</strong> GPT-2 processes continuous text streams</li>
+                        <li><strong>Max length:</strong> Fixed at 1024 tokens (architectural limit)</li>
                     </ul>
                     `;
                 } else {
                     return `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Adding Position & Segment Info</h4>
-                    <p>For BERT, the final input representation is the sum of <strong>three</strong> components. Even if the Segment Embeddings details are hidden in this comparison view, they are included in the calculation.</p>
-                    <ul>
-                        <li><strong>Token Embeddings:</strong> Represent the meaning of each word/subword.</li>
-                        <li><strong>Segment Embeddings:</strong> Distinguish between Sentence A and Sentence B.</li>
-                        <li><strong>Positional Embeddings:</strong> Indicate the order of tokens.</li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Adding Position & Segment Information</h4>
+                    <p>Self-attention is <strong>permutation-equivariant</strong> — it has no inherent sense of token order. BERT combines three embedding types.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
+                        <strong style="color:#3b82f6;">BERT Embedding Sum:</strong><br>
+                        <code style="font-size:12px;">Input[i] = Token[i] + Segment[i] + Position[i]</code>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Token:</strong> Semantic meaning from vocabulary</li>
+                        <li><strong>Segment:</strong> Sentence A (0) vs Sentence B (1)</li>
+                        <li><strong>Position:</strong> Absolute index (0, 1, 2...511)</li>
                     </ul>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Input = Token + Segment + Position</div>
-                    <p>All three vectors are summed element-wise to form the model's input.</p>
+                    <p style="font-size:12px; color:#94a3b8;">All three matrices are learned during pre-training and summed element-wise.</p>
                     `;
                 }
             }
@@ -1245,125 +1290,235 @@ JS_TRANSITION_MODAL = """
             const explanations = {
                 // 'Input_Token Embeddings' is handled dynamically above
                 'Token Embeddings_Segment Embeddings': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Adding Sentence Context</h4>
-                    <p><strong>Segment Embeddings</strong> distinguish between different sentences in the input (e.g., Sentence A vs. Sentence B). This is crucial for tasks like Question Answering or Next Sentence Prediction.</p>
-                    <ul>
-                        <li><strong>Token Type IDs:</strong> 0 for the first sentence, 1 for the second.</li>
-                        <li>Embeddings are looked up from a learned matrix of size <code>2 × hidden_dim</code>.</li>
-                        <li>These are added element-wise to the Token Embeddings.</li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Adding Sentence Membership (BERT only)</h4>
+                    <p><strong>Segment Embeddings</strong> provide explicit information about which sentence each token belongs to — essential for sentence-pair tasks.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
+                        <strong style="color:#3b82f6;">Token Type Assignment:</strong><br>
+                        <span style="font-size:11px; color:#94a3b8;">[CLS] What is AI? [SEP] AI is... [SEP]</span><br>
+                        <span style="font-size:11px; color:#64748b;">&nbsp;&nbsp;0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;0&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;&nbsp;1</span>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Segment Matrix:</strong> <code>E<sub>seg</sub> ∈ ℝ<sup>2 × 768</sup></code></li>
+                        <li><strong>ID 0:</strong> Sentence A (incl. [CLS] and first [SEP])</li>
+                        <li><strong>ID 1:</strong> Sentence B (incl. final [SEP])</li>
                     </ul>
+                    <p style="font-size:12px; color:#94a3b8;">GPT-2 omits this — it processes continuous text without explicit boundaries.</p>
                 `,
                 'Segment Embeddings_Positional Embeddings': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Injecting Position Information</h4>
-                    <p>Since the Transformer architecture has no inherent sense of order (unlike RNNs), <strong>Positional Embeddings</strong> are added to give the model information about the absolute position of each token.</p>
-                    <ul>
-                        <li>Learned embeddings for each position index (0, 1, 2, ...).</li>
-                        <li>Matrix size: <code>max_position_embeddings × hidden_dim</code> (typically 512 × 768 for BERT-base).</li>
-                        <li>Added element-wise to the previous sum of Token and Segment embeddings.</li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Injecting Position Information</h4>
+                    <p>Transformers are <strong>permutation-equivariant</strong> — unlike RNNs, they process all tokens in parallel with no inherent ordering. Positional embeddings solve this.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #8b5cf6;">
+                        <strong style="color:#8b5cf6;">Position Embedding Lookup:</strong><br>
+                        <code style="font-size:11px;">Position_Embed[i] = E<sub>position</sub>[i]</code><br>
+                        <span style="font-size:11px; color:#94a3b8;">where i is the absolute position index (0, 1, 2, ...)</span>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Matrix:</strong> <code>E<sub>pos</sub> ∈ ℝ<sup>512 × 768</sup></code> (BERT-base)</li>
+                        <li><strong>Learned</strong> (not sinusoidal) — optimized during pre-training</li>
+                        <li><strong>Limitation:</strong> Cannot generalize beyond max_seq_len</li>
                     </ul>
                 `,
                 'Positional Embeddings_Sum & Layer Normalization': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Combination & Normalization</h4>
-                    <p>The final input representation is the sum of the three embedding types:</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Embedding = Token + Segment + Position</div>
-                    <p><strong>Layer Normalization</strong> is then applied to stabilize training:</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">LN(x) = γ((x - μ) / σ) + β</div>
-                    <p>This normalizes the values across the hidden dimension for each token independently.</p>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Embedding Aggregation & Layer Normalization</h4>
+                    <p>All embedding components are summed element-wise, then normalized to stabilize training and improve gradient flow.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #22c55e;">
+                        <strong style="color:#22c55e;">Layer Normalization:</strong><br>
+                        <code style="font-size:11px;">LN(x) = γ ⊙ (x - μ) / √(σ² + ε) + β</code><br>
+                        <span style="font-size:11px; color:#94a3b8;">μ, σ² computed across hidden dim; γ, β are learned</span>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Effect:</strong> Each token vector → ~zero mean, ~unit variance</li>
+                        <li><strong>γ (scale):</strong> Initialized to 1</li>
+                        <li><strong>β (shift):</strong> Initialized to 0</li>
+                        <li><strong>ε:</strong> Small constant (1e-12) for numerical stability</li>
+                    </ul>
+                    <p style="font-size:12px; color:#94a3b8;">Unlike BatchNorm, LayerNorm works on each sample independently — ideal for variable-length sequences.</p>
                 `,
                 'Sum & Layer Normalization_Q/K/V Projections': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Linear Projections</h4>
-                    <p>The input vectors are projected into three different spaces using learned linear transformations (dense layers) to create <strong>Query (Q)</strong>, <strong>Key (K)</strong>, and <strong>Value (V)</strong> vectors.</p>
-                    <ul>
-                        <li><strong>Q:</strong> What the token is looking for.</li>
-                        <li><strong>K:</strong> What the token "advertises" about itself.</li>
-                        <li><strong>V:</strong> The actual content information to be aggregated.</li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Query, Key, Value Projections</h4>
+                    <p>The input is projected into three specialized representation spaces using learned linear transformations.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; font-family:monospace; font-size:11px;">
+                        Q = X · W<sub>Q</sub> + b<sub>Q</sub><br>
+                        K = X · W<sub>K</sub> + b<sub>K</sub><br>
+                        V = X · W<sub>V</sub> + b<sub>V</sub>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Query (Q):</strong> "What information am I looking for?"</li>
+                        <li><strong>Key (K):</strong> "What information can I provide?"</li>
+                        <li><strong>Value (V):</strong> "Here is my actual content"</li>
                     </ul>
-                    <p>Each projection uses a weight matrix of size <code>hidden_dim × hidden_dim</code>.</p>
+
+                    <p style="font-size:12px; color:#94a3b8;"><strong>Weight matrices:</strong> W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> ∈ ℝ<sup>768 × 768</sup><br>
+                    The separation allows different transformations for "searching" vs "being found" vs "providing content".</p>
                 `,
                 'Segment Embeddings_Sum & Layer Normalization': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Input Aggregation</h4>
-                    <p>The Segment Embeddings are combined with the other embedding components (Token and Positional) to form the sequence representation.</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Input = Token + Segment + Position</div>
-                    <p>All three vectors are summed element-wise, meaning they must occupy the same vector space. The result is then normalized (LayerNorm) to prepare it for the Transformer layers.</p>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Embedding Aggregation & Normalization</h4>
+                    <p>All three embedding components are summed into a single representation, then normalized.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
+                        <strong style="color:#3b82f6;">BERT Input Formula:</strong><br>
+                        <code style="font-size:11px;">Input[i] = E<sub>token</sub>[i] + E<sub>segment</sub>[i] + E<sub>position</sub>[i]</code>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li>All embeddings share the same dimension (768)</li>
+                        <li>Element-wise addition preserves vector space structure</li>
+                        <li><strong>LayerNorm</strong> stabilizes values before attention</li>
+                    </ul>
+
+                    <p style="font-size:12px; color:#94a3b8;">The summed representation is the model's initial understanding — context-independent at this stage. Contextualization happens in subsequent attention layers.</p>
                 `,
                 'Q/K/V Projections_Add & Norm': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Q/K/V ➜ Scaled Attention ➜ Add & Norm</h4>
-                    
-                    <strong style="color:#3b82f6; display:block; margin-bottom:4px;">Step 1: Q/K/V ➜ Scaled Dot-Product Attention</strong>
-                    <p>The projected Query, Key, and Value vectors are fed into the attention mechanism. The model calculates the compatibility (scores) between Q and K to decide "where to look".</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:8px; border-radius:4px; margin:8px 0; font-size:12px;">Scores = (Q · K^T) / √d_k</div>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Scaled Dot-Product Attention → Residual → Norm</h4>
 
-                    <strong style="color:#3b82f6; display:block; margin-top:16px; margin-bottom:4px;">Step 2: Scaled Dot-Product Attention ➜ Add & Norm</strong>
-                    <p>The scores are converted to probabilities and used to aggregate context.</p>
-                    <ol>
-                        <li><strong>Softmax:</strong> Converts scores to attention weights (probabilities).</li>
-                        <li><strong>Weighted Sum:</strong> Multiplies Values (V) by these weights to get the Context Vector.</li>
-                        <li><strong>Residual:</strong> The Context Vector is added back to the original input (x + Sublayer(x)).</li>
-                        <li><strong>Norm:</strong> The result is normalized (LayerNorm).</li>
-                    </ol>
-                    <div style="background:rgba(255,255,255,0.05); padding:8px; border-radius:4px; margin:8px 0; font-size:12px;">Output = LayerNorm(x + Attention(Q,K,V))</div>
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
+                        <strong style="color:#3b82f6;">Step 1: Compute Attention Scores</strong><br>
+                        <code style="font-size:11px;">Scores = Q · K<sup>T</sup> / √d<sub>k</sub></code><br>
+                        <span style="font-size:11px; color:#94a3b8;">Scaling by √d<sub>k</sub> prevents softmax saturation for large d<sub>k</sub></span>
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #8b5cf6;">
+                        <strong style="color:#8b5cf6;">Step 2: Apply Mask (GPT-2 only)</strong><br>
+                        <span style="font-size:11px; color:#94a3b8;">Scores[i,j] = -∞ if j > i (future tokens masked)</span>
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #22c55e;">
+                        <strong style="color:#22c55e;">Step 3: Softmax → Weighted Sum → Residual</strong><br>
+                        <code style="font-size:11px;">Attn = Softmax(Scores) · V</code><br>
+                        <code style="font-size:11px;">Output = LayerNorm(X + Attn)</code>
+                    </div>
+
+                    <p style="font-size:12px; color:#94a3b8;"><strong>Residual connection:</strong> Allows gradients to flow directly backward, mitigating vanishing gradients in deep networks.</p>
                 `,
                 'Scaled Dot-Product Attention_Global Attention Metrics': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Aggregating Statistics</h4>
-                    <p>We compute global metrics across all attention heads and layers to understand the model's behavior. This step doesn't change the data flow but analyzes the attention patterns produced in the previous step.</p>
-                    <ul>
-                        <li><strong>Entropy:</strong> How focused or diffuse the attention is.</li>
-                        <li><strong>Confidence:</strong> The magnitude of the maximum attention weight.</li>
-                        <li><strong>Sparsity:</strong> How many tokens receive significant attention.</li>
-                    </ul>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Attention Analysis (Interpretability)</h4>
+                    <p>Quantitative measures computed across attention distributions — <em>does not alter computation</em>, only analyzes patterns.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0;">
+                        <strong style="color:#94a3b8; font-size:12px;">Key Metrics:</strong><br>
+                        <span style="font-size:11px;"><strong style="color:#22c55e;">Entropy:</strong> H(A) = -Σ A[i,j]·log(A[i,j]) — high = diffuse, low = focused</span><br>
+                        <span style="font-size:11px;"><strong style="color:#3b82f6;">Confidence:</strong> max(A[i,:]) — strength of strongest connection</span><br>
+                        <span style="font-size:11px;"><strong style="color:#f59e0b;">Sparsity:</strong> % of weights below threshold τ</span>
+                    </div>
+
+                    <p style="font-size:12px; color:#94a3b8;">These metrics describe distribution <em>shape</em> but don't indicate whether attention is "correct" or task-relevant.</p>
                 `,
                 'Global Attention Metrics_Multi-Head Attention': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Visualizing Attention Heads</h4>
-                    <p>This visualization allows us to inspect the raw attention matrices for individual heads. In <strong>Multi-Head Attention</strong>, the model runs the attention mechanism multiple times in parallel (12 heads for BERT-base).</p>
-                    <p>Each head can learn to focus on different relationships (e.g., one head might track next-token relationships, another might track subject-verb dependencies).</p>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Multi-Head Attention Visualization</h4>
+                    <p>Multiple attention functions run in parallel, each potentially learning different relationship types.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
+                        <strong style="color:#3b82f6;">Multi-Head Formula:</strong><br>
+                        <code style="font-size:11px;">MultiHead(Q,K,V) = Concat(head<sub>1</sub>,...,head<sub>h</sub>) · W<sub>O</sub></code><br>
+                        <span style="font-size:11px; color:#94a3b8;">h=12 heads, each with d<sub>k</sub>=64 dims (768/12)</span>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Positional heads:</strong> Attend to adjacent tokens</li>
+                        <li><strong>Syntactic heads:</strong> Follow dependency structure</li>
+                        <li><strong>Delimiter heads:</strong> Attend to [CLS]/[SEP]</li>
+                        <li><strong>Long-range heads:</strong> Connect distant tokens</li>
+                    </ul>
                 `,
                 'Multi-Head Attention_Attention Flow': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Flow Visualization</h4>
-                    <p>The <strong>Attention Flow</strong> view provides a Sankey-style diagram to visualize the flow of information between tokens.</p>
-                    <ul>
-                        <li><strong>Lines:</strong> Represent attention weights.</li>
-                        <li><strong>Thickness:</strong> Proportional to the attention strength.</li>
-                        <li><strong>Filtering:</strong> Low-weight connections are often hidden to reduce clutter and reveal the most significant dependencies.</li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Attention Flow (Sankey Diagram)</h4>
+                    <p>Directed graph visualization showing information flow between tokens based on attention weights.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0;">
+                        <strong style="color:#94a3b8; font-size:12px;">Visual Encoding:</strong><br>
+                        <span style="font-size:11px;"><strong style="color:#22c55e;">●</strong> Nodes = tokens in sequence</span><br>
+                        <span style="font-size:11px;"><strong style="color:#3b82f6;">―</strong> Edges = attention weights (Query→Key)</span><br>
+                        <span style="font-size:11px;"><strong style="color:#f59e0b;">━</strong> Edge thickness ∝ weight magnitude</span>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Threshold:</strong> Connections below 0.04 filtered out</li>
+                        <li><strong>BERT:</strong> Bidirectional edges (both directions)</li>
+                        <li><strong>GPT-2:</strong> Leftward edges only (causal mask)</li>
                     </ul>
+
+                    <p style="font-size:12px; color:#94a3b8;">⚠️ Shows Query→Key relationships, not true information flow or causal influence.</p>
                 `,
                 'Attention Flow_Attention Head Specialization': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Analyzing Head Roles</h4>
-                    <p>We analyze the attention patterns to determine what linguistic features each head specializes in. This is done by correlating attention weights with known linguistic properties.</p>
-                    <ul>
-                        <li><strong>Syntax:</strong> Attention to syntactic dependencies.</li>
-                        <li><strong>Positional:</strong> Attention to previous/next tokens.</li>
-                        <li><strong>Long-range:</strong> Attention to distant tokens.</li>
-                    </ul>
-                    <p>The Radar Chart visualizes this "profile" for each head.</p>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Head Specialization Analysis</h4>
+                    <p>Attention patterns are analyzed to identify linguistic features captured by individual heads — correlating weights with annotated structures.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0;">
+                        <strong style="color:#94a3b8; font-size:12px;">7 Analysis Dimensions:</strong><br>
+                        <span style="font-size:11px;"><strong style="color:#3b82f6;">Syntax:</strong> Overlap with dependency edges</span><br>
+                        <span style="font-size:11px;"><strong style="color:#22c55e;">Semantics:</strong> Attention to content words</span><br>
+                        <span style="font-size:11px;"><strong style="color:#f59e0b;">CLS Focus:</strong> Attention to [CLS] token</span><br>
+                        <span style="font-size:11px;"><strong style="color:#8b5cf6;">Punctuation:</strong> Attention to delimiters</span><br>
+                        <span style="font-size:11px;"><strong style="color:#ef4444;">Entities:</strong> Attention to named entities</span><br>
+                        <span style="font-size:11px;"><strong style="color:#06b6d4;">Long-range:</strong> Mean attention distance</span><br>
+                        <span style="font-size:11px;"><strong style="color:#ec4899;">Self-attention:</strong> Diagonal attention strength</span>
+                    </div>
+
+                    <p style="font-size:12px; color:#94a3b8;">⚠️ POS-based heuristic — heads may capture patterns not aligned with traditional categories.</p>
                 `,
                 'Attention Head Specialization_Attention Dependency Tree': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Hierarchical Influence</h4>
-                    <p>The <strong>Dependency Tree</strong> visualizes the chain of influence starting from a selected root token. It shows how attention propagates through the sequence.</p>
-                    <ul>
-                        <li><strong>Root:</strong> The token being analyzed.</li>
-                        <li><strong>Children:</strong> Tokens that the root attends to most strongly.</li>
-                        <li><strong>Depth:</strong> Shows multi-hop attention (tokens attending to tokens that attend to the root).</li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Attention Dependency Tree</h4>
+                    <p>Hierarchical tree visualization rooted at a selected token, showing attention propagation through the sequence.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #8b5cf6;">
+                        <strong style="color:#8b5cf6;">Construction Algorithm:</strong><br>
+                        <span style="font-size:11px;">1. Select root token of interest</span><br>
+                        <span style="font-size:11px;">2. Find top-k tokens root attends to (children)</span><br>
+                        <span style="font-size:11px;">3. Recursively find what children attend to</span><br>
+                        <span style="font-size:11px;">4. Continue to desired depth</span>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Node size:</strong> Proportional to attention weight</li>
+                        <li><strong>Edge labels:</strong> Show exact attention values</li>
+                        <li><strong>Depth:</strong> Reveals transitive information flow</li>
                     </ul>
+
+                    <p style="font-size:12px; color:#94a3b8;">⚠️ Tree structure imposes hierarchy on non-hierarchical attention — multiple strong connections may be underrepresented.</p>
                 `,
                 'Attention Dependency Tree_Inter-Sentence Attention': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Cross-Sentence Analysis</h4>
-                    <p><strong>Inter-Sentence Attention (ISA)</strong> specifically isolates and quantifies the attention flowing between the two input sentences (Sentence A and Sentence B).</p>
-                    <ul>
-                        <li><strong>ISA Score:</strong> Aggregates attention weights where the Source is in one sentence and the Target is in the other.</li>
-                        <li>High ISA indicates strong interaction or information exchange between the sentences.</li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Inter-Sentence Attention (ISA)</h4>
+                    <p>Quantifies attention flow between distinct text segments — reduces token-level complexity O(n²) to sentence-level O(m²).</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #ff5ca9;">
+                        <strong style="color:#ff5ca9;">Three-Level Max Pooling:</strong><br>
+                        <code style="font-size:10px;">ISA(S<sub>a</sub>,S<sub>b</sub>) = max<sub>heads</sub>(max<sub>tokens∈S<sub>a</sub>×S<sub>b</sub></sub>(max<sub>layers</sub>(α<sub>ij</sub>)))</code>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>&gt;0.8:</strong> Strong cross-sentence coupling</li>
+                        <li><strong>0.4-0.8:</strong> Moderate interaction</li>
+                        <li><strong>&lt;0.4:</strong> Independent processing</li>
                     </ul>
+
+                    <p style="font-size:12px; color:#94a3b8;"><strong>BERT:</strong> Symmetric matrix (bidirectional)<br>
+                    <strong>GPT-2:</strong> Lower triangular (causal — later→earlier only)</p>
                 `,
                 'Positional Embeddings_Sum & Layer Normalization': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Embedding Summation & Normalization</h4>
-                    <p>The three embedding components are element-wise summed:</p>
-                    <div class="modal-formula">
-                        Input = Token_Embeddings + Segment_Embeddings + Positional_Embeddings
+                    <h4 style="color:#ff5ca9; margin-top:0;">Embedding Aggregation & Layer Normalization</h4>
+                    <p>All embedding components are summed element-wise, then normalized to stabilize training and improve gradient flow.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #22c55e;">
+                        <strong style="color:#22c55e;">Layer Normalization:</strong><br>
+                        <code style="font-size:11px;">LN(x) = γ ⊙ (x - μ) / √(σ² + ε) + β</code><br>
+                        <span style="font-size:11px; color:#94a3b8;">μ, σ² computed across hidden dim; γ, β are learned</span>
                     </div>
-                    <p>This combined representation is then passed through <strong>Layer Normalization</strong> to stabilize training.</p>
-                    <ul>
-                        <li><strong>Summation:</strong> Combines semantic meaning, sentence segment info, and position info.</li>
-                        <li><strong>LayerNorm:</strong> Normalizes the vector for each token to have mean 0 and variance 1.</li>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Effect:</strong> Each token vector → ~zero mean, ~unit variance</li>
+                        <li><strong>γ (scale):</strong> Initialized to 1</li>
+                        <li><strong>β (shift):</strong> Initialized to 0</li>
+                        <li><strong>ε:</strong> Small constant (1e-12) for numerical stability</li>
                     </ul>
+                    <p style="font-size:12px; color:#94a3b8;">Unlike BatchNorm, LayerNorm works on each sample independently — ideal for variable-length sequences.</p>
                 `,
                 'Add & Norm (post-FFN)_Hidden States': `
                     <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Final Layer Output</h4>
@@ -1374,54 +1529,126 @@ JS_TRANSITION_MODAL = """
                     <p>This produces the final <strong>Hidden States</strong> for the current layer, which are passed to the next layer or used for final predictions.</p>
                 `,
                 'Hidden States_Token Output Predictions': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Unembedding & Prediction</h4>
-                    <p>The final hidden states are projected back to the vocabulary size to predict the next token (or masked token).</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Logits = LayerNorm(Hidden) · W_vocab + b</div>
-                    <p><strong>Softmax</strong> is then applied to convert these logits into probabilities:</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">P(token_i) = exp(logit_i) / Σ exp(logit_j)</div>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Unembedding & Token Prediction</h4>
+                    <p>Hidden states are projected to vocabulary size to produce token probability distributions.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #8b5cf6;">
+                        <strong style="color:#8b5cf6;">Prediction Pipeline:</strong><br>
+                        <code style="font-size:11px;">Logits = H · W<sub>vocab</sub> + b</code><br>
+                        <code style="font-size:11px;">P(token<sub>i</sub>) = exp(logit<sub>i</sub>) / Σ<sub>j</sub> exp(logit<sub>j</sub>)</code>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Logits:</strong> Raw scores for each vocabulary token</li>
+                        <li><strong>Softmax:</strong> Normalizes to probability distribution</li>
+                        <li><strong>W<sub>vocab</sub>:</strong> Often shared (tied) with input embeddings</li>
+                    </ul>
+
+                    <p style="font-size:12px; color:#94a3b8;">The model outputs a distribution over 30k+ tokens — the predicted token is typically the argmax (greedy) or sampled from this distribution.</p>
                 `,
                 'Inter-Sentence Attention_Add & Norm': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Residual Connection & Norm</h4>
-                    <p>After the attention mechanism, a <strong>Residual (Skip) Connection</strong> adds the original input back to the attention output, followed by another Layer Normalization.</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Output = LayerNorm(x + Attention(x))</div>
-                    <p>This allows gradients to flow through the network more easily and preserves information from the lower layers.</p>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Residual Connection & Layer Normalization</h4>
+                    <p>After attention computation, the original input is added back (skip connection) and normalized.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #22c55e;">
+                        <strong style="color:#22c55e;">Residual Formula:</strong><br>
+                        <code style="font-size:11px;">Output = LayerNorm(X + Attention(X))</code>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Skip connection:</strong> Provides direct gradient path, mitigates vanishing gradients</li>
+                        <li><strong>Identity mapping:</strong> Layers learn <em>modifications</em> to identity, not complete transforms</li>
+                        <li><strong>Information preservation:</strong> Earlier layer info remains accessible</li>
+                    </ul>
+
+                    <p style="font-size:12px; color:#94a3b8;">This "post-norm" pattern (residual + LN) is applied consistently throughout BERT/GPT-2.</p>
                 `,
                 'Add & Norm_Feed-Forward Network': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Feed-Forward Processing</h4>
-                    <p>The output is passed through a position-wise <strong>Feed-Forward Network (FFN)</strong>.</p>
-                    <p>This is where the model "thinks" about the information it has gathered.</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">FFN(x) = GELU(xW_1 + b_1)W_2 + b_2</div>
-                    <ul>
-                        <li><strong>Column 1 ("Intermediate"):</strong> The model expands information into a massive space (3072 dimensions in BERT) to disentangle complex concepts. The heatmap shows these neurons firing.</li>
-                        <li><strong>Column 2 ("Projection"):</strong> It compresses this back to the standard size (768 dimensions) to pass it to the next layer.</li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Position-wise Feed-Forward Network</h4>
+                    <p>Applied <strong>independently to each token</strong> — provides non-linear transformation capacity beyond what attention offers.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #f59e0b;">
+                        <strong style="color:#f59e0b;">FFN Architecture:</strong><br>
+                        <code style="font-size:11px;">FFN(x) = GELU(x · W<sub>1</sub> + b<sub>1</sub>) · W<sub>2</sub> + b<sub>2</sub></code>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Expansion:</strong> 768 → 3072 dims (4× bottleneck)</li>
+                        <li><strong>Activation:</strong> GELU ≈ x · Φ(x) — smooth approximation of ReLU</li>
+                        <li><strong>Projection:</strong> 3072 → 768 dims</li>
                     </ul>
+
+                    <div style="background:rgba(139,92,246,0.1); padding:10px; border-radius:6px; margin-top:12px; border:1px solid rgba(139,92,246,0.3);">
+                        <strong style="color:#8b5cf6; font-size:12px;">💡 Interpretability insight:</strong><br>
+                        <span style="font-size:11px;">FFN neurons often correspond to interpretable concepts — functioning as a form of key-value memory storing factual knowledge.</span>
+                    </div>
                 `,
                 'Feed-Forward Network_Add & Norm (post-FFN)': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Second Residual & Norm</h4>
-                    <p>A second <strong>Residual Connection</strong> and <strong>Layer Normalization</strong> are applied after the FFN.</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Output = LayerNorm(x + FFN(x))</div>
-                    <p>This completes one full Transformer Encoder Block. In BERT-base, this entire process (Attention → Add&Norm → FFN → Add&Norm) repeats 12 times.</p>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Second Residual Connection & Normalization</h4>
+                    <p>Completes the Transformer block with another skip connection and normalization.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #22c55e;">
+                        <strong style="color:#22c55e;">Post-FFN Formula:</strong><br>
+                        <code style="font-size:11px;">X<sub>out</sub> = LayerNorm(X<sub>in</sub> + FFN(X<sub>in</sub>))</code>
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0;">
+                        <strong style="color:#94a3b8; font-size:12px;">Complete Transformer Block:</strong><br>
+                        <span style="font-size:11px;">X<sub>1</sub> = LayerNorm(X<sub>0</sub> + MultiHeadAttn(X<sub>0</sub>))</span><br>
+                        <span style="font-size:11px;">X<sub>2</sub> = LayerNorm(X<sub>1</sub> + FFN(X<sub>1</sub>))</span>
+                    </div>
+
+                    <p style="font-size:12px; color:#94a3b8;"><strong>Layer Stacking:</strong> This block repeats N times (N=12 for base, N=24 for large). Each layer operates on the previous layer's output: X<sup>(l)</sup> = Block(X<sup>(l-1)</sup>)</p>
                 `,
                 'Add & Norm (post-FFN)_Hidden States': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Final Layer Output</h4>
-                    <p>The output of the final (12th) encoder layer constitutes the <strong>Hidden States</strong> (or contextualized embeddings) for the sequence.</p>
-                    <ul>
-                        <li><strong>Shape:</strong> <code>(batch_size, seq_len, hidden_dim)</code></li>
-                        <li>These vectors contain rich, contextual information aggregated from all previous layers and are used for downstream tasks or the pre-training objectives.</li>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Final Hidden States</h4>
+                    <p>The output of the final Transformer layer — dense, <strong>contextualized representations</strong> encoding both token meaning and information gathered from the entire sequence.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0;">
+                        <strong style="color:#94a3b8; font-size:12px;">Hidden State Properties:</strong><br>
+                        <span style="font-size:11px;">• Shape: <code>(batch, seq_len, 768)</code></span><br>
+                        <span style="font-size:11px;">• Each H[i] = token i in full context</span><br>
+                        <span style="font-size:11px;">• Earlier layers → local/syntactic info</span><br>
+                        <span style="font-size:11px;">• Later layers → global/semantic info</span>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Token tasks:</strong> Use H[i] directly (NER, POS tagging)</li>
+                        <li><strong>Sequence tasks:</strong> Use H<sub>[CLS]</sub> (BERT) or H<sub>final</sub> (GPT-2)</li>
+                        <li><strong>Generation:</strong> Use H to predict next tokens</li>
                     </ul>
                 `,
                 'Hidden States_Token Output Predictions (MLM)': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Masked Language Modeling</h4>
-                    <p>For the pre-training objective, an <strong>MLM Head</strong> projects the hidden states back to the vocabulary size to predict the original identity of masked tokens.</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Logits = Linear(HiddenStates)</div>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">Probabilities = Softmax(Logits)</div>
-                    <p>This gives a probability distribution over the entire vocabulary for each token position.</p>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Masked Language Model Predictions</h4>
+                    <p>BERT's pre-training objective: predict the original identity of masked tokens from bidirectional context.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
+                        <strong style="color:#3b82f6;">MLM Head Pipeline:</strong><br>
+                        <span style="font-size:11px;">Hidden → Linear(768→768) → GELU → LayerNorm → W<sub>vocab</sub>(768→30k) → Softmax</span>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Masking strategy:</strong> 15% of tokens selected</li>
+                        <li>80% → [MASK], 10% → random, 10% → unchanged</li>
+                        <li><strong>Loss:</strong> Cross-entropy over masked positions only</li>
+                        <li><strong>W<sub>vocab</sub></strong> often tied with input embeddings</li>
+                    </ul>
                 `,
                 'Hidden States_Next Token Predictions': `
-                    <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Causal Language Modeling</h4>
-                    <p>The final hidden states are projected to the vocabulary size to predict the <strong>next token</strong> in the sequence.</p>
-                    <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px; font-family:monospace; margin:10px 0;">P(token_{t+1} | token_1...token_t)</div>
-                    <p>This is the core objective of GPT-2: predicting the future based on the past context.</p>
+                    <h4 style="color:#ff5ca9; margin-top:0;">Causal Language Model Predictions</h4>
+                    <p>GPT-2's objective: predict the next token given all preceding tokens (autoregressive).</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #f97316;">
+                        <strong style="color:#f97316;">CLM Objective:</strong><br>
+                        <code style="font-size:11px;">P(token<sub>t</sub> | token<sub>1</sub>, ..., token<sub>t-1</sub>) = Softmax(H<sub>t-1</sub> · W<sub>vocab</sub>)</code>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>Training:</strong> All positions predicted in parallel (teacher forcing)</li>
+                        <li><strong>Generation:</strong> Sequential sampling, append, repeat</li>
+                        <li><strong>Loss:</strong> Cross-entropy summed over all positions</li>
+                        <li><strong>Causal mask:</strong> Each token sees only left context</li>
+                    </ul>
                 `,
             };
 
