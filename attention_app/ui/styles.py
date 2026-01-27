@@ -3982,4 +3982,16 @@ __all__ = ["CSS"]
             border-bottom-left-radius: 16px !important;
             border-bottom-right-radius: 16px !important;
         }
+
+        /* Fix Prompt Tabs Flash */
+        .compare-tabs-inline {
+            display: none !important; /* Hide by default to prevent FOUC */
+            gap: 2px;
+            margin-left: 2px;
+            margin-right: 12px;
+        }
+
+        .custom-input-container.compare-prompts-active .compare-tabs-inline {
+            display: flex !important; /* Only show when parent has active class */
+        }
         """
