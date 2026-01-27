@@ -1362,10 +1362,7 @@ def server(input, output, session):
             # Attention rollout: accumulated flow through layers
             # Use all layers or up to the current layer
             target_layer = len(attentions) - 1 if use_all_layers else layer_idx
-            # Slice attentions up to target_layer (inclusive if 0-indexed?) 
-            # attentions is a tuple/list. range 0 to target_layer inclusive -> [:target_layer+1]
-            relevant_attentions = attentions[:target_layer+1]
-            rollout = compute_attention_rollout(relevant_attentions)
+            rollout = attention_rollout(attentions, target_layer)
             
             if is_causal:
                 rollout = rollout.copy()
@@ -2021,10 +2018,23 @@ def server(input, output, session):
                     viz_header("Multi-Head Attention", "Grid of all heads in this layer. See global patterns.",
                                """
                                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention</strong>
-                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Visualizes attention weight distribution showing how each token attends to others—not a direct measure of information flow or causal influence.</p>
-                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Matrix where cell (i,j) = attention from query i to key j. Options: specific Layer/Head or 'Global' (mean across heads). Normalization: 'Raw' (row-sum=1), 'Column' (key importance), 'Rollout' (accumulated across layers). Token click highlights row/column.</p>
-                               <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Attention weights ≠ contribution to output; gradient-based methods provide more reliable importance estimates.</p>
+                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how each token distributes its attention across all other tokens. Cell (i,j) = attention from query i to key j.</p>
+                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>Attention = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V</code></p>
+
+                               <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                   <strong style='color:#8b5cf6;font-size:11px'>Color Scale (Blue):</strong>
+                                   <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                                       <span style='color:#1e40af'>● Dark: High weight</span>
+                                       <span style='color:#3b82f6'>● Medium: Moderate</span>
+                                       <span style='color:#93c5fd'>● Light: Low weight</span>
+                                   </div>
+                               </div>
+
+                               <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                   ⚠️ High attention ≠ importance
+                               </p>
                                """,
+                               show_calc_title=False,
                                controls=[
                                    ui.download_button("export_multi_head_data", "JSON", style="padding: 2px 8px; font-size: 10px; height: 24px;")
                                ]),
@@ -2198,10 +2208,23 @@ def server(input, output, session):
                 """
                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Scaled Dot-Product Attention</strong>
                 <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how attention scores are computed between token pairs, determining which tokens influence each other's representations.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention(Q,K,V) = softmax(QK^T / √d_k)V. Dot product measures Query-Key similarity; scaling by √d_k prevents softmax saturation; output weights sum to 1 per row. Token selector focuses on specific query position; adjustable top-k controls how many key connections are displayed.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Raw attention scores don't account for Value vector magnitudes—high attention weight doesn't guarantee high influence on the output.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>softmax(QK<sup>T</sup>/√d<sub>k</sub>)</code> — scaling prevents gradient saturation</p>
+
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
+                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                        <span style='color:#22c55e'>● High: Strong Q·K match</span>
+                        <span style='color:#eab308'>● Med: Partial</span>
+                        <span style='color:#ef4444'>● Low: Weak</span>
+                    </div>
+                </div>
+
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ High score ≠ high influence (Value magnitudes matter)
+                </p>
                 """,
                 subtitle=f"(Layer {layer_idx} · Head {head_idx})",
+                show_calc_title=False,
                 controls=[
                     ui.download_button("export_attention_metrics_dashboard", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
                 ]
@@ -2255,10 +2278,23 @@ def server(input, output, session):
                 """
                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Scaled Dot-Product Attention</strong>
                 <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how attention scores are computed between token pairs, determining which tokens influence each other's representations.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention(Q,K,V) = softmax(QK^T / √d_k)V. Dot product measures Query-Key similarity; scaling by √d_k prevents softmax saturation; output weights sum to 1 per row. Token selector focuses on specific query position; adjustable top-k controls how many key connections are displayed.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Raw attention scores don't account for Value vector magnitudes—high attention weight doesn't guarantee high influence on the output.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>softmax(QK<sup>T</sup>/√d<sub>k</sub>)</code> — scaling prevents gradient saturation</p>
+
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
+                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                        <span style='color:#22c55e'>● High: Strong Q·K match</span>
+                        <span style='color:#eab308'>● Med: Partial</span>
+                        <span style='color:#ef4444'>● Low: Weak</span>
+                    </div>
+                </div>
+
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ High score ≠ high influence (Value magnitudes matter)
+                </p>
                 """,
                 subtitle=f"(Layer {layer_idx} · Head {head_idx})",
+                show_calc_title=False,
                 controls=[
                     ui.download_button("export_scaled_attention", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
                 ]
@@ -2738,9 +2774,26 @@ def server(input, output, session):
                 """
                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Head Specialization</strong>
                 <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Profiles what linguistic patterns each attention head focuses on—an approximation of functional specialization, not ground truth.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention mass aggregated by token category (Syntax, Semantics, Entities, Punctuation, CLS, Long-range, Self-attention) using POS tagging. Updates for selected Layer/Head; 'Global' view displays head specialization clusters across all heads.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> POS-based categorization is heuristic; heads may capture patterns not aligned with traditional linguistic categories.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention mass aggregated by token category using POS tagging.</p>
+
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>7 Dimensions:</strong>
+                    <div style='display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;font-size:10px'>
+                        <span style='color:#3b82f6'>● Syntax</span>
+                        <span style='color:#22c55e'>● Semantics</span>
+                        <span style='color:#f59e0b'>● CLS Focus</span>
+                        <span style='color:#8b5cf6'>● Punctuation</span>
+                        <span style='color:#ef4444'>● Entities</span>
+                        <span style='color:#06b6d4'>● Long-range</span>
+                        <span style='color:#ec4899'>● Self-attention</span>
+                    </div>
+                </div>
+
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ POS-based heuristic — may miss non-linguistic patterns
+                </p>
                 """,
+                show_calc_title=False,
                 controls=[
                     ui.download_button("export_head_spec_unique", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
@@ -2750,21 +2803,7 @@ def server(input, output, session):
                     )
                 ]
             ),
-            ui.div({"id": "radar-chart-container"}, head_specialization_radar(res, layer_idx, head_idx, mode)),
-            ui.HTML(f"""
-                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
-                    <strong style="color: #ff5ca9;">Specialization Dimensions</strong> — click any to see detailed explanation:<br>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: center;">
-                        <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
-                        <span class="metric-tag" onclick="showMetricModal('Semantics', 0, 0)">Semantics</span>
-                        <span class="metric-tag" onclick="showMetricModal('CLS Focus', 0, 0)">CLS Focus</span>
-                        <span class="metric-tag" onclick="showMetricModal('Punctuation', 0, 0)">Punctuation</span>
-                        <span class="metric-tag" onclick="showMetricModal('Entities', 0, 0)">Entities</span>
-                        <span class="metric-tag" onclick="showMetricModal('Long-range', 0, 0)">Long-range</span>
-                        <span class="metric-tag" onclick="showMetricModal('Self-attention', 0, 0)">Self-attention</span>
-                    </div>
-                </div>
-            """)
+            ui.div({"id": "radar-chart-container"}, head_specialization_radar(res, layer_idx, head_idx, mode))
         )
 
     @output
@@ -2793,9 +2832,22 @@ def server(input, output, session):
                        """
                         <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
                         <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of which tokens the selected focus token attends to most strongly—shows attention structure, not syntactic dependencies.</p>
-                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Tree built recursively from attention weights starting at the root token (selectable via floating toolbar). Each branch shows parent→child attention weight. Node size reflects attention strength.</p>
-                        <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Tree structure imposes hierarchy on non-hierarchical attention; multiple strong connections may be underrepresented.</p>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Tree built recursively from attention weights starting at the selected root token.</p>
+
+                        <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                            <strong style='color:#8b5cf6;font-size:11px'>Visual Encoding:</strong>
+                            <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                                <span style='color:#22c55e'>● Large node: High weight</span>
+                                <span style='color:#eab308'>● Med node: Moderate</span>
+                                <span style='color:#ef4444'>● Small: Low weight</span>
+                            </div>
+                        </div>
+
+                        <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                            ⚠️ Attention structure ≠ syntactic dependency parse
+                        </p>
                        """,
+                       show_calc_title=False,
                        controls=[
                            ui.download_button("export_tree_data", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                            ui.download_button("export_topk_attention", "Top-K CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
@@ -2805,7 +2857,7 @@ def server(input, output, session):
                                style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                            )
                        ]),
-            ui.div({"class": "viz-description"}, "Edge labels show attention weights; node size reflects strength. Use the floating toolbar to change the root token. ⚠️ This is attention structure, not syntactic parsing."),
+            ui.div({"class": "viz-description"}, "Edge labels show attention weights. Change root token via floating toolbar."),
             ui.div({"id": "tree-viz-container"}, get_influence_tree_ui(res, root_idx, layer_idx, head_idx, use_global=use_global, norm_mode=norm_mode))
         )
 
@@ -2841,11 +2893,24 @@ def server(input, output, session):
             viz_header("Attention Metrics", "Summary statistics for the selected head's attention distribution, or global aggregate across all heads.",
                                """
                                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Metrics</strong>
-                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Quantitative measures characterizing attention behavior for comparison across heads and layers—descriptive statistics, not quality judgments.</p>
-                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Confidence = max weight. Focus = normalized entropy (low = concentrated, high = diffuse). Sparsity = % near-zero weights. Additional: Uniformity, Balance, Flow Change. Updates for selected Layer/Head or 'Global'. Normalization modes: 'Raw', 'Column', 'Rollout'.</p>
-                               <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Metrics describe distribution shape but don't indicate whether attention is 'correct' or task-relevant.</p>
+                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Quantitative measures characterizing attention behavior—descriptive statistics, not quality judgments.</p>
+
+                               <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                                   <strong style='color:#8b5cf6;font-size:11px'>Key Metrics:</strong>
+                                   <div style='display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;font-size:10px'>
+                                       <span style='color:#22c55e'>● Confidence: max weight</span>
+                                       <span style='color:#3b82f6'>● Focus: entropy</span>
+                                       <span style='color:#f59e0b'>● Sparsity: % zeros</span>
+                                       <span style='color:#8b5cf6'>● Balance: distribution</span>
+                                   </div>
+                               </div>
+
+                               <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                                   ⚠️ Describes shape, not whether attention is "correct"
+                               </p>
                                """,
                                subtitle=subtitle,
+                               show_calc_title=False,
                                controls=[
                                    ui.download_button("export_attention_metrics_single", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
                                ]),
@@ -3983,12 +4048,37 @@ def server(input, output, session):
                 "Heatmap of sentence-pair attention scores computed via three-level max pooling (layers → heads → tokens).",
                 """
                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Inter-Sentence Attention (ISA)</strong>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures attention strength between sentence pairs—indicates cross-sentence attention flow, not semantic similarity or entailment.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> ISA = max_heads(max_tokens(max_layers(α_ij))) for tokens across sentence boundaries. Scores: High (&gt;0.8) = strong coupling; Medium (0.4-0.8) = moderate; Low (&lt;0.4) = independent processing. Token-by-token visualization highlights selected token's cross-sentence connections.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>BERT:</strong> Bidirectional attention — all tokens attend to all tokens regardless of position. The ISA matrix is fully populated: sentence A can attend to sentence B and vice versa, producing a roughly symmetric matrix.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>GPT-2:</strong> Causal (left-to-right) attention — each token can only attend to previous tokens due to the autoregressive mask. The ISA matrix upper triangle is near-zero: later sentences attend to earlier ones, but earlier sentences cannot attend forward.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Max aggregation captures peak attention but may miss nuanced distributed interactions; high ISA doesn't imply logical relationship.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures attention strength between sentence pairs—indicates cross-sentence attention flow, not semantic similarity.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>max<sub>layers</sub>(max<sub>heads</sub>(max<sub>tokens</sub>(α<sub>ij</sub>)))</code></p>
+
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
+                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                        <span style='color:#22c55e'>● &gt;0.8: Strong coupling</span>
+                        <span style='color:#eab308'>● 0.4-0.8: Moderate</span>
+                        <span style='color:#ef4444'>● &lt;0.4: Independent</span>
+                    </div>
+                </div>
+                """ + (
+                """
+                <div style='background:rgba(59,130,246,0.1);border-radius:6px;padding:8px;margin-top:8px;border-left:3px solid #3b82f6'>
+                    <strong style='color:#3b82f6;font-size:10px'>BERT (Bidirectional):</strong>
+                    <span style='font-size:10px;color:#94a3b8'> Full matrix — sentences attend both directions</span>
+                </div>
+                """
+                if not is_gpt2 else
+                """
+                <div style='background:rgba(249,115,22,0.1);border-radius:6px;padding:8px;margin-top:8px;border-left:3px solid #f97316'>
+                    <strong style='color:#f97316;font-size:10px'>GPT-2 (Causal):</strong>
+                    <span style='font-size:10px;color:#94a3b8'> Upper triangle ≈ 0 — only backward attention</span>
+                </div>
+                """
+                ) + """
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ High ISA ≠ semantic relationship or entailment
+                </p>
                 """,
+                        show_calc_title=False,
                         controls=[
                             ui.download_button(export_csv_id, "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
                             ui.download_button(export_json_id, "JSON", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
@@ -4224,12 +4314,37 @@ def server(input, output, session):
                 "Heatmap of sentence-pair attention scores computed via three-level max pooling (layers → heads → tokens).",
                 """
                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Inter-Sentence Attention (ISA)</strong>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures attention strength between sentence pairs—indicates cross-sentence attention flow, not semantic similarity or entailment.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> ISA = max_heads(max_tokens(max_layers(α_ij))) for tokens across sentence boundaries. Scores: High (&gt;0.8) = strong coupling; Medium (0.4-0.8) = moderate; Low (&lt;0.4) = independent processing. Token-by-token visualization highlights selected token's cross-sentence connections.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>BERT:</strong> Bidirectional attention — all tokens attend to all tokens regardless of position. The ISA matrix is fully populated: sentence A can attend to sentence B and vice versa, producing a roughly symmetric matrix.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>GPT-2:</strong> Causal (left-to-right) attention — each token can only attend to previous tokens due to the autoregressive mask. The ISA matrix upper triangle is near-zero: later sentences attend to earlier ones, but earlier sentences cannot attend forward.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Max aggregation captures peak attention but may miss nuanced distributed interactions; high ISA doesn't imply logical relationship.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures attention strength between sentence pairs—indicates cross-sentence attention flow, not semantic similarity.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>max<sub>layers</sub>(max<sub>heads</sub>(max<sub>tokens</sub>(α<sub>ij</sub>)))</code></p>
+
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
+                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                        <span style='color:#22c55e'>● &gt;0.8: Strong coupling</span>
+                        <span style='color:#eab308'>● 0.4-0.8: Moderate</span>
+                        <span style='color:#ef4444'>● &lt;0.4: Independent</span>
+                    </div>
+                </div>
+                """ + (
                 """
+                <div style='background:rgba(59,130,246,0.1);border-radius:6px;padding:8px;margin-top:8px;border-left:3px solid #3b82f6'>
+                    <strong style='color:#3b82f6;font-size:10px'>BERT (Bidirectional):</strong>
+                    <span style='font-size:10px;color:#94a3b8'> Full matrix — sentences attend both directions</span>
+                </div>
+                """
+                if not is_gpt2 else
+                """
+                <div style='background:rgba(249,115,22,0.1);border-radius:6px;padding:8px;margin-top:8px;border-left:3px solid #f97316'>
+                    <strong style='color:#f97316;font-size:10px'>GPT-2 (Causal):</strong>
+                    <span style='font-size:10px;color:#94a3b8'> Upper triangle ≈ 0 — only backward attention</span>
+                </div>
+                """
+                ) + """
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ High ISA ≠ semantic relationship or entailment
+                </p>
+                """,
+                show_calc_title=False
             ),
             ui.layout_columns(
                 ui.div(
@@ -4904,13 +5019,25 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%; display: flex; flex-direction: column;"},
             viz_header(
-                "Multi-Head Attention (Heatmap)",
+                "Multi-Head Attention",
                 "Full attention weight matrix for the selected head. Rows are query tokens, columns are key tokens.",
                 """
-                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention (Heatmap)</strong>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Visualizes attention weight distribution showing how each token attends to others—not a direct measure of information flow or causal influence.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Matrix where cell (i,j) = attention from query i to key j. Options: specific Layer/Head or 'Global' (mean across heads). Normalization: 'Raw' (row-sum=1), 'Column' (key importance), 'Rollout' (accumulated across layers). Token click highlights row/column.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Attention weights ≠ contribution to output; gradient-based methods provide more reliable importance estimates.</p>
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how each token distributes its attention across all other tokens. Each cell (i,j) represents the attention weight from query token i to key token j.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>Attention = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V</code></p>
+                
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>Color Scale (Blue):</strong>
+                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                        <span style='color:#1e40af'>● Dark blue: High weight</span>
+                        <span style='color:#3b82f6'>● Medium: Moderate</span>
+                        <span style='color:#93c5fd'>● Light: Low weight</span>
+                    </div>
+                </div>
+                
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ High attention ≠ importance
+                </p>
                 """,
                 show_calc_title=False,
                 controls=[
@@ -5136,9 +5263,21 @@ def server(input, output, session):
                 "Directed graph connecting tokens by attention weight. Only connections ≥0.04 displayed.", 
                 """
                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Flow</strong>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Sankey-style diagram showing attention distribution between tokens—illustrates weight patterns, not actual information propagation.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Line width proportional to attention weight α_ij. Only connections ≥0.04 threshold displayed. Options: specific Layer/Head or 'Global' (mean across heads). Normalization: 'Raw' (row-sum=1), 'Column' (key importance), 'Rollout' (accumulated across layers). Token click highlights connected flows.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Visual emphasis on strong connections may obscure important distributed patterns; threshold filtering hides weak but potentially meaningful attention.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Sankey-style diagram showing attention distribution. Line width is proportional to attention weight α<sub>ij</sub> between token pairs.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Threshold:</strong> Only connections with weight ≥ 0.04 are shown to reduce clutter.</p>
+                
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>Line Width:</strong>
+                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                        <span style='color:#22c55e'>● Wide: High weight</span>
+                        <span style='color:#eab308'>● Medium: Moderate</span>
+                        <span style='color:#ef4444'>● Thin: Low weight</span>
+                    </div>
+                </div>
+                
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ Shows Query→Key, not information flow
+                </p>
                 """,
                 show_calc_title=False,
                 controls=[
@@ -5338,9 +5477,26 @@ def server(input, output, session):
                 """
                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Head Specialization</strong>
                 <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Profiles what linguistic patterns each attention head focuses on—an approximation of functional specialization, not ground truth.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention mass aggregated by token category (Syntax, Semantics, Entities, Punctuation, CLS, Long-range, Self-attention) using POS tagging. Updates for selected Layer/Head; 'Global' view displays head specialization clusters across all heads.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> POS-based categorization is heuristic; heads may capture patterns not aligned with traditional linguistic categories.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention mass aggregated by token category using POS tagging.</p>
+
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>7 Dimensions:</strong>
+                    <div style='display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;font-size:10px'>
+                        <span style='color:#3b82f6'>● Syntax</span>
+                        <span style='color:#22c55e'>● Semantics</span>
+                        <span style='color:#f59e0b'>● CLS Focus</span>
+                        <span style='color:#8b5cf6'>● Punctuation</span>
+                        <span style='color:#ef4444'>● Entities</span>
+                        <span style='color:#06b6d4'>● Long-range</span>
+                        <span style='color:#ec4899'>● Self-attention</span>
+                    </div>
+                </div>
+
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ POS-based heuristic — may miss non-linguistic patterns
+                </p>
                 """,
+                show_calc_title=False,
                 controls=[
                     ui.download_button("export_head_spec_unique_legacy", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
@@ -5729,9 +5885,22 @@ def server(input, output, session):
                         """
                         <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
                         <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of which tokens the selected focus token attends to most strongly—shows attention structure, not syntactic dependencies.</p>
-                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Tree built recursively from attention weights starting at the root token (selectable via floating toolbar). Each branch shows parent→child attention weight. Node size reflects attention strength.</p>
-                        <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Tree structure imposes hierarchy on non-hierarchical attention; multiple strong connections may be underrepresented.</p>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Tree built recursively from attention weights starting at the selected root token.</p>
+
+                        <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                            <strong style='color:#8b5cf6;font-size:11px'>Visual Encoding:</strong>
+                            <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                                <span style='color:#22c55e'>● Large node: High weight</span>
+                                <span style='color:#eab308'>● Med node: Moderate</span>
+                                <span style='color:#ef4444'>● Small: Low weight</span>
+                            </div>
+                        </div>
+
+                        <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                            ⚠️ Attention structure ≠ syntactic dependency parse
+                        </p>
                         """,
+                        show_calc_title=False,
                         controls=[
                             ui.download_button("export_tree_data_legacy", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                             ui.tags.button(
@@ -5741,7 +5910,7 @@ def server(input, output, session):
                             )
                         ]
             ),
-            ui.div({"class": "viz-description"}, "Edge labels show attention weights; node size reflects strength. Use the floating toolbar to change the root token. ⚠️ This is attention structure, not syntactic parsing."),
+            ui.div({"class": "viz-description"}, "Edge labels show attention weights. Change root token via floating toolbar."),
             ui.div({"id": "tree-viz-container-legacy"}, get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="", use_global=use_global, max_depth=top_k_val, top_k=top_k_val, norm_mode=norm_mode))
         )
 
@@ -5868,10 +6037,23 @@ def server(input, output, session):
                 """
                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Scaled Dot-Product Attention</strong>
                 <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how attention scores are computed between token pairs, determining which tokens influence each other's representations.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention(Q,K,V) = softmax(QK^T / √d_k)V. Dot product measures Query-Key similarity; scaling by √d_k prevents softmax saturation; output weights sum to 1 per row. Token selector focuses on specific query position; adjustable top-k controls how many key connections are displayed.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Raw attention scores don't account for Value vector magnitudes—high attention weight doesn't guarantee high influence on the output.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>softmax(QK<sup>T</sup>/√d<sub>k</sub>)</code> — scaling prevents gradient saturation</p>
+
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
+                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                        <span style='color:#22c55e'>● High: Strong Q·K match</span>
+                        <span style='color:#eab308'>● Med: Partial</span>
+                        <span style='color:#ef4444'>● Low: Weak</span>
+                    </div>
+                </div>
+
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ High score ≠ high influence (Value magnitudes matter)
+                </p>
                 """,
                 subtitle=f"(Layer {layer_idx} · Head {head_idx})",
+                show_calc_title=False,
                 controls=[
                     ui.download_button("export_scaled_attention_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
                 ]
@@ -6115,9 +6297,26 @@ def server(input, output, session):
                 """
                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Head Specialization</strong>
                 <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Profiles what linguistic patterns each attention head focuses on—an approximation of functional specialization, not ground truth.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention mass aggregated by token category (Syntax, Semantics, Entities, Punctuation, CLS, Long-range, Self-attention) using POS tagging. Updates for selected Layer/Head; 'Global' view displays head specialization clusters across all heads.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> POS-based categorization is heuristic; heads may capture patterns not aligned with traditional linguistic categories.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention mass aggregated by token category using POS tagging.</p>
+
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>7 Dimensions:</strong>
+                    <div style='display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;font-size:10px'>
+                        <span style='color:#3b82f6'>● Syntax</span>
+                        <span style='color:#22c55e'>● Semantics</span>
+                        <span style='color:#f59e0b'>● CLS Focus</span>
+                        <span style='color:#8b5cf6'>● Punctuation</span>
+                        <span style='color:#ef4444'>● Entities</span>
+                        <span style='color:#06b6d4'>● Long-range</span>
+                        <span style='color:#ec4899'>● Self-attention</span>
+                    </div>
+                </div>
+
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ POS-based heuristic — may miss non-linguistic patterns
+                </p>
                 """,
+                show_calc_title=False,
                 controls=[
                     ui.download_button("export_head_spec_unique_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
@@ -6127,21 +6326,7 @@ def server(input, output, session):
                     )
                 ]
             ),
-            ui.div({"id": "radar-chart-container-B"}, head_specialization_radar(res, layer_idx, head_idx, mode, suffix="_B")),
-            ui.HTML(f"""
-                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: 16px; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
-                    <strong style="color: #ff5ca9;">Specialization Dimensions</strong> — click any to see detailed explanation:<br>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: center;">
-                        <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
-                        <span class="metric-tag" onclick="showMetricModal('Semantics', 0, 0)">Semantics</span>
-                        <span class="metric-tag" onclick="showMetricModal('CLS Focus', 0, 0)">CLS Focus</span>
-                        <span class="metric-tag" onclick="showMetricModal('Punctuation', 0, 0)">Punctuation</span>
-                        <span class="metric-tag" onclick="showMetricModal('Entities', 0, 0)">Entities</span>
-                        <span class="metric-tag" onclick="showMetricModal('Long-range', 0, 0)">Long-range</span>
-                        <span class="metric-tag" onclick="showMetricModal('Self-attention', 0, 0)">Self-attention</span>
-                    </div>
-                </div>
-            """)
+            ui.div({"id": "radar-chart-container-B"}, head_specialization_radar(res, layer_idx, head_idx, mode, suffix="_B"))
         )
 
 
@@ -6203,9 +6388,22 @@ def server(input, output, session):
                 """
                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
                 <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of which tokens the selected focus token attends to most strongly—shows attention structure, not syntactic dependencies.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Tree built recursively from attention weights starting at the root token (selectable via floating toolbar). Each branch shows parent→child attention weight. Node size reflects attention strength.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Tree structure imposes hierarchy on non-hierarchical attention; multiple strong connections may be underrepresented.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Tree built recursively from attention weights starting at the selected root token.</p>
+
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>Visual Encoding:</strong>
+                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                        <span style='color:#22c55e'>● Large node: High weight</span>
+                        <span style='color:#eab308'>● Med node: Moderate</span>
+                        <span style='color:#ef4444'>● Small: Low weight</span>
+                    </div>
+                </div>
+
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ Attention structure ≠ syntactic dependency parse
+                </p>
                 """,
+                show_calc_title=False,
                 controls=[
                     ui.download_button("export_tree_data_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
@@ -6254,16 +6452,28 @@ def server(input, output, session):
                 "Summary statistics for the selected head's attention distribution, or global aggregate across all heads.",
                 """
                 <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Metrics</strong>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Quantitative measures characterizing attention behavior for comparison across heads and layers—descriptive statistics, not quality judgments.</p>
-                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Confidence = max weight. Focus = normalized entropy (low = concentrated, high = diffuse). Sparsity = % near-zero weights. Additional: Uniformity, Balance, Flow Change. Updates for selected Layer/Head or 'Global'. Normalization modes: 'Raw', 'Column', 'Rollout'.</p>
-                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Metrics describe distribution shape but don't indicate whether attention is 'correct' or task-relevant.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Quantitative measures characterizing attention behavior—descriptive statistics, not quality judgments.</p>
+
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>Key Metrics:</strong>
+                    <div style='display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;font-size:10px'>
+                        <span style='color:#22c55e'>● Confidence: max weight</span>
+                        <span style='color:#3b82f6'>● Focus: entropy</span>
+                        <span style='color:#f59e0b'>● Sparsity: % zeros</span>
+                        <span style='color:#8b5cf6'>● Balance: distribution</span>
+                    </div>
+                </div>
+
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ Describes shape, not whether attention is "correct"
+                </p>
                 """,
                 subtitle=subtitle,
+                show_calc_title=False,
                 controls=[
                     ui.download_button("export_attention_metrics_single_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
                 ]
             ),
-
             get_metrics_display(res, layer_idx=layer_idx, head_idx=head_idx, use_full_scale=use_full_scale, baseline_stats=baseline_stats.get(), norm_mode=norm_mode)
         )
 
@@ -6488,27 +6698,26 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%; display: flex; flex-direction: column;"},
             viz_header(
                 "Multi-Head Attention",
-                "",
+                "Full attention weight matrix for the selected head. Rows are query tokens, columns are key tokens.",
                 ui.HTML("""
-                                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention</strong>
-                                
-                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how each token distributes its attention across all other tokens. Each cell (i,j) represents the attention weight from query token i to key token j.</p>
-                                
-                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>Attention = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V</code></p>
-                                
-                                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                                    <strong style='color:#8b5cf6;font-size:11px'>Color Scale (Blue):</strong>
-                                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
-                                        <span style='color:#1e40af'>● Dark blue: High weight</span>
-                                        <span style='color:#3b82f6'>● Medium: Moderate</span>
-                                        <span style='color:#93c5fd'>● Light: Low weight</span>
-                                    </div>
-                                </div>
-                                
-                                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                                    High attention ≠ importance
-                                </p>
-                            """),
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how each token distributes its attention across all other tokens. Each cell (i,j) represents the attention weight from query token i to key token j.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>Attention = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V</code></p>
+                
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>Color Scale (Blue):</strong>
+                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                        <span style='color:#1e40af'>● Dark blue: High weight</span>
+                        <span style='color:#3b82f6'>● Medium: Moderate</span>
+                        <span style='color:#93c5fd'>● Light: Low weight</span>
+                    </div>
+                </div>
+                
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ High attention ≠ importance
+                </p>
+                """),
+                show_calc_title=False,
                 controls=[
                     ui.download_button("export_heatmap_data_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
@@ -6706,27 +6915,26 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             viz_header(
                 "Attention Flow",
-                "",
+                "Directed graph connecting tokens by attention weight. Only connections ≥0.04 displayed.",
                 ui.HTML("""
-                                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Flow</strong>
-                                
-                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Sankey-style diagram showing attention distribution. Line width is proportional to attention weight α<sub>ij</sub> between token pairs.</p>
-                                
-                                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Threshold:</strong> Only connections with weight ≥ 0.04 are shown to reduce clutter.</p>
-                                
-                                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                                    <strong style='color:#8b5cf6;font-size:11px'>Line Width:</strong>
-                                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
-                                        <span style='color:#22c55e'>● Wide: High weight</span>
-                                        <span style='color:#eab308'>● Medium: Moderate</span>
-                                        <span style='color:#ef4444'>● Thin: Low weight</span>
-                                    </div>
-                                </div>
-                                
-                                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                                    Shows Query→Key, not information flow
-                                </p>
-                            """),
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Flow</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Sankey-style diagram showing attention distribution. Line width is proportional to attention weight α<sub>ij</sub> between token pairs.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Threshold:</strong> Only connections with weight ≥ 0.04 are shown to reduce clutter.</p>
+                
+                <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                    <strong style='color:#8b5cf6;font-size:11px'>Line Width:</strong>
+                    <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                        <span style='color:#22c55e'>● Wide: High weight</span>
+                        <span style='color:#eab308'>● Medium: Moderate</span>
+                        <span style='color:#ef4444'>● Thin: Low weight</span>
+                    </div>
+                </div>
+                
+                <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                    ⚠️ Shows Query→Key, not information flow
+                </p>
+                """),
+                show_calc_title=False,
                 controls=[
                     ui.download_button("export_flow_data_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
