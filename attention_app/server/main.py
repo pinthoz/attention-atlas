@@ -3113,20 +3113,23 @@ def server(input, output, session):
                         ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Maps each token ID to a learned dense vector representation (d=768 for base models) that captures semantic meaning from the vocabulary embedding matrix. At this stage, representations are context-independent—contextual disambiguation occurs in subsequent attention layers.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k_val))
                     ),
                     arrow("Token Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Injects absolute position information into each token representation using learned embeddings. Without positional encoding, Transformers would be permutation-invariant—unable to distinguish word order. Both BERT and GPT-2 use learned (not sinusoidal) position embeddings.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k_val)),
-                        arrow("Positional Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
-                    ),
-                ),
-                # Sum & Norm Row
                 ui.div(
-                    {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
-                    ui.div(
-                        {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable), then applies Layer Normalization to stabilize the activation distribution before entering the first Transformer block.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
-                    ),
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Injects absolute position information into each token representation using learned embeddings. Without positional encoding, Transformers would be permutation-invariant—unable to distinguish word order. Both BERT and GPT-2 use learned (not sinusoidal) position embeddings.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k_val))
+                ),
+            ),
+            # Sum & Norm Row
+            ui.div(
+                {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
+                ui.div(
+                    {"class": "flex-card", "style": "position: relative;"},
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable), then applies Layer Normalization to stabilize the activation distribution before entering the first Transformer block.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
+                ),
+                ui.div(
+                    {"style": "position: relative; display: flex; align-items: center; justify-content: center;"},
                     arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
+                        arrow("Positional Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; top: -25px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
+                ),
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
                         ui.div(
@@ -3722,7 +3725,11 @@ def server(input, output, session):
                  # Positional
                  rows.append(ui.div(paired_arrows(next_from, "Positional Embeddings", model_type_A=model_type_A, model_type_B=model_type_B), class_="arrow-row"))
                  pos_desc = "Injects absolute position information into each token representation using learned embeddings. Without positional encoding, Transformers would be permutation-invariant—unable to distinguish word order. Both BERT and GPT-2 use learned (not sinusoidal) position embeddings."
-                 rows.append(paired_with_card("Positional Embeddings", make_card("Positional Embeddings", pos_desc, get_posenc_table(res_A, top_k=top_k), "a"), make_card("Positional Embeddings", pos_desc, get_posenc_table(res_B, top_k=top_k, suffix="_B"), "b")))
+                 rows.append(ui.layout_columns(
+                    make_card("Positional Embeddings", pos_desc, get_posenc_table(res_A, top_k=top_k), "a"),
+                    make_card("Positional Embeddings", pos_desc, get_posenc_table(res_B, top_k=top_k, suffix="_B"), "b"),
+                    col_widths=[6, 6]
+                ))
 
                  # Sum & Norm
                  rows.append(ui.div(paired_arrows("Positional Embeddings", "Sum & Layer Normalization"), class_="arrow-row"))
@@ -7159,8 +7166,7 @@ def server(input, output, session):
                 ),
                 ui.div(
                     {"style": "position: relative; display: flex; align-items: center; justify-content: center;"},
-                    arrow("Token Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
-                    arrow("Positional Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; bottom: -25px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
+                    arrow("Token Embeddings", "Positional Embeddings", "horizontal", suffix=suffix)
                 ),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
@@ -7174,7 +7180,11 @@ def server(input, output, session):
                     {"class": "flex-card", "style": "position: relative;"},
                     ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model, suffix=suffix))
                 ),
-                arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
+                ui.div(
+                    {"style": "position: relative; display: flex; align-items: center; justify-content: center;"},
+                    arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
+                    arrow("Positional Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; top: -25px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
+                ),
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
                     ui.div(
