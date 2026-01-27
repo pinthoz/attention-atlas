@@ -1,15 +1,20 @@
 JS_CODE = """
         // Define global functions immediately (before Shiny connects)
         window.switchView = function(containerId, tabName) {
+            console.log("switchView called:", containerId, tabName);
             // 1. Hide all panes in this container
             var panes = document.querySelectorAll('#' + containerId + ' .view-pane');
+            console.log("Found panes:", panes.length);
             panes.forEach(function(pane) {
                 pane.style.display = 'none';
             });
             
             // 2. Show target pane
-            var target = document.getElementById(containerId + '_' + tabName);
+            var targetId = containerId + '_' + tabName;
+            var target = document.getElementById(targetId);
+            console.log("Target ID:", targetId, "Target found:", !!target);
             if(target) target.style.display = 'block';
+            else console.error("Target NOT found:", targetId);
             
             // 3. Update buttons
             var buttons = document.querySelectorAll('#' + containerId + ' .view-btn');
