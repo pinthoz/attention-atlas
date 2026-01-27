@@ -2636,24 +2636,14 @@ def server(input, output, session):
         if model_family == "gpt2":
             use_mlm = True
             title = "Next Token Predictions (Causal)"
-            desc = "Predicting the probability of the next token appearing after the sequence."
+            desc = "Shows GPT-2's autoregressive next-token probability distribution, predicting what token is most likely to follow the sequence based solely on preceding (left) context."
             
-            tooltip_html = """
-                <div class='info-tooltip-wrapper' style='display:flex; align-items:center; margin-left:2px;'>
-                    <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
-                    <div class='info-tooltip-content'>
-                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Next Token Predictions (Causal) (GPT-2)</strong>
-                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Displays the model's probabilistic forecast for the *next* token in the sequence, based on all preceding tokens.</p>
-                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Standard causal language modeling: P(token_t | token_1...token_{t-1}). The model outputs a probability distribution over the vocabulary; top-k candidates shown.</p>
-                        <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Purely statistical prediction based on training data; "plausible" continuations may not be factually correct or logically consistent.</p>
-                    </div>
-                </div>
+            tooltip = """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Next Token Predictions (Causal) (GPT-2)</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Displays the model's probabilistic forecast for the *next* token in the sequence, based on all preceding tokens.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Standard causal language modeling: P(token_t | token_1...token_{t-1}). The model outputs a probability distribution over the vocabulary; top-k candidates shown.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Purely statistical prediction based on training data; "plausible" continuations may not be factually correct or logically consistent.</p>
             """
-            title_header = ui.h4(
-                title, 
-                ui.HTML(tooltip_html),
-                style="margin:0; display:flex; align-items:center;"
-            )
         else:
             use_mlm = True # Always show
             
@@ -2717,40 +2707,20 @@ def server(input, output, session):
             """))
 
             # Add tooltip to title for BERT
-            tooltip_html = """
-                <div class='info-tooltip-wrapper' style='display:flex; align-items:center; margin-left:2px;'>
-                    <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
-                    <div class='info-tooltip-content'>
-                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Masked Token Predictions (MLM) (BERT)</strong>
-                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Reveals BERT's predictions when each token is masked, showing what the model considers plausible given bidirectional context.</p>
-                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Each token is iteratively masked; the model predicts the most likely original using context from both left and right. Top-k predictions with probabilities are displayed.</p>
-                        <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Predictions reflect training data statistics—high confidence in stereotypical associations may indicate learned biases rather than linguistic understanding.</p>
-                    </div>
-                </div>
+            tooltip = """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Masked Token Predictions (MLM) (BERT)</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Reveals BERT's predictions when each token is masked, showing what the model considers plausible given bidirectional context.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Each token is iteratively masked; the model predicts the most likely original using context from both left and right. Top-k predictions with probabilities are displayed.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Predictions reflect training data statistics—high confidence in stereotypical associations may indicate learned biases rather than linguistic understanding.</p>
             """
             
-            # Use ui.h4 directly with flexbox to match other headers perfectly while aligning content
-            title_header = ui.h4(
-                "Masked Token Predictions (MLM)", 
-                ui.HTML(tooltip_html), 
-                style="margin:0; display:flex; align-items:center;"
-            )
+            title = "Masked Token Predictions (MLM)"
             desc = "Demonstrates BERT's bidirectional language understanding by iteratively masking each token and predicting the most likely original based on full surrounding context from both directions."
 
-        # Header Container: Separating Title Row from Description to allow vertical centering of Button vs Title
-        header_row = ui.div(
-            {"style": "display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 4px;"},
-            title_header,
-            ui.div(*controls)
-        )
-        
-        description_row = ui.p(desc, style="font-size:11px; color:#6b7280; margin-bottom:8px; min-height: 20px; line-height: 1.4;")
-
         return ui.div(
-            {"class": "card", "style": "height: 100%;"},
+            {"class": "card card-compact-height", "style": "height: 100%;"},
             js_script,
-            header_row,
-            description_row,
+            viz_header(title, desc, tooltip, controls=controls),
             get_output_probabilities(res, use_mlm, text, top_k=top_k, manual_mode=manual_mode, custom_mask_indices=custom_mask_indices)
         )
 
@@ -3768,7 +3738,7 @@ def server(input, output, session):
                  ))
 
                  # Post FFN
-                 rows.append(ui.div(paired_arrows("Feed-Forward Network", "Add & Norm (Post-FFN)"), class_="arrow-row"))
+                 rows.append(ui.div(paired_arrows("Feed-Forward Network", "Add & Norm (post-FFN)"), class_="arrow-row"))
                  addnorm_post_desc = "Second residual connection and Layer Normalization within the Transformer block, applied after the Feed-Forward Network. Completes the standard Transformer block architecture: Attention → Add&Norm → FFN → Add&Norm."
                  rows.append(ui.layout_columns(
                      make_card("Add & Norm (Post-FFN)", addnorm_post_desc, get_add_norm_post_ffn_view(res_A, layer_idx), "a"),
@@ -3777,7 +3747,7 @@ def server(input, output, session):
                  ))
 
                  # Exit Arrow
-                 rows.append(ui.div(paired_arrows("Add & Norm (Post-FFN)", "Exit", model_type_A=model_type_A, model_type_B=model_type_B), class_="arrow-row"))
+                 rows.append(ui.div(paired_arrows("Add & Norm (post-FFN)", "Exit", model_type_A=model_type_A, model_type_B=model_type_B), class_="arrow-row"))
 
                  return ui.div(*rows)
 
@@ -5296,7 +5266,7 @@ def server(input, output, session):
                     )
                 ]
             ),
-            ui.div({"class": "viz-description"}, ui.HTML(
+            ui.div({"class": "viz-description", "style": "margin-top: 20px; flex-shrink: 0;"}, ui.HTML(
                 f"<strong style='color:#64748b'>{get_norm_mode_label(norm_mode, layer_idx, use_all_layers=use_all_layers, total_layers=num_layers)}</strong><br>" +
                 "Traces attention weight patterns between tokens. Thicker lines indicate stronger attention. ⚠️ This shows weight distribution, not actual information flow through the network."
             )),
@@ -6203,7 +6173,12 @@ def server(input, output, session):
         if is_bert:
             title = "Masked Token Predictions (MLM)"
             desc = "Demonstrates BERT's bidirectional language understanding by iteratively masking each token and predicting the most likely original based on full surrounding context from both directions."
-            tooltip = "<b>Masked Language Modeling:</b> We use BERT's Masked Language Modeling capability. To get these results, we iteratively mask each token in the sequence one by one and ask the model to predict the most likely original token based on the surrounding context (left and right)."
+            tooltip = """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Masked Token Predictions (MLM) (BERT)</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Reveals BERT's predictions when each token is masked, showing what the model considers plausible given bidirectional context.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Each token is iteratively masked; the model predicts the most likely original using context from both left and right. Top-k predictions with probabilities are displayed.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Predictions reflect training data statistics—high confidence in stereotypical associations may indicate learned biases rather than linguistic understanding.</p>
+            """
             
             # Interactive Mode Toggle
             try: manual_mode = input.mlm_interactive_mode_B()
@@ -6266,7 +6241,12 @@ def server(input, output, session):
         else:
             title = "Next Token Predictions (Causal)"
             desc = "Shows GPT-2's autoregressive next-token probability distribution, predicting what token is most likely to follow the sequence based solely on preceding (left) context."
-            tooltip = "Causal Language Modeling: GPT-2 predicts P(token_t | token_1...token_{t-1}) using only left context due to causal masking. This enables text generation but prevents direct use of future context, unlike BERT's bidirectional approach."
+            tooltip = """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Next Token Predictions (Causal) (GPT-2)</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Displays the model's probabilistic forecast for the *next* token in the sequence, based on all preceding tokens.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Standard causal language modeling: P(token_t | token_1...token_{t-1}). The model outputs a probability distribution over the vocabulary; top-k candidates shown.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Purely statistical prediction based on training data; "plausible" continuations may not be factually correct or logically consistent.</p>
+            """
             extra_controls = None
 
         return ui.div(
@@ -6420,6 +6400,7 @@ def server(input, output, session):
                     )
                 ]
             ),
+            ui.div({"class": "viz-description"}, "Edge labels show attention weights. Change root token via floating toolbar."),
             ui.div({"id": "tree-viz-container-B"}, get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="_B", use_global=use_global, top_k=top_k, max_depth=top_k, norm_mode=norm_mode))
         )
 

@@ -84,13 +84,21 @@ def viz_header(title, definition, tooltip_text, limitation=None, controls=None, 
             )
         )
     
+    # Conditional spacing: Compact if controls exist (BERT), Expanded if not (GPT-2)
+    if controls:
+        pt = "4px"  # "Mete mais para cima" for BERT
+        mt = "8px"
+    else:
+        pt = "18px"
+        mt = "16px" # "Diminui o espaço" for GPT-2
+
     header_row = ui.div(
-        {"class": "viz-header-with-info", "style": "display: flex; align-items: center; gap: 8px; width: 100%; flex-wrap: wrap;"},
+        {"class": "viz-header-with-info", "style": f"display: flex; align-items: center; gap: 8px; width: 100%; flex-wrap: wrap; padding-top: {pt}; min-height: 32px;"},
         *header_content
     )
     
     definition_box = ui.div(
-        {"class": "viz-definition", "style": "font-size:11px; color:#6b7280; margin-bottom:8px;"},
+        {"class": "viz-definition", "style": f"font-size:11px; color:#6b7280; margin-bottom:8px; margin-top: {mt};"},
         definition
     )
     

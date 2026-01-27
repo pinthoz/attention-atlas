@@ -3272,18 +3272,18 @@ __all__ = ["CSS"]
         /* Dual Row Token Split Layout (Compare Prompts) */
         .floating-control-bar .token-row-split {
             display: flex;
-            flex-direction: row; /* Side-by-side */
+            flex-direction: column; /* Stacked */
             flex-wrap: wrap;     /* Allow wrapping */
             align-items: stretch;
-            gap: 4px;
-            padding: 3px 6px;
+            gap: 2px;
+            padding: 2px 6px;
             background: rgba(30, 41, 59, 0.6);
             border-radius: 8px;
             border: 1px solid rgba(255, 255, 255, 0.06);
             flex: 1;
             max-width: 850px;
             min-width: 300px;
-            max-height: 72px; /* Restrict height (approx 2 lines) */
+            max-height: 60px; /* Reduced height */
             overflow-y: auto; /* Scroll vertically */
             margin-top: 5px;
         }
@@ -3303,9 +3303,9 @@ __all__ = ["CSS"]
             overflow-x: auto;
             white-space: nowrap;
             font-size: 11px;
-            flex: 1 1 45%; /* Basis 45% allows side-by-side */
+            flex: 1 1 100%; /* Full width */
             min-width: 250px;
-            padding: 2px 0;
+            padding: 0 0;
             border-bottom: 0;
         }
         
@@ -3314,6 +3314,12 @@ __all__ = ["CSS"]
         }
         .floating-control-bar .token-split-item::-webkit-scrollbar-thumb {
              background: rgba(255, 255, 255, 0.1);
+        }
+
+        .floating-control-bar .token-split-item.item-b {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin-top: 1px;
+            padding-top: 1px;
         }
 
         /* Model Labels */
