@@ -37,7 +37,7 @@ except Exception:
     ICON_DATA_URL = ""
 
 
-def viz_header(title, definition, tooltip_text, limitation=None, controls=None, subtitle=None):
+def viz_header(title, definition, tooltip_text, limitation=None, controls=None, subtitle=None, show_calc_title=True):
     """Create a visualization header with semantic documentation and optional controls.
     
     This provides clear explanations of what visualizations show and don't show,
@@ -50,17 +50,21 @@ def viz_header(title, definition, tooltip_text, limitation=None, controls=None, 
         limitation: Optional 1-line limitation note
         controls: Optional list of UI elements (buttons, etc.) to display in the header
         subtitle: Optional text to display after the info icon (e.g. "(Layer 0 · Head 0)")
+        show_calc_title: Whether to show "How is this calculated?" header in tooltip
     
     Returns:
         A Shiny UI div containing the header, info icon, definition, limitation, and controls
     """
+    tooltip_content = [ui.HTML(tooltip_text)]
+    # if show_calc_title:
+    #     tooltip_content.insert(0, ui.tags.strong("How is this calculated?"))
+
     info_icon = ui.div(
         {"class": "info-tooltip-wrapper"},
         ui.span({"class": "info-tooltip-icon"}, "i"),
         ui.div(
             {"class": "info-tooltip-content"},
-            ui.tags.strong("How is this calculated?"),
-            tooltip_text
+            *tooltip_content
         )
     )
     
