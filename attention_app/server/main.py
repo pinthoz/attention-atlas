@@ -4,6 +4,12 @@ import traceback
 import re
 import json
 from datetime import datetime
+import os
+from pathlib import Path
+
+# Create default download directories
+for d in ["sessions", "csv", "images"]:
+    Path(d).mkdir(exist_ok=True)
 
 import numpy as np
 import plotly.express as px
@@ -192,7 +198,17 @@ def server(input, output, session):
             ts = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
             parts.append(ts)
 
-        return f"{'_'.join(parts)}.{ext}"
+        filename = f"{'_'.join(parts)}.{ext}"
+
+        # Categorize into folders
+        if ext == "json":
+            return f"sessions/{filename}"
+        elif ext == "csv":
+            return f"csv/{filename}"
+        elif ext in ["png", "svg"]:
+            return f"images/{filename}"
+        
+        return filename
         
     # --- Session Persistence ---
     @render.download(
@@ -208,6 +224,7 @@ def server(input, output, session):
             except:
                 return default
 
+        # Basic Session Data
         session_data = {
             "text_input": safe_get(input.text_input, ""),
             "model_family": safe_get(input.model_family, "bert"),
@@ -219,13 +236,19 @@ def server(input, output, session):
             "norm": safe_get(input.global_norm, "raw"),
             "view_mode": safe_get(input.view_mode, "basic"),
             "compare_mode": safe_get(input.compare_mode, False),
-            
-            # Model B data
-            "text_input_B": safe_get(input.text_input_B, ""),
-            "model_family_B": safe_get(input.model_family_B, "bert"),
-            "model_name_B": safe_get(input.model_name_B, "gpt2"),
             "compare_prompts_mode": safe_get(input.compare_prompts_mode, False)
         }
+
+        # Conditionally add Model B data ONLY if compare_mode is active
+        if session_data["compare_mode"]:
+            session_data.update({
+                "model_family_B": safe_get(input.model_family_B, "bert"),
+                "model_name_B": safe_get(input.model_name_B, "gpt2"),
+            })
+            
+        # Text Input B is relevant if either compare mode is active
+        if session_data["compare_mode"] or session_data["compare_prompts_mode"]:
+             session_data["text_input_B"] = safe_get(input.text_input_B, "")
         
         yield json.dumps(session_data, indent=2)
 
@@ -240,41 +263,61 @@ def server(input, output, session):
             with open(file_infos[0]["datapath"], "r") as f:
                 data = json.load(f)
 
-            # Restore model family first (this will update the model_name choices)
-            if "model_family" in data:
-                ui.update_select("model_family", selected=data.get("model_family", "bert"))
-
-            # Restore standard inputs (delay model_name to let family update take effect)
-            ui.update_slider("global_layer", value=int(data.get("layer", 0)))
-            ui.update_slider("global_head", value=int(data.get("head", 0)))
-            ui.update_slider("global_topk", value=int(data.get("topk", 3)))
-            ui.update_select("global_norm", selected=data.get("norm", "raw"))
-
-            # Restore model name after a brief delay (let family update propagate)
-            ui.update_select("model_name", selected=data.get("model_name", "bert-base-uncased"))
-
+            # 1. Update Layout/Model Controls first (triggers UI rebuild)
+            if "compare_mode" in data:
+                 ui.update_switch("compare_mode", value=data.get("compare_mode"))
+            
+            if "compare_prompts_mode" in data:
+                 val = data.get("compare_prompts_mode")
+                 ui.update_switch("compare_prompts_mode", value=val)
+                 if val:
+                     # Force Wizard to DONE so generation can proceed (overriding default "A" from effect)
+                     prompt_entry_step.set("DONE")
+            
             if "view_mode" in data:
                  ui.update_radio_buttons("view_mode", selected=data.get("view_mode"))
 
-            if "compare_mode" in data:
-                 ui.update_switch("compare_mode", value=data.get("compare_mode"))
+            # Update Models
+            if "model_family" in data:
+                ui.update_select("model_family", selected=data.get("model_family", "bert"))
+            
+            if data.get("compare_mode") and "model_family_B" in data:
+                ui.update_select("model_family_B", selected=data.get("model_family_B"))
 
-            if "model_family_B" in data:
-                 ui.update_select("model_family_B", selected=data.get("model_family_B"))
+            # WAIT for UI to rebuild inputs based on model/mode changes
+            await asyncio.sleep(0.5)
 
-            if "model_name_B" in data:
+            # 2. Update Model Specifics (Names)
+            if "model_name" in data:
+                ui.update_select("model_name", selected=data.get("model_name"))
+            if data.get("compare_mode") and "model_name_B" in data:
                  ui.update_select("model_name_B", selected=data.get("model_name_B"))
 
-            # Restore custom textareas via JavaScript
+            # 3. Update Text Inputs (via JS)
             await session.send_custom_message("restore_session_text", {
                 "text_input": data.get("text_input", ""),
                 "text_input_B": data.get("text_input_B", "")
             })
 
-            ui.notification_show("Session loaded successfully!", type="message")
+            # 4. Update Custom Controls (Sliders & Radio)
+            # These are custom HTML inputs, so we must use a custom message to update them
+            await session.send_custom_message("restore_session_controls", {
+                "layer": int(data.get("layer", 0)),
+                "head": int(data.get("head", 0)),
+                "topk": int(data.get("topk", 3)),
+                "norm": data.get("norm", "raw")
+            })
+
+            ui.notification_show("Session loaded! Generating...", type="message")
+
+            # 5. Trigger Generation
+            await asyncio.sleep(0.2)
+            await session.send_custom_message("trigger_generate", {})
 
         except Exception as e:
             ui.notification_show(f"Failed to load session: {str(e)}", type="error")
+            print(f"Load Session Error: {e}")
+            traceback.print_exc()
 
     # --- Data Export Handlers ---
 

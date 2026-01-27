@@ -242,6 +242,79 @@ JS_CODE = """
                     }
                 }
             });
+
+            // Restore custom control items (sliders/radio)
+            Shiny.addCustomMessageHandler('restore_session_controls', function(data) {
+                console.log("Restoring controls:", data);
+                
+                // Restore Layer
+                if (data.layer !== undefined) {
+                    Shiny.setInputValue('global_layer', data.layer, {priority: 'event'});
+                    // Update visual slider if it exists (might not if controls hidden)
+                    var layerSlider = document.getElementById('layer-slider');
+                    if (layerSlider) {
+                        layerSlider.value = data.layer;
+                        var layerVal = document.getElementById('layer-value');
+                        if (layerVal) layerVal.textContent = data.layer;
+                    }
+                }
+                
+                // Restore Head
+                if (data.head !== undefined) {
+                    Shiny.setInputValue('global_head', data.head, {priority: 'event'});
+                    var headSlider = document.getElementById('head-slider');
+                    if (headSlider) {
+                        headSlider.value = data.head;
+                        var headVal = document.getElementById('head-value');
+                        if (headVal) headVal.textContent = data.head;
+                    }
+                }
+                
+                // Restore TopK
+                if (data.topk !== undefined) {
+                     Shiny.setInputValue('global_topk', data.topk, {priority: 'event'});
+                     var topkSlider = document.getElementById('topk-slider');
+                     if (topkSlider) {
+                         topkSlider.value = data.topk;
+                         var topkVal = document.getElementById('topk-value');
+                         if (topkVal) topkVal.textContent = data.topk;
+                     }
+                }
+                
+                // Restore Norm
+                if (data.norm !== undefined) {
+                    Shiny.setInputValue('global_norm', data.norm, {priority: 'event'});
+                    // Update visual radio button state
+                    var normGroup = document.getElementById('norm-radio-group');
+                    if (normGroup) {
+                        var buttons = normGroup.querySelectorAll('.radio-option');
+                        buttons.forEach(function(btn) {
+                            btn.classList.remove('active');
+                            if (btn.getAttribute('data-value') === data.norm) {
+                                btn.classList.add('active');
+                            }
+                        });
+                        
+                        // Handle rollout visibility
+                        var rolloutControl = document.getElementById('rollout-layers-control');
+                        if (rolloutControl) {
+                             if (data.norm === 'rollout') rolloutControl.classList.add('visible');
+                             else rolloutControl.classList.remove('visible');
+                        }
+                    }
+                }
+            });
+
+            // Trigger generation programmatically
+            Shiny.addCustomMessageHandler('trigger_generate', function(message) {
+                console.log("Triggering generation from server...");
+                var btn = document.getElementById('generate_all');
+                if (btn) {
+                    btn.click();
+                } else {
+                    console.error("Generate button not found");
+                }
+            });
         });
 
         // Dynamic tooltip positioning for fixed-position tooltips
