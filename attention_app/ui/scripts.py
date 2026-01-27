@@ -169,6 +169,14 @@ JS_CODE = """
                 link.click();
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
+
+                // Save a copy to the server-side images/ folder
+                if (typeof Shiny !== 'undefined' && Shiny.setInputValue) {
+                    Shiny.setInputValue('_save_png', {
+                        filename: filename || 'visualization.png',
+                        data: pngUrl
+                    }, {priority: 'event'});
+                }
             };
             img.onerror = function(e) {
                 console.error('Error loading SVG for PNG conversion:', e);
@@ -217,6 +225,14 @@ JS_CODE = """
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
+
+                    // Save a copy to the server-side images/ folder
+                    if (typeof Shiny !== 'undefined' && Shiny.setInputValue) {
+                        Shiny.setInputValue('_save_png', {
+                            filename: filename || 'chart.png',
+                            data: finalUrl
+                        }, {priority: 'event'});
+                    }
                 };
                 img.src = dataUrl;
             }).catch(function(error) {

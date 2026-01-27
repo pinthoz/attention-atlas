@@ -203,21 +203,71 @@ def server(input, output, session):
             parts.append(ts)
 
         filename = f"{'_'.join(parts)}.{ext}"
-
-        # Categorize into folders
-        if ext == "json":
-            return f"sessions/{filename}"
-        elif ext == "csv":
-            return f"csv/{filename}"
-        elif ext in ["png", "svg"]:
-            return f"images/{filename}"
-        
         return filename
-        
+
+    # --- Auto-save download helper ---
+    _EXPORT_FOLDER_MAP = {"json": "sessions", "csv": "csv", "png": "images", "svg": "images"}
+
+    def save_export_to_folder(content, filename):
+        """Save export content to the appropriate project folder based on file extension."""
+        ext = filename.rsplit('.', 1)[-1] if '.' in filename else ''
+        folder = _EXPORT_FOLDER_MAP.get(ext)
+        if folder and content and not content.startswith("Error") and not content.startswith("No data"):
+            try:
+                filepath = Path(folder) / filename
+                filepath.write_text(content, encoding='utf-8')
+            except Exception:
+                pass
+
+    def auto_save_download(section, ext, **gen_kwargs):
+        """Decorator replacing @render.download that also saves a copy to the project folder.
+
+        Usage:
+            @auto_save_download("head_specialization", "csv", data_type="all_heads")
+            def export_head_spec():
+                yield content
+        """
+        import functools
+        filename_fn = lambda: generate_export_filename(section, ext, **gen_kwargs)
+
+        def decorator(fn):
+            @render.download(filename=filename_fn)
+            @functools.wraps(fn)
+            def wrapper():
+                parts = []
+                for chunk in fn():
+                    parts.append(str(chunk) if not isinstance(chunk, str) else chunk)
+                    yield chunk
+                # After all chunks yielded, save a copy to the project folder
+                if parts:
+                    content = "".join(parts)
+                    fname = filename_fn()
+                    save_export_to_folder(content, fname)
+            return wrapper
+        return decorator
+
+    # --- PNG save handler (receives base64 data from JavaScript) ---
+    @reactive.Effect
+    @reactive.event(input._save_png)
+    def _handle_save_png():
+        data = input._save_png()
+        if not data:
+            return
+        try:
+            import base64
+            filename = data.get("filename", "export.png")
+            b64_data = data.get("data", "")
+            # Strip data:image/png;base64, prefix
+            if "," in b64_data:
+                b64_data = b64_data.split(",", 1)[1]
+            img_bytes = base64.b64decode(b64_data)
+            filepath = Path("images") / filename
+            filepath.write_bytes(img_bytes)
+        except Exception:
+            pass
+
     # --- Session Persistence ---
-    @render.download(
-        filename=lambda: generate_export_filename("attention_atlas_session", "json")
-    )
+    @auto_save_download("attention_atlas_session", "json")
     def save_session():
         def safe_get(input_fn, default=None):
             try:
@@ -341,7 +391,7 @@ def server(input, output, session):
         except:
             return "model"
 
-    @render.download(filename=lambda: generate_export_filename("head_specialization", "csv", data_type="all_heads"))
+    @auto_save_download("head_specialization", "csv", data_type="all_heads")
     def export_head_spec():
         """Export head specialization data as CSV - ALL layers and heads."""
         res = cached_result.get()
@@ -368,7 +418,7 @@ def server(input, output, session):
         except Exception as e:
             yield f"Error exporting data: {str(e)}"
 
-    @render.download(filename=lambda: generate_export_filename("multi_head_attention", "csv", data_type="all_layers_heads"))
+    @auto_save_download("multi_head_attention", "csv", data_type="all_layers_heads")
     def export_multi_head_data():
         """Export multi-head attention matrices as CSV - ALL layers and heads."""
         res = cached_result.get()
@@ -408,7 +458,7 @@ def server(input, output, session):
         except Exception as e:
             yield f"Error exporting data: {str(e)}"
 
-    @render.download(filename=lambda: generate_export_filename("attention_metrics", "csv", data_type="all_layers_heads"))
+    @auto_save_download("attention_metrics", "csv", data_type="all_layers_heads")
     def export_attention_metrics_single():
         """Export attention metrics for ALL layers and heads as CSV."""
         res = cached_result.get()
@@ -467,7 +517,7 @@ def server(input, output, session):
         except Exception as e:
             yield f"Error exporting data: {str(e)}"
 
-    @render.download(filename=lambda: generate_export_filename("attention_tree", "json", data_type="tree_structure"))
+    @auto_save_download("attention_tree", "json", data_type="tree_structure")
     def export_tree_data_json():
         """Export attention dependency tree as JSON."""
         res = cached_result.get()
@@ -512,7 +562,7 @@ def server(input, output, session):
         except Exception as e:
             yield json.dumps({"error": str(e)})
 
-    @render.download(filename=lambda: generate_export_filename("isa", "json", data_type="sentence_attention"))
+    @auto_save_download("isa", "json", data_type="sentence_attention")
     def export_isa_data():
         """Export ISA (Inter-sentence Attention) data as JSON."""
         res = cached_result.get()
@@ -549,7 +599,7 @@ def server(input, output, session):
         except Exception as e:
             yield json.dumps({"error": str(e)})
 
-    @render.download(filename=lambda: generate_export_filename("attention_flow", "csv", data_type="all_layers"))
+    @auto_save_download("attention_flow", "csv", data_type="all_layers")
     def export_attention_flow_data():
         """Export attention flow (rollout) data as CSV - ALL layers."""
         res = cached_result.get()
@@ -599,7 +649,7 @@ def server(input, output, session):
         except Exception as e:
             yield f"Error exporting data: {str(e)}"
 
-    @render.download(filename=lambda: generate_export_filename("multi_head_attention_B", "csv", data_type="all_layers_heads", is_b=True))
+    @auto_save_download("multi_head_attention_B", "csv", data_type="all_layers_heads", is_b=True)
     def export_heatmap_data_B():
         """Export multi-head attention matrices for Prompt B as CSV - ALL layers and heads."""
         res = get_active_result("_B")
@@ -638,7 +688,7 @@ def server(input, output, session):
         except Exception as e:
             yield f"Error exporting data: {str(e)}"
 
-    @render.download(filename=lambda: generate_export_filename("attention_metrics_B", "csv", data_type="all_layers_heads", is_b=True))
+    @auto_save_download("attention_metrics_B", "csv", data_type="all_layers_heads", is_b=True)
     def export_attention_metrics_single_B():
         """Export attention metrics for Prompt B for ALL layers and heads as CSV."""
         res = get_active_result("_B")
@@ -694,7 +744,7 @@ def server(input, output, session):
         except Exception as e:
             yield f"Error exporting data: {str(e)}"
 
-    @render.download(filename=lambda: generate_export_filename("attention_flow_B", "csv", data_type="all_layers", is_b=True))
+    @auto_save_download("attention_flow_B", "csv", data_type="all_layers", is_b=True)
     def export_flow_data_B():
         """Export attention flow data for Prompt B as CSV - ALL layers."""
         res = get_active_result("_B")
@@ -1883,6 +1933,17 @@ def server(input, output, session):
             ui.div(
                 {"style": "display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;"},
                 ui.h4("Global Attention Metrics", style="margin: 0;"),
+                ui.HTML("""
+                <div class='info-tooltip-wrapper' style='display:inline-flex; align-items:center; vertical-align:middle; position:relative; top:-1px;'>
+                    <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
+                    <div class='info-tooltip-content'>
+                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Metrics</strong>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Quantitative measures characterizing attention behavior for comparison across heads and layers—descriptive statistics, not quality judgments.</p>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Confidence = max weight. Focus = normalized entropy (low = concentrated, high = diffuse). Sparsity = % near-zero weights. Additional: Uniformity, Balance, Flow Change. Updates for selected Layer/Head or 'Global'. Normalization modes: 'Raw', 'Column', 'Rollout'.</p>
+                        <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Metrics describe distribution shape but don't indicate whether attention is 'correct' or task-relevant.</p>
+                    </div>
+                </div>
+                """),
                 ui.span("All Layers · All Heads", style="font-size: 11px; color: #94a3b8; font-weight: 500;")
             ),
             get_metrics_display(res)
@@ -1957,8 +2018,13 @@ def server(input, output, session):
                 ui.output_ui("render_scaled_attention_dashboard"),
                 ui.div(
                     {"class": "card"},
-                    viz_header("Multi-Head Attention", "Grid of all heads in this layer. See global patterns.", 
-                               "<b>Standard Attention Matrix Visualization.</b><br>Each cell (i,j) is the attention weight query i pays to key j.",
+                    viz_header("Multi-Head Attention", "Grid of all heads in this layer. See global patterns.",
+                               """
+                               <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention</strong>
+                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Visualizes attention weight distribution showing how each token attends to others—not a direct measure of information flow or causal influence.</p>
+                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Matrix where cell (i,j) = attention from query i to key j. Options: specific Layer/Head or 'Global' (mean across heads). Normalization: 'Raw' (row-sum=1), 'Column' (key importance), 'Rollout' (accumulated across layers). Token click highlights row/column.</p>
+                               <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Attention weights ≠ contribution to output; gradient-based methods provide more reliable importance estimates.</p>
+                               """,
                                controls=[
                                    ui.download_button("export_multi_head_data", "JSON", style="padding: 2px 8px; font-size: 10px; height: 24px;")
                                ]),
@@ -2035,7 +2101,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Segment Embeddings"),
-            ui.p("Encodes sentence membership (A or B), allowing BERT to reason about relationships between sentence pairs. When more than two sentences are provided, all sentences beyond the first are treated as Sentence B.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Encodes sentence membership using binary embeddings (Segment A or Segment B), enabling BERT to distinguish between tokens from different sentences. Essential for sentence-pair tasks such as Natural Language Inference, Question Answering, and Next Sentence Prediction.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_segment_embedding_view(res)
         )
 
@@ -2049,7 +2115,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Positional Embeddings"),
-            ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Injects absolute position information into each token representation using learned embeddings. Without positional encoding, Transformers would be permutation-invariant—unable to distinguish word order. Both BERT and GPT-2 use learned (not sinusoidal) position embeddings.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_posenc_table(res, top_k=top_k)
         )
 
@@ -2062,7 +2128,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Sum & Layer Normalization"),
-            ui.p("Combines token, position, and segment embeddings, with layer normalization to stabilize activations before attention.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable), then applies Layer Normalization to stabilize the activation distribution before entering the first Transformer block.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_sum_layernorm_view(res, encoder_model)
         )
 
@@ -2080,12 +2146,10 @@ def server(input, output, session):
         norm_mode = global_norm_mode.get()
 
         # Check if global mode is active
-        use_global = global_metrics_mode.get() == "all"
-
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Q/K/V Projections"),
-            ui.p("Query, Key, Value projections with magnitude, alignment, and directional analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Transforms input hidden states into Query, Key, and Value representations through learned linear projections (Q=XW_Q, K=XW_K, V=XW_V). Queries encode 'what information to look for', Keys encode 'what information is available', and Values contain 'the information to aggregate'.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_qkv_table(res, layer_idx, top_k=top_k, norm_mode=norm_mode, use_global=use_global)
         )
 
@@ -2129,9 +2193,14 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             viz_header(
-                "Scaled Dot-Product Attention", 
-                "Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.",
-                "<b>Formula:</b> Attention(Q, K, V) = softmax(QK<sup>T</sup> / √d<sub>k</sub>)V",
+                "Scaled Dot-Product Attention",
+                "Per-token breakdown of Q·K scoring and softmax weighting for the selected query position.",
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Scaled Dot-Product Attention</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how attention scores are computed between token pairs, determining which tokens influence each other's representations.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention(Q,K,V) = softmax(QK^T / √d_k)V. Dot product measures Query-Key similarity; scaling by √d_k prevents softmax saturation; output weights sum to 1 per row. Token selector focuses on specific query position; adjustable top-k controls how many key connections are displayed.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Raw attention scores don't account for Value vector magnitudes—high attention weight doesn't guarantee high influence on the output.</p>
+                """,
                 subtitle=f"(Layer {layer_idx} · Head {head_idx})",
                 controls=[
                     ui.download_button("export_attention_metrics_dashboard", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
@@ -2182,8 +2251,13 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             viz_header(
                 "Scaled Dot-Product Attention",
-                "Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.",
-                "<b>Formula:</b> Attention(Q, K, V) = softmax(QK<sup>T</sup> / √d<sub>k</sub>)V",
+                "Per-token breakdown of Q·K scoring and softmax weighting for the selected query position.",
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Scaled Dot-Product Attention</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how attention scores are computed between token pairs, determining which tokens influence each other's representations.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention(Q,K,V) = softmax(QK^T / √d_k)V. Dot product measures Query-Key similarity; scaling by √d_k prevents softmax saturation; output weights sum to 1 per row. Token selector focuses on specific query position; adjustable top-k controls how many key connections are displayed.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Raw attention scores don't account for Value vector magnitudes—high attention weight doesn't guarantee high influence on the output.</p>
+                """,
                 subtitle=f"(Layer {layer_idx} · Head {head_idx})",
                 controls=[
                     ui.download_button("export_scaled_attention", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
@@ -2201,8 +2275,8 @@ def server(input, output, session):
         except: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"}, 
-            ui.h4("Feed-Forward Network"), 
-            ui.p("Expansion -> Activation -> Projection", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.h4("Feed-Forward Network"),
+            ui.p("Position-wise two-layer MLP applied independently to each token: FFN(x) = GELU(xW₁+b₁)W₂+b₂. The intermediate dimension expands to 4× the hidden size, creating a bottleneck architecture believed to store factual knowledge learned during pre-training.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_ffn_view(res, layer)
         )
 
@@ -2216,7 +2290,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Add & Norm"),
-            ui.p("Residual Connection + Layer Normalization", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Applies residual connection (x + Sublayer(x)) followed by Layer Normalization. Residual connections enable gradient flow through deep networks; normalization stabilizes activations across layers. Applied after both attention and FFN sublayers.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_add_norm_view(res, layer)
         )
 
@@ -2230,7 +2304,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Add & Norm (Post-FFN)"),
-            ui.p("Residual Connection + Layer Normalization", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Second residual connection and Layer Normalization within the Transformer block, applied after the Feed-Forward Network. Completes the standard Transformer block architecture: Attention → Add&Norm → FFN → Add&Norm.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_add_norm_post_ffn_view(res, layer)
         )
 
@@ -2247,7 +2321,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Hidden States"),
-            ui.p("Final vector representation before projection.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Contextualized vector representations output by each Transformer layer. Unlike static embeddings, these encode both the token's original meaning and information aggregated from other positions through attention. Early layers capture syntax; deeper layers encode abstract semantics.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_layer_output_view(res, num_layers - 1)
         )
 
@@ -2532,8 +2606,10 @@ def server(input, output, session):
                 <div class='info-tooltip-wrapper' style='display:flex; align-items:center; margin-left:2px;'>
                     <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
                     <div class='info-tooltip-content'>
-                        <strong>Causal Language Modeling</strong>
-                        <p>We use GPT-2's Causal Language Modeling. The model predicts the <strong>next token</strong> in the sequence based on all previous tokens.</p>
+                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Next Token Predictions (Causal) (GPT-2)</strong>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Displays the model's probabilistic forecast for the *next* token in the sequence, based on all preceding tokens.</p>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Standard causal language modeling: P(token_t | token_1...token_{t-1}). The model outputs a probability distribution over the vocabulary; top-k candidates shown.</p>
+                        <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Purely statistical prediction based on training data; "plausible" continuations may not be factually correct or logically consistent.</p>
                     </div>
                 </div>
             """
@@ -2609,8 +2685,10 @@ def server(input, output, session):
                 <div class='info-tooltip-wrapper' style='display:flex; align-items:center; margin-left:2px;'>
                     <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
                     <div class='info-tooltip-content'>
-                        <strong>Masked Language Modeling</strong>
-                        <p>We use BERT's Masked Language Modeling capability. To get these results, we iteratively mask each token in the sequence one by one and ask the model to predict the most likely original token based on the surrounding context (left and right).</p>
+                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Masked Token Predictions (MLM) (BERT)</strong>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Reveals BERT's predictions when each token is masked, showing what the model considers plausible given bidirectional context.</p>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Each token is iteratively masked; the model predicts the most likely original using context from both left and right. Top-k predictions with probabilities are displayed.</p>
+                        <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Predictions reflect training data statistics—high confidence in stereotypical associations may indicate learned biases rather than linguistic understanding.</p>
                     </div>
                 </div>
             """
@@ -2621,7 +2699,7 @@ def server(input, output, session):
                 ui.HTML(tooltip_html), 
                 style="margin:0; display:flex; align-items:center;"
             )
-            desc = "Predicts the masked token using bidirectional context."
+            desc = "Demonstrates BERT's bidirectional language understanding by iteratively masking each token and predicting the most likely original based on full surrounding context from both directions."
 
         # Header Container: Separating Title Row from Description to allow vertical centering of Button vs Title
         header_row = ui.div(
@@ -2655,10 +2733,14 @@ def server(input, output, session):
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
             viz_header(
-                "Head Specialization", 
-                "Each axis represents a linguistic function. The shape shows what this head focuses on.",
-                "<b>Calculated by aggregating attention mass on specific token types.</b><br>e.g., Syntax score = % of attention directed to functional words (DET, PREP, etc.).",
-                limitation="Approximation based on POS tags.",
+                "Head Specialization",
+                "Radar chart profiling this head's attention distribution across 7 linguistic dimensions.",
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Head Specialization</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Profiles what linguistic patterns each attention head focuses on—an approximation of functional specialization, not ground truth.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention mass aggregated by token category (Syntax, Semantics, Entities, Punctuation, CLS, Long-range, Self-attention) using POS tagging. Updates for selected Layer/Head; 'Global' view displays head specialization clusters across all heads.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> POS-based categorization is heuristic; heads may capture patterns not aligned with traditional linguistic categories.</p>
+                """,
                 controls=[
                     ui.download_button("export_head_spec_unique", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
@@ -2671,7 +2753,7 @@ def server(input, output, session):
             ui.div({"id": "radar-chart-container"}, head_specialization_radar(res, layer_idx, head_idx, mode)),
             ui.HTML(f"""
                 <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
-                    <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
+                    <strong style="color: #ff5ca9;">Specialization Dimensions</strong> — click any to see detailed explanation:<br>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: center;">
                         <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
                         <span class="metric-tag" onclick="showMetricModal('Semantics', 0, 0)">Semantics</span>
@@ -2707,8 +2789,13 @@ def server(input, output, session):
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
             viz_header("Attention Dependency Tree",
-                       "Visualizes the hierarchical influence of tokens on the selected focus token.",
-                       "<b>Tree built from attention weights.</b><br>Each branch shows which tokens the focus token attends to most.",
+                       "Recursive expansion of the focus token's top-k attention connections into a multi-level tree.",
+                       """
+                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of which tokens the selected focus token attends to most strongly—shows attention structure, not syntactic dependencies.</p>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Tree built recursively from attention weights starting at the root token (selectable via floating toolbar). Each branch shows parent→child attention weight. Node size reflects attention strength.</p>
+                        <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Tree structure imposes hierarchy on non-hierarchical attention; multiple strong connections may be underrepresented.</p>
+                       """,
                        controls=[
                            ui.download_button("export_tree_data", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                            ui.download_button("export_topk_attention", "Top-K CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
@@ -2718,6 +2805,7 @@ def server(input, output, session):
                                style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                            )
                        ]),
+            ui.div({"class": "viz-description"}, "Edge labels show attention weights; node size reflects strength. Use the floating toolbar to change the root token. ⚠️ This is attention structure, not syntactic parsing."),
             ui.div({"id": "tree-viz-container"}, get_influence_tree_ui(res, root_idx, layer_idx, head_idx, use_global=use_global, norm_mode=norm_mode))
         )
 
@@ -2750,8 +2838,13 @@ def server(input, output, session):
 
         return ui.div(
             {"class": "card"},
-            viz_header("Attention Metrics", "Quantitative measures of attention behavior for the selected head.", 
-                               "<b>Formulas from 'From Attention to Assurance' paper.</b><br>Includes Confidence, Focus (Entropy), and more.",
+            viz_header("Attention Metrics", "Summary statistics for the selected head's attention distribution, or global aggregate across all heads.",
+                               """
+                               <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Metrics</strong>
+                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Quantitative measures characterizing attention behavior for comparison across heads and layers—descriptive statistics, not quality judgments.</p>
+                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Confidence = max weight. Focus = normalized entropy (low = concentrated, high = diffuse). Sparsity = % near-zero weights. Additional: Uniformity, Balance, Flow Change. Updates for selected Layer/Head or 'Global'. Normalization modes: 'Raw', 'Column', 'Rollout'.</p>
+                               <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Metrics describe distribution shape but don't indicate whether attention is 'correct' or task-relevant.</p>
+                               """,
                                subtitle=subtitle,
                                controls=[
                                    ui.download_button("export_attention_metrics_single", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
@@ -2874,7 +2967,7 @@ def server(input, output, session):
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
                         arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type_val, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k_val))
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Maps each token ID to a learned dense vector representation (d=768 for base models) that captures semantic meaning from the vocabulary embedding matrix. At this stage, representations are context-independent—contextual disambiguation occurs in subsequent attention layers.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k_val))
                     ),
                     arrow("Token Embeddings", "Segment Embeddings", "horizontal", suffix=suffix),
                     ui.div(
@@ -2882,7 +2975,7 @@ def server(input, output, session):
                         ui.div(
                             {"class": "card", "style": "height: 100%;"},
                             ui.h4("Segment Embeddings"),
-                            ui.p("Encodes sentence membership (A or B).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                            ui.p("Encodes sentence membership using binary embeddings (Segment A or Segment B), enabling BERT to distinguish between tokens from different sentences. Essential for sentence-pair tasks such as Natural Language Inference, Question Answering, and Next Sentence Prediction.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
                             get_segment_embedding_view(res)
                         ),
                         arrow("Segment Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
@@ -2890,7 +2983,7 @@ def server(input, output, session):
                     arrow("Segment Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k_val))
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Injects absolute position information into each token representation using learned embeddings. Without positional encoding, Transformers would be permutation-invariant—unable to distinguish word order. Both BERT and GPT-2 use learned (not sinusoidal) position embeddings.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k_val))
                     ),
                 ),
                 # Sum & Norm Row
@@ -2898,7 +2991,7 @@ def server(input, output, session):
                     {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable), then applies Layer Normalization to stabilize the activation distribution before entering the first Transformer block.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
                     ),
                     arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
                     ui.div(
@@ -2906,7 +2999,7 @@ def server(input, output, session):
                         ui.div(
                             {"class": "card", "style": "height: 100%;"},
                             ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
-                            ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                            ui.p("Transforms input hidden states into Query, Key, and Value representations through learned linear projections (Q=XW_Q, K=XW_K, V=XW_V). Queries encode 'what information to look for', Keys encode 'what information is available', and Values contain 'the information to aggregate'.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
                             get_qkv_table(res, layer_idx_val, top_k=top_k_val, suffix=suffix, norm_mode=norm_mode_val, use_global=(global_metrics_mode.get() == "all"))
                         ),
                     ),
@@ -2916,18 +3009,18 @@ def server(input, output, session):
                     {"class": "flex-row-container", "style": "margin-bottom: 22px;"},
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx_val))
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm"), ui.p("Applies residual connection (x + Sublayer(x)) followed by Layer Normalization. Residual connections enable gradient flow through deep networks; normalization stabilizes activations across layers. Applied after both attention and FFN sublayers.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_add_norm_view(res, layer_idx_val))
                     ),
                     arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
                         arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx_val))
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), ui.p("Position-wise two-layer MLP applied independently to each token: FFN(x) = GELU(xW₁+b₁)W₂+b₂. The intermediate dimension expands to 4× the hidden size, creating a bottleneck architecture believed to store factual knowledge learned during pre-training.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_ffn_view(res, layer_idx_val))
                     ),
                     arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx_val)),
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), ui.p("Second residual connection and Layer Normalization within the Transformer block, applied after the Feed-Forward Network. Completes the standard Transformer block architecture: Attention → Add&Norm → FFN → Add&Norm.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_add_norm_post_ffn_view(res, layer_idx_val)),
                         arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type_val, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
                     ),
                 ),
@@ -2952,12 +3045,12 @@ def server(input, output, session):
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
                         arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type_val, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k_val))
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Maps each token ID to a learned dense vector representation (d=768 for base models) that captures semantic meaning from the vocabulary embedding matrix. At this stage, representations are context-independent—contextual disambiguation occurs in subsequent attention layers.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k_val))
                     ),
                     arrow("Token Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k_val)),
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Positional Embeddings"), ui.p("Injects absolute position information into each token representation using learned embeddings. Without positional encoding, Transformers would be permutation-invariant—unable to distinguish word order. Both BERT and GPT-2 use learned (not sinusoidal) position embeddings.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_posenc_table(res, top_k=top_k_val)),
                         arrow("Positional Embeddings", "Sum & Layer Normalization", "vertical", suffix=suffix, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;")
                     ),
                 ),
@@ -2966,7 +3059,7 @@ def server(input, output, session):
                     {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Sum of all embeddings + layer normalization.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable), then applies Layer Normalization to stabilize the activation distribution before entering the first Transformer block.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
                     ),
                     arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
                     ui.div(
@@ -2974,7 +3067,7 @@ def server(input, output, session):
                         ui.div(
                             {"class": "card", "style": "height: 100%;"},
                             ui.div({"class": "header-simple"}, ui.h4("Q/K/V Projections")),
-                            ui.p("Query, Key, Value projections analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+                            ui.p("Transforms input hidden states into Query, Key, and Value representations through learned linear projections (Q=XW_Q, K=XW_K, V=XW_V). Queries encode 'what information to look for', Keys encode 'what information is available', and Values contain 'the information to aggregate'.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
                             get_qkv_table(res, layer_idx_val, top_k=top_k_val, suffix=suffix, norm_mode=norm_mode_val, use_global=(global_metrics_mode.get() == "all"))
                         ),
                     ),
@@ -2984,18 +3077,18 @@ def server(input, output, session):
                     {"class": "flex-row-container", "style": "margin-bottom: 22px;"},
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Pre-FFN)"), get_add_norm_view(res, layer_idx_val))
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm"), ui.p("Applies residual connection (x + Sublayer(x)) followed by Layer Normalization. Residual connections enable gradient flow through deep networks; normalization stabilizes activations across layers. Applied after both attention and FFN sublayers.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_add_norm_view(res, layer_idx_val))
                     ),
                     arrow("Add & Norm", "Feed-Forward Network", "horizontal", suffix=suffix),
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
                         arrow("Q/K/V Projections", "Add & Norm", "vertical", suffix=suffix, style="position: absolute; top: -30px; left: 50%; transform: translateX(-50%) rotate(45deg); width: auto; margin: 0; z-index: 10;"),
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), get_ffn_view(res, layer_idx_val))
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Feed-Forward Network"), ui.p("Position-wise two-layer MLP applied independently to each token: FFN(x) = GELU(xW₁+b₁)W₂+b₂. The intermediate dimension expands to 4× the hidden size, creating a bottleneck architecture believed to store factual knowledge learned during pre-training.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_ffn_view(res, layer_idx_val))
                     ),
                     arrow("Feed-Forward Network", "Add & Norm (post-FFN)", "horizontal", suffix=suffix),
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), get_add_norm_post_ffn_view(res, layer_idx_val)),
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), ui.p("Second residual connection and Layer Normalization within the Transformer block, applied after the Feed-Forward Network. Completes the standard Transformer block architecture: Attention → Add&Norm → FFN → Add&Norm.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_add_norm_post_ffn_view(res, layer_idx_val)),
                         arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type_val, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
                     ),
                 ),
@@ -3251,14 +3344,13 @@ def server(input, output, session):
                     ui.div(
                         {"class": "info-tooltip-content"},
                         ui.HTML("""
-                            <strong>Attention Received</strong>
-                            <p>Background opacity highlights tokens that the model focuses on most.</p>
+                            <strong>Sentence Preview</strong>
+                            <p>Visualizes the input text after model-specific tokenization, showing how raw text is decomposed into processable subword units.</p>
                             <div style='background:rgba(255,255,255,0.1); padding:8px; border-radius:4px; margin: 8px 0;'>
-                                <strong style='color:#3b82f6;'>Calculation:</strong>
-                                <code style='display:block; margin-top:4px;'>AVG(All Layers, All Heads) → Sum(Columns)</code>
+                                <strong style='color:#3b82f6;'>Tokenization Details:</strong>
+                                <p style='font-size:10px; margin-top:4px;'>Tokenization differs between models: BERT uses WordPiece (splitting unknown words into subwords like 'play' + '##ing'), while GPT-2 uses Byte-Pair Encoding (BPE) operating at byte level.</p>
+                                <p style='font-size:10px; margin-top:4px;'>Special tokens are model-specific: [CLS]/[SEP] for BERT, &lt;|endoftext|&gt; for GPT-2.</p>
                             </div>
-                            <p style='font-size:10px; color:#fff; margin-bottom: 8px;'>Sum of attention weights received from all other tokens, averaged across all layers and heads.</p>
-                            <p style='font-style:italic; color:#fff;'>Hover tokens for attention received</p>
                         """)
                     )
                 )
@@ -3539,13 +3631,13 @@ def server(input, output, session):
                      {"style": "position: relative; height: 100%;"},
                      arrow("Input", "Token Embeddings", "vertical", suffix="_A", model_type=model_type_A,
                            style="position: absolute; top: -32px; left: 50%; transform: translateX(-50%); width: auto; margin: 0; z-index: 100;"),
-                     make_card("Token Embeddings", "Token Lookup (Meaning)", get_embedding_table(res_A, top_k=top_k), "a")
+                      make_card("Token Embeddings", "Maps each token ID to a learned dense vector representation (d=768 for base models) that captures semantic meaning from the vocabulary embedding matrix. At this stage, representations are context-independent—contextual disambiguation occurs in subsequent attention layers.", get_embedding_table(res_A, top_k=top_k), "a")
                  )
                  row_B = ui.div(
                      {"style": "position: relative; height: 100%;"},
                      arrow("Input", "Token Embeddings", "vertical", suffix="_B", model_type=model_type_B,
                            style="position: absolute; top: -32px; left: 50%; transform: translateX(-50%); width: auto; margin: 0; z-index: 100;"),
-                     make_card("Token Embeddings", "Token Lookup (Meaning)", get_embedding_table(res_B, top_k=top_k, suffix="_B"), "b")
+                      make_card("Token Embeddings", "Maps each token ID to a learned dense vector representation (d=768 for base models) that captures semantic meaning from the vocabulary embedding matrix. At this stage, representations are context-independent—contextual disambiguation occurs in subsequent attention layers.", get_embedding_table(res_B, top_k=top_k, suffix="_B"), "b")
                  )
                  rows.append(ui.layout_columns(row_A, row_B, col_widths=[6, 6]))
 
@@ -3554,7 +3646,7 @@ def server(input, output, session):
                  # Segment Embeddings (Show ONLY if both are BERT - neither is GPT-2)
                  if not is_gpt2_A and not is_gpt2_B:
                      rows.append(ui.div(paired_arrows(next_from, "Segment Embeddings"), class_="arrow-row"))
-                     seg_desc = "Encodes sentence membership (A or B)."
+                     seg_desc = "Encodes sentence membership using binary embeddings (Segment A or Segment B), enabling BERT to distinguish between tokens from different sentences. Essential for sentence-pair tasks such as Natural Language Inference, Question Answering, and Next Sentence Prediction."
                      rows.append(ui.layout_columns(
                          make_card("Segment Embeddings", seg_desc, get_segment_embedding_view(res_A), "a"),
                          make_card("Segment Embeddings", seg_desc, get_segment_embedding_view(res_B), "b"),
@@ -3564,11 +3656,12 @@ def server(input, output, session):
 
                  # Positional
                  rows.append(ui.div(paired_arrows(next_from, "Positional Embeddings", model_type_A=model_type_A, model_type_B=model_type_B), class_="arrow-row"))
-                 rows.append(paired_with_card("Positional Embeddings", get_posenc_table(res_A, top_k=top_k), get_posenc_table(res_B, top_k=top_k, suffix="_B")))
+                 pos_desc = "Injects absolute position information into each token representation using learned embeddings. Without positional encoding, Transformers would be permutation-invariant—unable to distinguish word order. Both BERT and GPT-2 use learned (not sinusoidal) position embeddings."
+                 rows.append(paired_with_card("Positional Embeddings", make_card("Positional Embeddings", pos_desc, get_posenc_table(res_A, top_k=top_k), "a"), make_card("Positional Embeddings", pos_desc, get_posenc_table(res_B, top_k=top_k, suffix="_B"), "b")))
 
                  # Sum & Norm
                  rows.append(ui.div(paired_arrows("Positional Embeddings", "Sum & Layer Normalization"), class_="arrow-row"))
-                 sum_desc = "Combines token, position, and segment embeddings with layer normalization."
+                 sum_desc = "Computes the element-wise sum of token, positional, and segment embeddings (where applicable), then applies Layer Normalization to stabilize the activation distribution before entering the first Transformer block."
                  rows.append(ui.layout_columns(
                      make_card("Sum & Layer Normalization", sum_desc, get_sum_layernorm_view(res_A, encoder_model_A), "a"),
                      make_card("Sum & Layer Normalization", sum_desc, get_sum_layernorm_view(res_B, encoder_model_B, suffix="_B"), "b"),
@@ -3577,7 +3670,7 @@ def server(input, output, session):
 
                  # QKV
                  rows.append(ui.div(paired_arrows("Sum & Layer Normalization", "Q/K/V Projections"), class_="arrow-row"))
-                 qkv_desc = "Query, Key, Value projections analysis."
+                 qkv_desc = "Transforms input hidden states into Query, Key, and Value representations through learned linear projections (Q=XW_Q, K=XW_K, V=XW_V). Queries encode 'what information to look for', Keys encode 'what information is available', and Values contain 'the information to aggregate'."
                  rows.append(ui.layout_columns(
                      make_card("Q/K/V Projections", qkv_desc, get_qkv_table(res_A, layer_idx, top_k=top_k, norm_mode=norm_mode, use_global=use_global), "a"),
                      make_card("Q/K/V Projections", qkv_desc, get_qkv_table(res_B, layer_idx, top_k=top_k, suffix="_B", norm_mode=norm_mode, use_global=use_global), "b"),
@@ -3586,7 +3679,7 @@ def server(input, output, session):
 
                  # Add & Norm
                  rows.append(ui.div(paired_arrows("Q/K/V Projections", "Add & Norm"), class_="arrow-row"))
-                 addnorm_desc = "Residual Connection + Layer Normalization"
+                 addnorm_desc = "Applies residual connection (x + Sublayer(x)) followed by Layer Normalization. Residual connections enable gradient flow through deep networks; normalization stabilizes activations across layers. Applied after both attention and FFN sublayers."
                  rows.append(ui.layout_columns(
                      make_card("Add & Norm", addnorm_desc, get_add_norm_view(res_A, layer_idx), "a"),
                      make_card("Add & Norm", addnorm_desc, get_add_norm_view(res_B, layer_idx, suffix="_B"), "b"),
@@ -3595,7 +3688,7 @@ def server(input, output, session):
 
                  # FFN
                  rows.append(ui.div(paired_arrows("Add & Norm", "Feed-Forward Network"), class_="arrow-row"))
-                 ffn_desc = "Expansion -> Activation -> Projection"
+                 ffn_desc = "Position-wise two-layer MLP applied independently to each token: FFN(x) = GELU(xW₁+b₁)W₂+b₂. The intermediate dimension expands to 4× the hidden size, creating a bottleneck architecture believed to store factual knowledge learned during pre-training."
                  rows.append(ui.layout_columns(
                      make_card("Feed-Forward Network", ffn_desc, get_ffn_view(res_A, layer_idx), "a"),
                      make_card("Feed-Forward Network", ffn_desc, get_ffn_view(res_B, layer_idx, suffix="_B"), "b"),
@@ -3604,9 +3697,10 @@ def server(input, output, session):
 
                  # Post FFN
                  rows.append(ui.div(paired_arrows("Feed-Forward Network", "Add & Norm (Post-FFN)"), class_="arrow-row"))
+                 addnorm_post_desc = "Second residual connection and Layer Normalization within the Transformer block, applied after the Feed-Forward Network. Completes the standard Transformer block architecture: Attention → Add&Norm → FFN → Add&Norm."
                  rows.append(ui.layout_columns(
-                     make_card("Add & Norm (Post-FFN)", addnorm_desc, get_add_norm_post_ffn_view(res_A, layer_idx), "a"),
-                     make_card("Add & Norm (Post-FFN)", addnorm_desc, get_add_norm_post_ffn_view(res_B, layer_idx, suffix="_B"), "b"),
+                     make_card("Add & Norm (Post-FFN)", addnorm_post_desc, get_add_norm_post_ffn_view(res_A, layer_idx), "a"),
+                     make_card("Add & Norm (Post-FFN)", addnorm_post_desc, get_add_norm_post_ffn_view(res_B, layer_idx, suffix="_B"), "b"),
                      col_widths=[6, 6]
                  ))
 
@@ -3884,29 +3978,17 @@ def server(input, output, session):
 
         return ui.div(
             {"class": "card"},
-            viz_header("Inter-Sentence Attention (ISA)",
-                        "",
-                        """
-                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Inter-Sentence Attention (ISA)</strong>
-
-                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures how strongly tokens in one sentence attend to tokens in another sentence, aggregating across all layers and attention heads.</p>
-
-                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Three-step max aggregation:<br>
-                        <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>ISA = max<sub>heads</sub>(max<sub>tokens</sub>(max<sub>layers</sub>(α)))</code></p>
-
-                        <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                            <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
-                            <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
-                                <span style='color:#22c55e'>● High (>0.8): Strong dependency</span>
-                                <span style='color:#eab308'>● Mid (0.4-0.8): Moderate</span>
-                                <span style='color:#ef4444'>● Low (<0.4): Weak link</span>
-                            </div>
-                        </div>
-
-                        <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                            <em>Click icon for formulas & details</em>
-                        </p>
-                        """,
+            viz_header(
+                "Inter-Sentence Attention (ISA)",
+                "Heatmap of sentence-pair attention scores computed via three-level max pooling (layers → heads → tokens).",
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Inter-Sentence Attention (ISA)</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures attention strength between sentence pairs—indicates cross-sentence attention flow, not semantic similarity or entailment.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> ISA = max_heads(max_tokens(max_layers(α_ij))) for tokens across sentence boundaries. Scores: High (&gt;0.8) = strong coupling; Medium (0.4-0.8) = moderate; Low (&lt;0.4) = independent processing. Token-by-token visualization highlights selected token's cross-sentence connections.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>BERT:</strong> Bidirectional attention — all tokens attend to all tokens regardless of position. The ISA matrix is fully populated: sentence A can attend to sentence B and vice versa, producing a roughly symmetric matrix.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>GPT-2:</strong> Causal (left-to-right) attention — each token can only attend to previous tokens due to the autoregressive mask. The ISA matrix upper triangle is near-zero: later sentences attend to earlier ones, but earlier sentences cannot attend forward.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Max aggregation captures peak attention but may miss nuanced distributed interactions; high ISA doesn't imply logical relationship.</p>
+                """,
                         controls=[
                             ui.download_button(export_csv_id, "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
                             ui.download_button(export_json_id, "JSON", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
@@ -3917,7 +3999,7 @@ def server(input, output, session):
                             ),
                         ]
                     ),
-            ui.div({"class": "viz-description"}, "Visualizes attention strength between sentence pairs. Click any point to see token-level attention details. ⚠️ Higher ISA scores indicate stronger cross-sentence attention, not necessarily semantic similarity."),
+            ui.div({"class": "viz-description"}, "Click any cell to inspect token-level attention between the two sentences. ⚠️ High scores reflect strong attention coupling, not semantic similarity."),
             ui.layout_columns(
                 ui.div(
                     {"id": f"isa-plot-container{suffix}", "style": "width: 100%; display: flex; justify-content: center; align-items: center; margin-bottom: 20px;" if vertical_layout else "height: 500px; width: 100%; display: flex; justify-content: center; align-items: center;"},
@@ -4137,16 +4219,18 @@ def server(input, output, session):
 
         return ui.div(
             {"class": "card"},
-            ui.div(
-                {"style": "display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"},
-                ui.h4(
-                    "Inter-Sentence Attention (ISA)", 
-                    style="margin: 0; cursor: pointer; border-bottom: 1px dashed #cbd5e1; display: inline-block;",
-                    onclick=f"showISACalcExplanation('{model_type}')",
-                    title="Click to see how this is calculated"
-                ),
+            viz_header(
+                "Inter-Sentence Attention (ISA)",
+                "Heatmap of sentence-pair attention scores computed via three-level max pooling (layers → heads → tokens).",
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Inter-Sentence Attention (ISA)</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures attention strength between sentence pairs—indicates cross-sentence attention flow, not semantic similarity or entailment.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> ISA = max_heads(max_tokens(max_layers(α_ij))) for tokens across sentence boundaries. Scores: High (&gt;0.8) = strong coupling; Medium (0.4-0.8) = moderate; Low (&lt;0.4) = independent processing. Token-by-token visualization highlights selected token's cross-sentence connections.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>BERT:</strong> Bidirectional attention — all tokens attend to all tokens regardless of position. The ISA matrix is fully populated: sentence A can attend to sentence B and vice versa, producing a roughly symmetric matrix.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>GPT-2:</strong> Causal (left-to-right) attention — each token can only attend to previous tokens due to the autoregressive mask. The ISA matrix upper triangle is near-zero: later sentences attend to earlier ones, but earlier sentences cannot attend forward.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Max aggregation captures peak attention but may miss nuanced distributed interactions; high ISA doesn't imply logical relationship.</p>
+                """
             ),
-            ui.p("Visualizes the relationship between two sentences, focusing on how the tokens in Sentence X attend to the tokens in Sentence Y. The ISA score quantifies this relationship, with higher values indicating a stronger connection between the tokens in Sentence X and Sentence Y.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
             ui.layout_columns(
                 ui.div(
                     {"style": "height: 500px; width: 100%; display: flex; justify-content: center; align-items: center;"},
@@ -4820,9 +4904,15 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%; display: flex; flex-direction: column;"},
             viz_header(
-                "Multi-Head Attention",
-                "",
-                "<b>Calculation:</b> Attention = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V<br><br><b>Color Scale:</b> Dark blue indicates high attention weight.",
+                "Multi-Head Attention (Heatmap)",
+                "Full attention weight matrix for the selected head. Rows are query tokens, columns are key tokens.",
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention (Heatmap)</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Visualizes attention weight distribution showing how each token attends to others—not a direct measure of information flow or causal influence.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Matrix where cell (i,j) = attention from query i to key j. Options: specific Layer/Head or 'Global' (mean across heads). Normalization: 'Raw' (row-sum=1), 'Column' (key importance), 'Rollout' (accumulated across layers). Token click highlights row/column.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Attention weights ≠ contribution to output; gradient-based methods provide more reliable importance estimates.</p>
+                """,
+                show_calc_title=False,
                 controls=[
                     ui.download_button("export_multi_head_data", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
                     ui.tags.button(
@@ -5043,8 +5133,15 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             viz_header(
                 "Attention Flow",
-                "",
-                "<b>Threshold:</b> Connections < 0.04 hidden.<br><br><b>Line Width:</b> Proportional to attention weight.", controls=[
+                "Directed graph connecting tokens by attention weight. Only connections ≥0.04 displayed.", 
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Flow</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Sankey-style diagram showing attention distribution between tokens—illustrates weight patterns, not actual information propagation.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Line width proportional to attention weight α_ij. Only connections ≥0.04 threshold displayed. Options: specific Layer/Head or 'Global' (mean across heads). Normalization: 'Raw' (row-sum=1), 'Column' (key importance), 'Rollout' (accumulated across layers). Token click highlights connected flows.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Visual emphasis on strong connections may obscure important distributed patterns; threshold filtering hides weak but potentially meaningful attention.</p>
+                """,
+                show_calc_title=False,
+                controls=[
                     ui.download_button("export_attention_flow_data", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
                     ui.tags.button(
                         "PNG",
@@ -5236,10 +5333,14 @@ def server(input, output, session):
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
             viz_header(
-                "Head Specialization", 
-                "Each axis represents a linguistic function. The shape shows what this head focuses on.",
-                "<b>Calculated by aggregating attention mass on specific token types.</b><br>e.g., Syntax score = % of attention directed to functional words (DET, PREP, etc.).",
-                limitation="Approximation based on POS tags.",
+                "Head Specialization",
+                "Radar chart profiling this head's attention distribution across 7 linguistic dimensions.",
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Head Specialization</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Profiles what linguistic patterns each attention head focuses on—an approximation of functional specialization, not ground truth.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention mass aggregated by token category (Syntax, Semantics, Entities, Punctuation, CLS, Long-range, Self-attention) using POS tagging. Updates for selected Layer/Head; 'Global' view displays head specialization clusters across all heads.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> POS-based categorization is heuristic; heads may capture patterns not aligned with traditional linguistic categories.</p>
+                """,
                 controls=[
                     ui.download_button("export_head_spec_unique_legacy", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
@@ -5252,7 +5353,7 @@ def server(input, output, session):
             ui.div({"id": "radar-chart-container-legacy"}, head_specialization_radar(res, layer_idx, head_idx, mode)),
              ui.HTML(f"""
                 <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
-                    <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
+                    <strong style="color: #ff5ca9;">Specialization Dimensions</strong> — click any to see detailed explanation:<br>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: center;">
                         <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
                         <span class="metric-tag" onclick="showMetricModal('Semantics', 0, 0)">Semantics</span>
@@ -5624,8 +5725,13 @@ def server(input, output, session):
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
             viz_header("Attention Dependency Tree",
-                        "Visualizes the hierarchical influence of tokens on the selected focus token.",
-                        "<b>Tree built from attention weights.</b><br>Each branch shows which tokens the focus token attends to most.",
+                        "Recursive expansion of the focus token's top-k attention connections into a multi-level tree.",
+                        """
+                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of which tokens the selected focus token attends to most strongly—shows attention structure, not syntactic dependencies.</p>
+                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Tree built recursively from attention weights starting at the root token (selectable via floating toolbar). Each branch shows parent→child attention weight. Node size reflects attention strength.</p>
+                        <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Tree structure imposes hierarchy on non-hierarchical attention; multiple strong connections may be underrepresented.</p>
+                        """,
                         controls=[
                             ui.download_button("export_tree_data_legacy", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                             ui.tags.button(
@@ -5635,6 +5741,7 @@ def server(input, output, session):
                             )
                         ]
             ),
+            ui.div({"class": "viz-description"}, "Edge labels show attention weights; node size reflects strength. Use the floating toolbar to change the root token. ⚠️ This is attention structure, not syntactic parsing."),
             ui.div({"id": "tree-viz-container-legacy"}, get_influence_tree_ui(res, root_idx, layer_idx, head_idx, suffix="", use_global=use_global, max_depth=top_k_val, top_k=top_k_val, norm_mode=norm_mode))
         )
 
@@ -5757,8 +5864,13 @@ def server(input, output, session):
             {"class": "card", "style": "height: 100%;"},
             viz_header(
                 "Scaled Dot-Product Attention",
-                "Calculates attention scores by comparing Query vectors (what each token looks for) against Key vectors (what each token offers), scaled by √d to stabilize gradients.",
-                "<b>Formula:</b> Attention(Q, K, V) = softmax(QK<sup>T</sup> / √d<sub>k</sub>)V",
+                "Per-token breakdown of Q·K scoring and softmax weighting for the selected query position.",
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Scaled Dot-Product Attention</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how attention scores are computed between token pairs, determining which tokens influence each other's representations.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention(Q,K,V) = softmax(QK^T / √d_k)V. Dot product measures Query-Key similarity; scaling by √d_k prevents softmax saturation; output weights sum to 1 per row. Token selector focuses on specific query position; adjustable top-k controls how many key connections are displayed.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Raw attention scores don't account for Value vector magnitudes—high attention weight doesn't guarantee high influence on the output.</p>
+                """,
                 subtitle=f"(Layer {layer_idx} · Head {head_idx})",
                 controls=[
                     ui.download_button("export_scaled_attention_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
@@ -5808,7 +5920,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Add & Norm (Post-FFN)"),
-            ui.p("Residual Connection + Layer Normalization", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Second residual connection and Layer Normalization within the Transformer block, applied after the Feed-Forward Network. Completes the standard Transformer block architecture: Attention → Add&Norm → FFN → Add&Norm.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_add_norm_post_ffn_view(res, layer, suffix="_B")
         )
 
@@ -5826,7 +5938,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Hidden States"),
-            ui.p("Final vector representation before projection.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Contextualized vector representations output by each Transformer layer. Unlike static embeddings, these encode both the token's original meaning and information aggregated from other positions through attention. Early layers capture syntax; deeper layers encode abstract semantics.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_layer_output_view(res, num_layers - 1, suffix="_B")
         )
 
@@ -5901,8 +6013,8 @@ def server(input, output, session):
         # Prepare viz_header arguments
         if is_bert:
             title = "Masked Token Predictions (MLM)"
-            desc = "Predicts the masked token using bidirectional context."
-            tooltip = "<b>Iterative Masking (BERT):</b> Replaces token with [MASK] and computes logits."
+            desc = "Demonstrates BERT's bidirectional language understanding by iteratively masking each token and predicting the most likely original based on full surrounding context from both directions."
+            tooltip = "<b>Masked Language Modeling:</b> We use BERT's Masked Language Modeling capability. To get these results, we iteratively mask each token in the sequence one by one and ask the model to predict the most likely original token based on the surrounding context (left and right)."
             
             # Interactive Mode Toggle
             try: manual_mode = input.mlm_interactive_mode_B()
@@ -5964,8 +6076,8 @@ def server(input, output, session):
             """)]
         else:
             title = "Next Token Predictions (Causal)"
-            desc = "Predicting the probability of the next token appearing after the sequence."
-            tooltip = "<b>Causal (GPT-2):</b> Predicts next token given previous context (unidirectional)."
+            desc = "Shows GPT-2's autoregressive next-token probability distribution, predicting what token is most likely to follow the sequence based solely on preceding (left) context."
+            tooltip = "Causal Language Modeling: GPT-2 predicts P(token_t | token_1...token_{t-1}) using only left context due to causal masking. This enables text generation but prevents direct use of future context, unlike BERT's bidirectional approach."
             extra_controls = None
 
         return ui.div(
@@ -5998,10 +6110,14 @@ def server(input, output, session):
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
             viz_header(
-                "Head Specialization", 
-                "Each axis represents a linguistic function. The shape shows what this head focuses on.",
-                "<b>Calculated by aggregating attention mass on specific token types.</b><br>e.g., Syntax score = % of attention directed to functional words (DET, PREP, etc.).",
-                limitation="Approximation based on POS tags.",
+                "Head Specialization",
+                "Radar chart profiling this head's attention distribution across 7 linguistic dimensions.",
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Head Specialization</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Profiles what linguistic patterns each attention head focuses on—an approximation of functional specialization, not ground truth.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Attention mass aggregated by token category (Syntax, Semantics, Entities, Punctuation, CLS, Long-range, Self-attention) using POS tagging. Updates for selected Layer/Head; 'Global' view displays head specialization clusters across all heads.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> POS-based categorization is heuristic; heads may capture patterns not aligned with traditional linguistic categories.</p>
+                """,
                 controls=[
                     ui.download_button("export_head_spec_unique_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
@@ -6014,7 +6130,7 @@ def server(input, output, session):
             ui.div({"id": "radar-chart-container-B"}, head_specialization_radar(res, layer_idx, head_idx, mode, suffix="_B")),
             ui.HTML(f"""
                 <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: 16px; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
-                    <strong style="color: #ff5ca9;">Attention Specialization Dimensions</strong> — click any to see detailed explanation:<br>
+                    <strong style="color: #ff5ca9;">Specialization Dimensions</strong> — click any to see detailed explanation:<br>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: center;">
                         <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
                         <span class="metric-tag" onclick="showMetricModal('Semantics', 0, 0)">Semantics</span>
@@ -6083,8 +6199,13 @@ def server(input, output, session):
             {"class": "card card-compact-height", "style": "height: 100%;"},
             viz_header(
                 "Attention Dependency Tree",
-                "Visualizes the hierarchical influence of tokens on the selected focus token.",
-                "<b>Tree built from attention weights.</b><br>Each branch shows which tokens the focus token attends to most.",
+                "Recursive expansion of the focus token's top-k attention connections into a multi-level tree.",
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Dependency Tree</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Hierarchical view of which tokens the selected focus token attends to most strongly—shows attention structure, not syntactic dependencies.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Tree built recursively from attention weights starting at the root token (selectable via floating toolbar). Each branch shows parent→child attention weight. Node size reflects attention strength.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Tree structure imposes hierarchy on non-hierarchical attention; multiple strong connections may be underrepresented.</p>
+                """,
                 controls=[
                     ui.download_button("export_tree_data_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px; display: inline-flex; align-items: center; justify-content: center;"),
                     ui.tags.button(
@@ -6129,9 +6250,14 @@ def server(input, output, session):
         return ui.div(
             {"class": "card"},
             viz_header(
-                "Attention Metrics", 
-                "Quantitative measures of attention behavior for the selected head.", 
-                "<b>Formulas from 'From Attention to Assurance' paper.</b><br>Includes Confidence, Focus (Entropy), and more.",
+                "Attention Metrics",
+                "Summary statistics for the selected head's attention distribution, or global aggregate across all heads.",
+                """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Metrics</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Quantitative measures characterizing attention behavior for comparison across heads and layers—descriptive statistics, not quality judgments.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Confidence = max weight. Focus = normalized entropy (low = concentrated, high = diffuse). Sparsity = % near-zero weights. Additional: Uniformity, Balance, Flow Change. Updates for selected Layer/Head or 'Global'. Normalization modes: 'Raw', 'Column', 'Rollout'.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Metrics describe distribution shape but don't indicate whether attention is 'correct' or task-relevant.</p>
+                """,
                 subtitle=subtitle,
                 controls=[
                     ui.download_button("export_attention_metrics_single_B", "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;")
@@ -6954,9 +7080,7 @@ def server(input, output, session):
             ),
         )
 
-    @render.download(
-        filename=lambda: generate_export_filename("attention_heatmap", "csv")
-    )
+    @auto_save_download("attention_heatmap", "csv")
     def export_attention_metrics_dashboard():
         res = get_active_result()
         if not res: 
@@ -6996,9 +7120,7 @@ def server(input, output, session):
             traceback.print_exc()
             yield f"Error exporting metrics: {str(e)}"
 
-    @render.download(
-        filename=lambda: generate_export_filename("scaled_attention", "csv", data_type="qkv_scores")
-    )
+    @auto_save_download("scaled_attention", "csv", data_type="qkv_scores")
     def export_scaled_attention():
         """Export scaled dot-product attention data as CSV."""
         res = get_active_result()
@@ -7036,9 +7158,7 @@ def server(input, output, session):
             traceback.print_exc()
             yield f"Error exporting data: {str(e)}"
 
-    @render.download(
-        filename=lambda: generate_export_filename("scaled_attention", "csv", is_b=True, data_type="qkv_scores")
-    )
+    @auto_save_download("scaled_attention", "csv", is_b=True, data_type="qkv_scores")
     def export_scaled_attention_B():
         """Export scaled dot-product attention data as CSV for Model B."""
         res = get_active_result("_B")
@@ -7131,21 +7251,15 @@ def server(input, output, session):
         df = df[cols]
         return df.to_csv(index=False)
 
-    @render.download(
-        filename=lambda: generate_export_filename("head_specialization", "csv")
-    )
+    @auto_save_download("head_specialization", "csv")
     def export_head_spec_unique():
         yield get_head_spec_csv()
 
-    @render.download(
-        filename=lambda: generate_export_filename("head_specialization_legacy", "csv")
-    )
+    @auto_save_download("head_specialization_legacy", "csv")
     def export_head_spec_unique_legacy():
         yield get_head_spec_csv()
 
-    @render.download(
-        filename=lambda: generate_export_filename("head_specialization", "csv", is_b=True)
-    )
+    @auto_save_download("head_specialization", "csv", is_b=True)
     def export_head_spec_unique_B():
         yield get_head_spec_csv(is_b=True)
     
@@ -7237,9 +7351,7 @@ def server(input, output, session):
         df = pd.DataFrame(all_rows)
         return df.to_csv(index=False)
 
-    @render.download(
-        filename=lambda: generate_export_filename("attention_tree", "csv", data_type="all_layers_heads")
-    )
+    @auto_save_download("attention_tree", "csv", data_type="all_layers_heads")
     def export_tree_data():
         res = get_active_result()
         csv_content = get_tree_csv(res, all_layers_heads=True)
@@ -7248,9 +7360,7 @@ def server(input, output, session):
         else:
             yield "No data available"
 
-    @render.download(
-        filename=lambda: generate_export_filename("attention_tree", "csv", is_b=True, data_type="all_layers_heads")
-    )
+    @auto_save_download("attention_tree", "csv", is_b=True, data_type="all_layers_heads")
     def export_tree_data_B():
         res = get_active_result("_B")
         csv_content = get_tree_csv(res, suffix="_B", all_layers_heads=True)
@@ -7259,9 +7369,7 @@ def server(input, output, session):
         else:
             yield "No data available"
 
-    @render.download(
-        filename=lambda: generate_export_filename("attention_tree", "csv", data_type="all_layers_heads")
-    )
+    @auto_save_download("attention_tree", "csv", data_type="all_layers_heads")
     def export_tree_data_legacy():
         res = get_active_result()
         csv_content = get_tree_csv(res, suffix="", all_layers_heads=True)
@@ -7353,9 +7461,7 @@ def server(input, output, session):
         df = pd.DataFrame(all_rows)
         return df.to_csv(index=False)
 
-    @render.download(
-        filename=lambda: generate_export_filename("attention_topk", "csv", data_type="all_layers_heads")
-    )
+    @auto_save_download("attention_topk", "csv", data_type="all_layers_heads")
     def export_topk_attention():
         res = get_active_result()
         csv_content = get_topk_attention_csv(res)
@@ -7364,9 +7470,7 @@ def server(input, output, session):
         else:
             yield "No data available"
 
-    @render.download(
-        filename=lambda: generate_export_filename("attention_topk", "csv", is_b=True, data_type="all_layers_heads")
-    )
+    @auto_save_download("attention_topk", "csv", is_b=True, data_type="all_layers_heads")
     def export_topk_attention_B():
         res = get_active_result("_B")
         csv_content = get_topk_attention_csv(res, suffix="_B")
@@ -7376,9 +7480,7 @@ def server(input, output, session):
             yield "No data available"
 
     # --- ISA Export with Token-to-Token ---
-    @render.download(
-        filename=lambda: generate_export_filename("isa", "json", data_type="with_token2token")
-    )
+    @auto_save_download("isa", "json", data_type="with_token2token")
     def export_isa_json():
         """Export ISA data as JSON including token-to-token attention."""
         res = get_active_result()
@@ -7437,9 +7539,7 @@ def server(input, output, session):
         except Exception as e:
             yield json.dumps({"error": str(e)})
 
-    @render.download(
-        filename=lambda: generate_export_filename("isa", "json", is_b=True, data_type="with_token2token")
-    )
+    @auto_save_download("isa", "json", is_b=True, data_type="with_token2token")
     def export_isa_json_B():
         """Export ISA data as JSON for Model B."""
         res = get_active_result("_B")
@@ -7495,9 +7595,7 @@ def server(input, output, session):
             yield json.dumps({"error": str(e)})
 
     # --- ISA CSV Export ---
-    @render.download(
-        filename=lambda: generate_export_filename("isa", "csv", data_type="sentence_matrix")
-    )
+    @auto_save_download("isa", "csv", data_type="sentence_matrix")
     def export_isa_csv():
         """Export ISA sentence attention matrix as CSV."""
         res = get_active_result()
@@ -7523,9 +7621,7 @@ def server(input, output, session):
         except Exception as e:
             yield f"Error: {str(e)}"
 
-    @render.download(
-        filename=lambda: generate_export_filename("isa", "csv", is_b=True, data_type="sentence_matrix")
-    )
+    @auto_save_download("isa", "csv", is_b=True, data_type="sentence_matrix")
     def export_isa_csv_B():
         """Export ISA sentence attention matrix as CSV for Model B."""
         res = get_active_result("_B")
