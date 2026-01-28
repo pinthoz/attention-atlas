@@ -1707,7 +1707,7 @@ def server(input, output, session):
                     {"class": "control-group"},
                     ui.span("Scale", class_="control-label"),
                     ui.div(
-                        {"class": "btn-global", "id": "scale-toggle", "style": "width: 40px; cursor: pointer; position: relative;", "title": "Toggle between Optimized Scale (green) and Full 0-1 Scale (grey)"},
+                        {"class": "btn-global", "id": "scale-toggle", "style": "width: 40px; cursor: pointer; position: relative;", "title": "Applies to ATTENTION METRICS only. Toggle ON (Pink) to use absolute [0, 1] scale. Toggle OFF (Grey) to use original scale."},
                         ui.span("Full", style="font-size: 8px;")
                     )
                 ),
