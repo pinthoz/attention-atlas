@@ -197,9 +197,38 @@ CSS = """
             background: var(--sidebar-bg);
             color: var(--sidebar-text);
             padding: 20px;
-            /* overflow-y: auto; Removed by request */
+            /* overflow-y: auto; Removed by request - using zoom instead */
             box-shadow: 4px 0 24px rgba(0,0,0,0.1);
             z-index: 100;
+        }
+
+        /* Responsive "Negative Zoom" only for very short screens */
+        /* User reported issues starting around 567px height */
+        
+        @media (max-height: 700px) {
+            body {
+                zoom: 0.9;
+            }
+        }
+
+        @media (max-height: 600px) {
+            body {
+                zoom: 0.8;
+            }
+        }
+        
+        /* Removed width-based zoom to prevent unwanted scaling on standard laptops */
+
+        /* Custom Scrollbar for Sidebar */
+        .sidebar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .sidebar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .sidebar::-webkit-scrollbar-thumb {
+            background-color: #334155;
+            border-radius: 4px;
         }
 
         .sidebar .app-title {
@@ -3999,5 +4028,106 @@ __all__ = ["CSS"]
 
         .custom-input-container.compare-prompts-active .compare-tabs-inline {
             display: flex !important; /* Only show when parent has active class */
+        }
+        
+        /* RESPONSIVE LAYOUT - Mobile & Tablet (< 1024px) */
+        @media (max-width: 1024px) {
+            /* 1. Sidebar becomes a scrollable top header */
+            .sidebar {
+                position: relative !important;
+                width: 100% !important;
+                height: auto !important;
+                min-height: auto !important;
+                bottom: auto !important;
+                top: 0 !important;
+                left: 0 !important;
+                overflow-y: visible !important;
+                z-index: 101 !important;
+                padding: 16px !important;
+                padding-bottom: 24px !important;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                border-bottom: 1px solid rgba(255,255,255,0.1);
+            }
+
+            /* 2. Content fills width and removes margin */
+            .content {
+                margin-left: 0 !important;
+                margin-top: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                padding: 16px !important;
+                padding-bottom: 90px !important; /* Extra space for bottom navbar */
+            }
+
+            /* 3. Navbar (Attention/Bias tabs) fixed to bottom */
+            .navbar {
+                position: fixed !important;
+                bottom: 0 !important;
+                top: auto !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 64px !important;
+                background: #0f172a !important; /* Dark background matches sidebar theme */
+                border-top: 1px solid rgba(255,255,255,0.15) !important;
+                z-index: 9999 !important;
+                display: flex !important;
+                padding: 0 16px !important;
+                box-shadow: 0 -4px 12px rgba(0,0,0,0.2) !important;
+            }
+
+            /* Adjust nav container to fill width */
+            .navbar .container-fluid, 
+            .navbar-collapse, 
+            .navbar-nav {
+                width: 100% !important;
+                justify-content: space-between !important;
+                gap: 12px !important;
+            }
+            
+            .navbar .nav-link {
+                height: 36px !important;
+                font-size: 14px !important;
+            }
+
+            /* 4. Floating Control Bar adjusts to bottom (above navbar) */
+            .floating-control-bar {
+                left: 0 !important;
+                right: 0 !important;
+                margin: 0 12px 72px 12px !important; /* Bottom margin clears navbar */
+                padding: 12px !important;
+                flex-wrap: wrap !important;
+                justify-content: center !important;
+            }
+
+            /* 5. Visualization Adjustments */
+            .metrics-grid {
+                grid-template-columns: repeat(2, 1fr) !important; /* 2 columns on mobile */
+            }
+            
+            /* Compare Mode Stacking */
+            .shiny-layout-columns {
+                flex-direction: column !important;
+            }
+            
+            .shiny-layout-columns > div {
+                width: 100% !important;
+                margin-bottom: 24px;
+            }
+
+            /* Compare Inputs Side-by-Side on Mobile? No, stack them in sidebar */
+            #compare-modes-container {
+                flex-wrap: wrap; 
+                gap: 16px !important;
+            }
+        }
+
+        /* Extra Small Devices (< 600px) */
+        @media (max-width: 600px) {
+            .metrics-grid {
+                grid-template-columns: 1fr !important; /* 1 column on tiny screens */
+            }
+            .sidebar .app-title h3 {
+                font-size: 18px !important;
+            }
         }
         """
