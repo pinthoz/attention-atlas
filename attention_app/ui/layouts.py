@@ -64,11 +64,8 @@ attention_analysis_page = ui.page_fluid(
                 ui.div(
                     {"style": "flex: 1; min-width: 0; display: flex; flex-direction: column;"},
 
-                    # Model A Header - Hidden by default via CSS, shown when compare_mode is on
-                    ui.tags.span("Model A", id="model-a-header", class_="sidebar-label", style="color: #3b82f6; font-size: 10px; font-weight: 700; margin-bottom: 4px; border-bottom: 1px dashed rgba(59, 130, 246, 0.3); padding-bottom: 2px;"),
-
                     # Inputs A
-                    ui.tags.span("Model Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
+                    ui.tags.span("Model Family", id="lbl-fam-a", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px; transition: color 0.3s ease;"),
                     ui.input_select(
                         "model_family",
                         None,
@@ -76,7 +73,7 @@ attention_analysis_page = ui.page_fluid(
                         selected="bert",
                         width="100%"
                     ),
-                    ui.tags.span("Model Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
+                    ui.tags.span("Model Configuration", id="lbl-conf-a", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px; transition: color 0.3s ease;"),
                     ui.input_select(
                         "model_name",
                         None,
@@ -94,11 +91,8 @@ attention_analysis_page = ui.page_fluid(
                 ui.div(
                     {"id": "model-b-panel", "style": "flex: 1; min-width: 0; flex-direction: column;"},
 
-                    # Model B Header
-                    ui.tags.span("Model B", class_="sidebar-label", style="color: #ff5ca9; font-size: 10px; font-weight: 700; margin-bottom: 4px; display: block; border-bottom: 1px dashed rgba(255, 92, 169, 0.3); padding-bottom: 2px;"),
-
                     # Inputs B
-                    ui.tags.span("Model Family", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
+                    ui.tags.span("Model Family - B", id="lbl-fam-b", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #ff5ca9; margin-top: -5px;"),
                     ui.input_select(
                         "model_family_B",
                         None,
@@ -106,7 +100,7 @@ attention_analysis_page = ui.page_fluid(
                         selected="gpt2",
                         width="100%"
                     ),
-                    ui.tags.span("Model Architecture", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px;"),
+                    ui.tags.span("Model Config - B", id="lbl-conf-b", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #ff5ca9; margin-top: -5px;"),
                     ui.input_select(
                         "model_name_B",
                         None,
@@ -278,17 +272,36 @@ attention_analysis_page = ui.page_fluid(
                     }
                     // Handle compare_mode toggle - show/hide Model A header and Model B panel smoothly
                     if (event.name === 'compare_mode') {
-                        const modelAHeader = document.getElementById('model-a-header');
                         const modelBPanel = document.getElementById('model-b-panel');
+                        const lblFamA = document.getElementById('lbl-fam-a');
+                        const lblConfA = document.getElementById('lbl-conf-a');
 
                         if (event.value === true) {
-                            // Show elements by adding class (CSS handles display and transition)
-                            if (modelAHeader) modelAHeader.classList.add('compare-active');
+                            // Show B Panel
                             if (modelBPanel) modelBPanel.classList.add('compare-active');
+
+                            // Update Model A Labels (Blue + Suffix)
+                            if(lblFamA) {
+                                lblFamA.innerText = "Model Family - A";
+                                lblFamA.style.color = "#3b82f6";
+                            }
+                            if(lblConfA) {
+                                lblConfA.innerText = "Model Config - A";
+                                lblConfA.style.color = "#3b82f6";
+                            }
                         } else {
-                            // Hide elements by removing class
-                            if (modelAHeader) modelAHeader.classList.remove('compare-active');
+                            // Hide B Panel
                             if (modelBPanel) modelBPanel.classList.remove('compare-active');
+
+                            // Revert Model A Labels (Grey + Original)
+                            if(lblFamA) {
+                                lblFamA.innerText = "Model Family";
+                                lblFamA.style.color = "#64748b";
+                            }
+                            if(lblConfA) {
+                                lblConfA.innerText = "Model Configuration";
+                                lblConfA.style.color = "#64748b";
+                            }
                         }
                     }
                 });
