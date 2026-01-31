@@ -621,13 +621,26 @@ JS_INTERACTIVE = """
 
         // Bias Loading Handlers
         Shiny.addCustomMessageHandler('start_bias_loading', function(msg) {
-            $('#bias_loading_spinner').css('display', 'flex');
-            $('#analyze_bias_btn').prop('disabled', true).css('opacity', '0.7');
+            var btn = $('#analyze_bias_btn');
+            if (btn.length) {
+                if (!btn.data('original-content')) {
+                    btn.data('original-content', btn.html());
+                }
+                btn.html('<div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px;"></div>Analyzing<span class="loading-dots"></span>');
+                btn.prop('disabled', true).css('opacity', '0.8');
+            }
         });
-
+ 
         Shiny.addCustomMessageHandler('stop_bias_loading', function(msg) {
-            $('#bias_loading_spinner').css('display', 'none');
-            $('#analyze_bias_btn').prop('disabled', false).css('opacity', '1');
+            var btn = $('#analyze_bias_btn');
+            if (btn.length) {
+                if (btn.data('original-content')) {
+                    btn.html(btn.data('original-content'));
+                } else {
+                    btn.html('Analyze Bias');
+                }
+                btn.prop('disabled', false).css('opacity', '1');
+            }
         });
 
         // showMetricModal is already defined above - no need to redefine

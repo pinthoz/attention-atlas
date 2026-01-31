@@ -601,4 +601,21 @@ def compute_head_clusters(head_specialization_data):
     return results
 
 
-__all__ = ["compute_all_heads_specialization", "get_linguistic_tags", "compute_head_clusters"]
+
+def compute_head_specialization_metrics(tokens, attentions, layer_idx, head_idx, text, is_gpt2=False):
+    """
+    Compute specialization metrics for a specific single head.
+    Wrapper around compute_head_metrics with tag extraction.
+    """
+    # 1. Get tags
+    pos_tags, ner_tags = get_linguistic_tags(tokens, text)
+    
+    # 2. Get matrix
+    # attentions is list of tensors (batch, num_heads, seq_len, seq_len)
+    att_matrix = attentions[layer_idx][0, head_idx].cpu().numpy()
+    
+    # 3. Compute
+    return compute_head_metrics(att_matrix, tokens, pos_tags, ner_tags)
+
+
+__all__ = ["compute_all_heads_specialization", "get_linguistic_tags", "compute_head_clusters", "compute_head_specialization_metrics"]
