@@ -47,13 +47,13 @@ attention_analysis_page = ui.page_fluid(
         ui.div(
             {"class": "sidebar-section", "style": "margin-top: 0; transform: translateY(-8px);"}, # Fine-tuned vertical spacing
             # Header
-            ui.tags.span("Compare Modes", class_="sidebar-label"),
+            ui.tags.span("Compare Modes", id="cmp-modes-label", class_="sidebar-label"),
             
             # Checkbox Row - centered
             ui.div(
-                {"id": "compare-modes-container", "style": "margin-bottom: 16px; display: flex; align-items: center; justify-content: center; width: 100%; gap: 48px; white-space: nowrap;"},
-                ui.input_switch("compare_mode", ui.span("Models", style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #cbd5e1; font-weight: 600;"), value=False),
-                ui.input_switch("compare_prompts_mode", ui.span("Prompts", style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #cbd5e1; font-weight: 600;"), value=False)
+                {"id": "compare-modes-container"},
+                ui.input_switch("compare_mode", ui.span("Models", class_="compare-label"), value=False),
+                ui.input_switch("compare_prompts_mode", ui.span("Prompts", class_="compare-label"), value=False)
             ),
 
             # Model Configuration Container (Flex Row)
@@ -562,7 +562,25 @@ app_ui = ui.page_navbar(
                  box-shadow: none !important;
             }
 
-            /* Compare Modes Centering Fix */
+            /* Compare Modes Container and Switches */
+            #cmp-modes-label {
+                color: #cbd5e1 !important;
+                margin-bottom: 8px !important;
+                width: 100% !important;
+                text-align: left !important;
+                display: block !important;
+            }
+
+            #compare-modes-container {
+                margin-bottom: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                gap: 44px;
+                white-space: nowrap;
+            }
+
             #compare-modes-container .shiny-input-container {
                 width: auto !important;
                 margin-bottom: 0 !important;
@@ -573,18 +591,42 @@ app_ui = ui.page_navbar(
 
             #compare-modes-container .form-check {
                 margin: 0 !important;
-                padding-left: 0 !important; /* Reset bootstrap padding */
+                padding: 0 !important;
                 display: flex !important;
                 align-items: center !important;
                 min-height: auto !important;
-                width: auto !important; /* Allow shrinking */
+                width: auto !important;
                 justify-content: center !important;
+                background: transparent !important;
+                border: none !important;
             }
             
+            /* Target the switch itself */
             #compare-modes-container .form-check-input {
-                margin-left: 0 !important; /* Reset bootstrap */
-                margin-right: 6px !important;
+                margin: 0 8px 0 0 !important;
                 float: none !important;
+                cursor: pointer;
+                background-color: #1e293b !important;
+                border-color: #334155 !important;
+                width: 2.2em !important;
+                height: 1.2em !important;
+            }
+
+            #compare-modes-container .form-check-input:checked {
+                background-color: #ff5ca9 !important;
+                border-color: #ff5ca9 !important;
+            }
+
+            /* Redefine label colors/styles for integration */
+            #compare-modes-container .compare-label {
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                color: #cbd5e1;
+                font-weight: 600;
+                margin-bottom: 0 !important;
+                cursor: pointer;
+                line-height: 1;
             }
 
 

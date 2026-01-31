@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore", message=".*google.generativeai.*", category=FutureWarning)
+
 from pathlib import Path
 
 from shiny import App
