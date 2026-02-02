@@ -73,6 +73,7 @@ CSS = """
             margin: 0;
             padding-top: 0 !important; /* Override shiny navbar padding */
             color: var(--text-main);
+            overflow-x: hidden;
         }
 
         /* Reset Bootstrap containers that cause top gap */
@@ -4017,6 +4018,48 @@ __all__ = ["CSS"]
             border-bottom-left-radius: 16px !important;
             border-bottom-right-radius: 16px !important;
         }
+
+        /* ==========================================
+           Architecture Diagram
+           ========================================== */
+
+        .arch-section {
+            margin-bottom: 0;
+        }
+
+        .arch-body {
+            padding: 32px 20px;
+            display: flex;
+            justify-content: center;
+            background: rgba(248, 250, 252, 0.5);
+            border-radius: 20px;
+            border: 1px solid rgba(0, 0, 0, 0.03);
+            margin: 16px 0;
+        }
+
+        /* Paired diagrams in compare mode */
+        .arch-paired .arch-body {
+            flex-direction: row;
+            align-items: flex-start;
+            gap: 100px;
+            padding: 40px 24px;
+        }
+
+        /* Responsive: stack vertically on small screens */
+        @media (max-width: 1024px) {
+            .arch-paired .arch-body {
+                flex-direction: column;
+                align-items: center;
+                gap: 48px;
+                padding: 32px 16px;
+            }
+        }
+
+        .arch-diagram-wrapper {
+            color: #1e293b;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
 
         /* Fix Prompt Tabs Flash */
         .compare-tabs-inline {

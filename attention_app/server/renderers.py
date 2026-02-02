@@ -83,6 +83,294 @@ def arrow(from_section, to_section, direction="horizontal", suffix="", model_typ
     return ui.tags.div(attrs, icon)
 
 
+# ──────────────────────────────────────────────────────────────
+# Architecture Diagram helpers
+# ──────────────────────────────────────────────────────────────
+
+def _hex_to_rgb(hex_color):
+    """Convert '#3b82f6' → (59, 130, 246) for rgba() usage."""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+
+def get_architecture_diagram(model_type, accent_color, title_prefix=None, layer_count_val=12):
+    """Return raw HTML string for a single architecture column diagram.
+
+    Matches the design in architecture.html — dark blocks on page background.
+    model_type: 'bert' | 'gpt2'
+    accent_color: hex colour string e.g. '#3b82f6'
+    title_prefix: Optional string like "Model A" or "Prompt B"
+    layer_count_val: Number of layers to display (e.g. 12, 24)
+    """
+    r, g, b = _hex_to_rgb(accent_color)
+    accent_rgba = f"{r},{g},{b}"
+
+    if model_type == "bert":
+        model_name = "BERT (Encoder)"
+        has_segment_embed = True
+        attn_label = "Multi-Head Attn"
+        output_label = "MLM Predictions"
+        output_example = (
+            '<div style="font-size:8px;font-family:monospace;color:#64748b;'
+            'border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:3px;margin-bottom:3px;line-height:1.5;">'
+            '&ldquo;The capital of <span style="color:rgba(255,92,169,0.8);">[MASK]</span> is Paris.&rdquo;</div>'
+            '<div style="display:flex;justify-content:space-between;width:100%;font-size:9px;font-family:monospace;color:#cbd5e1;">'
+            '<span style="color:#f9a8d4;font-weight:700;">France</span><span style="opacity:0.75;">99.1%</span></div>'
+            '<div style="display:flex;justify-content:space-between;width:100%;font-size:9px;font-family:monospace;color:#cbd5e1;opacity:0.4;">'
+            '<span>Europe</span><span>0.4%</span></div>'
+        )
+    else:
+        model_name = "GPT-2 (Decoder)"
+        has_segment_embed = False
+        attn_label = "Masked Attn"
+        output_label = "Next Token Pred"
+        output_example = (
+            '<div style="font-size:8px;font-family:monospace;color:#64748b;'
+            'border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:3px;margin-bottom:3px;line-height:1.5;">'
+            '&ldquo;Deep Learning is really <span style="color:rgba(255,92,169,0.8);">&hellip;</span>&rdquo;</div>'
+            '<div style="display:flex;justify-content:space-between;width:100%;font-size:9px;font-family:monospace;color:#cbd5e1;">'
+            '<span style="color:#f9a8d4;font-weight:700;">powerful</span><span style="opacity:0.75;">65.4%</span></div>'
+            '<div style="display:flex;justify-content:space-between;width:100%;font-size:9px;font-family:monospace;color:#cbd5e1;opacity:0.4;">'
+            '<span>important</span><span>12.2%</span></div>'
+        )
+
+    # Title assembly
+    model_label = f'<span style="opacity:0.5;font-weight:400;">{title_prefix}:</span> {model_name}' if title_prefix else model_name
+
+    # Shared inline styles — sidebar-blue blocks on page bg ------------------
+    block = (
+        "position:relative;z-index:10;display:flex;align-items:center;justify-content:center;"
+        "text-align:center;height:34px;font-size:10px;padding:0 10px;border-radius:6px;"
+        "transition:all 0.3s;border:1px solid rgba(255,255,255,0.15);"
+        "user-select:none;background-color:#0f172a;width:110px;"
+        "box-shadow:0 1px 3px rgba(0,0,0,0.2);"
+    )
+    label = "font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#e2e8f0;"
+    badge = (
+        "position:absolute;top:-6px;right:-6px;font-family:'JetBrains Mono',monospace;"
+        "font-size:7px;padding:1px 4px;border-radius:3px;z-index:20;"
+        "background:rgba(30,41,59,0.9);color:#94a3b8;border:1px solid rgba(255,255,255,0.12);"
+    )
+    connector = (
+        "position:relative;width:1px;background-color:#cbd5e1;margin:0 auto;overflow:hidden;"
+    )
+    pulse_base = "position:absolute;top:0;width:100%;height:60%;animation:archMovePulse 2.5s linear infinite;"
+    add_norm_style = block + "height:22px;width:90px;font-size:8px;"
+    layer_box = (
+        "position:relative;padding:14px;padding-bottom:24px;border-radius:14px;"
+        "border:1px solid rgba(255,92,169,0.3);background-color:rgba(255,92,169,0.06);"
+        "display:flex;flex-direction:column;align-items:center;"
+        "box-shadow:inset 0 0 10px rgba(255,92,169,0.05);"
+    )
+    layer_count = (
+        "position:absolute;right:-14px;top:50%;transform:translateY(-50%) rotate(90deg);"
+        "font-size:9px;color:#64748b;font-family:monospace;letter-spacing:0.25em;font-weight:700;"
+    )
+    output_block = (
+        "position:relative;z-index:10;display:flex;flex-direction:column;align-items:center;"
+        "justify-content:center;padding:12px 10px;border-radius:6px;"
+        "transition:all 0.3s;user-select:none;width:150px;"
+        "border:1.5px solid rgba(255,92,169,0.5);background-color:#0f172a;"
+        "box-shadow:0 4px 6px -1px rgba(0,0,0,0.2), 0 2px 4px -1px rgba(255,92,169,0.1);"
+    )
+
+
+    # Residual SVG -----------------------------------------------------------
+    residual_svg = (
+        '<svg style="position:absolute;width:140px;height:100%;pointer-events:none;'
+        'top:0;left:50%;transform:translateX(-50%);opacity:0.4;">'
+        '<path d="M -45 28 C -65 28 -65 110 -45 110" fill="none" stroke="#10b981" stroke-width="1" transform="translate(70,0)"/>'
+        '<path d="M -45 148 C -65 148 -65 186 -45 186" fill="none" stroke="#10b981" stroke-width="1" transform="translate(70,0)"/>'
+        '</svg>'
+    )
+
+    # Helper closures --------------------------------------------------------
+    def _block(lbl, extra_style="", badge_text="DD", badge_extra="", label_extra=""):
+        return (
+            f'<div style="{block}{extra_style}">'
+            f'<div style="{badge}{badge_extra}">{badge_text}</div>'
+            f'<span style="{label}{label_extra}">{lbl}</span>'
+            f'</div>'
+        )
+
+    def _connector(h, pulse_color=""):
+        inner = ""
+        if pulse_color:
+            inner = f'<div style="{pulse_base}background:linear-gradient(transparent,{pulse_color},transparent);"></div>'
+        return f'<div style="{connector}height:{h}px;">{inner}</div>'
+
+    def _add_norm():
+        return (
+            f'<div style="{add_norm_style}">'
+            f'<div style="{badge}">DD</div>'
+            f'<span style="{label}font-size:7px;">Add &amp; Norm</span>'
+            f'</div>'
+        )
+
+    # Build HTML -------------------------------------------------------------
+    parts = []
+
+    # Embedded keyframes
+    parts.append(
+        '<style>'
+        '@keyframes archMovePulse { 0% { top: -50%; } 100% { top: 100%; } }'
+        '</style>'
+    )
+
+    parts.append('<div class="arch-diagram-wrapper" style="display:flex;flex-direction:column;align-items:center;">')
+
+    # Title
+    parts.append(
+        f'<div style="margin-bottom:14px;font-size:12px;font-weight:800;color:#334155;'
+        f'text-transform:uppercase;letter-spacing:0.25em;">{model_label}</div>'
+    )
+
+
+    # Sentence Preview
+    parts.append(_block("Sentence Preview",
+        extra_style=f"border-color:rgba({accent_rgba},0.3);",
+        badge_text="R0",
+        label_extra=f"color:rgba({accent_rgba},0.85);"))
+    parts.append(_connector(20, accent_color))
+
+    # Token Embeddings
+    parts.append(_block("Token Embeddings"))
+    parts.append(_connector(16))
+
+    # Segment Embed (BERT only)
+    if has_segment_embed:
+        parts.append(_block("Segment Embed",
+            extra_style="border-color:rgba(139,92,246,0.3);",
+            label_extra="color:#a78bfa;"))
+        parts.append(_connector(16))
+
+    # Pos Encoding
+    parts.append(_block("Pos Encoding"))
+    parts.append(_connector(20, accent_color))
+
+    # Layer Box
+    parts.append(f'<div style="{layer_box}">')
+    parts.append(f'<div style="{layer_count}">&times;{layer_count_val}</div>')
+
+    # Q/K/V
+    parts.append(_block("Q/K/V Projections",
+        extra_style=f"border-color:rgba({accent_rgba},0.2);font-size:8px;"))
+    parts.append(_connector(12))
+
+    # Attention
+    parts.append(_block(attn_label,
+        extra_style=f"background-color:rgba({accent_rgba},0.05);border-color:rgba({accent_rgba},0.4);",
+        badge_text="VIS",
+        badge_extra=f"color:rgba({accent_rgba},0.85);",
+        label_extra=f"color:rgba({accent_rgba},0.85);"))
+
+    # Residual SVG
+    parts.append(residual_svg)
+
+    parts.append(_connector(12, "#10b981"))
+
+    # Add & Norm 1
+    parts.append(_add_norm())
+    parts.append(_connector(12))
+
+    # FFN
+    parts.append(_block("Feed Forward", badge_text="TECH"))
+    parts.append(_connector(12, "#10b981"))
+
+    # Add & Norm 2
+    parts.append(_add_norm())
+
+    # Close layer box
+    parts.append('</div>')
+
+    # Connector to output
+    parts.append(_connector(24, "#ff5ca9"))
+
+    # Output block
+    parts.append(
+        f'<div style="{output_block}">'
+        f'<div style="{badge}color:#ff5ca9;">ESS</div>'
+        f'<span style="{label}color:#f9a8d4;margin-bottom:4px;font-size:10px;">{output_label}</span>'
+        f'<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start;width:100%;padding:0 6px;">'
+        f'{output_example}'
+        f'</div></div>'
+    )
+
+    # Close wrapper
+    parts.append('</div>')
+
+    return "\n".join(parts)
+
+
+def get_architecture_section(model_type="bert", accent_color="#3b82f6", title_prefix=None):
+    """Single-mode architecture diagram → ui.HTML."""
+    diagram_html = get_architecture_diagram(model_type, accent_color, title_prefix=title_prefix)
+    return ui.HTML(
+        f'<div class="arch-section">'
+        f'<div class="arch-body">{diagram_html}</div>'
+        f'</div>'
+    )
+
+
+def get_paired_architecture_section(model_type_a="bert", model_type_b="gpt2",
+                                     color_a="#3b82f6", color_b="#ff5ca9",
+                                     label_a="Model A", label_b="Model B",
+                                     active_model="both", dual_color=False,
+                                     layers_a=12, layers_b=12):
+    """
+    Compare-mode — always show both diagrams side-by-side.
+    active_model: "both" (default), "A", or "B".
+                  If "A", dim B. If "B", dim A.
+    dual_color: If True (compare models), A gets blue border, B gets pink.
+                If False (single/compare prompts), selected model gets pink border.
+    layers_a: Number of layers for Model A
+    layers_b: Number of layers for Model B
+    """
+    diagram_a = get_architecture_diagram(model_type_a, color_a, title_prefix=label_a, layer_count_val=layers_a)
+    diagram_b = get_architecture_diagram(model_type_b, color_b, title_prefix=label_b, layer_count_val=layers_b)
+    
+    # Styles for active/inactive states
+    base_style = "transition: all 0.3s; border-radius: 12px; padding: 10px;"
+    
+    # Pink is default color, blue only used in dual_color mode for Model A
+    pink = "#ff5ca9"
+    blue = "#3b82f6"
+    
+    style_pink = f"{base_style} border: 2px solid {pink}; background: rgba(255, 92, 169, 0.05);"
+    style_blue = f"{base_style} border: 2px solid {blue}; background: rgba(59, 130, 246, 0.05);"
+    style_inactive = f"{base_style} border: 2px solid transparent;"
+    
+    if dual_color and active_model == "both":
+        # Compare Models mode: A=blue, B=pink
+        style_a = style_blue
+        style_b = style_pink
+    elif active_model == "A":
+        # Single mode or Compare Prompts: selected model gets pink
+        style_a = style_pink
+        style_b = style_inactive
+    elif active_model == "B":
+        # Single mode or Compare Prompts: selected model gets pink
+        style_a = style_inactive
+        style_b = style_pink
+    else:
+        # Default fallback: both inactive
+        style_a = style_inactive
+        style_b = style_inactive
+
+    return ui.HTML(
+        f'<div style="background-color: #ffffff; border-radius: 16px; padding: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);">'
+        f'<div style="text-align: center; margin-bottom: 30px;">'
+        f'<h4 style="color: #ff5ca9; font-weight: 800; letter-spacing: 2px; margin: 0; font-size: 18px; text-transform: uppercase;">Architectures Available</h4>'
+        f'</div>'
+        f'<div style="display: flex; align-items: center; justify-content: center; gap: 40px; width: 100%;">'
+        f'<div style="{style_a}">{diagram_a}</div>'
+        f'<div style="{style_b}">{diagram_b}</div>'
+        f'</div>'
+        f'</div>'
+    )
+
+
+
 def get_choices(tokens):
     if not tokens: return {}
     return {str(i): f"{i}: {t}" for i, t in enumerate(tokens)}
@@ -2126,6 +2414,9 @@ __all__ = [
     "get_output_probabilities",
     "get_metrics_display",
     "get_influence_tree_data",
+    "get_architecture_diagram",
+    "get_architecture_section",
+    "get_paired_architecture_section",
 ]
 def compute_attention_rollout(attentions, discard_ratio=0.9, head_fusion="mean"):
     """

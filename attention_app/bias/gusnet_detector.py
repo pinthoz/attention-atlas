@@ -109,7 +109,7 @@ class GusNetDetector:
                     "index": idx,
                     "bias_types": [],
                     "is_biased": False,
-                    "scores": {"GEN": 0.0, "UNFAIR": 0.0, "STEREO": 0.0},
+                    "scores": {"O": 0.0, "GEN": 0.0, "UNFAIR": 0.0, "STEREO": 0.0},
                     "method": "gusnet",
                     "explanation": "",
                     "threshold": self.threshold,
@@ -117,12 +117,12 @@ class GusNetDetector:
                 continue
 
             # Compute per-category score (max of B/I probabilities)
-            scores = {}
+            scores = {"O": float(probs[0].item())}
             for cat, indices in CATEGORY_INDICES.items():
                 scores[cat] = float(max(probs[i].item() for i in indices))
 
-            # Determine which categories exceed threshold
-            bias_types = [cat for cat, score in scores.items() if score >= self.threshold]
+            # Determine which categories exceed threshold (exclude O — it's not a bias type)
+            bias_types = [cat for cat, score in scores.items() if score >= self.threshold and cat != "O"]
 
             # Build explanation
             explanations = []

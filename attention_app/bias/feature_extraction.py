@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from ..metrics import compute_all_attention_metrics
+from ..metrics import compute_all_attention_metrics, calculate_flow_change
 from ..head_specialization import compute_head_metrics, get_linguistic_tags
 from ..isa import compute_isa
 
@@ -36,6 +36,13 @@ def extract_global_metrics(attentions):
             prefix = f"GAM_L{layer_idx}_H{head_idx}"
             for key, val in metrics.items():
                 features[f"{prefix}_{key}"] = float(val)
+
+            # Calculate Normalized Focus (0-1 range)
+            # raw entropy / (n * log(n))
+            seq_len = att_matrix.shape[0]
+            max_entropy = seq_len * np.log(seq_len) if seq_len > 1 else 1.0
+            focus_normalized = metrics['focus_entropy'] / max_entropy if max_entropy > 0 else 0.0
+            features[f"{prefix}_focus_normalized"] = float(focus_normalized)
                 
     return features
 
@@ -63,6 +70,17 @@ def extract_global_aggregate_metrics(attentions):
     # Add with GAM_global prefix
     for key, val in metrics.items():
         features[f"GAM_global_{key}"] = float(val)
+        
+    # Calculate Global Normalized Focus
+    seq_len = global_att_matrix.shape[0]
+    max_entropy = seq_len * np.log(seq_len) if seq_len > 1 else 1.0
+    focus_normalized = metrics['focus_entropy'] / max_entropy if max_entropy > 0 else 0.0
+    features["GAM_global_focus_normalized"] = float(focus_normalized)
+        
+    # Calculate Flow Change (JSD between first and last layer)
+    # Get list of layer arrays (num_heads, seq, seq)
+    att_layers_full = [layer[0].cpu().numpy() for layer in attentions]
+    features["GAM_global_flow_change"] = calculate_flow_change(att_layers_full)
     
     # Also add layer-wise aggregations (mean across all heads in each layer)
     for layer_idx, layer_att in enumerate(attentions):
@@ -71,6 +89,12 @@ def extract_global_aggregate_metrics(attentions):
         
         for key, val in layer_metrics.items():
             features[f"GAM_layer{layer_idx}_{key}"] = float(val)
+            
+        # Calculate Layer Normalized Focus
+        seq_len = layer_mean_att.shape[0]
+        max_entropy = seq_len * np.log(seq_len) if seq_len > 1 else 1.0
+        focus_normalized = layer_metrics['focus_entropy'] / max_entropy if max_entropy > 0 else 0.0
+        features[f"GAM_layer{layer_idx}_focus_normalized"] = float(focus_normalized)
     
     return features
 
