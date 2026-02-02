@@ -3465,30 +3465,116 @@ def server(input, output, session):
         
         if not config:
             # BEFORE GENERATION - Show live preview (Safe because dashboard isn't loaded yet)
+            # IMPORTANT: Use LIVE input values here, NOT snapshotted values!
+            # This allows the architecture highlighting to react immediately to toggle changes.
+            try: live_compare_models = input.compare_mode()
+            except: live_compare_models = False
+            try: live_compare_prompts = input.compare_prompts_mode()
+            except: live_compare_prompts = False
+            live_compare = live_compare_models or live_compare_prompts
+            
+            # Helper to get layer count from model name
+            def get_layer_count(model_name):
+                # Map model names to layer counts
+                model_name = str(model_name).lower() if model_name else ""
+                if "xl" in model_name: return 48
+                if "large" in model_name:
+                    if "bert" in model_name: return 24
+                    return 36 # gpt2-large
+                if "medium" in model_name: return 24
+                # Base models (bert-base, gpt2-small)
+                return 12
+
             t = input.text_input().strip()
             # Placeholder changed to '(input)' per user request
             preview_html = f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">(input)</div>'
 
-            if not compare:
-                # Single mode live preview
+            if not live_compare:
+                # Single mode live preview - NOW DUAL ARCHITECTURE WITH HIGHLIGHTING
+                # We always show BOTH BERT and GPT-2, but highlight the one selected.
+                current_family = input.model_family() # "bert" or "gpt2"
+                active_model_code = "A" if current_family == "bert" else "B" # A=BERT, B=GPT2
+                
+                # Use dynamic layer count for the SELECTED model
+                # For the unselected one, default to 12 (since we don't know which specific model variant they'd want)
+                selected_model_name = input.model_name()
+                selected_layers = get_layer_count(selected_model_name)
+                
+                layers_a = selected_layers if current_family == "bert" else 12
+                layers_b = selected_layers if current_family == "gpt2" else 12
+
                 return ui.div(
                     ui.div(
                         {"class": "card"},
                         ui.h4("Sentence Preview"),
-                        ui.HTML(preview_html),
+                        ui.HTML(preview_html)
                     ),
-                    ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1');</script>")
+                    ui.div(
+                        {"style": "margin-top: 30px; transform: scale(0.75); transform-origin: top center; width: 133.5%; margin-left: -16.75%;"},
+                        get_paired_architecture_section(
+                            model_type_a="bert", 
+                            model_type_b="gpt2",
+                            label_a="",
+                            label_b="",
+                            active_model=active_model_code,
+                            layers_a=layers_a,
+                            layers_b=layers_b
+                        )
+                    ),
+                    ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1'); document.body.style.overflow = 'hidden';</script>")
                 )
             else:
                 # Compare mode - live paired previews
-                if compare_prompts:
+                if live_compare_prompts:
                     try: t_b = input.text_input_B().strip()
                     except: t_b = ""
                 else:
                     t_b = t # Same text if comparing models
                 
                 preview_b = f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{t_b}"</div>' if t_b else '<div style="color:#9ca3af;font-size:12px;">(input)</div>'
+
+                arch_type_a = "gpt2" if input.model_family() == "gpt2" else "bert"
+                arch_type_b = arch_type_a if live_compare_prompts else ("gpt2" if input.model_family_B() == "gpt2" else "bert")
                 
+                # Compute architecture highlighting:
+                # - Model A uses BERT slot if model_family() == "bert", else GPT-2 slot
+                # - Model B uses BERT slot if model_family_B() == "bert", else GPT-2 slot
+                model_a_is_bert = input.model_family() == "bert"
+                model_b_is_bert = input.model_family_B() == "bert" if live_compare_models else model_a_is_bert
+                same_family = model_a_is_bert == model_b_is_bert
+                
+                # Compute layer counts for assignment to architecture diagrams
+                count_a = get_layer_count(input.model_name())
+                count_b = get_layer_count(input.model_name_B()) if live_compare_models else count_a
+                
+                layers_for_bert = 12
+                layers_for_gpt2 = 12
+                
+                if model_a_is_bert:
+                    layers_for_bert = count_a
+                    # If comparing different families, B must be GPT2
+                    if not same_family and live_compare_models:
+                        layers_for_gpt2 = count_b
+                else: # A is gpt2
+                    layers_for_gpt2 = count_a
+                    # If comparing different families, B must be BERT
+                    if not same_family and live_compare_models:
+                        layers_for_bert = count_b
+
+                if live_compare_models:
+                    if same_family:
+                        # Same family: highlight only that one architecture
+                        arch_active_model = "A" if model_a_is_bert else "B"
+                        arch_dual_color = False
+                    else:
+                        # Different families: highlight both with blue/pink
+                        arch_active_model = "both"
+                        arch_dual_color = True
+                else:
+                    # Compare prompts: highlight selected model (pink only)
+                    arch_active_model = "A" if model_a_is_bert else "B"
+                    arch_dual_color = False
+
                 return ui.div(
                     {"id": "dashboard-container-compare", "class": "dashboard-stack"},
                     # Header: MODEL A | MODEL B
@@ -3503,7 +3589,24 @@ def server(input, output, session):
                         ui.div({"class": "card", "style": "border: 2px solid #ff5ca9;"}, ui.h4("Sentence Preview"), ui.HTML(preview_b)),
                         col_widths=[6, 6]
                     ),
-                    ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1');</script>")
+                    # Architecture section with smart highlighting:
+                    # - Compare Models: Highlight architectures based on Model A (blue) and Model B (pink) positions
+                    # - Compare Prompts: Single architecture highlighted (pink)
+                    # - Same family in Compare Models: Only one architecture highlighted
+                    ui.div(
+                        {"style": "margin-top: 30px; transform: scale(0.75); transform-origin: top center; width: 133.5%; margin-left: -16.75%;"},
+                        get_paired_architecture_section(
+                            model_type_a="bert", 
+                            model_type_b="gpt2",
+                            label_a="",
+                            label_b="",
+                            active_model=arch_active_model,
+                            dual_color=arch_dual_color,
+                            layers_a=layers_for_bert, # Passes to Diagram A (BERT default)
+                            layers_b=layers_for_gpt2  # Passes to Diagram B (GPT2 default)
+                        )
+                    ),
+                    ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1'); document.body.style.overflow = 'hidden';</script>")
                 )
         
         is_gpt2, num_layers, num_heads = config
@@ -3536,14 +3639,17 @@ def server(input, output, session):
             tokenizer_A = res[6]
             text_A = tokenizer_A.convert_tokens_to_string(tokens_A)
             footer_A_main = '<span style="color:#94a3b8;">Ġ (space token) removed for visualization</span>' if is_gpt2 else ""
+            arch_type = "gpt2" if is_gpt2 else "bert"
             return ui.div(
                 ui.div(
                     {"class": "card", "style": "margin-bottom: 32px;"},
                     preview_title,
                     get_preview_text_view(res, text_A, "", footer_A_main),
                 ),
+                # Architecture diagrams removed - they only appear before generation
                 # Dashboard layout
-                dashboard_layout_helper(is_gpt2, num_layers, num_heads, [], suffix="")
+                dashboard_layout_helper(is_gpt2, num_layers, num_heads, [], suffix=""),
+                ui.HTML("<script>document.body.style.overflow = 'auto';</script>")
             )
         else:
             # SIDE-BY-SIDE MODE - Accordion Layout
@@ -3757,6 +3863,8 @@ def server(input, output, session):
 
             # If strictly waiting for data, show only preview row + loading message
             if not res_A or not res_B:
+                 arch_type_a = "gpt2" if input.model_family() == "gpt2" else "bert"
+                 arch_type_b = arch_type_a if compare_prompts else ("gpt2" if input.model_family_B() == "gpt2" else "bert")
                  return ui.div(
                      {"id": "dashboard-container-compare", "class": "dashboard-stack"},
                       ui.layout_columns(
@@ -3766,6 +3874,7 @@ def server(input, output, session):
                       ),
                     # Use output_ui - the renderers handle grey/colored states internally
                     paired_with_card("Sentence Preview", ui.output_ui("preview_text"), ui.output_ui("preview_text_B")),
+                    # Architecture diagrams removed - they only appear before generation
                     ui.div(
                         {"style": "padding: 40px; text-align: center; color: #9ca3af;"},
                         ui.p("Generate comparison data...", style="font-size: 14px; animation: pulse 1.5s infinite;")
@@ -3813,6 +3922,11 @@ def server(input, output, session):
             footer_A = tok_info_A if is_family_diff else ""
             footer_B = tok_info_B if is_family_diff else ""
 
+            arch_type_a = "gpt2" if is_gpt2 else "bert"
+            arch_type_b_val = "gpt2" if is_gpt2_B else "bert"
+            if compare_prompts:
+                arch_type_b_val = arch_type_a
+
             return ui.div(
                 {"id": "dashboard-container-compare", "class": "dashboard-stack"},
 
@@ -3829,7 +3943,9 @@ def server(input, output, session):
                     ui.div({"class": "card compare-card-b"}, preview_title_B, get_preview_text_view(res_B, text_B_reconstructed, "_B", footer_html=footer_B)),
                     col_widths=[6, 6]
                 ),
-                
+
+                # Architecture diagrams removed - they only appear before generation
+
                 # Accordion - use stored state to preserve open panels
                 ui.accordion(
                     *accordion_items,
