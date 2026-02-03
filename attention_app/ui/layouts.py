@@ -722,6 +722,22 @@ app_ui = ui.page_navbar(
             }
 
             /* Navbar Styling Overrides (Removed - Consolidated in styles.py) */
+        """),
+        ui.tags.script("""
+            $(document).on('shown.bs.tab', function(e) {
+                var target = $(e.target).text().trim();
+                if (target === 'Bias') {
+                    document.body.style.setProperty('overflow', 'auto', 'important');
+                }
+            });
+            
+            // Robust check to ensure scroll is enabled on Bias tab
+            setInterval(function() {
+                var activeTab = $('.navbar .nav-link.active').text().trim();
+                if (activeTab === 'Bias' && document.body.style.overflow === 'hidden') {
+                    document.body.style.setProperty('overflow', 'auto', 'important');
+                }
+            }, 500);
         """)
     ),
 

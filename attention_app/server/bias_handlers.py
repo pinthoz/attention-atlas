@@ -853,5 +853,48 @@ def bias_server_handlers(input, output, session):
 
         return ui.HTML("".join(items))
 
+    @output
+    @render.ui
+    def bias_toolbar_tokens():
+        """Render biased tokens as horizontal chips in the toolbar."""
+        res = bias_results.get()
+        if not res:
+            return ui.HTML('<span style="color:#64748b;font-size:10px;">No analysis yet</span>')
+
+        token_labels = res["token_labels"]
+        biased = [
+            lbl for lbl in token_labels
+            if lbl.get("is_biased") and lbl["token"] not in ("[CLS]", "[SEP]", "[PAD]")
+        ]
+        if not biased:
+            return ui.HTML('<span style="color:#64748b;font-size:10px;">No bias detected</span>')
+
+        cat_colors = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
+        items = []
+        for lbl in biased:
+            clean = lbl["token"].replace("##", "").replace("\u0120", "")
+            types = lbl.get("bias_types", [])
+            scores = lbl.get("scores", {})
+            # Use the primary category color (first type) or pink as fallback
+            primary_color = cat_colors.get(types[0], "#ff5ca9") if types else "#ff5ca9"
+            max_score = max((scores.get(t, 0) for t in types), default=0)
+            
+            # Build category abbreviations
+            cat_abbrevs = "·".join(types) if types else ""
+            
+            items.append(
+                f'<span class="bias-token-chip" '
+                f'style="display:inline-flex;align-items:center;gap:3px;'
+                f'font-size:9px;font-family:JetBrains Mono,monospace;'
+                f'padding:1px 6px;border-radius:4px;flex-shrink:0;'
+                f'background:{primary_color}20;border:1px solid {primary_color}50;'
+                f'color:{primary_color};white-space:nowrap;cursor:default;" '
+                f'title="{cat_abbrevs} ({max_score:.2f})">'
+                f'{clean}'
+                f'</span>'
+            )
+
+        return ui.HTML("".join(items))
+
 
 __all__ = ["bias_server_handlers"]
