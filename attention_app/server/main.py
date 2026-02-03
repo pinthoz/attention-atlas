@@ -3510,7 +3510,7 @@ def server(input, output, session):
                         ui.HTML(preview_html)
                     ),
                     ui.div(
-                        {"style": "margin-top: 30px; transform: scale(0.75); transform-origin: top center; width: 133.5%; margin-left: -16.75%;"},
+                        {"style": "margin-top: 30px; zoom: 0.75; width: 100%; transform-origin: top center; margin-bottom: -40px;"}, # Zoom prevents extra space
                         get_paired_architecture_section(
                             model_type_a="bert", 
                             model_type_b="gpt2",
@@ -3521,7 +3521,7 @@ def server(input, output, session):
                             layers_b=layers_b
                         )
                     ),
-                    ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1'); document.body.style.overflow = 'hidden';</script>")
+                    ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1'); document.body.style.overflow = 'auto';</script>")
                 )
             else:
                 # Compare mode - live paired previews
@@ -3579,8 +3579,8 @@ def server(input, output, session):
                     {"id": "dashboard-container-compare", "class": "dashboard-stack"},
                     # Header: MODEL A | MODEL B
                     ui.layout_columns(
-                        ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
-                        ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
+                        ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
+                        ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                         col_widths=[6, 6]
                     ),
                     # Paired previews
@@ -3594,7 +3594,7 @@ def server(input, output, session):
                     # - Compare Prompts: Single architecture highlighted (pink)
                     # - Same family in Compare Models: Only one architecture highlighted
                     ui.div(
-                        {"style": "margin-top: 30px; transform: scale(0.75); transform-origin: top center; width: 133.5%; margin-left: -16.75%;"},
+                        {"style": "margin-top: 0px; zoom: 0.75; width: 100%; transform-origin: top center; margin-bottom: -40px;"}, # Zoom prevents extra space
                         get_paired_architecture_section(
                             model_type_a="bert", 
                             model_type_b="gpt2",
@@ -3606,7 +3606,7 @@ def server(input, output, session):
                             layers_b=layers_for_gpt2  # Passes to Diagram B (GPT2 default)
                         )
                     ),
-                    ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1'); document.body.style.overflow = 'hidden';</script>")
+                    ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1'); document.body.style.overflow = 'auto';</script>")
                 )
         
         is_gpt2, num_layers, num_heads = config
@@ -3868,8 +3868,8 @@ def server(input, output, session):
                  return ui.div(
                      {"id": "dashboard-container-compare", "class": "dashboard-stack"},
                       ui.layout_columns(
-                          ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
-                          ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
+                          ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
+                          ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                           col_widths=[6, 6]
                       ),
                     # Use output_ui - the renderers handle grey/colored states internally
@@ -3932,8 +3932,8 @@ def server(input, output, session):
 
                 # Top Header: MODEL A | MODEL B
                 ui.layout_columns(
-                    ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
-                    ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
+                    ui.h3(header_a, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
+                    ui.h3(header_b, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                     col_widths=[6, 6]
                 ),
 
