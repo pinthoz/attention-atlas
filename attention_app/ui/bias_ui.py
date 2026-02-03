@@ -25,19 +25,76 @@ def create_bias_sidebar():
 
             ui.tags.span("Sensitivity Threshold", class_="sidebar-label"),
             ui.div(
-                {"style": "padding: 0 4px;"},
-                ui.input_slider(
-                    "bias_threshold",
-                    None,
-                    min=0.1, max=0.9, value=0.5, step=0.05,
-                    width="100%",
+                {"style": "padding: 0 4px; margin-top: 8px;"},
+                # Custom Slider matching Floating Bar design
+                ui.div(
+                    {"class": "custom-sidebar-slider"},
+                    ui.div(
+                        {"class": "slider-container"},
+                        ui.tags.span("0.5", id="bias-threshold-val-sidebar", class_="slider-value"),
+                        ui.tags.input(
+                            type="range", 
+                            id="bias-threshold-sidebar", 
+                            min="0.1", max="0.9", value="0.5", step="0.05",
+                            oninput="document.getElementById('bias-threshold-val-sidebar').textContent = this.value; Shiny.setInputValue('bias_threshold', parseFloat(this.value), {priority:'event'});"
+                        ),
+                    )
                 ),
-            )
+            ),
+            
+            # Styles for this specific sidebar slider
+            ui.tags.style("""
+                .custom-sidebar-slider .slider-container {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                .custom-sidebar-slider .slider-value {
+                    min-width: 42px; /* Increased width to 42px */
+                    height: 20px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: #fff;
+                    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                    border-radius: 5px;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    font-family: 'JetBrains Mono', monospace;
+                }
+                .custom-sidebar-slider input[type="range"] {
+                    -webkit-appearance: none;
+                    width: 100%;
+                    height: 4px;
+                    background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
+                    border-radius: 2px;
+                    outline: none;
+                }
+                .custom-sidebar-slider input[type="range"]::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 50%;
+                    background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
+                    border: 2px solid rgba(255, 255, 255, 0.2);
+                    cursor: pointer;
+                    box-shadow: 0 2px 6px rgba(255, 92, 169, 0.4);
+                    transition: all 0.15s ease;
+                }
+                .custom-sidebar-slider input[type="range"]::-webkit-slider-thumb:hover {
+                    transform: scale(1.15);
+                    box-shadow: 0 2px 10px rgba(255, 92, 169, 0.6);
+                }
+            """)
         ),
+
+        # ── Spacer ──
+        ui.div(style="flex-grow: 1; min-height: 24px;"),
 
         # ── Input Text Area ──
         ui.div(
-            {"class": "sidebar-section", "style": "margin-top: auto; padding-top: 16px;"},
+            {"class": "sidebar-section", "style": "padding-top: 16px;"},
             ui.tags.span("Input Text", class_="sidebar-label"),
             
             ui.div(
@@ -139,6 +196,7 @@ def create_bias_content():
         """),
 
         ui.output_ui("bias_dashboard_content"),
+        ui.tags.script("document.body.style.overflow = 'auto';"),
     )
 
 
@@ -256,86 +314,70 @@ def create_floating_bias_toolbar():
         ui.div(
             {"class": "floating-control-bar", "id": "bias-floating-toolbar"},
 
-            ui.span("Bias Toolkit", class_="bar-title"),
+            ui.span("CONFIGURATIONS", class_="bar-title"),
 
             ui.div(
-                {"class": "controls-row"},
+                {"class": "controls-row", "style": "display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; width: 100%; gap: 0;"},
 
-                # ── Layer slider ──
+                # ── LEFT COL: Layer & Head ──
                 ui.div(
-                    {"class": "control-group"},
-                    ui.span("Layer", class_="control-label"),
+                    {"style": "display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding-right: 12px;"},
+                    
+                    # Layer slider
                     ui.div(
-                        {"class": "slider-container"},
-                        ui.tags.span("0", id="bias-layer-value", class_="slider-value"),
-                        ui.tags.input(type="range", id="bias-layer-slider", min="0", max="11", value="0", step="1"),
+                        {"class": "control-group"},
+                        ui.span("Layer", class_="control-label"),
+                        ui.div(
+                            {"class": "slider-container"},
+                            ui.tags.span("0", id="bias-layer-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="bias-layer-slider", min="0", max="11", value="0", step="1"),
+                        ),
                     ),
-                ),
 
-                # ── Head slider ──
-                ui.div(
-                    {"class": "control-group"},
-                    ui.span("Head", class_="control-label"),
+                    # Head slider
                     ui.div(
-                        {"class": "slider-container"},
-                        ui.tags.span("0", id="bias-head-value", class_="slider-value"),
-                        ui.tags.input(type="range", id="bias-head-slider", min="0", max="11", value="0", step="1"),
+                        {"class": "control-group"},
+                        ui.span("Head", class_="control-label"),
+                        ui.div(
+                            {"class": "slider-container"},
+                            ui.tags.span("0", id="bias-head-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="bias-head-slider", min="0", max="11", value="0", step="1"),
+                        ),
                     ),
+                    
+                    # Divider Left
+                    ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
                 ),
 
-                # ── Divider ──
-                ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
-
-                # ── Top-K ──
+                # ── CENTER COL: Bias Tokens ──
                 ui.div(
-                    {"class": "control-group"},
-                    ui.span("Top-K", class_="control-label"),
+                    {"style": "display: flex; justify-content: center; width: 100%; margin-top: 0;"}, # margin-top removed to fix spacing
                     ui.div(
-                        {"class": "slider-container"},
-                        ui.tags.span("5", id="bias-topk-value", class_="slider-value"),
-                        ui.tags.input(type="range", id="bias-topk-slider", min="1", max="10", value="5", step="1"),
+                        {"class": "control-group", "style": "display: flex; align-items: center; justify-content: center; width: 100%; overflow: visible; margin: 0;"},
+                        ui.div(
+                            {"id": "bias-tokens-row", "class": "bias-token-container-compact"},
+                            ui.output_ui("bias_toolbar_tokens"),
+                        ),
                     ),
                 ),
 
-                # ── Top Focus Heads chips ──
+                # ── RIGHT COL: Top-K ──
                 ui.div(
-                    {"class": "control-group"},
-                    ui.span("Focus Heads", class_="control-label"),
+                    {"style": "display: flex; align-items: center; justify-content: flex-start; gap: 16px; padding-left: 12px;"},
+                    
+                    # Divider Right
+                    ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
+
+                    # Top-K slider
                     ui.div(
-                        {"style": "display:flex;gap:4px;align-items:center;"},
-                        ui.output_ui("bias_toolkit_heads"),
+                        {"class": "control-group"},
+                        ui.span("Top-K", class_="control-label"),
+                        ui.div(
+                            {"class": "slider-container"},
+                            ui.tags.span("5", id="bias-topk-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="bias-topk-slider", min="1", max="10", value="5", step="1"),
+                        ),
                     ),
-                ),
-
-                # ── Divider ──
-                ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
-
-                # ── Detected Spans toggle ──
-                ui.div(
-                    {"class": "control-group"},
-                    ui.span("Spans", class_="control-label"),
-                    ui.tags.button(
-                        "Detected ",
-                        ui.span({"id": "bias-span-count-badge", "style": "background:rgba(0,0,0,0.3);font-size:9px;padding:1px 5px;border-radius:4px;margin-left:4px;"}, "0"),
-                        type="button",
-                        class_="btn-global",
-                        style="height:20px;padding:0 8px;font-size:10px;border:1px solid #ff5ca9;color:#ff5ca9;background:rgba(255,92,169,0.1);",
-                        onclick="toggleBiasSpans()",
-                    ),
-                ),
-            ),
-
-            # ── Popover: Detected Spans ──
-            ui.div(
-                {"id": "bias-spans-popover", "class": "bias-popover"},
-                ui.div(
-                    {"class": "popover-header"},
-                    ui.span("Detected Bias Spans", style="font-weight:600;font-size:12px;color:white;"),
-                    ui.tags.i(class_="fa-solid fa-xmark", style="cursor:pointer;color:#94a3b8;", onclick="toggleBiasSpans()"),
-                ),
-                ui.div(
-                    {"class": "popover-content"},
-                    ui.output_ui("bias_toolkit_spans"),
                 ),
             ),
         ),
@@ -344,64 +386,50 @@ def create_floating_bias_toolbar():
         ui.tags.style("""
             #bias-floating-toolbar {
                 animation: biasBarSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+                /* Default padding-top: 18px is from .floating-control-bar */
             }
             @keyframes biasBarSlideUp {
                 from { transform: translateY(100px); opacity: 0; }
                 to { transform: translateY(0); opacity: 1; }
             }
-            .bias-head-chip {
-                font-size: 10px;
-                font-family: 'JetBrains Mono', monospace;
-                padding: 2px 8px;
-                border-radius: 4px;
-                background: rgba(255, 92, 169, 0.15);
-                border: 1px solid rgba(255, 92, 169, 0.3);
-                color: #ff5ca9;
-                cursor: pointer;
-                transition: all 0.15s ease;
-                white-space: nowrap;
-            }
-            .bias-head-chip:hover {
-                background: rgba(255, 92, 169, 0.3);
-                transform: translateY(-1px);
-            }
-            .bias-popover {
-                position: absolute;
-                bottom: 70px;
-                right: 20px;
-                width: 300px;
-                max-height: 380px;
-                background: var(--sidebar-bg);
-                border: 1px solid rgba(255,255,255,0.1);
-                border-radius: 12px;
-                box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
-                display: none;
-                flex-direction: column;
-                overflow: hidden;
-            }
-            .bias-popover.visible { display: flex; }
-            .popover-header {
-                padding: 10px 14px;
-                background: rgba(255,255,255,0.03);
-                border-bottom: 1px solid rgba(255,255,255,0.05);
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .popover-content {
-                padding: 0;
+            
+            /* Outer Scroll & Visual Container */
+            .bias-token-container-compact {
+                display: block; /* Block layout for scrolling */
+                background: rgba(30, 41, 59, 0.6);
+                border-radius: 6px;
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                width: auto;
+                max-width: 450px;
+                max-height: 38px; /* Fixed height for compactness */
                 overflow-y: auto;
-                max-height: 320px;
+                overflow-x: hidden;
+                box-sizing: border-box;
+                padding: 1px 4px; /* Minimal padding */
             }
-            .popover-content::-webkit-scrollbar { width: 4px; }
-            .popover-content::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
-            .bias-span-item {
-                padding: 8px 14px;
-                border-bottom: 1px solid rgba(255,255,255,0.05);
-                transition: background 0.15s;
+
+            /* Inner Shiny Output Div - The actual Flex Layout */
+            #bias_toolbar_tokens {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                align-items: center;
+                align-content: flex-start; /* Pack to top strictly */
+                gap: 2px;
+                width: 100%;
             }
-            .bias-span-item:last-child { border-bottom: none; }
-            .bias-span-item:hover { background: rgba(255,255,255,0.05); }
+
+            .bias-token-container-compact::-webkit-scrollbar { width: 3px; }
+            .bias-token-container-compact::-webkit-scrollbar-track { background: transparent; }
+            .bias-token-container-compact::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
+            
+            .bias-token-chip {
+                transition: all 0.15s ease;
+            }
+            .bias-token-chip:hover {
+                transform: translateY(-1px);
+                filter: brightness(1.1);
+            }
         """),
 
         # ── Script ──
@@ -451,22 +479,6 @@ def create_floating_bias_toolbar():
                     document.getElementById('bias-head-value').textContent = hEl.value || '0';
                 }
             }, 500);
-
-            // ── setBiasHead (from top-K chips) ──
-            window.setBiasHead = function(layer, head) {
-                _setSelectize('bias_attn_layer', layer);
-                _setSelectize('bias_attn_head', head);
-                var ls = document.getElementById('bias-layer-slider');
-                var hs = document.getElementById('bias-head-slider');
-                if (ls) { ls.value = layer; document.getElementById('bias-layer-value').textContent = layer; }
-                if (hs) { hs.value = head;  document.getElementById('bias-head-value').textContent = head; }
-            };
-
-            // ── Spans popover toggle ──
-            window.toggleBiasSpans = function() {
-                var pop = document.getElementById('bias-spans-popover');
-                if (pop) pop.classList.toggle('visible');
-            };
 
             // ── Sync on select changes (from server-side updates) ──
             $(document).on('change', '#bias_attn_layer', function() {
