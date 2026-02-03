@@ -152,7 +152,7 @@ def create_bias_content():
     appear after analysis.
     """
     return ui.div(
-        {"class": "content bias-content", "style": "margin-top: 50px !important;"},
+        {"class": "content bias-content", "style": "margin-top: 19px !important;"},
 
         # Accordion badge styles (shared with dynamic content)
         ui.tags.style("""
