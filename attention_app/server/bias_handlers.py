@@ -179,29 +179,53 @@ def bias_server_handlers(input, output, session):
             print(f"Error loading bias session: {e}")
             traceback.print_exc()
 
+    def log_debug(msg):
+        with open("bias_debug.log", "a") as f:
+            f.write(f"[{datetime.now().isoformat()}] {msg}\n")
+            
     def heavy_bias_compute(text, model_name, threshold):
         """Perform bias analysis computation (runs in thread pool)."""
+        log_debug(f"Starting heavy_bias_compute (threshold={threshold})")
         print(f"DEBUG: Starting heavy_bias_compute (threshold={threshold})")
         if not text:
+            log_debug("No text provided")
+            print("DEBUG: No text provided")
             return None
 
         try:
             # Load attention model
+            log_debug(f"Loading model {model_name}...")
+            print(f"DEBUG: Loading model {model_name}...")
             tokenizer, encoder_model, mlm_model = ModelManager.get_model(model_name)
             device = ModelManager.get_device()
+            log_debug(f"Model loaded. Device: {device}")
+            print(f"DEBUG: Model loaded. Device: {device}")
 
+            log_debug("Tokenizing text...")
+            print("DEBUG: Tokenizing text...")
             inputs = tokenizer(text, return_tensors="pt")
             inputs = {k: v.to(device) for k, v in inputs.items()}
+            
+            log_debug("Running encoder inference...")
+            print("DEBUG: Running encoder inference...")
             with torch.no_grad():
                 outputs = encoder_model(**inputs)
             tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
             attentions = outputs.attentions
+            log_debug(f"Got {len(tokens)} tokens, {len(attentions)} layers")
             print(f"DEBUG: Got {len(tokens)} tokens, {len(attentions)} layers")
 
             # ── Token-level bias detection (GUS-Net only) ──
+            log_debug("Initializing GusNetDetector...")
+            print("DEBUG: Initializing GusNetDetector...")
             gus_detector = GusNetDetector(threshold=threshold)
+            log_debug("Running detect_bias...")
+            print("DEBUG: Running detect_bias...")
             gusnet_labels = gus_detector.detect_bias(text)
+            log_debug(f"GUS-Net returned {len(gusnet_labels)} labels")
             print(f"DEBUG: GUS-Net returned {len(gusnet_labels)} labels")
+            
+            # ... rest ...
 
             # Align GUS-Net labels to BERT attention tokens
             gus_aligned = _align_gusnet_to_bert(gusnet_labels, tokens)
@@ -230,6 +254,7 @@ def bias_server_handlers(input, output, session):
 
             bias_summary = gus_detector.get_bias_summary(token_labels)
             bias_spans = gus_detector.get_biased_spans(token_labels)
+            log_debug(f"{len(bias_spans)} spans detected")
             print(f"DEBUG: {len(bias_spans)} spans detected")
 
             # ── Attention x Bias ──
@@ -253,7 +278,8 @@ def bias_server_handlers(input, output, session):
                     "propagation_pattern": "none",
                 }
                 bias_matrix = np.array([])
-
+            
+            log_debug("Finished heavy_bias_compute successfully")
             return {
                 "tokens": tokens,
                 "text": text,
@@ -267,7 +293,9 @@ def bias_server_handlers(input, output, session):
                 "bias_matrix": bias_matrix,
             }
         except Exception as e:
-            print(f"ERROR in heavy_bias_compute: {e}")
+            msg = f"ERROR in heavy_bias_compute: {e}"
+            log_debug(msg)
+            print(msg)
             traceback.print_exc()
             return None
 
@@ -276,34 +304,69 @@ def bias_server_handlers(input, output, session):
     @reactive.effect
     @reactive.event(input.analyze_bias_btn)
     async def compute_bias():
-        text = input.bias_input_text().strip()
-        if not text:
-            return
-        bias_running.set(True)
-        await session.send_custom_message('start_bias_loading', {})
-        await asyncio.sleep(0.1)
-
+        log_debug("BUTTON CLICKED: compute_bias triggered")
         try:
-            model_name = input.model_name()
-        except Exception:
-            model_name = "bert-base-uncased"
+            text = input.bias_input_text().strip()
+            log_debug(f"Input text length: {len(text)}")
+            if not text:
+                log_debug("Text is empty, returning")
+                return
+            
+            log_debug("Starting loading UI...")
+            bias_running.set(True)
+            await session.send_custom_message('start_bias_loading', {})
+            await asyncio.sleep(0.1)
+            log_debug("Loading UI active")
 
-        threshold = input.bias_threshold()
+            try:
+                model_name = input.model_name()
+                log_debug(f"Retrieved model_name: {model_name}")
+            except Exception as e:
+                log_debug(f"Failed to get model_name, using default. Error: {e}")
+                model_name = "bert-base-uncased"
 
-        try:
-            loop = asyncio.get_running_loop()
-            with ThreadPoolExecutor() as pool:
-                result = await loop.run_in_executor(
-                    pool, heavy_bias_compute, text, model_name, threshold,
-                )
-            bias_results.set(result)
+            try:
+                threshold = float(input.bias_threshold())
+                log_debug(f"Threshold: {threshold}")
+            except Exception as e:
+                log_debug(f"Warning: bias_threshold input missing or invalid ({e}). Using default 0.5")
+                threshold = 0.5
+
+            try:
+                loop = asyncio.get_running_loop()
+                log_debug("Entering ThreadPoolExecutor...")
+                with ThreadPoolExecutor() as pool:
+                    log_debug("Submitting heavy_bias_compute...")
+                    result = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            pool, heavy_bias_compute, text, model_name, threshold,
+                        ),
+                        timeout=60.0
+                    )
+                    log_debug("heavy_bias_compute returned successfully")
+                bias_results.set(result)
+            except asyncio.TimeoutError:
+                msg = "ERROR: Bias analysis timed out (limit: 60s)"
+                log_debug(msg)
+                print(msg)
+                ui.notification_show("Analysis timed out.", type="error")
+                bias_results.set(None)
+            except Exception as e:
+                msg = f"ERROR during execution: {e}"
+                log_debug(msg)
+                print(msg)
+                traceback.print_exc()
+                ui.notification_show(f"Analysis failed: {e}", type="error")
+                bias_results.set(None)
+            finally:
+                log_debug("Stopping loading UI")
+                bias_running.set(False)
+                await session.send_custom_message('stop_bias_loading', {})
+            
         except Exception as e:
-            print(f"ERROR in compute_bias: {e}")
-            traceback.print_exc()
-            bias_results.set(None)
-        finally:
-            bias_running.set(False)
-            await session.send_custom_message('stop_bias_loading', {})
+            msg = f"CRITICAL ERROR in compute_bias top level: {e}"
+            log_debug(msg)
+            print(msg)
 
     # ── Dashboard content (conditional rendering) ──
 
@@ -325,15 +388,8 @@ def bias_server_handlers(input, output, session):
             )
             return ui.div(
                 ui.div(
-                    {"class": "card sentence-preview-card", "style": "margin-bottom: 24px;"},
-                    ui.div(
-                        {"class": "viz-header"},
-                        ui.h4("Sentence Preview", style="margin:0;"),
-                        ui.p(
-                            "Tokens coloured by bias type. Hover for category and confidence.",
-                            style="font-size:11px;color:#6b7280;margin:4px 0 0;",
-                        ),
-                    ),
+                    {"class": "card", "style": "margin-bottom: 24px; min-height: auto;"},
+                    ui.h4("Sentence Preview"),
                     ui.HTML(preview_html),
                 ),
                 create_bias_accordion(),
@@ -343,42 +399,27 @@ def bias_server_handlers(input, output, session):
 
         # ── Pre-analysis: sentence preview card only ──
         if text:
+            # Match user requested structure for text preview
             preview = ui.div(
-                text,
-                style=(
-                    "font-family:'JetBrains Mono',monospace;color:#94a3b8;"
-                    "font-size:14px;line-height:1.8;padding:8px 0;"
-                    "min-height:48px;display:flex;align-items:center;"
-                ),
+                f'"{text}"',
+                style="font-family:monospace;color:#6b7280;font-size:14px;"
             )
         else:
             preview = ui.div(
                 'Enter text in the sidebar and click "Analyze Bias" to begin.',
-                style="color:#9ca3af;font-size:12px;min-height:48px;display:flex;align-items:center;",
+                style="color:#9ca3af;font-size:14px;font-family:monospace;",
             )
 
         card = ui.div(
-            {"class": "card"},
-            ui.div(
-                {"class": "viz-header"},
-                ui.h4("Sentence Preview", style="margin:0;"),
-                ui.p(
-                    "Analyze text to see token-level bias detection.",
-                    style="font-size:11px;color:#6b7280;margin:4px 0 0;",
-                ),
-            ),
+            {"class": "card", "style": "min-height: auto;"},
+            ui.h4("Sentence Preview"),
             preview,
         )
 
         if running:
-            loading = ui.div(
-                {"style": "padding:40px;text-align:center;color:#9ca3af;"},
-                ui.p(
-                    "Analyzing bias...",
-                    style="font-size:14px;color:#ff5ca9;animation:pulse 1.5s infinite;",
-                ),
-            )
-            return ui.div(card, loading)
+            # User requested NO text below sentence preview
+            # We rely on the button state to show loading
+            return card
 
         return card
 
