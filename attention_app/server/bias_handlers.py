@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from shiny import ui, render, reactive
 
+import traceback
 from ..models import ModelManager
 from ..bias import (
     GusNetDetector,
@@ -28,49 +29,114 @@ from ..ui.bias_ui import create_bias_accordion, create_floating_bias_toolbar
 
 # ─── Token-alignment helper ───────────────────────────────────────────────
 
-def _align_gusnet_to_bert(gusnet_labels, bert_tokens):
-    """Align GUS-Net results (own tokenizer) to BERT tokens by text matching.
+def _align_gusnet_to_attention_tokens(gusnet_labels, attention_tokens, gusnet_special_tokens=None):
+    """Align GUS-Net token labels to the attention model's tokens.
 
-    Returns a list of dicts (same length as bert_tokens) with GUS-Net scores
-    merged in.  Unmatched BERT tokens get zeroed scores.
+    Handles cross-tokenizer subword mismatches — e.g. when GPT-2 BPE
+    produces a single token ``nurturing`` while BERT WordPiece splits it
+    into ``nur`` + ``##turing``.  In such cases the GUS-Net label is
+    propagated to all BERT subwords that form the original word.
+
+    Returns a list (same length as *attention_tokens*) where each entry
+    is either a GUS-Net label dict or ``None`` for unmatched positions.
     """
-    aligned = []
-    gus_idx = 0
-    gus_clean = [
-        l["token"].replace("##", "").lower()
-        for l in gusnet_labels
-        if l["token"] not in ("[CLS]", "[SEP]", "[PAD]")
-    ]
-    gus_data = [
-        l for l in gusnet_labels
-        if l["token"] not in ("[CLS]", "[SEP]", "[PAD]")
-    ]
+    if gusnet_special_tokens is None:
+        gusnet_special_tokens = {"[CLS]", "[SEP]", "[PAD]", "<|endoftext|>"}
 
-    for bt in bert_tokens:
-        clean_bt = bt.replace("##", "").replace("Ġ", "").lower()
-        if bt.startswith("[") and bt.endswith("]"):
-            aligned.append(None)
+    attn_special = {"[CLS]", "[SEP]", "[PAD]", "<|endoftext|>"}
+
+    def _clean(tok):
+        """Normalise a subword token for text matching."""
+        return tok.replace("##", "").replace("\u0120", "").replace("Ġ", "").lower().strip()
+
+    # Build cleaned GUS-Net content tokens
+    gus_clean = []
+    gus_data = []
+    for label in gusnet_labels:
+        if label["token"] in gusnet_special_tokens:
+            continue
+        gus_clean.append(_clean(label["token"]))
+        gus_data.append(label)
+
+    aligned = [None] * len(attention_tokens)
+    gus_idx = 0
+    # Tracks leftover characters from a partially consumed GUS-Net token
+    gus_remainder = ""
+    gus_current_label = None
+
+    for bt_idx, bt in enumerate(attention_tokens):
+        if bt in attn_special or (bt.startswith("[") and bt.endswith("]")):
             continue
 
-        # Try to find a matching GUS-Net token
-        matched = None
-        if gus_idx < len(gus_clean) and gus_clean[gus_idx] == clean_bt:
-            matched = gus_data[gus_idx]
-            gus_idx += 1
-        else:
-            # Search ahead a few positions
-            for look in range(gus_idx, min(gus_idx + 3, len(gus_clean))):
-                if gus_clean[look] == clean_bt:
-                    matched = gus_data[look]
-                    gus_idx = look + 1
-                    break
+        clean_bt = _clean(bt)
+        if not clean_bt:
+            continue
 
-        aligned.append(matched)
+        # Case 1: continuing to consume a partially matched GUS-Net token
+        if gus_remainder:
+            if gus_remainder.startswith(clean_bt):
+                aligned[bt_idx] = gus_current_label
+                gus_remainder = gus_remainder[len(clean_bt):]
+                if not gus_remainder:
+                    gus_current_label = None
+                continue
+            else:
+                # Mismatch mid-word — reset and fall through
+                gus_remainder = ""
+                gus_current_label = None
+
+        # Case 2: exact match with current GUS-Net token
+        if gus_idx < len(gus_clean) and gus_clean[gus_idx] == clean_bt:
+            aligned[bt_idx] = gus_data[gus_idx]
+            gus_idx += 1
+            continue
+
+        # Case 3: attention subword is a prefix of the GUS-Net token
+        #         (e.g. BERT "nur" is prefix of GPT-2 "nurturing")
+        if gus_idx < len(gus_clean) and gus_clean[gus_idx].startswith(clean_bt):
+            aligned[bt_idx] = gus_data[gus_idx]
+            gus_remainder = gus_clean[gus_idx][len(clean_bt):]
+            gus_current_label = gus_data[gus_idx]
+            if not gus_remainder:
+                gus_idx += 1
+                gus_current_label = None
+            else:
+                gus_idx += 1  # advance — remainder will be consumed by next subwords
+            continue
+
+        # Case 4: GUS-Net subword is a prefix of the attention token
+        #         (e.g. GPT-2 splits more finely than BERT on rare words)
+        if gus_idx < len(gus_clean):
+            accumulated = ""
+            scan = gus_idx
+            while scan < len(gus_clean) and len(accumulated) < len(clean_bt):
+                accumulated += gus_clean[scan]
+                scan += 1
+            if accumulated == clean_bt:
+                # Merge: use the first GUS-Net label (highest specificity)
+                aligned[bt_idx] = gus_data[gus_idx]
+                gus_idx = scan
+                continue
+
+        # Case 5: look-ahead for misalignment recovery
+        for look in range(gus_idx, min(gus_idx + 5, len(gus_clean))):
+            if gus_clean[look] == clean_bt:
+                aligned[bt_idx] = gus_data[look]
+                gus_idx = look + 1
+                break
 
     return aligned
 
 
 # ─── Server handler registration ──────────────────────────────────────────
+
+def _get_bias_model_label(res):
+    """Return a human-readable label for the bias model used in the result."""
+    from ..bias.gusnet_detector import MODEL_REGISTRY
+    key = res.get("bias_model_key", "gusnet-bert")
+    cfg = MODEL_REGISTRY.get(key, {})
+    return cfg.get("display_name", key)
+
 
 def bias_server_handlers(input, output, session):
     """Create server handlers for bias analysis tab."""
@@ -183,10 +249,23 @@ def bias_server_handlers(input, output, session):
         with open("bias_debug.log", "a") as f:
             f.write(f"[{datetime.now().isoformat()}] {msg}\n")
             
-    def heavy_bias_compute(text, model_name, threshold):
-        """Perform bias analysis computation (runs in thread pool)."""
-        log_debug(f"Starting heavy_bias_compute (threshold={threshold})")
-        print(f"DEBUG: Starting heavy_bias_compute (threshold={threshold})")
+    def heavy_bias_compute(text, model_name, threshold, bias_model_key):
+        """Perform bias analysis computation (runs in thread pool).
+
+        Parameters
+        ----------
+        text : str
+            The input sentence to analyse.
+        model_name : str
+            HuggingFace model name for the attention model (e.g. "bert-base-uncased").
+        threshold : float
+            Sensitivity threshold for the bias detector.
+        bias_model_key : str
+            Key into ``MODEL_REGISTRY`` selecting the GUS-Net backbone
+            ("gusnet-bert" or "gusnet-gpt2").
+        """
+        log_debug(f"Starting heavy_bias_compute (threshold={threshold}, bias_model={bias_model_key})")
+        print(f"DEBUG: Starting heavy_bias_compute (threshold={threshold}, bias_model={bias_model_key})")
         if not text:
             log_debug("No text provided")
             print("DEBUG: No text provided")
@@ -194,8 +273,8 @@ def bias_server_handlers(input, output, session):
 
         try:
             # Load attention model
-            log_debug(f"Loading model {model_name}...")
-            print(f"DEBUG: Loading model {model_name}...")
+            log_debug(f"Loading attention model {model_name}...")
+            print(f"DEBUG: Loading attention model {model_name}...")
             tokenizer, encoder_model, mlm_model = ModelManager.get_model(model_name)
             device = ModelManager.get_device()
             log_debug(f"Model loaded. Device: {device}")
@@ -205,7 +284,7 @@ def bias_server_handlers(input, output, session):
             print("DEBUG: Tokenizing text...")
             inputs = tokenizer(text, return_tensors="pt")
             inputs = {k: v.to(device) for k, v in inputs.items()}
-            
+
             log_debug("Running encoder inference...")
             print("DEBUG: Running encoder inference...")
             with torch.no_grad():
@@ -215,20 +294,21 @@ def bias_server_handlers(input, output, session):
             log_debug(f"Got {len(tokens)} tokens, {len(attentions)} layers")
             print(f"DEBUG: Got {len(tokens)} tokens, {len(attentions)} layers")
 
-            # ── Token-level bias detection (GUS-Net only) ──
-            log_debug("Initializing GusNetDetector...")
-            print("DEBUG: Initializing GusNetDetector...")
-            gus_detector = GusNetDetector(threshold=threshold)
+            # ── Token-level bias detection (GUS-Net) ──
+            log_debug(f"Initializing GusNetDetector (model_key={bias_model_key})...")
+            print(f"DEBUG: Initializing GusNetDetector (model_key={bias_model_key})...")
+            gus_detector = GusNetDetector(model_key=bias_model_key, threshold=threshold)
             log_debug("Running detect_bias...")
             print("DEBUG: Running detect_bias...")
             gusnet_labels = gus_detector.detect_bias(text)
             log_debug(f"GUS-Net returned {len(gusnet_labels)} labels")
             print(f"DEBUG: GUS-Net returned {len(gusnet_labels)} labels")
-            
-            # ... rest ...
 
-            # Align GUS-Net labels to BERT attention tokens
-            gus_aligned = _align_gusnet_to_bert(gusnet_labels, tokens)
+            # Align GUS-Net labels to the attention model's tokens
+            gus_special = gus_detector.config["special_tokens"]
+            gus_aligned = _align_gusnet_to_attention_tokens(
+                gusnet_labels, tokens, gusnet_special_tokens=gus_special
+            )
 
             # Build unified token_labels aligned to BERT tokens
             token_labels = []
@@ -291,6 +371,7 @@ def bias_server_handlers(input, output, session):
                 "attention_metrics": attention_metrics,
                 "propagation_analysis": propagation_analysis,
                 "bias_matrix": bias_matrix,
+                "bias_model_key": bias_model_key,
             }
         except Exception as e:
             msg = f"ERROR in heavy_bias_compute: {e}"
@@ -332,6 +413,14 @@ def bias_server_handlers(input, output, session):
                 log_debug(f"Warning: bias_threshold input missing or invalid ({e}). Using default 0.5")
                 threshold = 0.5
 
+            # Bias detection model (BERT or GPT-2 backbone)
+            try:
+                bias_model_key = input.bias_model_key()
+                log_debug(f"Bias model key: {bias_model_key}")
+            except Exception as e:
+                log_debug(f"Warning: bias_model_key missing ({e}). Using default gusnet-bert")
+                bias_model_key = "gusnet-bert"
+
             try:
                 loop = asyncio.get_running_loop()
                 log_debug("Entering ThreadPoolExecutor...")
@@ -339,7 +428,7 @@ def bias_server_handlers(input, output, session):
                     log_debug("Submitting heavy_bias_compute...")
                     result = await asyncio.wait_for(
                         loop.run_in_executor(
-                            pool, heavy_bias_compute, text, model_name, threshold,
+                            pool, heavy_bias_compute, text, model_name, threshold, bias_model_key,
                         ),
                         timeout=60.0
                     )
@@ -381,25 +470,30 @@ def bias_server_handlers(input, output, session):
         except Exception:
             text = ""
 
+        from .renderers import get_gusnet_architecture_section
+        # MOVED: arch_section creation is now conditional to prevent reactivity
+        # and hide it after analysis.
+
         # ── Post-analysis: sentence preview + accordion ──
         if res:
             preview_html = create_bias_sentence_preview(
                 res["tokens"], res["token_labels"]
             )
             return ui.div(
+                {"style": "display: flex; flex-direction: column; gap: 24px;"},
                 ui.div(
-                    {"class": "card", "style": "margin-bottom: 24px; min-height: auto;"},
+                    {"class": "card", "style": "min-height: auto;"},
                     ui.h4("Sentence Preview"),
                     ui.HTML(preview_html),
                 ),
+                # arch_section REMOVED
                 create_bias_accordion(),
                 create_floating_bias_toolbar(),
-                ui.tags.script("Shiny.setInputValue('toggle_bias_toolbar_visible', true, {priority: 'event'});"), 
+                ui.tags.script("Shiny.setInputValue('toggle_bias_toolbar_visible', true, {priority: 'event'});"),
             )
 
-        # ── Pre-analysis: sentence preview card only ──
+        # ── Pre-analysis: sentence preview + architecture ──
         if text:
-            # Match user requested structure for text preview
             preview = ui.div(
                 f'"{text}"',
                 style="font-family:monospace;color:#6b7280;font-size:14px;"
@@ -417,11 +511,28 @@ def bias_server_handlers(input, output, session):
         )
 
         if running:
-            # User requested NO text below sentence preview
-            # We rely on the button state to show loading
-            return card
+            return ui.div(
+                {"style": "display: flex; flex-direction: column; gap: 24px;"},
+                card
+                # arch_section REMOVED
+            )
 
-        return card
+        # Initial State: Show Architecture
+        # Only check model key HERE to avoid updates when showing results
+        try:
+            selected_model = input.bias_model_key()
+        except Exception:
+            selected_model = "gusnet-bert"
+
+        arch_section = ui.div(
+            get_gusnet_architecture_section(selected_model=selected_model),
+        )
+
+        return ui.div(
+            {"style": "display: flex; flex-direction: column; gap: 24px;"},
+            card, 
+            arch_section
+        )
 
     # ── Method info (sidebar) ──
 
@@ -544,7 +655,10 @@ def bias_server_handlers(input, output, session):
                 'No biased tokens detected.</div>'
             )
 
-        threshold = input.bias_threshold()
+        try:
+            threshold = float(input.bias_threshold())
+        except Exception:
+            threshold = 0.5
         cat_colors = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
         items = []
         for lbl in biased:
@@ -568,22 +682,62 @@ def bias_server_handlers(input, output, session):
                 )
             badges_html = "".join(badge_parts)
 
+            try:
+                # `bias_selected_tokens` comes as a list from JS
+                try:
+                    sel_raw = input.bias_selected_tokens()
+                except Exception:
+                    sel_raw = None
+
+                # print(f"DEBUG: bias_selected_tokens raw: {sel_raw} type: {type(sel_raw)}")
+                if sel_raw is None:
+                    sel_indices = []
+                elif isinstance(sel_raw, (int, float, str)):
+                    sel_indices = [int(sel_raw)]
+                elif isinstance(sel_raw, (list, tuple)):
+                    sel_indices = [int(x) for x in sel_raw if x is not None]
+                else:
+                    sel_indices = []
+            except Exception as e:
+                print(f"Error parsing selection in bias_spans_table: {repr(e)}")
+                traceback.print_exc()
+                sel_indices = []
+            
+            is_selected = (lbl["index"] in sel_indices)
+            
+            row_style = "display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(226,232,240,0.4);"
+            if is_selected:
+                row_style += "background:rgba(255, 92, 169, 0.1); border-left: 3px solid #ff5ca9;"
+
             items.append(
-                f'<div style="display:flex;align-items:center;gap:8px;'
-                f'padding:8px 10px;border-bottom:1px solid rgba(226,232,240,0.4);">'
+                f'<div style="{row_style}">'
                 f'<span style="font-family:JetBrains Mono,monospace;font-size:13px;'
                 f'font-weight:600;color:#ec4899;min-width:70px;">{clean}</span>'
                 f'<span style="display:flex;gap:4px;flex-wrap:wrap;">{badges_html}</span>'
                 f'</div>'
             )
 
+        # Split into two columns for vertical sorting (Col 1 then Col 2)
+        import math
+        n_items = len(items)
+        mid_point = math.ceil(n_items / 2)
+        items_col1 = items[:mid_point]
+        items_col2 = items[mid_point:]
+
         html = (
-            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;'
-            f'border:1px solid rgba(226,232,240,0.4);border-radius:8px;overflow:hidden;">'
-            f'{"".join(items)}</div>'
+            f'<div style="display:flex;gap:16px;border:1px solid rgba(226,232,240,0.4);border-radius:8px;overflow:hidden;">'
+            # Column 1
+            f'<div style="flex:1;display:flex;flex-direction:column;">'
+            f'{"".join(items_col1)}'
+            f'</div>'
+            # Column 2
+            f'<div style="flex:1;display:flex;flex-direction:column;border-left:1px solid rgba(226,232,240,0.4);">'
+            f'{"".join(items_col2)}'
+            f'</div>'
+            f'</div>'
             f'<div style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:center;">'
             f'Threshold: <code style="font-family:JetBrains Mono,monospace;">{threshold:.2f}</code>'
-            f' &middot; Method: GUS-Net (multi-label token NER)'
+            f' &middot; Method: GUS-Net ({_get_bias_model_label(res)}) — multi-label token NER'
             f' &middot; {len(biased)} biased tokens</div>'
         )
         return ui.HTML(html)
@@ -600,7 +754,29 @@ def bias_server_handlers(input, output, session):
                 'No analysis results yet.</div>'
             )
         try:
-            html = create_token_bias_strip(res["token_labels"])
+            # Selected tokens from toolbar click (None = no highlight)
+            # Selected tokens from toolbar click (None = no highlight)
+            try:
+                try:
+                    sel_raw = input.bias_selected_tokens()
+                except Exception:
+                    sel_raw = None
+                
+                # print(f"DEBUG: token_bias_strip selection: {sel_raw}")
+                if sel_raw is None:
+                    selected_token_idxs = None
+                elif isinstance(sel_raw, (int, float, str)):
+                    selected_token_idxs = [int(sel_raw)]
+                elif isinstance(sel_raw, (list, tuple)):
+                    selected_token_idxs = [int(x) for x in sel_raw if x is not None]
+                else:
+                    selected_token_idxs = None
+            except Exception as e:
+                print(f"Error in token_bias_strip selection: {repr(e)}")
+                # traceback.print_exc()
+                selected_token_idxs = None
+                
+            html = create_token_bias_strip(res["token_labels"], selected_token_idx=selected_token_idxs)
             return ui.HTML(html)
         except Exception as e:
             print(f"Error creating token bias strip: {e}")
@@ -621,7 +797,12 @@ def bias_server_handlers(input, output, session):
         if bm.size == 0:
             return ui.HTML('<div style="color:#9ca3af;padding:20px;">No biased tokens detected.</div>')
         try:
-            fig = create_attention_bias_matrix(bm, res["attention_metrics"])
+            try:
+                layer_idx = int(input.bias_attn_layer())
+            except Exception:
+                layer_idx = None
+
+            fig = create_attention_bias_matrix(bm, res["attention_metrics"], selected_layer=layer_idx)
             return ui.HTML(
                 fig.to_html(include_plotlyjs='cdn', full_html=False,
                             config={'displayModeBar': False})
@@ -645,7 +826,12 @@ def bias_server_handlers(input, output, session):
         if not prop:
             return ui.HTML('<div style="color:#9ca3af;padding:20px;">No propagation data.</div>')
         try:
-            fig = create_bias_propagation_plot(prop)
+            try:
+                layer_idx = int(input.bias_attn_layer())
+            except Exception:
+                layer_idx = None
+
+            fig = create_bias_propagation_plot(prop, selected_layer=layer_idx)
             return ui.HTML(
                 fig.to_html(include_plotlyjs='cdn', full_html=False,
                             config={'displayModeBar': False})
@@ -671,6 +857,26 @@ def bias_server_handlers(input, output, session):
         except Exception:
             layer_idx, head_idx = 0, 0
 
+        # Selected tokens from toolbar click (None = no highlight)
+        try:
+            try:
+                sel_raw = input.bias_selected_tokens()
+            except Exception:
+                sel_raw = None
+            
+            # print(f"DEBUG: combined view selection: {sel_raw}")
+            if sel_raw is None:
+                selected_token_idxs = None
+            elif isinstance(sel_raw, (int, float, str)):
+                selected_token_idxs = [int(sel_raw)]
+            elif isinstance(sel_raw, (list, tuple)):
+                selected_token_idxs = [int(x) for x in sel_raw if x is not None]
+            else:
+                selected_token_idxs = None
+        except Exception as e:
+            print(f"Error in combined view selection: {repr(e)}")
+            selected_token_idxs = None
+
         attentions = res["attentions"]
         if not attentions or layer_idx >= len(attentions):
             return ui.HTML('<div style="color:#9ca3af;">No attention data available.</div>')
@@ -679,6 +885,7 @@ def bias_server_handlers(input, output, session):
             attn_matrix = attentions[layer_idx][0, head_idx].cpu().numpy()
             fig = create_combined_bias_visualization(
                 res["tokens"], res["token_labels"], attn_matrix, layer_idx, head_idx,
+                selected_token_idx=selected_token_idxs,
             )
             return ui.HTML(
                 fig.to_html(include_plotlyjs='cdn', full_html=False,
@@ -714,10 +921,23 @@ def bias_server_handlers(input, output, session):
 
         n_specialized = sum(1 for m in top_heads if m.specialized_for_bias)
 
+        try:
+            sel_layer = int(input.bias_attn_layer())
+            sel_head = int(input.bias_attn_head())
+        except Exception:
+            sel_layer, sel_head = -1, -1
+
         rows = []
         for m in top_heads:
             is_sig = m.specialized_for_bias
-            row_bg = "background:rgba(255,92,169,0.04);" if is_sig else ""
+            is_selected = (m.layer == sel_layer and m.head == sel_head)
+            
+            row_bg = ""
+            if is_selected:
+                row_bg = "background:rgba(67, 56, 202, 0.15); box-shadow: inset 3px 0 0 #4338ca;" # Highlight specific to selection
+            elif is_sig:
+                row_bg = "background:rgba(255,92,169,0.04);"
+                
             ratio_color = "#ff5ca9" if is_sig else "#64748b"
             sig_dot = (
                 '<span style="color:#22c55e;font-size:8px;margin-left:4px;" '
@@ -773,9 +993,9 @@ def bias_server_handlers(input, output, session):
                     <th style="padding:12px;text-align:center;font-size:11px;color:#64748b;
                         border-bottom:2px solid #e2e8f0;">Head</th>
                     <th style="padding:12px;text-align:right;font-size:11px;color:#64748b;
-                        border-bottom:2px solid #e2e8f0;">Bias Attention Ratio</th>
+                        border-bottom:2px solid #e2e8f0;">BAR (μ̂/μ₀)</th>
                     <th style="padding:12px;text-align:right;font-size:11px;color:#64748b;
-                        border-bottom:2px solid #e2e8f0;">Amplification</th>
+                        border-bottom:2px solid #e2e8f0;">BSR</th>
                     <th style="padding:12px;text-align:right;font-size:11px;color:#64748b;
                         border-bottom:2px solid #e2e8f0;">Max Attention</th>
                 </tr>
@@ -897,7 +1117,11 @@ def bias_server_handlers(input, output, session):
     @output
     @render.ui
     def bias_toolbar_tokens():
-        """Render biased tokens as horizontal chips in the toolbar."""
+        """Render biased tokens as clickable chips in the toolbar.
+
+        Clicking a chip selects that token in the Combined View,
+        highlighting its row/column with the category-specific colour.
+        """
         res = bias_results.get()
         if not res:
             return ui.HTML('<span style="color:#64748b;font-size:10px;">No analysis yet</span>')
@@ -916,20 +1140,20 @@ def bias_server_handlers(input, output, session):
             clean = lbl["token"].replace("##", "").replace("\u0120", "")
             types = lbl.get("bias_types", [])
             scores = lbl.get("scores", {})
-            # Use the primary category color (first type) or pink as fallback
             primary_color = cat_colors.get(types[0], "#ff5ca9") if types else "#ff5ca9"
             max_score = max((scores.get(t, 0) for t in types), default=0)
-            
-            # Build category abbreviations
             cat_abbrevs = "·".join(types) if types else ""
-            
+            tok_idx = lbl["index"]
+
             items.append(
                 f'<span class="bias-token-chip" '
+                f'data-token-idx="{tok_idx}" '
+                f'onclick="selectBiasToken({tok_idx})" '
                 f'style="display:inline-flex;align-items:center;gap:3px;'
                 f'font-size:9px;font-family:JetBrains Mono,monospace;'
                 f'padding:1px 6px;border-radius:4px;flex-shrink:0;'
                 f'background:{primary_color}20;border:1px solid {primary_color}50;'
-                f'color:{primary_color};white-space:nowrap;cursor:default;" '
+                f'color:{primary_color};white-space:nowrap;cursor:pointer;" '
                 f'title="{cat_abbrevs} ({max_score:.2f})">'
                 f'{clean}'
                 f'</span>'
