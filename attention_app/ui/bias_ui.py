@@ -19,9 +19,60 @@ def create_bias_sidebar():
             "Detect and analyze social bias in text using GUS-Net neural NER."
         ),
 
-        # ── Configuration Sections ──
+        # ── Bias Detection Model Selector ──
         ui.div(
-            {"class": "sidebar-section", "style": "margin-top: 4px;"},
+            {"class": "sidebar-section", "style": "margin-top: 4px; margin-bottom: 4px;"},
+            ui.tags.span("Bias Detection Model", class_="sidebar-label"),
+            ui.div(
+                {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
+                ui.tags.select(
+                    ui.tags.option("GUS-Net (BERT)", value="gusnet-bert"),
+                    ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2"),
+                    id="bias_model_key",
+                    class_="bias-model-select",
+                    onchange="Shiny.setInputValue('bias_model_key', this.value, {priority:'event'});",
+                ),
+            ),
+            ui.tags.style("""
+                .bias-model-select {
+                    width: 100%;
+                    padding: 7px 10px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    font-family: 'Inter', sans-serif;
+                    color: #e2e8f0;
+                    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                    border: 1px solid rgba(255, 255, 255, 0.10);
+                    border-radius: 6px;
+                    outline: none;
+                    cursor: pointer;
+                    appearance: none;
+                    -webkit-appearance: none;
+                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+                    background-repeat: no-repeat;
+                    background-position: right 10px center;
+                    padding-right: 28px;
+                    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+                }
+                .bias-model-select:hover {
+                    border-color: rgba(255, 92, 169, 0.4);
+                }
+                .bias-model-select:focus {
+                    border-color: #ff5ca9;
+                    box-shadow: 0 0 0 2px rgba(255, 92, 169, 0.15);
+                }
+                .bias-model-select option {
+                    background: #1e293b;
+                    color: #e2e8f0;
+                    padding: 6px;
+                }
+            """),
+        ),
+
+        # ── Configuration Sections ──
+        ui.div(style="flex-grow: 1; min-height: 24px;"),
+        ui.div(
+            {"class": "sidebar-section"},
 
             ui.tags.span("Sensitivity Threshold", class_="sidebar-label"),
             ui.div(
@@ -195,6 +246,12 @@ def create_bias_content():
             }
         """),
 
+        ui.tags.style("""
+            #bias_dashboard_content {
+                margin-bottom: 0 !important;
+                height: auto; 
+            }
+        """),
         ui.output_ui("bias_dashboard_content"),
         ui.tags.script("document.body.style.overflow = 'auto';"),
     )
@@ -223,7 +280,7 @@ def create_bias_accordion():
                 {"class": "card"},
                 ui.div(
                     {"style": "padding: 16px;"},
-                    ui.h4("Detected Bias Tokens", style="font-size:16px; font-weight:700; color:#ff5ca9; margin-bottom:4px;"),
+                    ui.h4("Detected Bias Tokens", style="font-size:16px; font-weight:700; color:#000000; margin-bottom:4px;"),
                     ui.p("Each biased token with its category labels and confidence scores.",
                          style="font-size:11px;color:#6b7280;margin-bottom:16px;"),
                     ui.output_ui("bias_spans_table"),
@@ -295,8 +352,11 @@ def create_bias_accordion():
             ),
             ui.div(
                 {"class": "card", "style": "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05); margin-top: 16px;"},
-                ui.h5("Top Attention Heads by Bias Focus", style="color:#ff5ca9; margin-bottom:12px; font-weight: 700;"),
-                ui.p("Top 5 heads ranked by bias attention ratio. Green dot = above specialization threshold (1.5).", style="font-size:11px;color:#6b7280;margin-bottom:12px;"),
+                viz_header(
+                    "Top Attention Heads by Bias Focus",
+                    "Top 5 heads ranked by bias attention ratio. Green dot = above specialization threshold (1.5).",
+                    "List of attention heads with the strongest focus on biased tokens, ranked by their Bias Attention Ratio."
+                ),
                 ui.output_ui("bias_focused_heads_table"),
             ),
             value="attention_bias"
@@ -401,14 +461,15 @@ def create_floating_bias_toolbar():
                 border: 1px solid rgba(255, 255, 255, 0.06);
                 width: auto;
                 max-width: 450px;
-                max-height: 38px; /* Fixed height for compactness */
+                max-height: 36px; /* Fixed height for compactness */
                 overflow-y: auto;
                 overflow-x: hidden;
                 box-sizing: border-box;
-                padding: 1px 4px; /* Minimal padding */
+                padding: 3px 4px; /* Small vertical padding for selected token visibility */
+                height: fit-content;
+                align-self: center;
             }
 
-            /* Inner Shiny Output Div - The actual Flex Layout */
             #bias_toolbar_tokens {
                 display: flex;
                 flex-wrap: wrap;
@@ -417,6 +478,16 @@ def create_floating_bias_toolbar():
                 align-content: flex-start; /* Pack to top strictly */
                 gap: 2px;
                 width: 100%;
+                margin: 0 !important;
+                padding: 0 !important;
+                height: fit-content;
+            }
+            
+            /* Remove any extra space from Shiny wrappers */
+            #bias-tokens-row > div,
+            #bias-tokens-row > div > div {
+                margin: 0 !important;
+                padding: 0 !important;
             }
 
             .bias-token-container-compact::-webkit-scrollbar { width: 3px; }
@@ -428,12 +499,35 @@ def create_floating_bias_toolbar():
             }
             .bias-token-chip:hover {
                 transform: translateY(-1px);
-                filter: brightness(1.1);
+                filter: brightness(1.2);
+            }
+            .bias-token-chip.selected {
+                box-shadow: 0 0 0 1.5px currentColor !important;
+                filter: brightness(1.3) !important;
+                transform: translateY(-1px);
             }
         """),
 
         # ── Script ──
         ui.tags.script("""
+        // ── Token selection for Combined View ──
+        window.selectedBiasTokens = new Set();
+        
+        window.selectBiasToken = function(idx) {
+            var chips = document.querySelectorAll('.bias-token-chip[data-token-idx="' + idx + '"]');
+            
+            if (window.selectedBiasTokens.has(idx)) {
+                window.selectedBiasTokens.delete(idx);
+                chips.forEach(function(c) { c.classList.remove('selected'); });
+            } else {
+                window.selectedBiasTokens.add(idx);
+                chips.forEach(function(c) { c.classList.add('selected'); });
+            }
+            
+            // Send array of indices to Shiny
+            Shiny.setInputValue('bias_selected_tokens', Array.from(window.selectedBiasTokens), {priority: 'event'});
+        };
+
         (function() {
             // ── Debounced Shiny setters ──
             function debounce(fn, ms) {
@@ -478,6 +572,8 @@ def create_floating_bias_toolbar():
                     hSlider.value = hEl.value || '0';
                     document.getElementById('bias-head-value').textContent = hEl.value || '0';
                 }
+                // Initialize selected tokens list
+                Shiny.setInputValue('bias_selected_tokens', [], {priority: 'event'});
             }, 500);
 
             // ── Sync on select changes (from server-side updates) ──

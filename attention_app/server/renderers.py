@@ -157,7 +157,7 @@ def get_architecture_diagram(model_type, accent_color, title_prefix=None, layer_
     pulse_base = "position:absolute;top:0;width:100%;height:60%;animation:archMovePulse 2.5s linear infinite;"
     add_norm_style = block + "height:22px;width:90px;font-size:8px;"
     layer_box = (
-        "position:relative;padding:14px;padding-bottom:24px;border-radius:14px;"
+        "position:relative;padding:14px;padding-bottom:24px;border-radius:8px;"
         "border:1px solid rgba(255,92,169,0.3);background-color:rgba(255,92,169,0.06);"
         "display:flex;flex-direction:column;align-items:center;"
         "box-shadow:inset 0 0 10px rgba(255,92,169,0.05);"
@@ -369,6 +369,196 @@ def get_paired_architecture_section(model_type_a="bert", model_type_b="gpt2",
         f'</div>'
     )
 
+
+def get_gusnet_architecture_section(selected_model="gusnet-bert"):
+    """
+    GUS-Net architecture diagrams for bias detection.
+    Shows BERT and GPT-2 pipelines side-by-side.
+    
+    selected_model: "gusnet-bert" or "gusnet-gpt2"
+    """
+    # Colors
+    blue = "#3b82f6"
+    green = "#10b981"
+    pink = "#ff5ca9"
+
+    # Determine which is selected
+    bert_selected = selected_model == "gusnet-bert"
+    gpt2_selected = selected_model == "gusnet-gpt2"
+
+    # Styles
+    base_section = "position:relative;padding:16px 8px 12px 8px;border-radius:12px;border:2px solid;display:flex;flex-direction:column;align-items:center;width:120px;transition:all 0.3s ease;"
+    
+    block_style = "position:relative;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;height:33px;font-size:7px;padding:0 4px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background-color:#0f172a;width:100px;transition:transform 0.2s;margin-bottom:0;box-shadow:0 1px 3px rgba(0,0,0,0.2);"
+    block_label = "font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#e2e8f0;margin-bottom:1px;"
+    block_sub = "font-family:'JetBrains Mono',monospace;font-size:6px;color:#94a3b8;"
+    badge_style = "position:absolute;top:-5px;right:6px;font-family:'JetBrains Mono',monospace;font-size:5px;padding:1px 3px;border-radius:3px;background:rgba(30,41,59,0.9);color:#94a3b8;border:1px solid rgba(255,255,255,0.12);z-index:20;"
+    layer_box = "position:relative;padding:8px;border-radius:8px;border:1px solid rgba(255,92,169,0.3);background-color:rgba(255,92,169,0.06);display:flex;flex-direction:column;align-items:center;width:100%;margin:6px 0;"
+    connector = "width:1px;height:12px;background-color:#cbd5e1;margin:3px auto;"
+
+    # LLRD visualization (green bars) for GPT-2
+    llrd_html = """
+        <div style="width:60%;margin:3px auto 0;">
+            <div style="height:2px;background:#10b981;margin-bottom:1px;border-radius:1px;opacity:1.0;width:100%;"></div>
+            <div style="height:2px;background:#10b981;margin-bottom:1px;border-radius:1px;opacity:0.85;width:90%;"></div>
+            <div style="height:2px;background:#10b981;margin-bottom:1px;border-radius:1px;opacity:0.5;width:70%;"></div>
+        </div>
+    """
+
+    # --- BERT Diagram (Pink) ---
+    bert_border = f"border-color:{pink};box-shadow:0 0 20px rgba(255,92,169,0.2);" if bert_selected else "border-color:rgba(255,92,169,0.2);opacity:0.4;"
+    bert_bg = "background:rgba(255,92,169,0.08);" if bert_selected else "background:rgba(255,92,169,0.02);"
+    
+    bert_html = f"""
+        <div style="{base_section}{bert_border}{bert_bg}">
+            <div style="{block_style}border-color:rgba(255,92,169,0.4);">
+                <span style="{block_label}color:{pink};">BertTokenizerFast</span>
+                <span style="{block_sub}">Pad: Max Length</span>
+            </div>
+
+            <div style="{connector}"></div>
+
+            <div style="{layer_box}">
+                <div style="{badge_style}color:{pink};">ENC</div>
+                <div style="{block_style}width:100%;background:rgba(255,92,169,0.1);border-color:rgba(255,92,169,0.3);margin-bottom:4px;">
+                    <span style="{block_label}color:#db2777;">BertForTokenCls</span>
+                    <span style="{block_sub}color:#db2777;">12 Layers</span>
+                </div>
+                <div style="{connector}height:4px;"></div>
+                <div style="{block_style}width:100%;margin-bottom:4px;">
+                    <span style="{block_label}">Linear Head</span>
+                    <span style="{block_sub}">768 → 7 Labels</span>
+                </div>
+                <div style="{connector}height:4px;"></div>
+                <div style="{block_style}width:100%;border-color:rgba(255,92,169,0.5);">
+                    <span style="{block_label}color:#fbcfe8;">Sigmoid+Thresh</span>
+                    <span style="{block_sub}font-weight:700;color:#f9a8d4;">Dynamic Opt.</span>
+                </div>
+            </div>
+
+            <div style="{connector}"></div>
+
+            <div style="{layer_box}border-color:rgba(255,255,255,0.1);background:rgba(255,255,255,0.02);">
+                <div style="{badge_style}color:#64748b;">OPT</div>
+                <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;margin-bottom:3px;">
+                    <span style="{block_label}font-size:7px;color:#ffffff;">Focal Loss</span>
+                    <span style="{block_sub}color:#cbd5e1;">α=0.75, γ=3.0</span>
+                </div>
+                <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;">
+                    <span style="{block_label}font-size:7px;color:#ffffff;">Optimizer</span>
+                    <span style="{block_sub}color:#cbd5e1;">AdamW + Warmup</span>
+                </div>
+            </div>
+        </div>
+    """
+
+    # --- GPT-2 Diagram (Blue) ---
+    gpt2_border = f"border-color:{blue};box-shadow:0 0 20px rgba(59,130,246,0.2);" if gpt2_selected else "border-color:rgba(59,130,246,0.2);opacity:0.4;"
+    gpt2_bg = "background:rgba(59,130,246,0.08);" if gpt2_selected else "background:rgba(59,130,246,0.02);"
+    
+    gpt2_html = f"""
+        <div style="{base_section}{gpt2_border}{gpt2_bg}">
+            <div style="{block_style}border-color:rgba(59,130,246,0.4);">
+                <span style="{block_label}color:{blue};">GPT2TokenizerFast</span>
+                <span style="{block_sub}">Pad: Right | BPE</span>
+            </div>
+
+            <div style="{connector}"></div>
+
+            <div style="{layer_box}border-color:rgba(59,130,246,0.3);background:rgba(59,130,246,0.06);">
+                <div style="{badge_style}color:{blue};">DEC</div>
+                <div style="{block_style}width:100%;background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.3);margin-bottom:4px;">
+                    <span style="{block_label}color:#2563eb;">GPT2ForTokenCls</span>
+                    <span style="{block_sub}color:#2563eb;">12 Layers</span>
+                </div>
+                <div style="{connector}height:4px;"></div>
+                <div style="{block_style}width:100%;margin-bottom:4px;">
+                    <span style="{block_label}">Linear Head</span>
+                    <span style="{block_sub}">768 → 6 Ch</span>
+                </div>
+                <div style="{connector}height:4px;"></div>
+                <div style="{block_style}width:100%;border-color:rgba(59,130,246,0.5);">
+                    <span style="{block_label}color:#93c5fd;">Sigmoid+Thresh</span>
+                    <span style="{block_sub}font-weight:700;color:#60a5fa;">Dynamic Opt.</span>
+                </div>
+            </div>
+
+            <div style="{connector}"></div>
+
+            <div style="{layer_box}border-color:rgba(255,255,255,0.1);background:rgba(255,255,255,0.02);">
+                <div style="{badge_style}color:#64748b;">OPT</div>
+                <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;margin-bottom:3px;">
+                    <span style="{block_label}font-size:7px;color:#ffffff;">Focal Loss</span>
+                    <span style="{block_sub}color:#cbd5e1;">γ=2.0, Sm=0.05</span>
+                </div>
+                <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;">
+                    <span style="{block_label}font-size:7px;color:#ffffff;">LLRD Optimizer</span>
+                    <span style="{block_sub}color:#cbd5e1;">Decay: 0.85</span>
+                    {llrd_html}
+                </div>
+            </div>
+        </div>
+    """
+
+    # Output example (NER inference) - dark theme
+    output_html = f"""
+        <div style="position:relative;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:#1e293b;display:flex;flex-direction:column;align-items:center;width:150px;margin-top:12px;">
+            <div style="{badge_style}color:#94a3b8;">OUTPUT</div>
+            <span style="{block_label}font-size:6px;color:#94a3b8;margin-bottom:4px;">Inference Example</span>
+
+            <div style="display:flex;flex-direction:row;justify-content:center;align-items:flex-start;width:100%;gap:2px;">
+                <div style="display:flex;flex-direction:column;align-items:center;width:30px;">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:6px;color:#e2e8f0;padding:1px 0;background:#0f172a;border-radius:3px;border:1px solid rgba(255,255,255,0.1);margin-bottom:2px;width:100%;text-align:center;">Women</div>
+                    <div style="font-size:4px;font-weight:bold;padding:1px 0;border-radius:2px;text-transform:uppercase;width:100%;text-align:center;background:rgba(139,92,246,0.3);color:#a78bfa;border:1px solid rgba(139,92,246,0.5);">B-GEN</div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:center;width:30px;">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:6px;color:#e2e8f0;padding:1px 0;background:#0f172a;border-radius:3px;border:1px solid rgba(255,255,255,0.1);margin-bottom:2px;width:100%;text-align:center;">cannot</div>
+                    <div style="height:6px;"></div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:center;width:30px;">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:6px;color:#e2e8f0;padding:1px 0;background:#0f172a;border-radius:3px;border:1px solid rgba(255,255,255,0.1);margin-bottom:2px;width:100%;text-align:center;">drive</div>
+                    <div style="font-size:4px;font-weight:bold;padding:1px 0;border-radius:2px;text-transform:uppercase;width:100%;text-align:center;background:rgba(249,115,22,0.3);color:#fb923c;border:1px solid rgba(249,115,22,0.5);">B-STER</div>
+                    <div style="font-size:4px;font-weight:bold;padding:1px 0;border-radius:2px;text-transform:uppercase;width:100%;text-align:center;background:rgba(239,68,68,0.3);color:#f87171;border:1px solid rgba(239,68,68,0.5);margin-top:1px;">B-UNF</div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:center;width:30px;">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:6px;color:#e2e8f0;padding:1px 0;background:#0f172a;border-radius:3px;border:1px solid rgba(255,255,255,0.1);margin-bottom:2px;width:100%;text-align:center;">well</div>
+                    <div style="font-size:4px;font-weight:bold;padding:1px 0;border-radius:2px;text-transform:uppercase;width:100%;text-align:center;background:rgba(249,115,22,0.3);color:#fb923c;border:1px solid rgba(249,115,22,0.5);">I-STER</div>
+                    <div style="font-size:4px;font-weight:bold;padding:1px 0;border-radius:2px;text-transform:uppercase;width:100%;text-align:center;background:rgba(239,68,68,0.3);color:#f87171;border:1px solid rgba(239,68,68,0.5);margin-top:1px;">I-UNF</div>
+                </div>
+            </div>
+
+            <div style="margin-top:6px;display:flex;gap:6px;justify-content:center;width:100%;border-top:1px solid rgba(255,255,255,0.08);padding-top:4px;">
+                <div style="display:flex;align-items:center;gap:2px;"><div style="width:3px;height:3px;background:#a78bfa;border-radius:50%;"></div><span style="font-size:4px;color:#94a3b8;font-family:monospace;letter-spacing:0.05em;">GEN</span></div>
+                <div style="display:flex;align-items:center;gap:2px;"><div style="width:3px;height:3px;background:#fb923c;border-radius:50%;"></div><span style="font-size:4px;color:#94a3b8;font-family:monospace;letter-spacing:0.05em;">STEREO</span></div>
+                <div style="display:flex;align-items:center;gap:2px;"><div style="width:3px;height:3px;background:#f87171;border-radius:50%;"></div><span style="font-size:4px;color:#94a3b8;font-family:monospace;letter-spacing:0.05em;">UNFAIR</span></div>
+            </div>
+        </div>
+    """
+
+    # Merge connector
+    merge_connector = """
+        <div style="width:120px;height:16px;position:relative;margin-top:6px;">
+            <div style="position:absolute;left:25%;top:0;width:1px;height:8px;background:#cbd5e1;"></div>
+            <div style="position:absolute;right:25%;top:0;width:1px;height:8px;background:#cbd5e1;"></div>
+            <div style="position:absolute;top:8px;left:25%;right:25%;height:1px;background:#cbd5e1;"></div>
+            <div style="position:absolute;top:8px;left:50%;height:8px;width:1px;background:#cbd5e1;"></div>
+        </div>
+    """
+
+    # Main container
+    return ui.HTML(
+        f'<div style="background-color:#ffffff;border-radius:16px;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;border:1px solid #e2e8f0;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -1px rgba(0,0,0,0.06);">'
+        f'<div style="text-align:center;margin-bottom:16px;">'
+        f'<h4 style="color:#ff5ca9;font-weight:800;letter-spacing:2px;margin:0;font-size:13px;text-transform:uppercase;">GUS-Net Training Pipeline</h4>'
+        f'</div>'
+        f'<div style="display:flex;align-items:center;justify-content:center;gap:16px;width:100%;">'
+        f'{bert_html}'
+        f'{gpt2_html}'
+        f'</div>'
+        f'{merge_connector}'
+        f'{output_html}'
+        f'</div>'
+    )
 
 
 def get_choices(tokens):
@@ -2417,6 +2607,7 @@ __all__ = [
     "get_architecture_diagram",
     "get_architecture_section",
     "get_paired_architecture_section",
+    "get_gusnet_architecture_section",
 ]
 def compute_attention_rollout(attentions, discard_ratio=0.9, head_fusion="mean"):
     """

@@ -11,7 +11,7 @@ import html as html_lib
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from .attention_bias import HeadBiasMetrics
 
 
@@ -102,18 +102,33 @@ def create_token_bias_heatmap(token_labels: List[Dict], text: str) -> go.Figure:
 
 def create_attention_bias_matrix(
     bias_matrix: np.ndarray,
-    metrics: Optional[List[HeadBiasMetrics]] = None
+    metrics: Optional[List[HeadBiasMetrics]] = None,
+    selected_layer: Optional[int] = None
 ) -> go.Figure:
     """Create heatmap showing attention to bias for each (layer, head).
 
     Args:
         bias_matrix: Matrix of shape [num_layers, num_heads]
         metrics: Optional list of HeadBiasMetrics for enhanced tooltips
+        selected_layer: Optional integer index of the layer to highlight
 
     Returns:
         Plotly Figure object
     """
     num_layers, num_heads = bias_matrix.shape
+
+    # Handle all-zeros or empty (precaution)
+    if bias_matrix.size == 0 or np.all(bias_matrix == 0):
+        # Return a "blank" but valid figure to avoid white-out
+        fig = go.Figure()
+        fig.update_layout(
+             title=dict(text="No bias attention detected (values are 0)", font=dict(size=14, color="#64748b")),
+             xaxis=dict(visible=False),
+             yaxis=dict(visible=False),
+             plot_bgcolor="rgba(0,0,0,0)",
+             paper_bgcolor="rgba(0,0,0,0)",
+        )
+        return fig
 
     # Create hover text
     if metrics:
@@ -127,25 +142,41 @@ def create_attention_bias_matrix(
                 if m:
                     text = (
                         f"<b>Layer {layer}, Head {head}</b><br>"
-                        f"Bias Attention Ratio: {m.bias_attention_ratio:.3f}<br>"
-                        f"Amplification Score: {m.amplification_score:.3f}<br>"
-                        f"Max Bias Attention: {m.max_bias_attention:.3f}<br>"
-                        f"Specialized: {'Yes' if m.specialized_for_bias else 'No'}"
+                        f"BAR (μ̂/μ₀): {m.bias_attention_ratio:.3f}<br>"
+                        f"BSR (self-reinforcement): {m.amplification_score:.3f}<br>"
+                        f"Max α→biased: {m.max_bias_attention:.3f}<br>"
+                        f"Specialised: {'Yes' if m.specialized_for_bias else 'No'}"
                     )
                 else:
-                    text = f"<b>Layer {layer}, Head {head}</b><br>Ratio: {bias_matrix[layer, head]:.3f}"
+                    text = f"<b>Layer {layer}, Head {head}</b><br>BAR: {bias_matrix[layer, head]:.3f}"
                 row.append(text)
             hover_text.append(row)
     else:
         hover_text = [[f"<b>L{l}, H{h}</b><br>Ratio: {bias_matrix[l,h]:.3f}"
                        for h in range(num_heads)] for l in range(num_layers)]
 
-    # Custom colorscale (blue for low, red for high bias attention)
+    # Dynamic range: ensure 1.0 is always central
+    # Range is [0, max(2.5, data_max)]
+    # This ensures 1.0 (neutral) aligns with White in the colorscale below
+    max_val = float(bias_matrix.max())
+    z_max = max(2.5, max_val)
+    z_min = 0.0
+
+    # Custom colorscale (matches z_max alignment)
+    # We want:
+    # 0.0 (Blue) -> 1.0 (White) -> >1.5 (Red)
+    # Since we map [0, z_max], we need to find where 1.0 falls.
+    # mid_point = 1.0 / z_max
+    
+    mid_point = 1.0 / z_max if z_max > 0 else 0.5
+    
+    # Construct scale: 0->Blue, mid->White, 1->Red
+    # Plotly colorscales are [normalized_val, color]
     colorscale = [
-        [0.0, '#dbeafe'],   # Light blue
-        [0.5, '#ffffff'],   # White (neutral)
-        [0.75, '#fecaca'],  # Light red
-        [1.0, '#dc2626']    # Dark red (high bias)
+        [0.0, '#dbeafe'],        # 0.0: Light Blue
+        [mid_point, '#ffffff'],  # 1.0: White (Neutral)
+        [min(1.0, mid_point + (0.5/z_max)), '#fecaca'], # ~1.5: Light Red
+        [1.0, '#dc2626']         # Max: Dark Red
     ]
 
     fig = go.Figure(data=go.Heatmap(
@@ -153,10 +184,12 @@ def create_attention_bias_matrix(
         x=[f"H{h}" for h in range(num_heads)],
         y=[f"L{l}" for l in range(num_layers)],
         colorscale=colorscale,
-        zmid=1.0,
+        zmin=z_min,
+        zmax=z_max,
+        showscale=True,
         colorbar=dict(
             title=dict(
-                text="Bias Attention<br>Ratio",
+                text="BAR<br>(μ̂/μ₀)",
                 side="right",
                 font=dict(size=11, color="#64748b")
             ),
@@ -165,6 +198,21 @@ def create_attention_bias_matrix(
         hovertemplate="%{text}<extra></extra>",
         text=hover_text
     ))
+
+    # Add shape for selected layer
+    if selected_layer is not None and 0 <= selected_layer < num_layers:
+        fig.add_shape(
+            type="rect",
+            x0=-0.5,
+            x1=num_heads - 0.5,
+            y0=selected_layer - 0.5,
+            y1=selected_layer + 0.5,
+            line=dict(
+                color="#ec4899",  # Pink highlight
+                width=3,
+            ),
+            fillcolor="rgba(0,0,0,0)",
+        )
 
     fig.update_layout(
         title=dict(
@@ -195,11 +243,11 @@ def create_attention_bias_matrix(
         xref="paper",
         yref="paper",
         text=(
-            "<b>Bias Attention Ratio</b><br>"
-            "<span style='font-size:9px'>attn(→biased) / E[attn]</span><br><br>"
-            "<span style='color:#dc2626'>■</span> <b>≥ 1.5</b> Specialized<br>"
-            "<span style='color:#93c5fd'>■</span> <b>= 1.0</b> Neutral<br>"
-            "<span style='color:#3b82f6'>■</span> <b>&lt; 1.0</b> Avoids bias"
+            "<b>BAR(l, h) = μ̂<sub>B</sub> / μ₀</b><br>"
+            "<span style='font-size:9px'>observed / expected attention</span><br><br>"
+            "<span style='color:#dc2626'>■</span> <b>≥ 1.5</b> Specialised<br>"
+            "<span style='color:#93c5fd'>■</span> <b>= 1.0</b> Uniform<br>"
+            "<span style='color:#3b82f6'>■</span> <b>&lt; 1.0</b> Under-attends"
         ),
         showarrow=False,
         font=dict(size=10, color="#64748b"),
@@ -210,14 +258,15 @@ def create_attention_bias_matrix(
     return fig
 
 
-def create_bias_propagation_plot(layer_propagation: List[float]) -> go.Figure:
+def create_bias_propagation_plot(
+    layer_propagation: List[float],
+    selected_layer: Optional[int] = None
+) -> go.Figure:
     """Create line plot showing how bias attention changes across layers.
 
     Args:
         layer_propagation: List of average bias ratios per layer
-
-    Returns:
-        Plotly Figure object
+        selected_layer: Optional layer index to highlight
     """
     layers = list(range(len(layer_propagation)))
 
@@ -231,8 +280,8 @@ def create_bias_propagation_plot(layer_propagation: List[float]) -> go.Figure:
         marker=dict(size=8, color='#ff5ca9', line=dict(color='white', width=2)),
         fill='tozeroy',
         fillcolor='rgba(255, 92, 169, 0.1)',
-        name='Bias Attention',
-        hovertemplate="<b>Layer %{x}</b><br>Avg Bias Ratio: %{y:.3f}<extra></extra>"
+        name='BAR',
+        hovertemplate="<b>Layer %{x}</b><br>Avg BAR: %{y:.3f}<extra></extra>"
     ))
 
     # Add reference line at 1.0 (neutral)
@@ -244,6 +293,27 @@ def create_bias_propagation_plot(layer_propagation: List[float]) -> go.Figure:
         annotation_position="right",
         annotation_font=dict(size=10, color="#64748b")
     )
+
+    # Add arrow annotation for selected layer if provided
+    if selected_layer is not None and 0 <= selected_layer < len(layers):
+        fig.add_annotation(
+            x=selected_layer,
+            y=layer_propagation[selected_layer],
+            text="Selected",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=1,
+            arrowwidth=2,
+            arrowcolor="#64748b",
+            ax=0,
+            ay=-40,
+            font=dict(size=10, color="#64748b"),
+            bgcolor="rgba(255, 255, 255, 0.8)",
+            bordercolor="#e2e8f0",
+            borderwidth=1,
+            borderpad=4,
+            opacity=0.9
+        )
 
     fig.update_layout(
         title=dict(
@@ -259,9 +329,10 @@ def create_bias_propagation_plot(layer_propagation: List[float]) -> go.Figure:
             tickfont=dict(size=11, color="#64748b")
         ),
         yaxis=dict(
-            title="Average Bias Attention Ratio",
+            title="Avg BAR (μ̂ / μ₀)",
             gridcolor='#e2e8f0',
-            tickfont=dict(size=11, color="#64748b")
+            tickfont=dict(size=11, color="#64748b"),
+            rangemode="tozero"
         ),
         height=400,
         margin=dict(l=80, r=40, t=100, b=60),
@@ -279,17 +350,36 @@ def create_combined_bias_visualization(
     token_labels: List[Dict],
     attention_matrix: np.ndarray,
     layer_idx: int,
-    head_idx: int
+    head_idx: int,
+    selected_token_idx: Optional[Union[int, List[int]]] = None,
 ) -> go.Figure:
     """Create attention heatmap matching the Multi-Head Attention style.
 
-    Biased tokens are highlighted with pink row/column overlays,
-    exactly like the attention tab highlights a selected token.
+    By default no tokens are highlighted.  When *selected_token_idx* is
+    provided, that token's row and column are highlighted using its
+    primary bias-category colour (GEN → orange, STEREO → purple,
+    UNFAIR → red).
     """
     n = len(tokens)
+    
+    # Normalize selection to a set of indices
+    selected_indices = set()
+    if isinstance(selected_token_idx, list):
+        selected_indices = set(selected_token_idx)
+    elif isinstance(selected_token_idx, int) and selected_token_idx >= 0:
+        selected_indices = {selected_token_idx}
+        
     biased_indices = set(
         i for i, label in enumerate(token_labels) if label.get("is_biased")
     )
+
+    # Category-specific highlight palettes
+    _CAT_HIGHLIGHT = {
+        "GEN":    {"fill": "rgba(249, 115, 22, 0.14)", "border": "#f97316"},
+        "UNFAIR": {"fill": "rgba(239, 68, 68, 0.14)",  "border": "#ef4444"},
+        "STEREO": {"fill": "rgba(156, 39, 176, 0.14)", "border": "#9c27b0"},
+    }
+    _DEFAULT_HL = {"fill": "rgba(236, 72, 153, 0.12)", "border": "#ec4899"}
 
     # ── Clean token labels (remove subword markers, deduplicate) ──
     from collections import Counter
@@ -304,12 +394,23 @@ def create_combined_bias_visualization(
         else:
             cleaned.append(t)
 
-    # ── HTML-styled tick labels (pink + bold for biased tokens) ──
+    sel_hl_map = {} # map idx -> color info
+    for idx in selected_indices:
+        if 0 <= idx < n:
+            lbl = token_labels[idx]
+            if lbl.get("is_biased") and lbl.get("bias_types"):
+                primary = lbl["bias_types"][0]
+                sel_hl_map[idx] = _CAT_HIGHLIGHT.get(primary, _DEFAULT_HL)
+            else:
+                sel_hl_map[idx] = _DEFAULT_HL
+
+    # ── HTML-styled tick labels ──
     styled = []
     for i, tok in enumerate(cleaned):
-        if i in biased_indices:
+        if i in selected_indices:
+            color = sel_hl_map[i]["border"]
             styled.append(
-                f"<span style='color:#ec4899;font-weight:bold'>{tok}</span>"
+                f"<span style='color:{color};font-weight:bold'>{tok}</span>"
             )
         else:
             styled.append(tok)
@@ -362,28 +463,26 @@ def create_combined_bias_visualization(
         text=hover_text,
     ))
 
-    # ── Pink row/column highlights for biased tokens ──
-    for idx in biased_indices:
-        if idx < 0 or idx >= n:
-            continue
-        # Row highlight
-        fig.add_shape(
-            type="rect",
-            x0=-0.5, x1=n - 0.5,
-            y0=idx - 0.5, y1=idx + 0.5,
-            fillcolor="rgba(236, 72, 153, 0.12)",
-            line=dict(color="#ec4899", width=1),
-            layer="above",
-        )
-        # Column highlight
-        fig.add_shape(
-            type="rect",
-            x0=idx - 0.5, x1=idx + 0.5,
-            y0=-0.5, y1=n - 0.5,
-            fillcolor="rgba(236, 72, 153, 0.12)",
-            line=dict(color="#ec4899", width=1),
-            layer="above",
-        )
+    # ── Row/column highlight for the SELECTED token only ──
+    for idx in selected_indices:
+        if 0 <= idx < n:
+            hl = sel_hl_map.get(idx, _DEFAULT_HL)
+            fig.add_shape(
+                type="rect",
+                x0=-0.5, x1=n - 0.5,
+                y0=idx - 0.5, y1=idx + 0.5,
+                fillcolor=hl["fill"],
+                line=dict(color=hl["border"], width=1),
+                layer="above",
+            )
+            fig.add_shape(
+                type="rect",
+                x0=idx - 0.5, x1=idx + 0.5,
+                y0=-0.5, y1=n - 0.5,
+                fillcolor=hl["fill"],
+                line=dict(color=hl["border"], width=1),
+                layer="above",
+            )
 
     fig.update_layout(
         title=dict(
@@ -649,45 +748,128 @@ def create_method_info_html() -> str:
 
 
 def create_ratio_formula_html() -> str:
-    """Render the Bias Attention Ratio formula explanation panel."""
+    """Render the Bias Attention Ratio formula as an academic-style panel."""
+
+    # ── CSS helper: inline fraction ──
+    def frac(num: str, den: str, color: str = "#e2e8f0") -> str:
+        return (
+            f'<span style="display:inline-flex;flex-direction:column;align-items:center;'
+            f'vertical-align:middle;margin:0 3px;">'
+            f'<span style="padding:0 5px 2px;line-height:1.2;">{num}</span>'
+            f'<span style="border-top:1.5px solid {color};padding:2px 5px 0;'
+            f'line-height:1.2;">{den}</span></span>'
+        )
+
+    # Variable colour tokens
+    mu_hat = '<span style="color:#60a5fa;">μ&#770;<sub style="font-size:80%;">𝐵</sub></span>'
+    mu_hat_lh = f'{mu_hat}<sup style="font-size:75%;color:#94a3b8;">(<i>l,h</i>)</sup>'
+    mu_0 = '<span style="color:#f59e0b;">μ<sub style="font-size:80%;">0</sub></span>'
+    alpha = '<span style="color:#a5b4fc;">α<sub style="font-size:75%;"><i>ij</i></sub></span>'
+    alpha_lh = f'{alpha}<sup style="font-size:70%;color:#94a3b8;">(<i>l,h</i>)</sup>'
+    B_set = '<span style="color:#f472b6;">𝐵</span>'
+
     return (
         '<div style="background:linear-gradient(135deg,#f8fafc,#f0f4f8);'
         'border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;margin-bottom:16px;">'
 
-        '<div style="margin-bottom:12px;">'
-        '<span style="font-size:13px;font-weight:700;color:#1e293b;">Bias Attention Ratio — Definition</span>'
+        # ── Title ──
+        '<div style="margin-bottom:14px;">'
+        '<h4 style="margin:0;">'
+        'Bias Attention Ratio — Definition</h4>'
         '</div>'
 
-        '<div style="background:#1e293b;border-radius:8px;padding:12px 16px;margin-bottom:12px;'
-        'font-family:JetBrains Mono,monospace;font-size:12px;color:#e2e8f0;line-height:1.6;">'
-        'ratio(<span style="color:#94a3b8;">l, h</span>) = '
-        '<span style="color:#60a5fa;">mean_attn(all → biased_tokens)</span>'
-        ' / '
-        '<span style="color:#f59e0b;">E[attn | uniform]</span>'
+        # ── Main formula block ──
+        '<div style="background:#1e293b;border-radius:8px;padding:14px 18px;margin-bottom:14px;'
+        'font-family:JetBrains Mono,monospace;font-size:13px;color:#e2e8f0;'
+        'line-height:1.3;text-align:center;">'
+        # BAR(l,h) = fraction
+        '<div style="margin-bottom:10px;">'
+        '<span style="color:#cbd5e1;font-weight:600;">BAR</span>'
+        '<span style="color:#94a3b8;font-size:11px;">(<i>l, h</i>)</span>'
+        '<span style="margin:0 8px;color:#64748b;">=</span>'
+        + frac(mu_hat_lh, mu_0) +
+        '<span style="margin:0 8px;color:#64748b;">=</span>'
+        + frac(
+            f'<span style="color:#94a3b8;font-size:10px;">observed</span>',
+            f'<span style="color:#94a3b8;font-size:10px;">expected</span>',
+        ) +
         '</div>'
 
-        '<div style="font-size:11px;color:#64748b;line-height:1.6;">'
-        'A ratio of '
-        '<code style="background:#dbeafe;padding:1px 5px;border-radius:3px;font-size:10px;color:#1e40af;">1.0</code>'
-        ' means the head distributes attention uniformly (neutral baseline). '
-        'Ratio '
-        '<code style="background:#fee2e2;padding:1px 5px;border-radius:3px;font-size:10px;color:#991b1b;">&gt; 1.5</code>'
-        ' indicates the head <b>specializes</b> on biased tokens. '
-        'Ratio '
-        '<code style="background:#dbeafe;padding:1px 5px;border-radius:3px;font-size:10px;color:#1e40af;">&lt; 1.0</code>'
-        ' means the head <b>avoids</b> biased tokens.'
+        # ── where clause ──
+        '<div style="border-top:1px solid rgba(148,163,184,0.2);'
+        'padding-top:10px;margin-top:6px;text-align:left;font-size:11px;line-height:1.8;">'
+
+        # μ̂_B definition
+        f'<div>{mu_hat_lh}'
+        f'<span style="color:#64748b;margin:0 6px;">=</span>'
+        + frac('<span style="color:#e2e8f0;">1</span>',
+               '<span style="color:#e2e8f0;"><i>N</i></span>') +
+        f'<span style="color:#94a3b8;margin:0 2px;">·</span>'
+        f'<span style="color:#94a3b8;">&#8721;<sub style="font-size:70%;"><i>i</i>=1</sub>'
+        f'<sup style="font-size:70%;"><i>N</i></sup></span>'
+        f'<span style="color:#94a3b8;margin:0 1px;">&#8721;<sub style="font-size:70%;"><i>j</i>∈{B_set}</sub></span>'
+        f'<span style="margin-left:3px;">{alpha_lh}</span>'
+        f'<span style="color:#475569;font-size:9px;margin-left:10px;font-style:italic;">'
+        f'observed mean attention → biased tokens</span></div>'
+
+        # μ₀ definition
+        f'<div>{mu_0}'
+        f'<span style="color:#64748b;margin:0 6px;">=</span>'
+        + frac(f'<span style="color:#e2e8f0;">|{B_set}|</span>',
+               '<span style="color:#e2e8f0;"><i>N</i></span>') +
+        f'<span style="color:#475569;font-size:9px;margin-left:10px;font-style:italic;">'
+        f'expected under uniform distribution</span></div>'
+
+        '</div></div>'
+
+        # ── Variable definitions ──
+        '<div style="font-size:10px;color:#94a3b8;line-height:1.7;margin-bottom:12px;'
+        'padding:8px 12px;background:rgba(241,245,249,0.5);border-radius:6px;'
+        'font-family:JetBrains Mono,monospace;">'
+        f'<div>{alpha_lh} '
+        '<span style="color:#64748b;">— attention weight from token <i>i</i> '
+        'to token <i>j</i> at layer <i>l</i>, head <i>h</i></span></div>'
+        f'<div>{B_set} ⊆ &#123;1, …, <i>N</i>&#125; '
+        '<span style="color:#64748b;">— indices flagged by GUS-Net</span></div>'
+        '<div><span style="color:#e2e8f0;"><i>N</i></span> '
+        '<span style="color:#64748b;">— sequence length</span></div>'
+        '</div>'
+
+        # ── Interpretation ──
+        '<div style="font-size:11px;color:#64748b;line-height:1.7;">'
+        '<code style="background:#dbeafe;padding:1px 6px;border-radius:3px;'
+        'font-size:10px;color:#1e40af;">= 1.0</code> '
+        'Uniform baseline (head treats biased and non-biased tokens equally) '
+        '<br>'
+        '<code style="background:#fee2e2;padding:1px 6px;border-radius:3px;'
+        'font-size:10px;color:#991b1b;">&gt; 1.5</code> '
+        '<b>Specialised</b> — head disproportionately attends to biased tokens '
+        '<br>'
+        '<code style="background:#dbeafe;padding:1px 6px;border-radius:3px;'
+        'font-size:10px;color:#1e40af;">&lt; 1.0</code> '
+        'Head <b>under-attends</b> biased tokens relative to baseline'
         '</div>'
         '</div>'
     )
 
 
-def create_token_bias_strip(token_labels: List[Dict]) -> str:
+def create_token_bias_strip(
+    token_labels: List[Dict],
+    selected_token_idx: Optional[Union[int, List[int]]] = None
+) -> str:
     """Render a compact HTML strip showing per-token bias categories.
 
     Each token is displayed with small coloured dots beneath it indicating
     which categories (GEN / UNFAIR / STEREO) are active.  This replaces
     the Plotly heatmap with a lighter, card-free visualisation.
     """
+    # Normalize selection
+    selected_indices = set()
+    if isinstance(selected_token_idx, list):
+        selected_indices = set(selected_token_idx)
+    elif isinstance(selected_token_idx, int) and selected_token_idx >= 0:
+        selected_indices = {selected_token_idx}
+
     cats = ["O", "GEN", "UNFAIR", "STEREO"]
     cat_colors = {"O": "#64748b", "GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
 
@@ -700,8 +882,18 @@ def create_token_bias_strip(token_labels: List[Dict]) -> str:
         if not clean:
             continue
 
+        idx = lbl.get("index", -1)
+        is_selected = (idx in selected_indices)
+        
         is_biased = lbl.get("is_biased", False)
-        tok_bg = "background:rgba(236,72,153,0.06);" if is_biased else ""
+        
+        # Base background
+        bg_style = "background:rgba(236,72,153,0.06);" if is_biased else ""
+        
+        # Enhanced style for selected token
+        if is_selected:
+            bg_style = "background:rgba(255, 92, 169, 0.2); box-shadow: 0 0 0 2px #ff5ca9; transform: translateY(-1px);"
+
         types = lbl.get("bias_types", [])
         scores = lbl.get("scores", {})
 
@@ -732,8 +924,8 @@ def create_token_bias_strip(token_labels: List[Dict]) -> str:
 
         cells.append(
             f'<span style="display:inline-flex;flex-direction:column;align-items:center;'
-            f'padding:4px 6px;border-radius:6px;{tok_bg}'
-            f'font-family:JetBrains Mono,monospace;font-size:12px;cursor:help;" '
+            f'padding:4px 6px;border-radius:6px;{bg_style}'
+            f'font-family:JetBrains Mono,monospace;font-size:12px;cursor:help;transition:all 0.2s ease;" '
             f'title="{tooltip}">'
             f'<span style="line-height:1.2;color:#0f172a;">{html_lib.escape(clean)}</span>'
             f'{scores_row}'
