@@ -8,8 +8,10 @@ import os
 from pathlib import Path
 
 # Create default download directories
-for d in ["sessions", "csv", "images"]:
-    Path(d).mkdir(exist_ok=True)
+download_base = Path("downloads")
+download_base.mkdir(exist_ok=True)
+for d in ["csv", "png", "json", "sessions"]:
+    (download_base / d).mkdir(exist_ok=True)
 
 import numpy as np
 import plotly.express as px
@@ -81,7 +83,7 @@ def server(input, output, session):
             }, 50);
         }
 
-        // Listen for Shiny input changes on layer/head/view controls
+        # Listen for Shiny input changes on layer/head/view controls
         $(document).on('shiny:inputchanged', function(event) {
             if (event.name === 'global_layer' || event.name === 'global_head' ||
                 event.name === 'global_topk' || event.name === 'global_norm' ||
@@ -90,12 +92,12 @@ def server(input, output, session):
             }
         });
 
-        // Restore scroll after Shiny value/output updates
+        # Restore scroll after Shiny value/output updates
         $(document).on('shiny:value', function(event) {
             if (pendingRestore) restoreScroll();
         });
 
-        // Also restore on idle (backup)
+        # Also restore on idle (backup)
         $(document).on('shiny:idle', function(event) {
             if (pendingRestore) restoreScroll();
         });
@@ -206,12 +208,22 @@ def server(input, output, session):
         return filename
 
     # --- Auto-save download helper ---
-    _EXPORT_FOLDER_MAP = {"json": "sessions", "csv": "csv", "png": "images", "svg": "images"}
+    _EXPORT_FOLDER_MAP = {
+        "json": "downloads/json", 
+        "csv": "downloads/csv", 
+        "png": "downloads/png", 
+        "svg": "downloads/png"
+    }
 
     def save_export_to_folder(content, filename):
         """Save export content to the appropriate project folder based on file extension."""
         ext = filename.rsplit('.', 1)[-1] if '.' in filename else ''
         folder = _EXPORT_FOLDER_MAP.get(ext)
+        
+        # Override for sessions to keep them separate
+        if "session" in filename and ext == "json":
+            folder = "downloads/sessions"
+            
         if folder and content and not content.startswith("Error") and not content.startswith("No data"):
             try:
                 filepath = Path(folder) / filename
@@ -261,7 +273,7 @@ def server(input, output, session):
             if "," in b64_data:
                 b64_data = b64_data.split(",", 1)[1]
             img_bytes = base64.b64decode(b64_data)
-            filepath = Path("images") / filename
+            filepath = Path("downloads/png") / filename
             filepath.write_bytes(img_bytes)
         except Exception:
             pass

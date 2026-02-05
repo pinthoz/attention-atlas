@@ -19,55 +19,224 @@ def create_bias_sidebar():
             "Detect and analyze social bias in text using GUS-Net neural NER."
         ),
 
-        # ── Bias Detection Model Selector ──
+        # ── Compare Modes Section ──
         ui.div(
-            {"class": "sidebar-section", "style": "margin-top: 4px; margin-bottom: 4px;"},
-            ui.tags.span("Bias Detection Model", class_="sidebar-label"),
+            {"class": "sidebar-section", "style": "margin-top: 0; padding-bottom: 16px;"},
+            # Header
+            ui.tags.span("Compare Modes", id="bias-cmp-modes-label", class_="sidebar-label"),
+            # Switches Row
+            # Switches Row
             ui.div(
-                {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
-                ui.tags.select(
-                    ui.tags.option("GUS-Net (BERT)", value="gusnet-bert"),
-                    ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2"),
-                    id="bias_model_key",
-                    class_="bias-model-select",
-                    onchange="Shiny.setInputValue('bias_model_key', this.value, {priority:'event'});",
+                {"id": "bias-compare-modes-container"},
+                ui.input_switch("bias_compare_mode", ui.span("Models", class_="compare-label"), value=False),
+                ui.input_switch("bias_compare_prompts_mode", ui.span("Prompts", class_="compare-label"), value=False)
+            ),
+        ),
+
+        # Compare Modes Styling
+        ui.tags.style("""
+            #bias-cmp-modes-label {
+                color: #cbd5e1 !important;
+                margin-bottom: 8px !important;
+                width: 100% !important;
+                text-align: left !important;
+                display: block !important;
+            }
+
+            #bias-compare-modes-container {
+                margin-bottom: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                gap: 44px;
+                white-space: nowrap;
+            }
+
+            #bias-compare-modes-container .shiny-input-container {
+                width: auto !important;
+                margin-bottom: 0 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+            }
+
+            #bias-compare-modes-container .form-check {
+                margin: 0 !important;
+                padding: 0 !important;
+                display: flex !important;
+                align-items: center !important;
+                min-height: auto !important;
+                width: auto !important;
+                justify-content: center !important;
+                background: transparent !important;
+                border: none !important;
+            }
+            
+            #bias-compare-modes-container .form-check-input {
+                margin: 0 8px 0 0 !important;
+                float: none !important;
+                cursor: pointer;
+                background-color: #1e293b !important;
+                border-color: #334155 !important;
+                width: 2.2em !important;
+                height: 1.2em !important;
+            }
+
+            #bias-compare-modes-container .form-check-input:checked {
+                background-color: #ff5ca9 !important;
+                border-color: #ff5ca9 !important;
+            }
+
+            .compare-label {
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                color: #cbd5e1;
+                font-weight: 600;
+                margin-bottom: 0 !important;
+                cursor: pointer;
+                line-height: 1;
+            }
+        """),
+
+        # ── Models Container (A and B side by side when compare mode) ──
+        ui.div(
+            {"id": "bias-models-container", "style": "display: flex; gap: 12px;"},
+
+            # Model A Panel
+            ui.div(
+                {"id": "bias-model-a-panel", "style": "flex: 1;"},
+                ui.div(
+                    {"class": "sidebar-section", "style": "margin-top: 4px; margin-bottom: 4px;"},
+                    ui.tags.span("Bias Detection Model", id="bias-model-a-label", class_="sidebar-label"),
+                    ui.div(
+                        {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
+                        ui.tags.select(
+                            ui.tags.option("GUS-Net (BERT)", value="gusnet-bert"),
+                            ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2"),
+                            id="bias_model_key",
+                            class_="bias-model-select",
+                            onchange="Shiny.setInputValue('bias_model_key', this.value, {priority:'event'});",
+                        ),
+                    ),
                 ),
             ),
-            ui.tags.style("""
-                .bias-model-select {
-                    width: 100%;
-                    padding: 7px 10px;
-                    font-size: 12px;
-                    font-weight: 600;
-                    font-family: 'Inter', sans-serif;
-                    color: #e2e8f0;
-                    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-                    border: 1px solid rgba(255, 255, 255, 0.10);
-                    border-radius: 6px;
-                    outline: none;
-                    cursor: pointer;
-                    appearance: none;
-                    -webkit-appearance: none;
-                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
-                    background-repeat: no-repeat;
-                    background-position: right 10px center;
-                    padding-right: 28px;
-                    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-                }
-                .bias-model-select:hover {
-                    border-color: rgba(255, 92, 169, 0.4);
-                }
-                .bias-model-select:focus {
-                    border-color: #ff5ca9;
-                    box-shadow: 0 0 0 2px rgba(255, 92, 169, 0.15);
-                }
-                .bias-model-select option {
-                    background: #1e293b;
-                    color: #e2e8f0;
-                    padding: 6px;
-                }
-            """),
+
+            # Model B Panel (hidden by default)
+            ui.div(
+                {"id": "bias-model-b-panel", "style": "flex: 1; display: none;"},
+                ui.div(
+                    {"class": "sidebar-section", "style": "margin-top: 4px; margin-bottom: 4px;"},
+                    ui.tags.span("Detect Model - B", id="bias-model-b-label", class_="sidebar-label", style="color: #ff5ca9;"),
+                    ui.div(
+                        {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
+                        ui.tags.select(
+                            ui.tags.option("GUS-Net (BERT)", value="gusnet-bert"),
+                            ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2", selected="selected"),
+                            id="bias_model_key_B",
+                            class_="bias-model-select bias-model-select-b",
+                            onchange="Shiny.setInputValue('bias_model_key_B', this.value, {priority:'event'});",
+                        ),
+                    ),
+                ),
+            ),
         ),
+
+        # ── Styles for model selects and toggle switches ──
+        ui.tags.style("""
+            .bias-model-select {
+                width: 100%;
+                padding: 7px 10px;
+                font-size: 12px;
+                font-weight: 600;
+                font-family: 'Inter', sans-serif;
+                color: #e2e8f0;
+                background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                border: 1px solid rgba(255, 255, 255, 0.10);
+                border-radius: 6px;
+                outline: none;
+                cursor: pointer;
+                appearance: none;
+                -webkit-appearance: none;
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+                background-repeat: no-repeat;
+                background-position: right 10px center;
+                padding-right: 28px;
+                transition: border-color 0.15s ease, box-shadow 0.15s ease;
+            }
+            .bias-model-select:hover {
+                border-color: rgba(255, 92, 169, 0.4);
+            }
+            .bias-model-select:focus {
+                border-color: #ff5ca9;
+                box-shadow: 0 0 0 2px rgba(255, 92, 169, 0.15);
+            }
+            .bias-model-select option {
+                background: #1e293b;
+                color: #e2e8f0;
+                padding: 6px;
+            }
+
+            /* Model A label when in compare mode */
+            #bias-model-a-label.compare-active {
+                color: #3b82f6 !important;
+            }
+
+            /* Model B select pink border */
+            .bias-model-select-b {
+                border-color: rgba(255, 92, 169, 0.3) !important;
+            }
+            .bias-model-select-b:hover {
+                border-color: rgba(255, 92, 169, 0.5) !important;
+            }
+            .bias-model-select-b:focus {
+                border-color: #ff5ca9 !important;
+                box-shadow: 0 0 0 2px rgba(255, 92, 169, 0.2) !important;
+            }
+
+            /* Toggle Switch Styling */
+            .toggle-switch {
+                position: relative;
+                display: inline-block;
+                width: 36px;
+                height: 20px;
+            }
+            .toggle-switch input {
+                opacity: 0;
+                width: 0;
+                height: 0;
+            }
+            .toggle-slider {
+                position: absolute;
+                cursor: pointer;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: #334155;
+                transition: 0.3s;
+                border-radius: 20px;
+            }
+            .toggle-slider:before {
+                position: absolute;
+                content: "";
+                height: 14px;
+                width: 14px;
+                left: 3px;
+                bottom: 3px;
+                background-color: #94a3b8;
+                transition: 0.3s;
+                border-radius: 50%;
+            }
+            .toggle-switch input:checked + .toggle-slider {
+                background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
+            }
+            .toggle-switch input:checked + .toggle-slider:before {
+                transform: translateX(16px);
+                background-color: white;
+            }
+        """),
 
         # ── Configuration Sections ──
         ui.div(style="flex-grow: 1; min-height: 24px;"),
@@ -77,23 +246,21 @@ def create_bias_sidebar():
             ui.tags.span("Sensitivity Threshold", class_="sidebar-label"),
             ui.div(
                 {"style": "padding: 0 4px; margin-top: 8px;"},
-                # Custom Slider matching Floating Bar design
                 ui.div(
                     {"class": "custom-sidebar-slider"},
                     ui.div(
                         {"class": "slider-container"},
                         ui.tags.span("0.5", id="bias-threshold-val-sidebar", class_="slider-value"),
                         ui.tags.input(
-                            type="range", 
-                            id="bias-threshold-sidebar", 
+                            type="range",
+                            id="bias-threshold-sidebar",
                             min="0.1", max="0.9", value="0.5", step="0.05",
                             oninput="document.getElementById('bias-threshold-val-sidebar').textContent = this.value; Shiny.setInputValue('bias_threshold', parseFloat(this.value), {priority:'event'});"
                         ),
                     )
                 ),
             ),
-            
-            # Styles for this specific sidebar slider
+
             ui.tags.style("""
                 .custom-sidebar-slider .slider-container {
                     display: flex;
@@ -101,7 +268,7 @@ def create_bias_sidebar():
                     gap: 8px;
                 }
                 .custom-sidebar-slider .slider-value {
-                    min-width: 42px; /* Increased width to 42px */
+                    min-width: 42px;
                     height: 20px;
                     display: flex;
                     align-items: center;
@@ -147,7 +314,7 @@ def create_bias_sidebar():
         ui.div(
             {"class": "sidebar-section", "style": "padding-top: 16px;"},
             ui.tags.span("Input Text", class_="sidebar-label"),
-            
+
             ui.div(
                 {"class": "custom-input-container", "id": "bias-input-container"},
                 ui.div(
@@ -155,6 +322,12 @@ def create_bias_sidebar():
                     ui.div(
                         {"class": "history-tab", "onclick": "toggleBiasHistory()", "title": "History"},
                         ui.HTML("""<svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 448 512" fill="white"><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg>"""),
+                    ),
+                    # Compare Prompts Tabs (hidden by default)
+                    ui.div(
+                        {"class": "bias-compare-tabs-inline", "id": "bias-prompt-tabs", "style": "display: none; gap: 2px; margin-right: 8px;"},
+                        ui.tags.button("A", id="bias-prompt-tab-a", class_="bias-prompt-tab active", onclick="window.switchBiasPromptTab && window.switchBiasPromptTab('A');"),
+                        ui.tags.button("B", id="bias-prompt-tab-b", class_="bias-prompt-tab", onclick="window.switchBiasPromptTab && window.switchBiasPromptTab('B');"),
                     ),
                     ui.div(
                         {"class": "session-controls", "style": "display: flex; gap: 4px; align-items: flex-end; margin-left: auto;"},
@@ -164,14 +337,84 @@ def create_bias_sidebar():
                     ),
                 ),
                 ui.div({"id": "bias-history-dropdown", "class": "history-dropdown"}, ui.output_ui("bias_history_list")),
+                # Text Input A
                 ui.tags.textarea("All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.", id="bias_input_text", class_="custom-textarea", rows=6, oninput="Shiny.setInputValue('bias_input_text', this.value, {priority: 'event'})"),
+                # Text Input B (hidden by default)
+                ui.tags.textarea("Programmers are logical and rigorous. Artists are creative and emotional.", id="bias_input_text_B", class_="custom-textarea", rows=6, style="display: none;", oninput="Shiny.setInputValue('bias_input_text_B', this.value, {priority: 'event'})", placeholder="Enter second text for comparison..."),
             ),
-            
+
+            # Prompt tabs styling
+            ui.tags.style("""
+                .bias-compare-tabs-inline {
+                    display: none;
+                }
+                /* Prompt Tab Base Styles (Matched to Attention Tab) */
+                .bias-prompt-tab {
+                    position: relative;
+                    padding: 4px 12px;
+                    border-top-left-radius: 8px;
+                    border-top-right-radius: 8px;
+                    border-bottom-left-radius: 0;
+                    border-bottom-right-radius: 0;
+                    font-size: 14px;
+                    font-weight: 700;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    height: 26px;
+                    line-height: 1;
+                    color: white;
+                    border: none;
+                    transition: opacity 0.2s ease, transform 0.2s ease;
+                }
+
+                /* Tab A - Blue */
+                #bias-prompt-tab-a {
+                    background: #3b82f6; /* Solid blue */
+                    margin-left: -8px;
+                    z-index: 20;
+                    box-shadow: 2px -2px 5px rgba(0,0,0,0.1);
+                    padding-left: 14px;
+                    padding-right: 10px;
+                }
+                #bias-prompt-tab-a:hover {
+                    background: #2563eb;
+                }
+
+                /* Tab B - Pink */
+                #bias-prompt-tab-b {
+                    background: #ff5ca9; /* Solid pink */
+                    margin-left: -8px;
+                    z-index: 10;
+                    box-shadow: 2px -2px 5px rgba(0,0,0,0.1);
+                    padding-left: 14px;
+                    padding-right: 10px;
+                }
+                #bias-prompt-tab-b:hover {
+                    background: #f43f8e;
+                }
+                
+                /* Active State Logic (opacity/z-index toggled via JS, colors stay constant) */
+                .bias-prompt-tab.active {
+                    /* No specific active style needed here as we toggle opacity/zIndex in JS like Attention tab */
+                }
+
+                /* Text input styling in compare prompts mode */
+                #bias-input-container.compare-prompts-active #bias_input_text {
+                    border: 2px solid #3b82f6;
+                }
+                #bias-input-container.compare-prompts-active #bias_input_text_B {
+                    border: 2px solid #ff5ca9;
+                }
+            """),
+
             ui.div(
                 {"style": "margin-top: 12px;"},
                 ui.input_action_button("analyze_bias_btn", "Analyze Bias", class_="btn-primary", style="padding-top: 6px; padding-bottom: 6px; min-height: 0; height: auto;"),
             ),
-            
+
+            # JavaScript for compare modes
             ui.tags.script("""
                 function toggleBiasHistory() {
                     const dropdown = document.getElementById('bias-history-dropdown');
@@ -189,6 +432,117 @@ def create_bias_sidebar():
                     if (container && !container.contains(event.target)) {
                         dropdown.classList.remove('show');
                     }
+                });
+
+                // Compare Mode Logic (Models & Prompts) - Handling shiny:inputchanged for standard switches
+                $(document).on('shiny:inputchanged', function(event) {
+                    // Compare Models Logic
+                    if (event.name === 'bias_compare_mode') {
+                        const enabled = event.value;
+                        const modelBPanel = document.getElementById('bias-model-b-panel');
+                        const modelALabel = document.getElementById('bias-model-a-label');
+
+                        if (enabled) {
+                            modelBPanel.style.display = 'block';
+                            modelALabel.classList.add('compare-active');
+                            modelALabel.innerText = "Detect Model - A";
+                            
+                            // Mutex: Turn off Compare Prompts if on
+                            // using jQuery to trigger change so shiny sees it (and executes that handler to update UI)
+                            const promptSwitch = $('#bias_compare_prompts_mode');
+                            // Only if it is currently visually checked (Shiny input might be true)
+                            // We can check .prop('checked')
+                            if (promptSwitch.length && promptSwitch.prop('checked')) {
+                                // We need to update the checkbox and trigger change
+                                // But prevent infinite loops? The prompt handler logic won't turn off models if prompts is becoming false.
+                                // So it's safe.
+                                promptSwitch.prop('checked', false).trigger('change');
+                                // Note: trigger('change') might not be enough for shiny binding to pick up in all cases
+                                // but standard behavior for shiny wrapper usually works with change. 
+                            }
+                        } else {
+                            modelBPanel.style.display = 'none';
+                            modelALabel.classList.remove('compare-active');
+                            modelALabel.innerText = "Bias Detection Model";
+                        }
+                    }
+
+                    // Compare Prompts Logic
+                    if (event.name === 'bias_compare_prompts_mode') {
+                        const enabled = event.value;
+                        const promptTabs = document.getElementById('bias-prompt-tabs');
+                        const inputContainer = document.getElementById('bias-input-container');
+                        const textInputA = document.getElementById('bias_input_text');
+                        const textInputB = document.getElementById('bias_input_text_B');
+                        
+                        if (enabled) {
+                            promptTabs.style.display = 'flex';
+                            inputContainer.classList.add('compare-prompts-active');
+                            textInputA.style.display = 'block';
+                            textInputB.style.display = 'none';
+                            
+                            // Mutex: Turn off Compare Models if on
+                            const modelSwitch = $('#bias_compare_mode');
+                            if (modelSwitch.length && modelSwitch.prop('checked')) {
+                                modelSwitch.prop('checked', false).trigger('change');
+                            }
+                        } else {
+                            promptTabs.style.display = 'none';
+                            inputContainer.classList.remove('compare-prompts-active');
+                            textInputA.style.display = 'block';
+                            textInputB.style.display = 'none';
+                        }
+                    }
+                });
+
+                // Switch between Prompt A and B tabs
+                window.switchBiasPromptTab = function(tab) {
+                    const tabA = document.getElementById('bias-prompt-tab-a');
+                    const tabB = document.getElementById('bias-prompt-tab-b');
+                    const textInputA = document.getElementById('bias_input_text');
+                    const textInputB = document.getElementById('bias_input_text_B');
+
+                    if (tab === 'A') {
+                        tabA.classList.add('active');
+                        tabB.classList.remove('active');
+                        tabA.style.opacity = '1.0';
+                        tabA.style.zIndex = '20';
+                        tabB.style.opacity = '0.5';
+                        tabB.style.zIndex = '10';
+                        textInputA.style.display = 'block';
+                        textInputB.style.display = 'none';
+                    } else {
+                        tabA.classList.remove('active');
+                        tabB.classList.add('active');
+                        tabA.style.opacity = '0.5';
+                        tabA.style.zIndex = '10';
+                        tabB.style.opacity = '1.0';
+                        tabB.style.zIndex = '25';
+                        textInputA.style.display = 'none';
+                        textInputB.style.display = 'block';
+                    }
+                    Shiny.setInputValue('bias_active_prompt_tab', tab, {priority: 'event'});
+                };
+
+                // Handle dynamic bias button label updates (Sequential Logic)
+                Shiny.addCustomMessageHandler('update_bias_button_label', function(msg) {
+                    var btn = $('#analyze_bias_btn');
+                    if (btn.length === 0) return;
+
+                    var newLabel = msg.label;
+                    var isDisabled = btn.prop('disabled');
+
+                    if (isDisabled) {
+                        btn.data('original-content', newLabel);
+                    } else {
+                        btn.html(newLabel);
+                        btn.data('original-content', newLabel); 
+                    }
+                });
+
+                // Generic JS Evaluator for simple server commands
+                Shiny.addCustomMessageHandler('bias_eval_js', function(code) {
+                    eval(code);
                 });
             """)
         ),
@@ -249,7 +603,7 @@ def create_bias_content():
         ui.tags.style("""
             #bias_dashboard_content {
                 margin-bottom: 0 !important;
-                height: auto; 
+                height: auto;
             }
         """),
         ui.output_ui("bias_dashboard_content"),
@@ -382,7 +736,7 @@ def create_floating_bias_toolbar():
                 # ── LEFT COL: Layer & Head ──
                 ui.div(
                     {"style": "display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding-right: 12px;"},
-                    
+
                     # Layer slider
                     ui.div(
                         {"class": "control-group"},
@@ -404,14 +758,14 @@ def create_floating_bias_toolbar():
                             ui.tags.input(type="range", id="bias-head-slider", min="0", max="11", value="0", step="1"),
                         ),
                     ),
-                    
+
                     # Divider Left
                     ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
                 ),
 
                 # ── CENTER COL: Bias Tokens ──
                 ui.div(
-                    {"style": "display: flex; justify-content: center; width: 100%; margin-top: 0;"}, # margin-top removed to fix spacing
+                    {"style": "display: flex; justify-content: center; width: 100%; margin-top: 0;"},
                     ui.div(
                         {"class": "control-group", "style": "display: flex; align-items: center; justify-content: center; width: 100%; overflow: visible; margin: 0;"},
                         ui.div(
@@ -424,7 +778,7 @@ def create_floating_bias_toolbar():
                 # ── RIGHT COL: Top-K ──
                 ui.div(
                     {"style": "display: flex; align-items: center; justify-content: flex-start; gap: 16px; padding-left: 12px;"},
-                    
+
                     # Divider Right
                     ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
 
@@ -446,26 +800,25 @@ def create_floating_bias_toolbar():
         ui.tags.style("""
             #bias-floating-toolbar {
                 animation: biasBarSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-                /* Default padding-top: 18px is from .floating-control-bar */
             }
             @keyframes biasBarSlideUp {
                 from { transform: translateY(100px); opacity: 0; }
                 to { transform: translateY(0); opacity: 1; }
             }
-            
+
             /* Outer Scroll & Visual Container */
             .bias-token-container-compact {
-                display: block; /* Block layout for scrolling */
+                display: block;
                 background: rgba(30, 41, 59, 0.6);
                 border-radius: 6px;
                 border: 1px solid rgba(255, 255, 255, 0.06);
                 width: auto;
                 max-width: 450px;
-                max-height: 36px; /* Fixed height for compactness */
+                max-height: 36px;
                 overflow-y: auto;
                 overflow-x: hidden;
                 box-sizing: border-box;
-                padding: 3px 4px; /* Small vertical padding for selected token visibility */
+                padding: 3px 4px;
                 height: fit-content;
                 align-self: center;
             }
@@ -475,15 +828,14 @@ def create_floating_bias_toolbar():
                 flex-wrap: wrap;
                 justify-content: center;
                 align-items: center;
-                align-content: flex-start; /* Pack to top strictly */
+                align-content: flex-start;
                 gap: 2px;
                 width: 100%;
                 margin: 0 !important;
                 padding: 0 !important;
                 height: fit-content;
             }
-            
-            /* Remove any extra space from Shiny wrappers */
+
             #bias-tokens-row > div,
             #bias-tokens-row > div > div {
                 margin: 0 !important;
@@ -493,7 +845,7 @@ def create_floating_bias_toolbar():
             .bias-token-container-compact::-webkit-scrollbar { width: 3px; }
             .bias-token-container-compact::-webkit-scrollbar-track { background: transparent; }
             .bias-token-container-compact::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
-            
+
             .bias-token-chip {
                 transition: all 0.15s ease;
             }
@@ -512,10 +864,10 @@ def create_floating_bias_toolbar():
         ui.tags.script("""
         // ── Token selection for Combined View ──
         window.selectedBiasTokens = new Set();
-        
+
         window.selectBiasToken = function(idx) {
             var chips = document.querySelectorAll('.bias-token-chip[data-token-idx="' + idx + '"]');
-            
+
             if (window.selectedBiasTokens.has(idx)) {
                 window.selectedBiasTokens.delete(idx);
                 chips.forEach(function(c) { c.classList.remove('selected'); });
@@ -523,13 +875,11 @@ def create_floating_bias_toolbar():
                 window.selectedBiasTokens.add(idx);
                 chips.forEach(function(c) { c.classList.add('selected'); });
             }
-            
-            // Send array of indices to Shiny
+
             Shiny.setInputValue('bias_selected_tokens', Array.from(window.selectedBiasTokens), {priority: 'event'});
         };
 
         (function() {
-            // ── Debounced Shiny setters ──
             function debounce(fn, ms) {
                 var t; return function() { var a=arguments,c=this; clearTimeout(t); t=setTimeout(function(){fn.apply(c,a);},ms); };
             }
@@ -544,7 +894,6 @@ def create_floating_bias_toolbar():
             var setHead  = debounce(function(v){ _setSelectize('bias_attn_head', v); }, 200);
             var setTopK  = debounce(function(v){ Shiny.setInputValue('bias_top_k', parseInt(v), {priority:'event'}); }, 200);
 
-            // ── Bind sliders ──
             function bindSlider(sliderId, valId, setter) {
                 var el = document.getElementById(sliderId);
                 if (el) el.oninput = function() {
@@ -556,7 +905,6 @@ def create_floating_bias_toolbar():
             bindSlider('bias-head-slider', 'bias-head-value', setHead);
             bindSlider('bias-topk-slider', 'bias-topk-value', setTopK);
 
-            // ── Sync slider ranges from actual model ──
             setTimeout(function() {
                 var lEl = document.getElementById('bias_attn_layer');
                 var hEl = document.getElementById('bias_attn_head');
@@ -572,11 +920,9 @@ def create_floating_bias_toolbar():
                     hSlider.value = hEl.value || '0';
                     document.getElementById('bias-head-value').textContent = hEl.value || '0';
                 }
-                // Initialize selected tokens list
                 Shiny.setInputValue('bias_selected_tokens', [], {priority: 'event'});
             }, 500);
 
-            // ── Sync on select changes (from server-side updates) ──
             $(document).on('change', '#bias_attn_layer', function() {
                 var s = document.getElementById('bias-layer-slider');
                 if (s) { s.value = this.value; document.getElementById('bias-layer-value').textContent = this.value; }

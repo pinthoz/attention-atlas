@@ -143,7 +143,19 @@ def bias_server_handlers(input, output, session):
 
     bias_running = reactive.value(False)
     bias_results = reactive.value(None)
+    bias_results_B = reactive.value(None)  # For comparison
     bias_history = reactive.Value([])
+
+    # Snapshots of compare mode state - Updated ONLY on 'Analyze Bias'
+    active_bias_compare_models = reactive.Value(False)
+    active_bias_compare_prompts = reactive.Value(False)
+    
+    # Sequential Logic State
+    bias_prompt_step = reactive.Value("A")
+
+    # Cached texts for display
+    bias_cached_text_A = reactive.value("")
+    bias_cached_text_B = reactive.value("")
 
     # ── History Logic ──
 
@@ -210,6 +222,31 @@ def bias_server_handlers(input, output, session):
             selector="body", where="beforeEnd",
             ui=ui.tags.script(js_code),
         )
+
+    # ── Sequential Button Logic ──
+    @reactive.Effect
+    @reactive.event(input.bias_active_prompt_tab)
+    def update_bias_step_state():
+        # Keep python state in sync with JS state
+        step = input.bias_active_prompt_tab()
+        if step:
+            bias_prompt_step.set(step)
+
+    @reactive.Effect
+    @reactive.event(input.bias_compare_prompts_mode, bias_prompt_step)
+    async def update_bias_button_label():
+        try:
+            mode = input.bias_compare_prompts_mode()
+        except Exception:
+            mode = False
+            
+        step = bias_prompt_step.get()
+        label = "Analyze Bias"
+        
+        if mode and step == "A":
+            label = "Prompt B ➜"
+            
+        await session.send_custom_message("update_bias_button_label", {"label": label})
 
     # ── Session Logic ──
 
@@ -392,12 +429,48 @@ def bias_server_handlers(input, output, session):
             if not text:
                 log_debug("Text is empty, returning")
                 return
+
+            # ── Intercept Click for Sequential Logic ──
+            try:
+                compare_prompts_live = input.bias_compare_prompts_mode()
+            except Exception:
+                compare_prompts_live = False
             
+            step = bias_prompt_step.get()
+
+            if compare_prompts_live and step == "A":
+                # User clicked "Prompt B ->". Do not analyze. Switch tab.
+                log_debug("Sequential Logic: Switching to Tab B")
+                await session.send_custom_message("switch_prompt_tab_bias", "B") # Need to add this handler to JS too
+                # Or just use the existing one? No, I added switchBiasPromptTab function but not a message handler for it specifically?
+                # Actually, I can just call the function via JS eval or add a handler. 
+                # Let's add a simple script execution.
+                await session.send_custom_message("bias_eval_js", "window.switchBiasPromptTab('B');")
+                return
+
             log_debug("Starting loading UI...")
             bias_running.set(True)
             await session.send_custom_message('start_bias_loading', {})
             await asyncio.sleep(0.1)
             log_debug("Loading UI active")
+
+            # Check compare modes and snapshot them
+            try:
+                compare_models = input.bias_compare_mode()
+            except Exception:
+                compare_models = False
+            try:
+                compare_prompts = input.bias_compare_prompts_mode()
+            except Exception:
+                compare_prompts = False
+
+            active_bias_compare_models.set(compare_models)
+            active_bias_compare_prompts.set(compare_prompts)
+
+            # Clear previous results
+            bias_results.set(None)
+            bias_results_B.set(None)
+            bias_cached_text_A.set(text)
 
             try:
                 model_name = input.model_name()
@@ -413,7 +486,7 @@ def bias_server_handlers(input, output, session):
                 log_debug(f"Warning: bias_threshold input missing or invalid ({e}). Using default 0.5")
                 threshold = 0.5
 
-            # Bias detection model (BERT or GPT-2 backbone)
+            # Bias detection model (BERT or GPT-2 backbone) - Model A
             try:
                 bias_model_key = input.bias_model_key()
                 log_debug(f"Bias model key: {bias_model_key}")
@@ -425,21 +498,68 @@ def bias_server_handlers(input, output, session):
                 loop = asyncio.get_running_loop()
                 log_debug("Entering ThreadPoolExecutor...")
                 with ThreadPoolExecutor() as pool:
-                    log_debug("Submitting heavy_bias_compute...")
+                    # Compute Result A
+                    log_debug("Submitting heavy_bias_compute for Model A...")
                     result = await asyncio.wait_for(
                         loop.run_in_executor(
                             pool, heavy_bias_compute, text, model_name, threshold, bias_model_key,
                         ),
                         timeout=60.0
                     )
-                    log_debug("heavy_bias_compute returned successfully")
-                bias_results.set(result)
+                    log_debug("heavy_bias_compute A returned successfully")
+                    bias_results.set(result)
+
+                    # Compute Result B if needed
+                    if compare_models:
+                        # Case 1: Same Prompt (A), Different Model (B)
+                        try:
+                            bias_model_key_B = input.bias_model_key_B()
+                            if not bias_model_key_B:
+                                bias_model_key_B = "gusnet-gpt2"
+                        except Exception:
+                            bias_model_key_B = "gusnet-gpt2"
+
+                        log_debug(f"Starting heavy_bias_compute B ({bias_model_key_B}) for Compare Models")
+                        result_B = await asyncio.wait_for(
+                            loop.run_in_executor(
+                                pool, heavy_bias_compute, text, model_name, threshold, bias_model_key_B,
+                            ),
+                            timeout=60.0
+                        )
+                        bias_results_B.set(result_B)
+                        bias_cached_text_B.set(text)  # Same text for compare models
+
+                    elif compare_prompts:
+                        # Case 2: Different Prompt (B), Same Model (A)
+                        try:
+                            text_B = input.bias_input_text_B().strip()
+                        except Exception:
+                            text_B = ""
+
+                        if text_B:
+                            log_debug(f"Starting heavy_bias_compute B (Prompt B) for Compare Prompts")
+                            result_B = await asyncio.wait_for(
+                                loop.run_in_executor(
+                                    pool, heavy_bias_compute, text_B, model_name, threshold, bias_model_key,
+                                ),
+                                timeout=60.0
+                            )
+                            bias_results_B.set(result_B)
+                            bias_cached_text_B.set(text_B)
+                        else:
+                            bias_results_B.set(None)
+                            bias_cached_text_B.set("")
+                    else:
+                        bias_results_B.set(None)
+                        bias_cached_text_B.set("")
+
             except asyncio.TimeoutError:
                 msg = "ERROR: Bias analysis timed out (limit: 60s)"
                 log_debug(msg)
                 print(msg)
                 ui.notification_show("Analysis timed out.", type="error")
                 bias_results.set(None)
+                bias_results_B.set(None)
             except Exception as e:
                 msg = f"ERROR during execution: {e}"
                 log_debug(msg)
@@ -447,11 +567,12 @@ def bias_server_handlers(input, output, session):
                 traceback.print_exc()
                 ui.notification_show(f"Analysis failed: {e}", type="error")
                 bias_results.set(None)
+                bias_results_B.set(None)
             finally:
                 log_debug("Stopping loading UI")
                 bias_running.set(False)
                 await session.send_custom_message('stop_bias_loading', {})
-            
+
         except Exception as e:
             msg = f"CRITICAL ERROR in compute_bias top level: {e}"
             log_debug(msg)
@@ -463,34 +584,92 @@ def bias_server_handlers(input, output, session):
     @render.ui
     def bias_dashboard_content():
         res = bias_results.get()
+        res_B = bias_results_B.get()
         running = bias_running.get()
+
+        # Get snapshotted compare mode states
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
 
         try:
             text = input.bias_input_text().strip()
         except Exception:
             text = ""
 
+        try:
+            text_B = input.bias_input_text_B().strip()
+        except Exception:
+            text_B = ""
+
         from .renderers import get_gusnet_architecture_section
-        # MOVED: arch_section creation is now conditional to prevent reactivity
-        # and hide it after analysis.
 
         # ── Post-analysis: sentence preview + accordion ──
         if res:
-            preview_html = create_bias_sentence_preview(
-                res["tokens"], res["token_labels"]
-            )
-            return ui.div(
-                {"style": "display: flex; flex-direction: column; gap: 24px;"},
-                ui.div(
-                    {"class": "card", "style": "min-height: auto;"},
-                    ui.h4("Sentence Preview"),
-                    ui.HTML(preview_html),
-                ),
-                # arch_section REMOVED
-                create_bias_accordion(),
-                create_floating_bias_toolbar(),
-                ui.tags.script("Shiny.setInputValue('toggle_bias_toolbar_visible', true, {priority: 'event'});"),
-            )
+            # Check if we're in compare mode
+            if (compare_models or compare_prompts) and res_B:
+                # Side-by-side comparison view
+                preview_html_A = create_bias_sentence_preview(
+                    res["tokens"], res["token_labels"]
+                )
+                preview_html_B = create_bias_sentence_preview(
+                    res_B["tokens"], res_B["token_labels"]
+                )
+
+                # Determine labels based on mode
+                if compare_models:
+                    header_A = "MODEL A"
+                    header_B = "MODEL B"
+                    # Keep the detailed label for the card or just use generic?
+                    # User asked for "MODEL A" header.
+                else:
+                    header_A = "PROMPT A"
+                    header_B = "PROMPT B"
+
+                return ui.div(
+                    {"style": "display: flex; flex-direction: column; gap: 24px;"},
+                    # Side-by-side sentence previews
+                    ui.div(
+                        {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;"},
+                        # Column A
+                        ui.div(
+                            ui.h3(header_A, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
+                            ui.div(
+                                {"class": "card compare-card-a", "style": "min-height: auto;"},
+                                ui.h4(f"Sentence Preview ({_get_bias_model_label(res)})" if compare_models else "Sentence Preview", style="margin: 0 0 8px 0;"),
+                                ui.HTML(preview_html_A),
+                            ),
+                        ),
+                        # Column B
+                        ui.div(
+                            ui.h3(header_B, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
+                            ui.div(
+                                {"class": "card compare-card-b", "style": "min-height: auto;"},
+                                ui.h4(f"Sentence Preview ({_get_bias_model_label(res_B)})" if compare_models else "Sentence Preview", style="margin: 0 0 8px 0;"),
+                                ui.HTML(preview_html_B),
+                            ),
+                        ),
+                    ),
+                    # Summary comparison cards
+                    create_bias_accordion(),
+                    create_floating_bias_toolbar(),
+                    ui.tags.script("Shiny.setInputValue('toggle_bias_toolbar_visible', true, {priority: 'event'});"),
+                )
+            else:
+                # Single result view (original behavior)
+                preview_html = create_bias_sentence_preview(
+                    res["tokens"], res["token_labels"]
+                )
+                return ui.div(
+                    {"style": "display: flex; flex-direction: column; gap: 24px;"},
+                    ui.div(
+                        {"class": "card", "style": "min-height: auto;"},
+                        ui.h4("Sentence Preview"),
+                        ui.HTML(preview_html),
+                    ),
+                    create_bias_accordion(),
+                    create_floating_bias_toolbar(),
+                    ui.tags.script("Shiny.setInputValue('toggle_bias_toolbar_visible', true, {priority: 'event'});"),
+                )
 
         # ── Pre-analysis: sentence preview + architecture ──
         if text:
@@ -504,34 +683,201 @@ def bias_server_handlers(input, output, session):
                 style="color:#9ca3af;font-size:14px;font-family:monospace;",
             )
 
-        card = ui.div(
-            {"class": "card", "style": "min-height: auto;"},
-            ui.h4("Sentence Preview"),
-            preview,
-        )
+        # Get LIVE compare mode states for pre-analysis (instant feedback)
+        try:
+            live_compare_models = input.bias_compare_mode()
+        except Exception:
+            live_compare_models = False
+
+        try:
+            live_compare_prompts = input.bias_compare_prompts_mode()
+        except Exception:
+            live_compare_prompts = False
+
+        if live_compare_prompts:
+            # Side-by-side preview for Compare Prompts
+            preview_A = ui.div(
+                f'"{text}"' if text else "Waiting for input...",
+                style="font-family:monospace;color:#6b7280;font-size:14px;"
+            )
+            preview_B = ui.div(
+                f'"{text_B}"' if text_B else "Waiting for input...",
+                style="font-family:monospace;color:#6b7280;font-size:14px;"
+            )
+            
+            card = ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; min-height: auto; align-items: start;"},
+                # Column A
+                ui.div(
+                    ui.h3("PROMPT A", style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
+                    ui.div(
+                        {"class": "card compare-card-a", "style": "min-height: auto;"},
+                        ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
+                        preview_A,
+                    ),
+                ),
+                # Column B
+                ui.div(
+                    ui.h3("PROMPT B", style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
+                    ui.div(
+                        {"class": "card compare-card-b", "style": "min-height: auto;"},
+                        ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
+                        preview_B,
+                    ),
+                ),
+            )
+        elif live_compare_models:
+            # Side-by-side preview for Compare Models (same text, different models)
+            preview_content = ui.div(
+                f'"{text}"' if text else "Waiting for input...",
+                style="font-family:monospace;color:#6b7280;font-size:14px;"
+            )
+            
+            card = ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; min-height: auto; align-items: start;"},
+                # Column A
+                ui.div(
+                    ui.h3("MODEL A", style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
+                    ui.div(
+                        {"class": "card compare-card-a", "style": "min-height: auto;"},
+                        ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
+                        preview_content,
+                    ),
+                ),
+                # Column B
+                ui.div(
+                    ui.h3("MODEL B", style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
+                    ui.div(
+                        {"class": "card compare-card-b", "style": "min-height: auto;"},
+                        ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
+                        # We need a fresh object/string for the second separate div content
+                        ui.div(
+                            f'"{text}"' if text else "Waiting for input...",
+                            style="font-family:monospace;color:#6b7280;font-size:14px;"
+                        ),
+                    ),
+                ),
+            )
+        else:
+            # Single preview
+            if text:
+                preview = ui.div(
+                    f'"{text}"',
+                    style="font-family:monospace;color:#6b7280;font-size:14px;"
+                )
+            else:
+                preview = ui.div(
+                    'Enter text in the sidebar and click "Analyze Bias" to begin.',
+                    style="color:#9ca3af;font-size:14px;font-family:monospace;",
+                )
+
+            card = ui.div(
+                {"class": "card", "style": "min-height: auto;"},
+                ui.h4("Sentence Preview"),
+                preview,
+            )
 
         if running:
             return ui.div(
                 {"style": "display: flex; flex-direction: column; gap: 24px;"},
                 card
-                # arch_section REMOVED
             )
 
         # Initial State: Show Architecture
-        # Only check model key HERE to avoid updates when showing results
+        # Determine architecture display mode based on current compare mode
         try:
             selected_model = input.bias_model_key()
         except Exception:
             selected_model = "gusnet-bert"
 
+        try:
+            current_compare_models = input.bias_compare_mode()
+        except Exception:
+            current_compare_models = False
+
+        try:
+            text_B = input.bias_input_text_B().strip()
+        except Exception:
+            text_B = ""
+
         arch_section = ui.div(
-            get_gusnet_architecture_section(selected_model=selected_model),
+            get_gusnet_architecture_section(
+                selected_model=selected_model,
+                compare_mode=current_compare_models,
+            ),
         )
 
         return ui.div(
             {"style": "display: flex; flex-direction: column; gap: 24px;"},
-            card, 
+            card,
             arch_section
+        )
+
+
+    def _create_bias_comparison_summary(res_A, res_B, is_model_compare):
+        """Create a side-by-side summary comparison card."""
+        summary_A = res_A["bias_summary"]
+        summary_B = res_B["bias_summary"]
+
+        if is_model_compare:
+            label_A = _get_bias_model_label(res_A)
+            label_B = _get_bias_model_label(res_B)
+        else:
+            label_A = "Prompt A"
+            label_B = "Prompt B"
+
+        # Create comparison metrics
+        comparison_html = f"""
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div style="border: 2px solid #3b82f6; border-radius: 8px; padding: 16px;">
+                <h5 style="color: #3b82f6; margin: 0 0 12px 0; font-size: 14px; font-weight: 700;">{label_A}</h5>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 24px; font-weight: 700; color: #1e293b;">{summary_A['biased_tokens']}</div>
+                        <div style="font-size: 10px; color: #64748b;">Biased Tokens</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 24px; font-weight: 700; color: #ea580c;">{summary_A['generalization_count']}</div>
+                        <div style="font-size: 10px; color: #64748b;">Generalizations</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 24px; font-weight: 700; color: #dc2626;">{summary_A['unfairness_count']}</div>
+                        <div style="font-size: 10px; color: #64748b;">Unfair</div>
+                    </div>
+                </div>
+                <div style="margin-top: 12px; text-align: center;">
+                    <span style="font-size: 28px; font-weight: 700; color: #ff5ca9;">{summary_A['bias_percentage']:.1f}%</span>
+                    <span style="font-size: 11px; color: #64748b; margin-left: 4px;">Bias</span>
+                </div>
+            </div>
+            <div style="border: 2px solid #ff5ca9; border-radius: 8px; padding: 16px;">
+                <h5 style="color: #ff5ca9; margin: 0 0 12px 0; font-size: 14px; font-weight: 700;">{label_B}</h5>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 24px; font-weight: 700; color: #1e293b;">{summary_B['biased_tokens']}</div>
+                        <div style="font-size: 10px; color: #64748b;">Biased Tokens</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 24px; font-weight: 700; color: #ea580c;">{summary_B['generalization_count']}</div>
+                        <div style="font-size: 10px; color: #64748b;">Generalizations</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 24px; font-weight: 700; color: #dc2626;">{summary_B['unfairness_count']}</div>
+                        <div style="font-size: 10px; color: #64748b;">Unfair</div>
+                    </div>
+                </div>
+                <div style="margin-top: 12px; text-align: center;">
+                    <span style="font-size: 28px; font-weight: 700; color: #ff5ca9;">{summary_B['bias_percentage']:.1f}%</span>
+                    <span style="font-size: 11px; color: #64748b; margin-left: 4px;">Bias</span>
+                </div>
+            </div>
+        </div>
+        """
+
+        return ui.div(
+            {"class": "card", "style": "min-height: auto;"},
+            ui.h4("Bias Comparison Summary"),
+            ui.HTML(comparison_html),
         )
 
     # ── Method info (sidebar) ──
@@ -546,6 +892,8 @@ def bias_server_handlers(input, output, session):
 
     @output
     @render.ui
+    @output
+    @render.ui
     def bias_summary():
         res = bias_results.get()
         if not res:
@@ -554,42 +902,74 @@ def bias_server_handlers(input, output, session):
                 'Enter text and click "Analyze Bias" to begin.</div>'
             )
 
-        summary = res["bias_summary"]
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+        res_B = bias_results_B.get()
 
-        # Criteria breakdown
-        criteria_html = create_bias_criteria_html(summary)
-
-        # Metric cards using existing .metric-card design
-        cards = f"""
-        <div class="metrics-grid" style="margin-top:16px;">
-            <div class="metric-card">
-                <div class="metric-label">Biased Tokens</div>
-                <div class="metric-value">{summary['biased_tokens']} / {summary['total_tokens']}</div>
+        def get_summary_cards(res_data):
+            summary = res_data["bias_summary"]
+            # Criteria breakdown
+            criteria_html = create_bias_criteria_html(summary)
+            # Metric cards
+            cards = f"""
+            <div class="metrics-grid" style="margin-top:16px;">
+                <div class="metric-card">
+                    <div class="metric-label">Biased Tokens</div>
+                    <div class="metric-value">{summary['biased_tokens']} / {summary['total_tokens']}</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Bias %</div>
+                    <div class="metric-value">{summary['bias_percentage']:.1f}%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Generalizations</div>
+                    <div class="metric-value" style="color:#ea580c;">{summary['generalization_count']}</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Unfair Language</div>
+                    <div class="metric-value" style="color:#dc2626;">{summary['unfairness_count']}</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Stereotypes</div>
+                    <div class="metric-value" style="color:#7b1fa2;">{summary['stereotype_count']}</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Avg Confidence</div>
+                    <div class="metric-value">{summary.get('avg_confidence', 0):.2f}</div>
+                </div>
             </div>
-            <div class="metric-card">
-                <div class="metric-label">Bias %</div>
-                <div class="metric-value">{summary['bias_percentage']:.1f}%</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Generalizations</div>
-                <div class="metric-value" style="color:#ea580c;">{summary['generalization_count']}</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Unfair Language</div>
-                <div class="metric-value" style="color:#dc2626;">{summary['unfairness_count']}</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Stereotypes</div>
-                <div class="metric-value" style="color:#7b1fa2;">{summary['stereotype_count']}</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Avg Confidence</div>
-                <div class="metric-value">{summary.get('avg_confidence', 0):.2f}</div>
-            </div>
-        </div>
-        """
-
-        return ui.HTML(criteria_html + cards)
+            """
+            return criteria_html + cards
+        
+        if (compare_models or compare_prompts) and res_B:
+            # Side-by-side layout
+            content_A = get_summary_cards(res)
+            content_B = get_summary_cards(res_B)
+            
+            # Labels
+            if compare_models:
+                lbl_A = _get_bias_model_label(res)
+                lbl_B = _get_bias_model_label(res_B)
+            else:
+                lbl_A = "Prompt A"
+                lbl_B = "Prompt B"
+                
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;"},
+                # Col A
+                ui.div(
+                    ui.h4(lbl_A, style="color:#3b82f6;border-bottom:2px solid #3b82f6;padding-bottom:4px;margin-bottom:12px;text-transform:uppercase;font-size:12px;letter-spacing:1px;"),
+                    ui.HTML(content_A)
+                ),
+                # Col B
+                ui.div(
+                    ui.h4(lbl_B, style="color:#ff5ca9;border-bottom:2px solid #ff5ca9;padding-bottom:4px;margin-bottom:12px;text-transform:uppercase;font-size:12px;letter-spacing:1px;"),
+                    ui.HTML(content_B)
+                )
+            )
+        else:
+            # Single view
+            return ui.HTML(get_summary_cards(res))
 
     # ── Inline bias view (primary) ──
 
@@ -637,374 +1017,11 @@ def bias_server_handlers(input, output, session):
 
     # ── Bias spans table (per-token, one line each) ──
 
-    @output
-    @render.ui
-    def bias_spans_table():
-        res = bias_results.get()
-        if not res:
-            return None
 
-        token_labels = res["token_labels"]
-        biased = [
-            lbl for lbl in token_labels
-            if lbl.get("is_biased") and lbl["token"] not in ("[CLS]", "[SEP]", "[PAD]")
-        ]
-        if not biased:
-            return ui.HTML(
-                '<div style="color:#9ca3af;font-size:12px;padding:12px;">'
-                'No biased tokens detected.</div>'
-            )
-
-        try:
-            threshold = float(input.bias_threshold())
-        except Exception:
-            threshold = 0.5
-        cat_colors = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
-        items = []
-        for lbl in biased:
-            clean = lbl["token"].replace("##", "").replace("\u0120", "")
-            types = lbl.get("bias_types", [])
-            scores = lbl.get("scores", {})
-
-            # Category badges with individual scores
-            badge_parts = []
-            for bt in types:
-                bg = cat_colors.get(bt, "#ff5ca9")
-                sc = scores.get(bt, 0)
-                badge_parts.append(
-                    f'<span style="display:inline-flex;align-items:center;gap:4px;'
-                    f'background:{bg}18;border:1px solid {bg}40;color:{bg};'
-                    f'padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;">'
-                    f'{bt}'
-                    f'<span style="font-family:JetBrains Mono,monospace;font-weight:400;'
-                    f'opacity:0.8;">{sc:.2f}</span>'
-                    f'</span>'
-                )
-            badges_html = "".join(badge_parts)
-
-            try:
-                # `bias_selected_tokens` comes as a list from JS
-                try:
-                    sel_raw = input.bias_selected_tokens()
-                except Exception:
-                    sel_raw = None
-
-                # print(f"DEBUG: bias_selected_tokens raw: {sel_raw} type: {type(sel_raw)}")
-                if sel_raw is None:
-                    sel_indices = []
-                elif isinstance(sel_raw, (int, float, str)):
-                    sel_indices = [int(sel_raw)]
-                elif isinstance(sel_raw, (list, tuple)):
-                    sel_indices = [int(x) for x in sel_raw if x is not None]
-                else:
-                    sel_indices = []
-            except Exception as e:
-                print(f"Error parsing selection in bias_spans_table: {repr(e)}")
-                traceback.print_exc()
-                sel_indices = []
-            
-            is_selected = (lbl["index"] in sel_indices)
-            
-            row_style = "display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(226,232,240,0.4);"
-            if is_selected:
-                row_style += "background:rgba(255, 92, 169, 0.1); border-left: 3px solid #ff5ca9;"
-
-            items.append(
-                f'<div style="{row_style}">'
-                f'<span style="font-family:JetBrains Mono,monospace;font-size:13px;'
-                f'font-weight:600;color:#ec4899;min-width:70px;">{clean}</span>'
-                f'<span style="display:flex;gap:4px;flex-wrap:wrap;">{badges_html}</span>'
-                f'</div>'
-            )
-
-        # Split into two columns for vertical sorting (Col 1 then Col 2)
-        import math
-        n_items = len(items)
-        mid_point = math.ceil(n_items / 2)
-        items_col1 = items[:mid_point]
-        items_col2 = items[mid_point:]
-
-        html = (
-            f'<div style="display:flex;gap:16px;border:1px solid rgba(226,232,240,0.4);border-radius:8px;overflow:hidden;">'
-            # Column 1
-            f'<div style="flex:1;display:flex;flex-direction:column;">'
-            f'{"".join(items_col1)}'
-            f'</div>'
-            # Column 2
-            f'<div style="flex:1;display:flex;flex-direction:column;border-left:1px solid rgba(226,232,240,0.4);">'
-            f'{"".join(items_col2)}'
-            f'</div>'
-            f'</div>'
-            f'<div style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:center;">'
-            f'Threshold: <code style="font-family:JetBrains Mono,monospace;">{threshold:.2f}</code>'
-            f' &middot; Method: GUS-Net ({_get_bias_model_label(res)}) — multi-label token NER'
-            f' &middot; {len(biased)} biased tokens</div>'
-        )
-        return ui.HTML(html)
 
     # ── Token bias strip (replaces Plotly heatmap) ──
 
-    @output
-    @render.ui
-    def token_bias_strip():
-        res = bias_results.get()
-        if not res:
-            return ui.HTML(
-                '<div style="color:#9ca3af;padding:20px;text-align:center;">'
-                'No analysis results yet.</div>'
-            )
-        try:
-            # Selected tokens from toolbar click (None = no highlight)
-            # Selected tokens from toolbar click (None = no highlight)
-            try:
-                try:
-                    sel_raw = input.bias_selected_tokens()
-                except Exception:
-                    sel_raw = None
-                
-                # print(f"DEBUG: token_bias_strip selection: {sel_raw}")
-                if sel_raw is None:
-                    selected_token_idxs = None
-                elif isinstance(sel_raw, (int, float, str)):
-                    selected_token_idxs = [int(sel_raw)]
-                elif isinstance(sel_raw, (list, tuple)):
-                    selected_token_idxs = [int(x) for x in sel_raw if x is not None]
-                else:
-                    selected_token_idxs = None
-            except Exception as e:
-                print(f"Error in token_bias_strip selection: {repr(e)}")
-                # traceback.print_exc()
-                selected_token_idxs = None
-                
-            html = create_token_bias_strip(res["token_labels"], selected_token_idx=selected_token_idxs)
-            return ui.HTML(html)
-        except Exception as e:
-            print(f"Error creating token bias strip: {e}")
-            return ui.HTML(f'<div style="color:#ef4444;">Error: {e}</div>')
 
-    # ── Attention bias matrix ──
-
-    @output
-    @render.ui
-    def attention_bias_matrix():
-        res = bias_results.get()
-        if not res:
-            return ui.HTML(
-                '<div style="color:#9ca3af;padding:20px;text-align:center;">'
-                'No analysis results yet.</div>'
-            )
-        bm = res["bias_matrix"]
-        if bm.size == 0:
-            return ui.HTML('<div style="color:#9ca3af;padding:20px;">No biased tokens detected.</div>')
-        try:
-            try:
-                layer_idx = int(input.bias_attn_layer())
-            except Exception:
-                layer_idx = None
-
-            fig = create_attention_bias_matrix(bm, res["attention_metrics"], selected_layer=layer_idx)
-            return ui.HTML(
-                fig.to_html(include_plotlyjs='cdn', full_html=False,
-                            config={'displayModeBar': False})
-            )
-        except Exception as e:
-            print(f"Error creating attention bias matrix: {e}")
-            return ui.HTML(f'<div style="color:#ef4444;">Error: {e}</div>')
-
-    # ── Propagation plot ──
-
-    @output
-    @render.ui
-    def bias_propagation_plot():
-        res = bias_results.get()
-        if not res:
-            return ui.HTML(
-                '<div style="color:#9ca3af;padding:20px;text-align:center;">'
-                'No analysis results yet.</div>'
-            )
-        prop = res["propagation_analysis"]["layer_propagation"]
-        if not prop:
-            return ui.HTML('<div style="color:#9ca3af;padding:20px;">No propagation data.</div>')
-        try:
-            try:
-                layer_idx = int(input.bias_attn_layer())
-            except Exception:
-                layer_idx = None
-
-            fig = create_bias_propagation_plot(prop, selected_layer=layer_idx)
-            return ui.HTML(
-                fig.to_html(include_plotlyjs='cdn', full_html=False,
-                            config={'displayModeBar': False})
-            )
-        except Exception as e:
-            print(f"Error creating propagation plot: {e}")
-            return ui.HTML(f'<div style="color:#ef4444;">Error: {e}</div>')
-
-    # ── Combined attention + bias view ──
-
-    @output
-    @render.ui
-    def combined_bias_view():
-        res = bias_results.get()
-        if not res:
-            return ui.HTML(
-                '<div style="color:#9ca3af;padding:20px;text-align:center;">'
-                'No analysis results yet.</div>'
-            )
-        try:
-            layer_idx = int(input.bias_attn_layer())
-            head_idx = int(input.bias_attn_head())
-        except Exception:
-            layer_idx, head_idx = 0, 0
-
-        # Selected tokens from toolbar click (None = no highlight)
-        try:
-            try:
-                sel_raw = input.bias_selected_tokens()
-            except Exception:
-                sel_raw = None
-            
-            # print(f"DEBUG: combined view selection: {sel_raw}")
-            if sel_raw is None:
-                selected_token_idxs = None
-            elif isinstance(sel_raw, (int, float, str)):
-                selected_token_idxs = [int(sel_raw)]
-            elif isinstance(sel_raw, (list, tuple)):
-                selected_token_idxs = [int(x) for x in sel_raw if x is not None]
-            else:
-                selected_token_idxs = None
-        except Exception as e:
-            print(f"Error in combined view selection: {repr(e)}")
-            selected_token_idxs = None
-
-        attentions = res["attentions"]
-        if not attentions or layer_idx >= len(attentions):
-            return ui.HTML('<div style="color:#9ca3af;">No attention data available.</div>')
-
-        try:
-            attn_matrix = attentions[layer_idx][0, head_idx].cpu().numpy()
-            fig = create_combined_bias_visualization(
-                res["tokens"], res["token_labels"], attn_matrix, layer_idx, head_idx,
-                selected_token_idx=selected_token_idxs,
-            )
-            return ui.HTML(
-                fig.to_html(include_plotlyjs='cdn', full_html=False,
-                            config={'displayModeBar': False})
-            )
-        except Exception as e:
-            print(f"Error creating combined view: {e}")
-            traceback.print_exc()
-            return ui.HTML(f'<div style="color:#ef4444;">Error: {e}</div>')
-
-    # ── Bias-focused heads table ──
-
-    @output
-    @render.ui
-    def bias_focused_heads_table():
-        res = bias_results.get()
-        if not res:
-            return None
-
-        metrics = res["attention_metrics"]
-        if not metrics:
-            return ui.HTML(
-                '<div style="color:#9ca3af;font-size:12px;padding:12px;">'
-                'No attention metrics available.</div>'
-            )
-
-        # Always show top 5 heads by ratio, even if below threshold
-        top_heads = sorted(
-            metrics,
-            key=lambda x: x.bias_attention_ratio,
-            reverse=True,
-        )[:5]
-
-        n_specialized = sum(1 for m in top_heads if m.specialized_for_bias)
-
-        try:
-            sel_layer = int(input.bias_attn_layer())
-            sel_head = int(input.bias_attn_head())
-        except Exception:
-            sel_layer, sel_head = -1, -1
-
-        rows = []
-        for m in top_heads:
-            is_sig = m.specialized_for_bias
-            is_selected = (m.layer == sel_layer and m.head == sel_head)
-            
-            row_bg = ""
-            if is_selected:
-                row_bg = "background:rgba(67, 56, 202, 0.15); box-shadow: inset 3px 0 0 #4338ca;" # Highlight specific to selection
-            elif is_sig:
-                row_bg = "background:rgba(255,92,169,0.04);"
-                
-            ratio_color = "#ff5ca9" if is_sig else "#64748b"
-            sig_dot = (
-                '<span style="color:#22c55e;font-size:8px;margin-left:4px;" '
-                'title="Above threshold (1.5)">●</span>'
-                if is_sig else
-                '<span style="color:#94a3b8;font-size:8px;margin-left:4px;" '
-                'title="Below threshold (1.5)">○</span>'
-            )
-
-            rows.append(f"""
-                <tr style="{row_bg}">
-                    <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;">
-                        Layer {m.layer}</td>
-                    <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:center;">
-                        Head {m.head}</td>
-                    <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right;
-                        font-family:monospace;font-weight:600;color:{ratio_color};">
-                        {m.bias_attention_ratio:.3f}{sig_dot}</td>
-                    <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right;
-                        font-family:monospace;">{m.amplification_score:.3f}</td>
-                    <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right;
-                        font-family:monospace;">{m.max_bias_attention:.3f}</td>
-                </tr>
-            """)
-
-        # Contextual explanation
-        if n_specialized == 0:
-            note_html = (
-                '<div style="margin-top:12px;padding:12px;background:#f0f9ff;'
-                'border:1px solid #bae6fd;border-radius:8px;font-size:11px;color:#0369a1;">'
-                '<b>No heads exceed the specialization threshold (1.5).</b> '
-                'This does not contradict token-level bias detection — '
-                'lexical bias detected by GUS-Net may be present without being '
-                'concentrated in any single attention head. The bias is distributed '
-                'across the network rather than localised.'
-                '</div>'
-            )
-        else:
-            note_html = (
-                f'<div style="margin-top:12px;font-size:11px;color:#64748b;">'
-                f'<span style="color:#22c55e;">●</span> = above threshold (1.5) · '
-                f'<span style="color:#94a3b8;">○</span> = below threshold · '
-                f'Showing top 5 heads by ratio.'
-                f'</div>'
-            )
-
-        table_html = f"""
-        <table style="width:100%;border-collapse:collapse;">
-            <thead>
-                <tr style="background:#f8fafc;">
-                    <th style="padding:12px;text-align:center;font-size:11px;color:#64748b;
-                        border-bottom:2px solid #e2e8f0;">Layer</th>
-                    <th style="padding:12px;text-align:center;font-size:11px;color:#64748b;
-                        border-bottom:2px solid #e2e8f0;">Head</th>
-                    <th style="padding:12px;text-align:right;font-size:11px;color:#64748b;
-                        border-bottom:2px solid #e2e8f0;">BAR (μ̂/μ₀)</th>
-                    <th style="padding:12px;text-align:right;font-size:11px;color:#64748b;
-                        border-bottom:2px solid #e2e8f0;">BSR</th>
-                    <th style="padding:12px;text-align:right;font-size:11px;color:#64748b;
-                        border-bottom:2px solid #e2e8f0;">Max Attention</th>
-                </tr>
-            </thead>
-            <tbody>{"".join(rows)}</tbody>
-        </table>
-        {note_html}
-        """
-        return ui.HTML(table_html)
 
     # ── Ratio formula panel (static) ──
 
@@ -1161,5 +1178,205 @@ def bias_server_handlers(input, output, session):
 
         return ui.HTML("".join(items))
 
+
+    # ── Comparison Refactored Renderers ──
+
+    @output
+    @render.ui
+    def bias_spans_table():
+        res = bias_results.get()
+        if not res: return None
+        
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+        res_B = bias_results_B.get()
+        
+        try: threshold = float(input.bias_threshold())
+        except: threshold = 0.5
+
+        def get_view(data, is_B=False):
+            token_labels = data["token_labels"]
+            biased = [l for l in token_labels if l.get("is_biased") and l["token"] not in ("[CLS]","[SEP]","[PAD]")]
+            if not biased:
+                return ui.HTML('<div style="color:#9ca3af;font-size:12px;padding:12px;">No biased tokens detected.</div>')
+            
+            cat_colors = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
+            items = []
+            
+            sel_indices = []
+            if not is_B:
+                try:
+                    s = input.bias_selected_tokens()
+                    if s: sel_indices = [int(s)] if isinstance(s, (int,str)) else [int(x) for x in s if x is not None]
+                except: pass
+                
+            for lbl in biased:
+                clean = lbl["token"].replace("##", "").replace("\u0120", "")
+                types = lbl.get("bias_types", [])
+                scores = lbl.get("scores", {})
+                
+                badges = "".join([
+                    f'<span style="display:inline-flex;align-items:center;gap:4px;background:{cat_colors.get(t,"#ff5ca9")}18;border:1px solid {cat_colors.get(t,"#ff5ca9")}40;color:{cat_colors.get(t,"#ff5ca9")};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;">{t}<span style="font-family:JetBrains Mono;font-weight:400;opacity:0.8;">{scores.get(t,0):.2f}</span></span>' 
+                    for t in types
+                ])
+                
+                style = "display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(226,232,240,0.4);"
+                if lbl["index"] in sel_indices:
+                    style += "background:rgba(255, 92, 169, 0.1); border-left: 3px solid #ff5ca9;"
+                    
+                items.append(f'<div style="{style}"><span style="font-family:JetBrains Mono;font-size:13px;font-weight:600;color:#ec4899;min-width:70px;">{clean}</span><span style="display:flex;gap:4px;flex-wrap:wrap;">{badges}</span></div>')
+                
+            import math
+            mid = math.ceil(len(items)/2)
+            c1, c2 = items[:mid], items[mid:]
+            
+            lbl_info = f'Threshold: <code>{threshold:.2f}</code> · {_get_bias_model_label(data)}'
+            
+            return ui.HTML(
+                f'<div style="display:flex;gap:16px;border:1px solid rgba(226,232,240,0.4);border-radius:8px;overflow:hidden;">'
+                f'<div style="flex:1;display:flex;flex-direction:column;">{"".join(c1)}</div>'
+                f'<div style="flex:1;display:flex;flex-direction:column;border-left:1px solid rgba(226,232,240,0.4);">{"".join(c2)}</div>'
+                f'</div>'
+                f'<div style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:center;">{lbl_info}</div>'
+            )
+
+        if (compare_models or compare_prompts) and res_B:
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;"},
+                ui.div(ui.h4(_get_label(res, True, compare_models), style="text-align:center;color:#3b82f6;border-bottom:1px solid #3b82f6;padding-bottom:4px;margin-bottom:8px;font-size:12px;font-weight:bold;text-transform:uppercase;"), get_view(res, False)),
+                ui.div(ui.h4(_get_label(res_B, False, compare_models), style="text-align:center;color:#ff5ca9;border-bottom:1px solid #ff5ca9;padding-bottom:4px;margin-bottom:8px;font-size:12px;font-weight:bold;text-transform:uppercase;"), get_view(res_B, True))
+            )
+        return get_view(res)
+
+    @output
+    @render.ui
+    def token_bias_strip():
+        res = bias_results.get()
+        if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
+        
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+        res_B = bias_results_B.get()
+        
+        def get_viz(data):
+            try:
+                fig = create_token_bias_heatmap(data["token_labels"], data["text"])
+                return fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
+            except Exception as e: return f'<div style="color:red">Error: {e}</div>'
+
+        if (compare_models or compare_prompts) and res_B:
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;"},
+                ui.div(ui.HTML(get_viz(res))),
+                ui.div(ui.HTML(get_viz(res_B)))
+            )
+        return ui.HTML(get_viz(res))
+
+    @output
+    @render.ui
+    def combined_bias_view():
+        res = bias_results.get()
+        if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
+        
+        try: l_idx, h_idx = int(input.bias_attn_layer()), int(input.bias_attn_head())
+        except: l_idx, h_idx = 0, 0
+        
+        sel = None
+        try:
+            s = input.bias_selected_tokens()
+            if s: sel = [int(s)] if isinstance(s,(int,str)) else [int(x) for x in s if x]
+        except: pass
+        
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+        res_B = bias_results_B.get()
+
+        def get_viz(data, s_idxs):
+            atts = data["attentions"]
+            if not atts or l_idx >= len(atts): return '<div style="color:#9ca3af;">No attention data.</div>'
+            try:
+                # For Model B, if architectures differ, we might check bounds? 
+                # Assuming similar arch for now or handling index error.
+                if l_idx >= len(atts): return '<div style="color:#9ca3af;">Layer out of bounds.</div>'
+                attn = atts[l_idx][0, h_idx].cpu().numpy()
+                fig = create_combined_bias_visualization(data["tokens"], data["token_labels"], attn, l_idx, h_idx, selected_token_idx=s_idxs)
+                return fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
+            except Exception as e: return f'<div style="color:red">Error: {e}</div>'
+
+        if (compare_models or compare_prompts) and res_B:
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; assign-items: start;"},
+                ui.div(ui.h4(f"L{l_idx}·H{h_idx} (A)", style="text-align:center;font-size:12px;color:#64748b;margin-bottom:8px;"), ui.HTML(get_viz(res, sel))),
+                ui.div(ui.h4(f"L{l_idx}·H{h_idx} (B)", style="text-align:center;font-size:12px;color:#64748b;margin-bottom:8px;"), ui.HTML(get_viz(res_B, None))) # No selection sync yet
+            )
+        return ui.HTML(get_viz(res, sel))
+
+    @output
+    @render.ui
+    def bias_propagation_plot():
+        res = bias_results.get()
+        if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;">No results.</div>')
+        
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+        res_B = bias_results_B.get()
+        
+        try: l_idx = int(input.bias_attn_layer())
+        except: l_idx = None
+
+        def get_viz(data):
+            p = data["propagation_analysis"]["layer_propagation"]
+            if not p: return "No data."
+            fig = create_bias_propagation_plot(p, selected_layer=l_idx)
+            return fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
+
+        if (compare_models or compare_prompts) and res_B:
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px;"},
+                ui.div(ui.HTML(get_viz(res))),
+                ui.div(ui.HTML(get_viz(res_B)))
+            )
+        return ui.HTML(get_viz(res))
+
+    @output
+    @render.ui
+    def bias_focused_heads_table():
+        res = bias_results.get()
+        if not res: return None
+        
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+        res_B = bias_results_B.get()
+        
+        try: l_idx, h_idx = int(input.bias_attn_layer()), int(input.bias_attn_head())
+        except: l_idx, h_idx = -1, -1
+
+        def get_table(data):
+            mets = data["attention_metrics"]
+            if not mets: return '<div style="color:#9ca3af;">No metrics.</div>'
+            top = sorted(mets, key=lambda x: x.bias_attention_ratio, reverse=True)[:5]
+            rows = []
+            for m in top:
+                is_sel = (m.layer == l_idx and m.head == h_idx)
+                is_sig = m.specialized_for_bias
+                bg = "background:rgba(67, 56, 202, 0.15);" if is_sel else ("background:rgba(255,92,169,0.04);" if is_sig else "")
+                col = "#ff5ca9" if is_sig else "#64748b"
+                dot = "●" if is_sig else "○"
+                dot_c = "#22c55e" if is_sig else "#94a3b8"
+                rows.append(f'<tr style="{bg}"><td style="padding:4px;border-bottom:1px solid #e2e8f0;text-align:center;">L{m.layer}</td><td style="padding:4px;border-bottom:1px solid #e2e8f0;text-align:center;">H{m.head}</td><td style="padding:4px;text-align:right;color:{col};font-weight:600;">{m.bias_attention_ratio:.2f}<span style="color:{dot_c};font-size:8px;margin-left:2px;">{dot}</span></td></tr>')
+            
+            return f'<table style="width:100%;font-size:11px;"><thead><tr style="color:#64748b;"><th>Lay</th><th>Hd</th><th style="text-align:right;">BAR</th></tr></thead><tbody>{"".join(rows)}</tbody></table>'
+
+        if (compare_models or compare_prompts) and res_B:
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;"},
+                ui.div(ui.h4("Top Heads (A)", style="font-size:11px;margin-bottom:8px;color:#3b82f6;text-align:center;"), ui.HTML(get_table(res))),
+                ui.div(ui.h4("Top Heads (B)", style="font-size:11px;margin-bottom:8px;color:#ff5ca9;text-align:center;"), ui.HTML(get_table(res_B)))
+            )
+        return ui.HTML(get_table(res))
+
+    def _get_label(data, is_A, compare_m):
+        if compare_m: return _get_bias_model_label(data)
+        return "Prompt A" if is_A else "Prompt B"
 
 __all__ = ["bias_server_handlers"]

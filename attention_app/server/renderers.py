@@ -370,12 +370,13 @@ def get_paired_architecture_section(model_type_a="bert", model_type_b="gpt2",
     )
 
 
-def get_gusnet_architecture_section(selected_model="gusnet-bert"):
+def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=False):
     """
     GUS-Net architecture diagrams for bias detection.
     Shows BERT and GPT-2 pipelines side-by-side.
-    
+
     selected_model: "gusnet-bert" or "gusnet-gpt2"
+    compare_mode: If True, both models are highlighted (A=blue, B=pink)
     """
     # Colors
     blue = "#3b82f6"
@@ -383,8 +384,13 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert"):
     pink = "#ff5ca9"
 
     # Determine which is selected
-    bert_selected = selected_model == "gusnet-bert"
-    gpt2_selected = selected_model == "gusnet-gpt2"
+    if compare_mode:
+        # Both models highlighted with different colors
+        bert_selected = True
+        gpt2_selected = True
+    else:
+        bert_selected = selected_model == "gusnet-bert"
+        gpt2_selected = selected_model == "gusnet-gpt2"
 
     # Styles
     base_section = "position:relative;padding:16px 8px 12px 8px;border-radius:12px;border:2px solid;display:flex;flex-direction:column;align-items:center;width:120px;transition:all 0.3s ease;"
@@ -405,24 +411,40 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert"):
         </div>
     """
 
-    # --- BERT Diagram (Pink) ---
-    bert_border = f"border-color:{pink};box-shadow:0 0 20px rgba(255,92,169,0.2);" if bert_selected else "border-color:rgba(255,92,169,0.2);opacity:0.4;"
-    bert_bg = "background:rgba(255,92,169,0.08);" if bert_selected else "background:rgba(255,92,169,0.02);"
+    # --- BERT Diagram ---
+    # In compare mode: BERT = blue (Model A), GPT-2 = pink (Model B)
+    # In single mode: Selected model gets pink
+    if compare_mode:
+        bert_border = f"border-color:{blue};box-shadow:0 0 20px rgba(59,130,246,0.2);"
+        bert_bg = "background:rgba(59,130,246,0.08);"
+    elif bert_selected:
+        bert_border = f"border-color:{pink};box-shadow:0 0 20px rgba(255,92,169,0.2);"
+        bert_bg = "background:rgba(255,92,169,0.08);"
+    else:
+        bert_border = "border-color:rgba(255,92,169,0.2);opacity:0.4;"
+        bert_bg = "background:rgba(255,92,169,0.02);"
     
+    # Dynamic colors for BERT diagram
+    bert_accent = blue if compare_mode else pink
+    bert_accent_rgb = "59,130,246" if compare_mode else "255,92,169"
+    bert_text_dark = "#2563eb" if compare_mode else "#db2777"
+    bert_text_light = "#93c5fd" if compare_mode else "#fbcfe8"
+    bert_text_accent = "#60a5fa" if compare_mode else "#f9a8d4"
+
     bert_html = f"""
         <div style="{base_section}{bert_border}{bert_bg}">
-            <div style="{block_style}border-color:rgba(255,92,169,0.4);">
-                <span style="{block_label}color:{pink};">BertTokenizerFast</span>
+            <div style="{block_style}border-color:rgba({bert_accent_rgb},0.4);">
+                <span style="{block_label}color:{bert_accent};">BertTokenizerFast</span>
                 <span style="{block_sub}">Pad: Max Length</span>
             </div>
 
             <div style="{connector}"></div>
 
-            <div style="{layer_box}">
-                <div style="{badge_style}color:{pink};">ENC</div>
-                <div style="{block_style}width:100%;background:rgba(255,92,169,0.1);border-color:rgba(255,92,169,0.3);margin-bottom:4px;">
-                    <span style="{block_label}color:#db2777;">BertForTokenCls</span>
-                    <span style="{block_sub}color:#db2777;">12 Layers</span>
+            <div style="{layer_box}border-color:rgba({bert_accent_rgb},0.3);background:rgba({bert_accent_rgb},0.06);">
+                <div style="{badge_style}color:{bert_accent};">ENC</div>
+                <div style="{block_style}width:100%;background:rgba({bert_accent_rgb},0.1);border-color:rgba({bert_accent_rgb},0.3);margin-bottom:4px;">
+                    <span style="{block_label}color:{bert_text_dark};">BertForTokenCls</span>
+                    <span style="{block_sub}color:{bert_text_dark};">12 Layers</span>
                 </div>
                 <div style="{connector}height:4px;"></div>
                 <div style="{block_style}width:100%;margin-bottom:4px;">
@@ -430,9 +452,9 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert"):
                     <span style="{block_sub}">768 → 7 Labels</span>
                 </div>
                 <div style="{connector}height:4px;"></div>
-                <div style="{block_style}width:100%;border-color:rgba(255,92,169,0.5);">
-                    <span style="{block_label}color:#fbcfe8;">Sigmoid+Thresh</span>
-                    <span style="{block_sub}font-weight:700;color:#f9a8d4;">Dynamic Opt.</span>
+                <div style="{block_style}width:100%;border-color:rgba({bert_accent_rgb},0.5);">
+                    <span style="{block_label}color:{bert_text_light};">Sigmoid+Thresh</span>
+                    <span style="{block_sub}font-weight:700;color:{bert_text_accent};">Dynamic Opt.</span>
                 </div>
             </div>
 
@@ -452,24 +474,40 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert"):
         </div>
     """
 
-    # --- GPT-2 Diagram (Blue) ---
-    gpt2_border = f"border-color:{blue};box-shadow:0 0 20px rgba(59,130,246,0.2);" if gpt2_selected else "border-color:rgba(59,130,246,0.2);opacity:0.4;"
-    gpt2_bg = "background:rgba(59,130,246,0.08);" if gpt2_selected else "background:rgba(59,130,246,0.02);"
+    # --- GPT-2 Diagram ---
+    # In compare mode: GPT-2 = pink (Model B)
+    # In single mode: Selected model gets its assigned color
+    if compare_mode:
+        gpt2_border = f"border-color:{pink};box-shadow:0 0 20px rgba(255,92,169,0.2);"
+        gpt2_bg = "background:rgba(255,92,169,0.08);"
+    elif gpt2_selected:
+        gpt2_border = f"border-color:{blue};box-shadow:0 0 20px rgba(59,130,246,0.2);"
+        gpt2_bg = "background:rgba(59,130,246,0.08);"
+    else:
+        gpt2_border = "border-color:rgba(59,130,246,0.2);opacity:0.4;"
+        gpt2_bg = "background:rgba(59,130,246,0.02);"
     
+    # Dynamic colors for GPT-2 diagram
+    gpt2_accent = pink if compare_mode else blue
+    gpt2_accent_rgb = "255,92,169" if compare_mode else "59,130,246"
+    gpt2_text_dark = "#db2777" if compare_mode else "#2563eb"
+    gpt2_text_light = "#fbcfe8" if compare_mode else "#93c5fd"
+    gpt2_text_accent = "#f9a8d4" if compare_mode else "#60a5fa"
+
     gpt2_html = f"""
         <div style="{base_section}{gpt2_border}{gpt2_bg}">
-            <div style="{block_style}border-color:rgba(59,130,246,0.4);">
-                <span style="{block_label}color:{blue};">GPT2TokenizerFast</span>
+            <div style="{block_style}border-color:rgba({gpt2_accent_rgb},0.4);">
+                <span style="{block_label}color:{gpt2_accent};">GPT2TokenizerFast</span>
                 <span style="{block_sub}">Pad: Right | BPE</span>
             </div>
 
             <div style="{connector}"></div>
 
-            <div style="{layer_box}border-color:rgba(59,130,246,0.3);background:rgba(59,130,246,0.06);">
-                <div style="{badge_style}color:{blue};">DEC</div>
-                <div style="{block_style}width:100%;background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.3);margin-bottom:4px;">
-                    <span style="{block_label}color:#2563eb;">GPT2ForTokenCls</span>
-                    <span style="{block_sub}color:#2563eb;">12 Layers</span>
+            <div style="{layer_box}border-color:rgba({gpt2_accent_rgb},0.3);background:rgba({gpt2_accent_rgb},0.06);">
+                <div style="{badge_style}color:{gpt2_accent};">DEC</div>
+                <div style="{block_style}width:100%;background:rgba({gpt2_accent_rgb},0.1);border-color:rgba({gpt2_accent_rgb},0.3);margin-bottom:4px;">
+                    <span style="{block_label}color:{gpt2_text_dark};">GPT2ForTokenCls</span>
+                    <span style="{block_sub}color:{gpt2_text_dark};">12 Layers</span>
                 </div>
                 <div style="{connector}height:4px;"></div>
                 <div style="{block_style}width:100%;margin-bottom:4px;">
@@ -477,9 +515,9 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert"):
                     <span style="{block_sub}">768 → 6 Ch</span>
                 </div>
                 <div style="{connector}height:4px;"></div>
-                <div style="{block_style}width:100%;border-color:rgba(59,130,246,0.5);">
-                    <span style="{block_label}color:#93c5fd;">Sigmoid+Thresh</span>
-                    <span style="{block_sub}font-weight:700;color:#60a5fa;">Dynamic Opt.</span>
+                <div style="{block_style}width:100%;border-color:rgba({gpt2_accent_rgb},0.5);">
+                    <span style="{block_label}color:{gpt2_text_light};">Sigmoid+Thresh</span>
+                    <span style="{block_sub}font-weight:700;color:{gpt2_text_accent};">Dynamic Opt.</span>
                 </div>
             </div>
 
@@ -545,15 +583,24 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert"):
         </div>
     """
 
+    # Model labels for compare mode
+    # Model labels for compare mode - REMOVED per user request
+    if compare_mode:
+        label_A = ""
+        label_B = ""
+    else:
+        label_A = ""
+        label_B = ""
+
     # Main container
     return ui.HTML(
         f'<div style="background-color:#ffffff;border-radius:16px;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;border:1px solid #e2e8f0;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -1px rgba(0,0,0,0.06);">'
         f'<div style="text-align:center;margin-bottom:16px;">'
         f'<h4 style="color:#ff5ca9;font-weight:800;letter-spacing:2px;margin:0;font-size:13px;text-transform:uppercase;">GUS-Net Training Pipeline</h4>'
         f'</div>'
-        f'<div style="display:flex;align-items:center;justify-content:center;gap:16px;width:100%;">'
-        f'{bert_html}'
-        f'{gpt2_html}'
+        f'<div style="display:flex;align-items:flex-start;justify-content:center;gap:16px;width:100%;">'
+        f'<div>{label_A}{bert_html}</div>'
+        f'<div>{label_B}{gpt2_html}</div>'
         f'</div>'
         f'{merge_connector}'
         f'{output_html}'
