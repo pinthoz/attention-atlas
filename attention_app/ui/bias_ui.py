@@ -21,7 +21,7 @@ def create_bias_sidebar():
 
         # ── Compare Modes Section ──
         ui.div(
-            {"class": "sidebar-section", "style": "margin-top: 0; padding-bottom: 16px;"},
+            {"class": "sidebar-section", "style": "margin-top: 0; padding-bottom: 10px;"},
             # Header
             ui.tags.span("Compare Modes", id="bias-cmp-modes-label", class_="sidebar-label"),
             # Switches Row
@@ -44,7 +44,7 @@ def create_bias_sidebar():
             }
 
             #bias-compare-modes-container {
-                margin-bottom: 16px;
+                margin-bottom: 10px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -114,7 +114,9 @@ def create_bias_sidebar():
                         {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
                         ui.tags.select(
                             ui.tags.option("GUS-Net (BERT)", value="gusnet-bert"),
+                            ui.tags.option("GUS-Net (BERT Large)", value="gusnet-bert-large"),
                             ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2"),
+                            ui.tags.option("GUS-Net (GPT-2 Medium)", value="gusnet-gpt2-medium"),
                             id="bias_model_key",
                             class_="bias-model-select",
                             onchange="Shiny.setInputValue('bias_model_key', this.value, {priority:'event'});",
@@ -133,7 +135,9 @@ def create_bias_sidebar():
                         {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
                         ui.tags.select(
                             ui.tags.option("GUS-Net (BERT)", value="gusnet-bert"),
+                            ui.tags.option("GUS-Net (BERT Large)", value="gusnet-bert-large"),
                             ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2", selected="selected"),
+                            ui.tags.option("GUS-Net (GPT-2 Medium)", value="gusnet-gpt2-medium"),
                             id="bias_model_key_B",
                             class_="bias-model-select bias-model-select-b",
                             onchange="Shiny.setInputValue('bias_model_key_B', this.value, {priority:'event'});",
@@ -147,23 +151,20 @@ def create_bias_sidebar():
         ui.tags.style("""
             .bias-model-select {
                 width: 100%;
-                padding: 7px 10px;
+                padding: 6px 28px 6px 10px;
                 font-size: 12px;
-                font-weight: 600;
-                font-family: 'Inter', sans-serif;
+                height: 32px;
+                background-color: #1e293b;
                 color: #e2e8f0;
-                background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-                border: 1px solid rgba(255, 255, 255, 0.10);
-                border-radius: 6px;
-                outline: none;
-                cursor: pointer;
+                border: 1px solid #334155;
+                border-radius: 8px;
                 appearance: none;
                 -webkit-appearance: none;
-                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
                 background-repeat: no-repeat;
-                background-position: right 10px center;
-                padding-right: 28px;
-                transition: border-color 0.15s ease, box-shadow 0.15s ease;
+                background-position: right 8px center;
+                background-size: 12px;
+                cursor: pointer;
             }
             .bias-model-select:hover {
                 border-color: rgba(255, 92, 169, 0.4);
@@ -544,6 +545,33 @@ def create_bias_sidebar():
                 Shiny.addCustomMessageHandler('bias_eval_js', function(code) {
                     eval(code);
                 });
+
+                // Restore bias session controls (model selects, threshold slider)
+                Shiny.addCustomMessageHandler('restore_bias_session_controls', function(data) {
+                    if (data.bias_model_key) {
+                        var sel = document.getElementById('bias_model_key');
+                        if (sel) {
+                            sel.value = data.bias_model_key;
+                            Shiny.setInputValue('bias_model_key', data.bias_model_key, {priority: 'event'});
+                        }
+                    }
+                    if (data.bias_model_key_B) {
+                        var selB = document.getElementById('bias_model_key_B');
+                        if (selB) {
+                            selB.value = data.bias_model_key_B;
+                            Shiny.setInputValue('bias_model_key_B', data.bias_model_key_B, {priority: 'event'});
+                        }
+                    }
+                    if (data.threshold !== undefined) {
+                        var slider = document.getElementById('bias-threshold-sidebar');
+                        var valSpan = document.getElementById('bias-threshold-val-sidebar');
+                        if (slider) {
+                            slider.value = data.threshold;
+                            if (valSpan) valSpan.textContent = data.threshold;
+                            Shiny.setInputValue('bias_threshold', parseFloat(data.threshold), {priority: 'event'});
+                        }
+                    }
+                });
             """)
         ),
     )
@@ -619,45 +647,16 @@ def create_bias_accordion():
         # Panel 1: Overview & Detection
         ui.accordion_panel(
             ui.span("Overview & Detection", ui.span({"class": "accordion-panel-badge essential"}, "Essential")),
-            # Summary Card
-            ui.div(
-                {"class": "card", "style": "margin-bottom: 24px;"},
-                viz_header(
-                    "Bias Detection Summary",
-                    "Composite bias level with explicit weighted criteria and per-category counts.",
-                    "Level = weighted composite of token density (30%), generalizations (20%), unfair language (25%), and stereotypes (25%).",
-                ),
-                ui.output_ui("bias_summary"),
-            ),
-            # Detected Bias Tokens Card
-            ui.div(
-                {"class": "card"},
-                ui.div(
-                    {"style": "padding: 16px;"},
-                    ui.h4("Detected Bias Tokens", style="font-size:16px; font-weight:700; color:#000000; margin-bottom:4px;"),
-                    ui.p("Each biased token with its category labels and confidence scores.",
-                         style="font-size:11px;color:#6b7280;margin-bottom:16px;"),
-                    ui.output_ui("bias_spans_table"),
-                    ui.hr(),
-                    ui.output_ui("bias_method_info"),
-                )
-            ),
+            ui.output_ui("bias_summary"),
+            ui.output_ui("bias_spans_table"),
             value="overview"
         ),
 
         # Panel 2: Technical Analysis
         ui.accordion_panel(
             ui.span("Technical Analysis", ui.span({"class": "accordion-panel-badge technical"}, "Technical")),
-            ui.div(
-                {"class": "card"},
-                ui.div(
-                    {"class": "viz-header"},
-                    ui.h4("Token-Level Bias Distribution", style="margin:0;"),
-                    ui.p("Each token with per-category scores. Coloured dots and values show bias intensity across GEN, UNFAIR, and STEREO.",
-                         style="font-size:11px;color:#6b7280;margin:4px 0 0;"),
-                ),
-                ui.output_ui("token_bias_strip"),
-            ),
+            ui.output_ui("token_bias_strip"),
+            ui.output_ui("confidence_breakdown"),
             value="technical"
         ),
 
@@ -673,46 +672,12 @@ def create_bias_accordion():
                 ui.input_select("bias_attn_head", "Head", choices={}, selected="0"),
             ),
             # Combined Attention & Bias View (controlled by toolbar)
-            ui.div(
-                {"class": "card", "style": "margin-bottom: 24px; box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"},
-                ui.div(
-                    {"class": "viz-header"},
-                    ui.h4("Combined Attention & Bias View", style="margin:0;"),
-                    ui.p("Attention weights for a single head with pink row/column highlights on biased tokens. Use the toolbar to change layer and head.",
-                         style="font-size:11px;color:#6b7280;margin:4px 0 0;"),
-                ),
-                ui.output_ui("combined_bias_view"),
-            ),
-            ui.layout_columns(
-                ui.div(
-                    {"class": "card", "style": "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"},
-                    viz_header(
-                        "Bias Attention Matrix",
-                        "Each cell = ratio of attention a head pays to biased tokens vs. the uniform baseline.",
-                        "Values centred on 1.0 (neutral). Red > 1.5 = head specializes on biased tokens. Blue < 1.0 = head avoids them.",
-                    ),
-                    ui.output_ui("attention_bias_matrix"),
-                ),
-                ui.div(
-                    {"class": "card", "style": "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"},
-                    viz_header(
-                        "Bias Propagation Across Layers",
-                        "Mean bias attention ratio per layer — how bias focus evolves through model depth.",
-                        "The dashed line at 1.0 represents neutral attention. Values above indicate increasing bias focus.",
-                    ),
-                    ui.output_ui("bias_propagation_plot"),
-                ),
-                col_widths=[6, 6],
-            ),
-            ui.div(
-                {"class": "card", "style": "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05); margin-top: 16px;"},
-                viz_header(
-                    "Top Attention Heads by Bias Focus",
-                    "Top 5 heads ranked by bias attention ratio. Green dot = above specialization threshold (1.5).",
-                    "List of attention heads with the strongest focus on biased tokens, ranked by their Bias Attention Ratio."
-                ),
-                ui.output_ui("bias_focused_heads_table"),
-            ),
+            ui.output_ui("combined_bias_view"),
+            
+            # Using custom output_ui for these to handle layout internally (single vs dual columns)
+            ui.output_ui("attention_bias_matrix"),
+            ui.output_ui("bias_propagation_plot"),
+            ui.output_ui("bias_focused_heads_table"),
             value="attention_bias"
         ),
         id="bias_accordion",

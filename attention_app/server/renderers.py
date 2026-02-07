@@ -370,31 +370,63 @@ def get_paired_architecture_section(model_type_a="bert", model_type_b="gpt2",
     )
 
 
-def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=False):
+def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=False, compare_prompts=False, model_a=None, model_b=None):
     """
     GUS-Net architecture diagrams for bias detection.
-    Shows BERT and GPT-2 pipelines side-by-side.
+    Shows two dynamic diagrams (BERT and GPT-2) that adapt layers/head
+    based on the selected model variant.
 
-    selected_model: "gusnet-bert" or "gusnet-gpt2"
-    compare_mode: If True, both models are highlighted (A=blue, B=pink)
+    selected_model: active model key (used in single/compare_prompts mode)
+    compare_mode: If True, compare models mode (model_a=blue, model_b=pink)
+    compare_prompts: If True, compare prompts mode (only selected model has pink)
+    model_a: Model selected as A in compare mode
+    model_b: Model selected as B in compare mode
     """
     # Colors
     blue = "#3b82f6"
     green = "#10b981"
     pink = "#ff5ca9"
 
-    # Determine which is selected
+    # Model specs lookup
+    BERT_FAMILY = {"gusnet-bert": (12, 768), "gusnet-bert-large": (24, 1024)}
+    GPT2_FAMILY = {"gusnet-gpt2": (12, 768), "gusnet-gpt2-medium": (24, 1024)}
+
+    def _is_bert(key):
+        return key in BERT_FAMILY
+
+    def _is_gpt2(key):
+        return key in GPT2_FAMILY
+
+    # Determine dynamic specs for each diagram
     if compare_mode:
-        # Both models highlighted with different colors
-        bert_selected = True
-        gpt2_selected = True
+        # BERT diagram: use whichever BERT variant is in model_a or model_b
+        bert_key = next((k for k in (model_a, model_b) if k and _is_bert(k)), "gusnet-bert")
+        gpt2_key = next((k for k in (model_a, model_b) if k and _is_gpt2(k)), "gusnet-gpt2")
     else:
-        bert_selected = selected_model == "gusnet-bert"
-        gpt2_selected = selected_model == "gusnet-gpt2"
+        bert_key = selected_model if _is_bert(selected_model) else "gusnet-bert"
+        gpt2_key = selected_model if _is_gpt2(selected_model) else "gusnet-gpt2"
+
+    bert_layers, bert_head = BERT_FAMILY[bert_key]
+    gpt2_layers, gpt2_head = GPT2_FAMILY[gpt2_key]
+
+    # Determine highlighting
+    bert_is_selected = _is_bert(selected_model)
+    gpt2_is_selected = _is_gpt2(selected_model)
+
+    if compare_mode:
+        bert_is_model_a = _is_bert(model_a) if model_a else False
+        bert_is_model_b = _is_bert(model_b) if model_b else False
+        gpt2_is_model_a = _is_gpt2(model_a) if model_a else False
+        gpt2_is_model_b = _is_gpt2(model_b) if model_b else False
+    else:
+        bert_is_model_a = False
+        bert_is_model_b = False
+        gpt2_is_model_a = False
+        gpt2_is_model_b = False
 
     # Styles
     base_section = "position:relative;padding:16px 8px 12px 8px;border-radius:12px;border:2px solid;display:flex;flex-direction:column;align-items:center;width:120px;transition:all 0.3s ease;"
-    
+
     block_style = "position:relative;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;height:33px;font-size:7px;padding:0 4px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background-color:#0f172a;width:100px;transition:transform 0.2s;margin-bottom:0;box-shadow:0 1px 3px rgba(0,0,0,0.2);"
     block_label = "font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#e2e8f0;margin-bottom:1px;"
     block_sub = "font-family:'JetBrains Mono',monospace;font-size:6px;color:#94a3b8;"
@@ -411,31 +443,41 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
         </div>
     """
 
-    # --- BERT Diagram ---
-    # In compare mode: BERT = blue (Model A), GPT-2 = pink (Model B)
-    # In single mode: Selected model gets pink
-    if compare_mode:
-        bert_border = f"border-color:{blue};box-shadow:0 0 20px rgba(59,130,246,0.2);"
-        bert_bg = "background:rgba(59,130,246,0.08);"
-    elif bert_selected:
-        bert_border = f"border-color:{pink};box-shadow:0 0 20px rgba(255,92,169,0.2);"
-        bert_bg = "background:rgba(255,92,169,0.08);"
-    else:
-        bert_border = "border-color:rgba(255,92,169,0.2);opacity:0.4;"
-        bert_bg = "background:rgba(255,92,169,0.02);"
-    
-    # Dynamic colors for BERT diagram
-    bert_accent = blue if compare_mode else pink
-    bert_accent_rgb = "59,130,246" if compare_mode else "255,92,169"
-    bert_text_dark = "#2563eb" if compare_mode else "#db2777"
-    bert_text_light = "#93c5fd" if compare_mode else "#fbcfe8"
-    bert_text_accent = "#60a5fa" if compare_mode else "#f9a8d4"
+    # --- Helper to resolve diagram colors ---
+    def _resolve_colors(is_model_a, is_model_b, is_selected):
+        """Return (border, bg, accent, accent_rgb, text_dark, text_light, text_accent)."""
+        if compare_mode:
+            if is_model_a:
+                return (f"border-color:{blue};box-shadow:0 0 20px rgba(59,130,246,0.2);",
+                        "background:rgba(59,130,246,0.08);",
+                        blue, "59,130,246", "#2563eb", "#93c5fd", "#60a5fa")
+            elif is_model_b:
+                return (f"border-color:{pink};box-shadow:0 0 20px rgba(255,92,169,0.2);",
+                        "background:rgba(255,92,169,0.08);",
+                        pink, "255,92,169", "#db2777", "#fbcfe8", "#f9a8d4")
+            else:
+                return ("border-color:rgba(255,92,169,0.2);opacity:0.4;",
+                        "background:rgba(255,92,169,0.02);",
+                        pink, "255,92,169", "#db2777", "#fbcfe8", "#f9a8d4")
+        elif is_selected:
+            return (f"border-color:{pink};box-shadow:0 0 20px rgba(255,92,169,0.2);",
+                    "background:rgba(255,92,169,0.08);",
+                    pink, "255,92,169", "#db2777", "#fbcfe8", "#f9a8d4")
+        else:
+            return ("border-color:rgba(255,92,169,0.2);opacity:0.4;",
+                    "background:rgba(255,92,169,0.02);",
+                    pink, "255,92,169", "#db2777", "#fbcfe8", "#f9a8d4")
+
+    # --- BERT Diagram (dynamic: adapts to base/large) ---
+    (bert_border, bert_bg, bert_accent, bert_accent_rgb,
+     bert_text_dark, bert_text_light, bert_text_accent) = _resolve_colors(
+        bert_is_model_a, bert_is_model_b, bert_is_selected)
 
     bert_html = f"""
         <div style="{base_section}{bert_border}{bert_bg}">
             <div style="{block_style}border-color:rgba({bert_accent_rgb},0.4);">
                 <span style="{block_label}color:{bert_accent};">BertTokenizerFast</span>
-                <span style="{block_sub}">Pad: Max Length</span>
+                <span style="{block_sub}">Pad: Max Length (128) | WordPiece</span>
             </div>
 
             <div style="{connector}"></div>
@@ -443,13 +485,13 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
             <div style="{layer_box}border-color:rgba({bert_accent_rgb},0.3);background:rgba({bert_accent_rgb},0.06);">
                 <div style="{badge_style}color:{bert_accent};">ENC</div>
                 <div style="{block_style}width:100%;background:rgba({bert_accent_rgb},0.1);border-color:rgba({bert_accent_rgb},0.3);margin-bottom:4px;">
-                    <span style="{block_label}color:{bert_text_dark};">BertForTokenCls</span>
-                    <span style="{block_sub}color:{bert_text_dark};">12 Layers</span>
+                    <span style="{block_label}color:{bert_text_dark};">BertForTokenClas</span>
+                    <span style="{block_sub}color:{bert_text_dark};">{bert_layers} Layers (Encoder)</span>
                 </div>
                 <div style="{connector}height:4px;"></div>
                 <div style="{block_style}width:100%;margin-bottom:4px;">
                     <span style="{block_label}">Linear Head</span>
-                    <span style="{block_sub}">768 → 7 Labels</span>
+                    <span style="{block_sub}">{bert_head} → 7 Labels</span>
                 </div>
                 <div style="{connector}height:4px;"></div>
                 <div style="{block_style}width:100%;border-color:rgba({bert_accent_rgb},0.5);">
@@ -474,25 +516,10 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
         </div>
     """
 
-    # --- GPT-2 Diagram ---
-    # In compare mode: GPT-2 = pink (Model B)
-    # In single mode: Selected model gets its assigned color
-    if compare_mode:
-        gpt2_border = f"border-color:{pink};box-shadow:0 0 20px rgba(255,92,169,0.2);"
-        gpt2_bg = "background:rgba(255,92,169,0.08);"
-    elif gpt2_selected:
-        gpt2_border = f"border-color:{blue};box-shadow:0 0 20px rgba(59,130,246,0.2);"
-        gpt2_bg = "background:rgba(59,130,246,0.08);"
-    else:
-        gpt2_border = "border-color:rgba(59,130,246,0.2);opacity:0.4;"
-        gpt2_bg = "background:rgba(59,130,246,0.02);"
-    
-    # Dynamic colors for GPT-2 diagram
-    gpt2_accent = pink if compare_mode else blue
-    gpt2_accent_rgb = "255,92,169" if compare_mode else "59,130,246"
-    gpt2_text_dark = "#db2777" if compare_mode else "#2563eb"
-    gpt2_text_light = "#fbcfe8" if compare_mode else "#93c5fd"
-    gpt2_text_accent = "#f9a8d4" if compare_mode else "#60a5fa"
+    # --- GPT-2 Diagram (dynamic: adapts to base/medium) ---
+    (gpt2_border, gpt2_bg, gpt2_accent, gpt2_accent_rgb,
+     gpt2_text_dark, gpt2_text_light, gpt2_text_accent) = _resolve_colors(
+        gpt2_is_model_a, gpt2_is_model_b, gpt2_is_selected)
 
     gpt2_html = f"""
         <div style="{base_section}{gpt2_border}{gpt2_bg}">
@@ -506,13 +533,13 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
             <div style="{layer_box}border-color:rgba({gpt2_accent_rgb},0.3);background:rgba({gpt2_accent_rgb},0.06);">
                 <div style="{badge_style}color:{gpt2_accent};">DEC</div>
                 <div style="{block_style}width:100%;background:rgba({gpt2_accent_rgb},0.1);border-color:rgba({gpt2_accent_rgb},0.3);margin-bottom:4px;">
-                    <span style="{block_label}color:{gpt2_text_dark};">GPT2ForTokenCls</span>
-                    <span style="{block_sub}color:{gpt2_text_dark};">12 Layers</span>
+                    <span style="{block_label}color:{gpt2_text_dark};">GPT2ForTokenClas</span>
+                    <span style="{block_sub}color:{gpt2_text_dark};">{gpt2_layers} Layers (Decoder)</span>
                 </div>
                 <div style="{connector}height:4px;"></div>
                 <div style="{block_style}width:100%;margin-bottom:4px;">
                     <span style="{block_label}">Linear Head</span>
-                    <span style="{block_sub}">768 → 6 Ch</span>
+                    <span style="{block_sub}">{gpt2_head} → 7 Labels</span>
                 </div>
                 <div style="{connector}height:4px;"></div>
                 <div style="{block_style}width:100%;border-color:rgba({gpt2_accent_rgb},0.5);">
@@ -573,9 +600,9 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
         </div>
     """
 
-    # Merge connector
+    # Merge connector (2 inputs → 1 output)
     merge_connector = """
-        <div style="width:120px;height:16px;position:relative;margin-top:6px;">
+        <div style="width:140px;height:16px;position:relative;margin-top:6px;">
             <div style="position:absolute;left:25%;top:0;width:1px;height:8px;background:#cbd5e1;"></div>
             <div style="position:absolute;right:25%;top:0;width:1px;height:8px;background:#cbd5e1;"></div>
             <div style="position:absolute;top:8px;left:25%;right:25%;height:1px;background:#cbd5e1;"></div>
@@ -583,7 +610,6 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
         </div>
     """
 
-    # Model labels for compare mode
     # Model labels for compare mode - REMOVED per user request
     if compare_mode:
         label_A = ""
@@ -592,13 +618,13 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
         label_A = ""
         label_B = ""
 
-    # Main container
+    # Main container (2 diagrams)
     return ui.HTML(
         f'<div style="background-color:#ffffff;border-radius:16px;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;border:1px solid #e2e8f0;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -1px rgba(0,0,0,0.06);">'
         f'<div style="text-align:center;margin-bottom:16px;">'
         f'<h4 style="color:#ff5ca9;font-weight:800;letter-spacing:2px;margin:0;font-size:13px;text-transform:uppercase;">GUS-Net Training Pipeline</h4>'
         f'</div>'
-        f'<div style="display:flex;align-items:flex-start;justify-content:center;gap:16px;width:100%;">'
+        f'<div style="display:flex;align-items:flex-start;justify-content:center;gap:12px;width:100%;">'
         f'<div>{label_A}{bert_html}</div>'
         f'<div>{label_B}{gpt2_html}</div>'
         f'</div>'

@@ -1,7 +1,9 @@
 import json
 from datetime import datetime
+from pathlib import Path
 import traceback
 import asyncio
+import functools
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -13,7 +15,6 @@ from ..models import ModelManager
 from ..bias import (
     GusNetDetector,
     AttentionBiasAnalyzer,
-    create_token_bias_heatmap,
     create_attention_bias_matrix,
     create_bias_propagation_plot,
     create_combined_bias_visualization,
@@ -23,8 +24,49 @@ from ..bias import (
     create_bias_criteria_html,
     create_bias_sentence_preview,
     create_token_bias_strip,
+    create_confidence_breakdown,
 )
 from ..ui.bias_ui import create_bias_accordion, create_floating_bias_toolbar
+from ..ui.components import viz_header
+
+def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header=None, style=None, controls=None):
+    """Wrap content in a card with consistent header style."""
+    base_style = "min-height: auto; display: flex; flex-direction: column;"
+    if style:
+        base_style += f" {style}"
+
+    header = None
+    if manual_header:
+        # manual_header is (title, subtitle) tuple
+        header_parts = [
+            ui.h4(manual_header[0], style="margin:0;"),
+            ui.p(manual_header[1], style="font-size:11px;color:#6b7280;margin:4px 0 0;flex:1;")
+        ]
+        if controls:
+            header = ui.div(
+                {"class": "viz-header", "style": "display:flex;align-items:center;gap:8px;flex-wrap:wrap;"},
+                ui.h4(manual_header[0], style="margin:0;"),
+                ui.p(manual_header[1], style="font-size:11px;color:#6b7280;margin:4px 0 0;flex:1;"),
+                ui.div(
+                    *controls,
+                    style="margin-left:auto;display:flex;align-items:center;gap:8px;"
+                )
+            )
+        else:
+            header = ui.div(
+                {"class": "viz-header"},
+                ui.h4(manual_header[0], style="margin:0;"),
+                ui.p(manual_header[1], style="font-size:11px;color:#6b7280;margin:4px 0 0;")
+            )
+    elif title:
+        header = viz_header(title, subtitle, help_text, controls=controls)
+
+    return ui.div(
+        {"class": "card", "style": base_style},
+        header,
+        ui.div(content, style="flex: 1; display: flex; flex-direction: column;")
+    )
+
 
 
 # ─── Token-alignment helper ───────────────────────────────────────────────
@@ -157,8 +199,12 @@ def bias_server_handlers(input, output, session):
     bias_cached_text_A = reactive.value("")
     bias_cached_text_B = reactive.value("")
 
-    # ── History Logic ──
+    # ── Constants for UI Consistency ──
+    _BTN_STYLE_CSV = "padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: #334155; text-decoration: none;"
+    _BTN_STYLE_PNG = "padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: #334155;"
 
+    # ── History Logic ──
+    
     @reactive.Effect
     @reactive.event(input.analyze_bias_btn)
     def update_bias_history():
@@ -248,39 +294,450 @@ def bias_server_handlers(input, output, session):
             
         await session.send_custom_message("update_bias_button_label", {"label": label})
 
+    # ── Export Infrastructure ──
+
+    _BIAS_EXPORT_FOLDER_MAP = {
+        "json": "downloads/json",
+        "csv": "downloads/csv",
+        "png": "downloads/png",
+    }
+
+    def generate_bias_export_filename(section, ext="csv", is_b=False, incl_timestamp=True, data_type=None):
+        """Generate export filename for bias section exports."""
+        try:
+            bias_key = input.bias_model_key()
+        except Exception:
+            bias_key = "gusnet-bert"
+
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+
+        parts = [f"bias_{section}"]
+        if data_type:
+            parts.append(data_type)
+        parts.append(bias_key)
+
+        if compare_models:
+            parts.append("ModelB" if is_b else "ModelA")
+        if compare_prompts:
+            parts.append("PromptB" if is_b else "PromptA")
+        if incl_timestamp:
+            parts.append(datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+
+        return f"{'_'.join(parts)}.{ext}"
+
+    def save_bias_export_to_folder(content, filename):
+        """Save export content to the appropriate project folder."""
+        ext = filename.rsplit('.', 1)[-1] if '.' in filename else ''
+        folder = _BIAS_EXPORT_FOLDER_MAP.get(ext)
+        if "session" in filename and ext == "json":
+            folder = "downloads/sessions"
+        if folder and content and not content.startswith("Error") and not content.startswith("No data"):
+            try:
+                filepath = Path(folder) / filename
+                filepath.parent.mkdir(parents=True, exist_ok=True)
+                filepath.write_text(content, encoding='utf-8')
+            except Exception:
+                pass
+
+    def auto_save_bias_download(section, ext, **gen_kwargs):
+        """Decorator replacing @render.download that also saves a copy."""
+        filename_fn = lambda: generate_bias_export_filename(section, ext, **gen_kwargs)
+        def decorator(fn):
+            @render.download(filename=filename_fn)
+            @functools.wraps(fn)
+            def wrapper():
+                parts = []
+                for chunk in fn():
+                    parts.append(str(chunk) if not isinstance(chunk, str) else chunk)
+                    yield chunk
+                if parts:
+                    content = "".join(parts)
+                    fname = filename_fn()
+                    save_bias_export_to_folder(content, fname)
+            return wrapper
+        return decorator
+
     # ── Session Logic ──
 
     @render.download(filename=lambda: f"bias_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
     def save_bias_session():
         data = {
-            "text": input.bias_input_text(),
-            "threshold": input.bias_threshold(),
+            "type": "bias_analysis",
             "timestamp": datetime.now().isoformat(),
-            "type": "bias_analysis"
+            "text": input.bias_input_text(),
+            "threshold": float(input.bias_threshold()) if input.bias_threshold() else 0.5,
         }
-        return json.dumps(data, indent=2)
+
+        # Bias model key
+        try:
+            data["bias_model_key"] = input.bias_model_key()
+        except Exception:
+            data["bias_model_key"] = "gusnet-bert"
+
+        # Compare modes
+        try:
+            data["bias_compare_mode"] = bool(input.bias_compare_mode())
+        except Exception:
+            data["bias_compare_mode"] = False
+        try:
+            data["bias_compare_prompts_mode"] = bool(input.bias_compare_prompts_mode())
+        except Exception:
+            data["bias_compare_prompts_mode"] = False
+
+        # Conditional: Model B / Text B
+        if data["bias_compare_mode"]:
+            try:
+                data["bias_model_key_B"] = input.bias_model_key_B()
+            except Exception:
+                data["bias_model_key_B"] = "gusnet-gpt2"
+        if data["bias_compare_prompts_mode"]:
+            try:
+                data["bias_input_text_B"] = input.bias_input_text_B()
+            except Exception:
+                data["bias_input_text_B"] = ""
+
+        # Layer / Head / Top-K
+        try:
+            data["bias_attn_layer"] = input.bias_attn_layer()
+        except Exception:
+            pass
+        try:
+            data["bias_attn_head"] = input.bias_attn_head()
+        except Exception:
+            pass
+        try:
+            data["bias_top_k"] = int(input.bias_top_k())
+        except Exception:
+            pass
+
+        content = json.dumps(data, indent=2)
+        # Also save to downloads/sessions/
+        save_bias_export_to_folder(content, f"bias_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+        return content
 
     @reactive.Effect
     @reactive.event(input.load_bias_session_upload)
-    def load_bias_session():
+    async def load_bias_session():
         file_info = input.load_bias_session_upload()
         if not file_info:
             return
-            
+
         try:
             with open(file_info[0]["datapath"], "r") as f:
                 data = json.load(f)
-                
-            if "text" in data:
-                ui.update_text_area("bias_input_text", value=data["text"])
+
+            # 1. Restore compare modes first (triggers UI rebuild)
+            compare_mode = data.get("bias_compare_mode", False)
+            compare_prompts = data.get("bias_compare_prompts_mode", False)
+
+            # Use JS to set switch values (standard Shiny switches)
+            if compare_mode:
+                await session.send_custom_message("bias_eval_js",
+                    "var sw=$('#bias_compare_mode'); if(sw.length && !sw.prop('checked')){sw.prop('checked',true).trigger('change');}")
+            if compare_prompts:
+                await session.send_custom_message("bias_eval_js",
+                    "var sw=$('#bias_compare_prompts_mode'); if(sw.length && !sw.prop('checked')){sw.prop('checked',true).trigger('change');}")
+
+            # 2. Wait for UI to rebuild, then restore controls via JS
+            await asyncio.sleep(0.3)
+
+            restore_data = {}
+            if "bias_model_key" in data:
+                restore_data["bias_model_key"] = data["bias_model_key"]
+            if "bias_model_key_B" in data:
+                restore_data["bias_model_key_B"] = data["bias_model_key_B"]
             if "threshold" in data:
-                ui.update_slider("bias_threshold", value=data["threshold"])
-                
-            # Trigger analysis automatically as sessions usually imply a saved result state
-            # but we just restore parameters here for now to be safe
+                restore_data["threshold"] = data["threshold"]
+
+            if restore_data:
+                await session.send_custom_message("restore_bias_session_controls", restore_data)
+
+            # 3. Restore text inputs
+            if "text" in data:
+                await session.send_custom_message("bias_eval_js",
+                    f"var ta=document.getElementById('bias_input_text'); if(ta){{ta.value={json.dumps(data['text'])}; Shiny.setInputValue('bias_input_text',ta.value,{{priority:'event'}});}}")
+            if "bias_input_text_B" in data:
+                await session.send_custom_message("bias_eval_js",
+                    f"var ta=document.getElementById('bias_input_text_B'); if(ta){{ta.value={json.dumps(data['bias_input_text_B'])}; Shiny.setInputValue('bias_input_text_B',ta.value,{{priority:'event'}});}}")
+
+            # 4. Restore layer/head selections (after a small delay for selects to populate)
+            await asyncio.sleep(0.2)
+            if "bias_attn_layer" in data:
+                ui.update_select("bias_attn_layer", selected=str(data["bias_attn_layer"]))
+            if "bias_attn_head" in data:
+                ui.update_select("bias_attn_head", selected=str(data["bias_attn_head"]))
+
+            ui.notification_show("Bias session loaded successfully.", type="message", duration=3)
+
         except Exception as e:
             print(f"Error loading bias session: {e}")
             traceback.print_exc()
+            ui.notification_show(f"Error loading session: {e}", type="error")
+
+    # ── CSV Export Handlers (8 pairs: A and B) ──
+
+    # 1. Bias Summary
+    @auto_save_bias_download("summary", "csv")
+    def export_bias_summary():
+        res = bias_results.get()
+        if not res:
+            yield "No data available"
+            return
+        s = res["bias_summary"]
+        lines = ["metric,value"]
+        for k, v in s.items():
+            lines.append(f"{k},{v}")
+        yield "\n".join(lines)
+
+    @auto_save_bias_download("summary", "csv", is_b=True)
+    def export_bias_summary_B():
+        res = bias_results_B.get()
+        if not res:
+            yield "No data available"
+            return
+        s = res["bias_summary"]
+        lines = ["metric,value"]
+        for k, v in s.items():
+            lines.append(f"{k},{v}")
+        yield "\n".join(lines)
+
+    # 2. Bias Spans (Detected Bias Tokens)
+    @auto_save_bias_download("spans", "csv")
+    def export_bias_spans():
+        res = bias_results.get()
+        if not res:
+            yield "No data available"
+            return
+        lines = ["token,index,bias_types,GEN,UNFAIR,STEREO,max_score"]
+        for lbl in res["token_labels"]:
+            if not lbl.get("is_biased"):
+                continue
+            scores = lbl.get("scores", {})
+            types = ";".join(lbl.get("bias_types", []))
+            max_s = max((scores.get(t, 0) for t in lbl.get("bias_types", [])), default=0)
+            lines.append(f"{lbl['token']},{lbl['index']},{types},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f},{max_s:.4f}")
+        yield "\n".join(lines)
+
+    @auto_save_bias_download("spans", "csv", is_b=True)
+    def export_bias_spans_B():
+        res = bias_results_B.get()
+        if not res:
+            yield "No data available"
+            return
+        lines = ["token,index,bias_types,GEN,UNFAIR,STEREO,max_score"]
+        for lbl in res["token_labels"]:
+            if not lbl.get("is_biased"):
+                continue
+            scores = lbl.get("scores", {})
+            types = ";".join(lbl.get("bias_types", []))
+            max_s = max((scores.get(t, 0) for t in lbl.get("bias_types", [])), default=0)
+            lines.append(f"{lbl['token']},{lbl['index']},{types},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f},{max_s:.4f}")
+        yield "\n".join(lines)
+
+    # 3. Token Bias Strip
+    @auto_save_bias_download("strip", "csv")
+    def export_bias_strip():
+        res = bias_results.get()
+        if not res:
+            yield "No data available"
+            return
+        lines = ["token,index,is_biased,O,GEN,UNFAIR,STEREO"]
+        for lbl in res["token_labels"]:
+            scores = lbl.get("scores", {})
+            lines.append(f"{lbl['token']},{lbl['index']},{lbl.get('is_biased',False)},{scores.get('O',0):.4f},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f}")
+        yield "\n".join(lines)
+
+    @auto_save_bias_download("strip", "csv", is_b=True)
+    def export_bias_strip_B():
+        res = bias_results_B.get()
+        if not res:
+            yield "No data available"
+            return
+        lines = ["token,index,is_biased,O,GEN,UNFAIR,STEREO"]
+        for lbl in res["token_labels"]:
+            scores = lbl.get("scores", {})
+            lines.append(f"{lbl['token']},{lbl['index']},{lbl.get('is_biased',False)},{scores.get('O',0):.4f},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f}")
+        yield "\n".join(lines)
+
+    # 4. Confidence Breakdown
+    @auto_save_bias_download("confidence", "csv")
+    def export_bias_confidence():
+        res = bias_results.get()
+        if not res:
+            yield "No data available"
+            return
+        lines = ["token,index,tier,max_score,bias_types"]
+        for lbl in res["token_labels"]:
+            if not lbl.get("is_biased"):
+                continue
+            scores = lbl.get("scores", {})
+            types = lbl.get("bias_types", [])
+            max_s = max((scores.get(t, 0) for t in types), default=0)
+            tier = "high" if max_s >= 0.85 else ("medium" if max_s >= 0.70 else "low")
+            lines.append(f"{lbl['token']},{lbl['index']},{tier},{max_s:.4f},{';'.join(types)}")
+        yield "\n".join(lines)
+
+    @auto_save_bias_download("confidence", "csv", is_b=True)
+    def export_bias_confidence_B():
+        res = bias_results_B.get()
+        if not res:
+            yield "No data available"
+            return
+        lines = ["token,index,tier,max_score,bias_types"]
+        for lbl in res["token_labels"]:
+            if not lbl.get("is_biased"):
+                continue
+            scores = lbl.get("scores", {})
+            types = lbl.get("bias_types", [])
+            max_s = max((scores.get(t, 0) for t in types), default=0)
+            tier = "high" if max_s >= 0.85 else ("medium" if max_s >= 0.70 else "low")
+            lines.append(f"{lbl['token']},{lbl['index']},{tier},{max_s:.4f},{';'.join(types)}")
+        yield "\n".join(lines)
+
+    # 5. Combined Bias View (Attention Matrix CSV)
+    @auto_save_bias_download("combined", "csv")
+    def export_bias_combined():
+        res = bias_results.get()
+        if not res:
+            yield "No data available"
+            return
+        try:
+            l_idx = int(input.bias_attn_layer())
+            h_idx = int(input.bias_attn_head())
+        except Exception:
+            l_idx, h_idx = 0, 0
+        atts = res["attentions"]
+        if not atts or l_idx >= len(atts):
+            yield "No attention data"
+            return
+        tokens = res["tokens"]
+        attn = atts[l_idx][0, h_idx].cpu().numpy()
+        header = "query_token," + ",".join(tokens)
+        lines = [header]
+        for i, tok in enumerate(tokens):
+            vals = ",".join(f"{attn[i,j]:.6f}" for j in range(len(tokens)))
+            lines.append(f"{tok},{vals}")
+        yield "\n".join(lines)
+
+    @auto_save_bias_download("combined", "csv", is_b=True)
+    def export_bias_combined_B():
+        res = bias_results_B.get()
+        if not res:
+            yield "No data available"
+            return
+        try:
+            l_idx = int(input.bias_attn_layer())
+            h_idx = int(input.bias_attn_head())
+        except Exception:
+            l_idx, h_idx = 0, 0
+        atts = res["attentions"]
+        if not atts or l_idx >= len(atts):
+            yield "No attention data"
+            return
+        tokens = res["tokens"]
+        attn = atts[l_idx][0, h_idx].cpu().numpy()
+        header = "query_token," + ",".join(tokens)
+        lines = [header]
+        for i, tok in enumerate(tokens):
+            vals = ",".join(f"{attn[i,j]:.6f}" for j in range(len(tokens)))
+            lines.append(f"{tok},{vals}")
+        yield "\n".join(lines)
+
+    # 6. Attention Bias Matrix
+    @auto_save_bias_download("matrix", "csv")
+    def export_bias_matrix():
+        res = bias_results.get()
+        if not res:
+            yield "No data available"
+            return
+        metrics = res.get("attention_metrics", [])
+        if not metrics:
+            yield "No metrics available"
+            return
+        lines = ["layer,head,bias_attention_ratio,specialized"]
+        for m in metrics:
+            lines.append(f"{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.specialized_for_bias}")
+        yield "\n".join(lines)
+
+    @auto_save_bias_download("matrix", "csv", is_b=True)
+    def export_bias_matrix_B():
+        res = bias_results_B.get()
+        if not res:
+            yield "No data available"
+            return
+        metrics = res.get("attention_metrics", [])
+        if not metrics:
+            yield "No metrics available"
+            return
+        lines = ["layer,head,bias_attention_ratio,specialized"]
+        for m in metrics:
+            lines.append(f"{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.specialized_for_bias}")
+        yield "\n".join(lines)
+
+    # 7. Bias Propagation
+    @auto_save_bias_download("propagation", "csv")
+    def export_bias_propagation():
+        res = bias_results.get()
+        if not res:
+            yield "No data available"
+            return
+        prop = res["propagation_analysis"]["layer_propagation"]
+        if not prop:
+            yield "No propagation data"
+            return
+        lines = ["layer,mean_bar,max_bar,min_bar"]
+        for p in prop:
+            lines.append(f"{p['layer']},{p['mean_ratio']:.4f},{p['max_ratio']:.4f},{p['min_ratio']:.4f}")
+        yield "\n".join(lines)
+
+    @auto_save_bias_download("propagation", "csv", is_b=True)
+    def export_bias_propagation_B():
+        res = bias_results_B.get()
+        if not res:
+            yield "No data available"
+            return
+        prop = res["propagation_analysis"]["layer_propagation"]
+        if not prop:
+            yield "No propagation data"
+            return
+        lines = ["layer,mean_bar,max_bar,min_bar"]
+        for p in prop:
+            lines.append(f"{p['layer']},{p['mean_ratio']:.4f},{p['max_ratio']:.4f},{p['min_ratio']:.4f}")
+        yield "\n".join(lines)
+
+    # 8. Top Bias-Focused Heads
+    @auto_save_bias_download("top_heads", "csv")
+    def export_bias_top_heads():
+        res = bias_results.get()
+        if not res:
+            yield "No data available"
+            return
+        metrics = res.get("attention_metrics", [])
+        if not metrics:
+            yield "No metrics available"
+            return
+        top = sorted(metrics, key=lambda m: m.bias_attention_ratio, reverse=True)[:5]
+        lines = ["rank,layer,head,bar,specialized"]
+        for i, m in enumerate(top, 1):
+            lines.append(f"{i},{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.specialized_for_bias}")
+        yield "\n".join(lines)
+
+    @auto_save_bias_download("top_heads", "csv", is_b=True)
+    def export_bias_top_heads_B():
+        res = bias_results_B.get()
+        if not res:
+            yield "No data available"
+            return
+        metrics = res.get("attention_metrics", [])
+        if not metrics:
+            yield "No metrics available"
+            return
+        top = sorted(metrics, key=lambda m: m.bias_attention_ratio, reverse=True)[:5]
+        lines = ["rank,layer,head,bar,specialized"]
+        for i, m in enumerate(top, 1):
+            lines.append(f"{i},{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.specialized_for_bias}")
+        yield "\n".join(lines)
 
     def log_debug(msg):
         with open("bias_debug.log", "a") as f:
@@ -504,7 +961,7 @@ def bias_server_handlers(input, output, session):
                         loop.run_in_executor(
                             pool, heavy_bias_compute, text, model_name, threshold, bias_model_key,
                         ),
-                        timeout=60.0
+                        timeout=180.0
                     )
                     log_debug("heavy_bias_compute A returned successfully")
                     bias_results.set(result)
@@ -524,7 +981,7 @@ def bias_server_handlers(input, output, session):
                             loop.run_in_executor(
                                 pool, heavy_bias_compute, text, model_name, threshold, bias_model_key_B,
                             ),
-                            timeout=60.0
+                            timeout=180.0
                         )
                         bias_results_B.set(result_B)
                         bias_cached_text_B.set(text)  # Same text for compare models
@@ -542,7 +999,7 @@ def bias_server_handlers(input, output, session):
                                 loop.run_in_executor(
                                     pool, heavy_bias_compute, text_B, model_name, threshold, bias_model_key,
                                 ),
-                                timeout=60.0
+                                timeout=180.0
                             )
                             bias_results_B.set(result_B)
                             bias_cached_text_B.set(text_B)
@@ -554,7 +1011,7 @@ def bias_server_handlers(input, output, session):
                         bias_cached_text_B.set("")
 
             except asyncio.TimeoutError:
-                msg = "ERROR: Bias analysis timed out (limit: 60s)"
+                msg = "ERROR: Bias analysis timed out (limit: 180s)"
                 log_debug(msg)
                 print(msg)
                 ui.notification_show("Analysis timed out.", type="error")
@@ -591,15 +1048,21 @@ def bias_server_handlers(input, output, session):
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
 
-        try:
-            text = input.bias_input_text().strip()
-        except Exception:
-            text = ""
+        # Use cached texts when results exist to prevent re-rendering on input change
+        # Only read live inputs when there are no results (pre-analysis state)
+        if res or running:
+            text = bias_cached_text_A.get()
+            text_B = bias_cached_text_B.get()
+        else:
+            try:
+                text = input.bias_input_text().strip()
+            except Exception:
+                text = ""
 
-        try:
-            text_B = input.bias_input_text_B().strip()
-        except Exception:
-            text_B = ""
+            try:
+                text_B = input.bias_input_text_B().strip()
+            except Exception:
+                text_B = ""
 
         from .renderers import get_gusnet_architecture_section
 
@@ -635,7 +1098,7 @@ def bias_server_handlers(input, output, session):
                             ui.h3(header_A, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
                             ui.div(
                                 {"class": "card compare-card-a", "style": "min-height: auto;"},
-                                ui.h4(f"Sentence Preview ({_get_bias_model_label(res)})" if compare_models else "Sentence Preview", style="margin: 0 0 8px 0;"),
+                                ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                                 ui.HTML(preview_html_A),
                             ),
                         ),
@@ -644,7 +1107,7 @@ def bias_server_handlers(input, output, session):
                             ui.h3(header_B, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                             ui.div(
                                 {"class": "card compare-card-b", "style": "min-height: auto;"},
-                                ui.h4(f"Sentence Preview ({_get_bias_model_label(res_B)})" if compare_models else "Sentence Preview", style="margin: 0 0 8px 0;"),
+                                ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                                 ui.HTML(preview_html_B),
                             ),
                         ),
@@ -800,10 +1263,24 @@ def bias_server_handlers(input, output, session):
         except Exception:
             text_B = ""
 
+        # Get Model B selection for Compare Models mode
+        try:
+            model_b = input.bias_model_key_B()
+            if not model_b:
+                model_b = "gusnet-gpt2"  # Default Model B
+        except Exception:
+            model_b = "gusnet-gpt2"
+
+        # Determine if we're in compare prompts mode (text_B present but not compare_models)
+        current_compare_prompts = bool(text_B) and not current_compare_models
+
         arch_section = ui.div(
             get_gusnet_architecture_section(
                 selected_model=selected_model,
                 compare_mode=current_compare_models,
+                compare_prompts=current_compare_prompts,
+                model_a=selected_model,  # Model A comes from main selector
+                model_b=model_b,  # Model B comes from compare selector
             ),
         )
 
@@ -892,8 +1369,6 @@ def bias_server_handlers(input, output, session):
 
     @output
     @render.ui
-    @output
-    @render.ui
     def bias_summary():
         res = bias_results.get()
         if not res:
@@ -942,34 +1417,23 @@ def bias_server_handlers(input, output, session):
             return criteria_html + cards
         
         if (compare_models or compare_prompts) and res_B:
-            # Side-by-side layout
             content_A = get_summary_cards(res)
             content_B = get_summary_cards(res_B)
-            
-            # Labels
-            if compare_models:
-                lbl_A = _get_bias_model_label(res)
-                lbl_B = _get_bias_model_label(res_B)
-            else:
-                lbl_A = "Prompt A"
-                lbl_B = "Prompt B"
-                
+
+            header_args = ("Bias Detection Summary",
+                          "Composite bias level with explicit weighted criteria and per-category counts.",
+                          "Level = weighted composite of token density (30%), generalizations (20%), unfair language (25%), and stereotypes (25%).")
+
             return ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;"},
-                # Col A
-                ui.div(
-                    ui.h4(lbl_A, style="color:#3b82f6;border-bottom:2px solid #3b82f6;padding-bottom:4px;margin-bottom:12px;text-transform:uppercase;font-size:12px;letter-spacing:1px;"),
-                    ui.HTML(content_A)
-                ),
-                # Col B
-                ui.div(
-                    ui.h4(lbl_B, style="color:#ff5ca9;border-bottom:2px solid #ff5ca9;padding-bottom:4px;margin-bottom:12px;text-transform:uppercase;font-size:12px;letter-spacing:1px;"),
-                    ui.HTML(content_B)
-                )
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(ui.HTML(content_A), *header_args, style="margin-bottom:0; border: 2px solid #3b82f6; height: 100%;"),
+                _wrap_card(ui.HTML(content_B), *header_args, style="margin-bottom:0; border: 2px solid #ff5ca9; height: 100%;")
             )
         else:
-            # Single view
-            return ui.HTML(get_summary_cards(res))
+            header_args = ("Bias Detection Summary",
+                          "Composite bias level with explicit weighted criteria and per-category counts.",
+                          "Level = weighted composite of token density (30%), generalizations (20%), unfair language (25%), and stereotypes (25%).")
+            return _wrap_card(ui.HTML(get_summary_cards(res)), *header_args, style="margin-bottom: 24px;")
 
     # ── Inline bias view (primary) ──
 
@@ -1194,59 +1658,86 @@ def bias_server_handlers(input, output, session):
         try: threshold = float(input.bias_threshold())
         except: threshold = 0.5
 
-        def get_view(data, is_B=False):
+        def get_content_html(items, t, c, s_idxs):
+            import math
+            n_items = len(items)
+            mid_point = math.ceil(n_items / 2)
+            items_col1 = items[:mid_point]
+            items_col2 = items[mid_point:]
+            
+            lbl_info = f'Threshold: <code>{t:.2f}</code>'
+            
+            return (
+                f'<div style="display:flex;gap:16px;border:1px solid rgba(226,232,240,0.4);border-radius:8px;overflow:hidden;">'
+                f'<div style="flex:1;display:flex;flex-direction:column;">{"".join(items_col1)}</div>'
+                f'<div style="flex:1;display:flex;flex-direction:column;border-left:1px solid rgba(226,232,240,0.4);">{"".join(items_col2)}</div>'
+                f'</div>'
+                f'<div style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:center;">{lbl_info}</div>'
+            )
+            
+        # Helper to build content list
+        def build_items(data, s_idxs):
+             # Re-implement item building logic here, or just call logic
+             # For brevity in this replacement, assume get_view logic is split
+             # Actually I need to fully rewrite get_view to return the HTML string, then wrap in card.
+             pass
+
+        # Let's just inline the wrapping into the main logic
+        
+        # ... logic to build HTML items ...
+        # Copied from previous implementation
+        def produce_html(data, is_B):
             token_labels = data["token_labels"]
             biased = [l for l in token_labels if l.get("is_biased") and l["token"] not in ("[CLS]","[SEP]","[PAD]")]
-            if not biased:
-                return ui.HTML('<div style="color:#9ca3af;font-size:12px;padding:12px;">No biased tokens detected.</div>')
+            if not biased: return '<div style="color:#9ca3af;font-size:12px;padding:12px;">No biased tokens detected.</div>'
             
             cat_colors = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
             items = []
-            
             sel_indices = []
             if not is_B:
-                try:
+                try: 
                     s = input.bias_selected_tokens()
-                    if s: sel_indices = [int(s)] if isinstance(s, (int,str)) else [int(x) for x in s if x is not None]
+                    if s: sel_indices = [int(s)] if isinstance(s,(int,str)) else [int(x) for x in s if x]
                 except: pass
                 
             for lbl in biased:
                 clean = lbl["token"].replace("##", "").replace("\u0120", "")
                 types = lbl.get("bias_types", [])
                 scores = lbl.get("scores", {})
-                
-                badges = "".join([
-                    f'<span style="display:inline-flex;align-items:center;gap:4px;background:{cat_colors.get(t,"#ff5ca9")}18;border:1px solid {cat_colors.get(t,"#ff5ca9")}40;color:{cat_colors.get(t,"#ff5ca9")};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;">{t}<span style="font-family:JetBrains Mono;font-weight:400;opacity:0.8;">{scores.get(t,0):.2f}</span></span>' 
-                    for t in types
-                ])
-                
+                badges = "".join([f'<span style="display:inline-flex;align-items:center;gap:4px;background:{cat_colors.get(t,"#ff5ca9")}18;border:1px solid {cat_colors.get(t,"#ff5ca9")}40;color:{cat_colors.get(t,"#ff5ca9")};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;">{t}<span style="font-family:JetBrains Mono;font-weight:400;opacity:0.8;">{scores.get(t,0):.2f}</span></span>' for t in types])
                 style = "display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(226,232,240,0.4);"
-                if lbl["index"] in sel_indices:
-                    style += "background:rgba(255, 92, 169, 0.1); border-left: 3px solid #ff5ca9;"
-                    
+                if lbl["index"] in sel_indices: style += "background:rgba(255, 92, 169, 0.1); border-left: 3px solid #ff5ca9;"
                 items.append(f'<div style="{style}"><span style="font-family:JetBrains Mono;font-size:13px;font-weight:600;color:#ec4899;min-width:70px;">{clean}</span><span style="display:flex;gap:4px;flex-wrap:wrap;">{badges}</span></div>')
-                
+            
             import math
             mid = math.ceil(len(items)/2)
             c1, c2 = items[:mid], items[mid:]
-            
-            lbl_info = f'Threshold: <code>{threshold:.2f}</code> · {_get_bias_model_label(data)}'
-            
-            return ui.HTML(
-                f'<div style="display:flex;gap:16px;border:1px solid rgba(226,232,240,0.4);border-radius:8px;overflow:hidden;">'
-                f'<div style="flex:1;display:flex;flex-direction:column;">{"".join(c1)}</div>'
-                f'<div style="flex:1;display:flex;flex-direction:column;border-left:1px solid rgba(226,232,240,0.4);">{"".join(c2)}</div>'
-                f'</div>'
-                f'<div style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:center;">{lbl_info}</div>'
-            )
+            lbl_info = f'Threshold: <code>{threshold:.2f}</code>'
+            return (f'<div style="display:flex;gap:16px;border:1px solid rgba(226,232,240,0.4);border-radius:8px;overflow:hidden;">'
+                    f'<div style="flex:1;display:flex;flex-direction:column;">{"".join(c1)}</div>'
+                    f'<div style="flex:1;display:flex;flex-direction:column;border-left:1px solid rgba(226,232,240,0.4);">{"".join(c2)}</div>'
+                    f'</div><div style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:center;">{lbl_info}</div>')
+
+        # Use manual header for Detected Bias Tokens
+        # old ui: h4("Detected Bias Tokens", ...), p(...)
+        man_header = ("Detected Bias Tokens", "Each biased token with its category labels and confidence scores.")
+        
+        # Additional footer: bias_method_info (was separate)
+        # Should we include it in the card? The previous UI had `ui.hr(), ui.output_ui("bias_method_info")` INSIDE the card.
+        # So we should append it to content.
+        # But bias_method_info is a separate renderer. We can't easily call it here unless we duplicate it or it returns string.
+        # `create_method_info_html` returns string. So we can just call that.
+        
+        method_html = create_method_info_html()
+        method_footer = f'<div style="margin-top: auto;"><hr style="margin:16px 0;opacity:0.3;"/>{method_html}</div>'
 
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;"},
-                ui.div(ui.h4(_get_label(res, True, compare_models), style="text-align:center;color:#3b82f6;border-bottom:1px solid #3b82f6;padding-bottom:4px;margin-bottom:8px;font-size:12px;font-weight:bold;text-transform:uppercase;"), get_view(res, False)),
-                ui.div(ui.h4(_get_label(res_B, False, compare_models), style="text-align:center;color:#ff5ca9;border-bottom:1px solid #ff5ca9;padding-bottom:4px;margin-bottom:8px;font-size:12px;font-weight:bold;text-transform:uppercase;"), get_view(res_B, True))
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res, False)}</div>' + method_footer), manual_header=man_header, style="border: 2px solid #3b82f6; height: 100%;"),
+                _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res_B, True)}</div>' + method_footer), manual_header=man_header, style="border: 2px solid #ff5ca9; height: 100%;")
             )
-        return get_view(res)
+        return _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res, False)}</div>' + method_footer), manual_header=man_header)
 
     @output
     @render.ui
@@ -1258,19 +1749,64 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
         
+        # Get selected token index for highlighting
+        try:
+            sel = input.bias_selected_tokens()
+            selected_idx = [int(sel)] if sel else None
+        except:
+            selected_idx = None
+        
+        def get_viz(data, sel_idx=None):
+            try:
+                return create_token_bias_strip(data["token_labels"], sel_idx)
+            except Exception as e: return f'<div style="color:red">Error: {e}</div>'
+
+        man_header = ("Token-Level Bias Distribution",
+                      "Each token with per-category scores. Coloured dots and values show bias intensity across O, GEN, UNFAIR, and STEREO.")
+
+        if (compare_models or compare_prompts) and res_B:
+             return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(ui.HTML(get_viz(res, selected_idx)), manual_header=man_header, style="border: 2px solid #3b82f6; height: 100%;",
+                           controls=[ui.download_button("export_bias_strip", "CSV", style=_BTN_STYLE_CSV)]),
+                _wrap_card(ui.HTML(get_viz(res_B)), manual_header=man_header, style="border: 2px solid #ff5ca9; height: 100%;",
+                           controls=[ui.download_button("export_bias_strip_B", "CSV", style=_BTN_STYLE_CSV)])
+            )
+        return _wrap_card(ui.HTML(get_viz(res, selected_idx)), manual_header=man_header,
+                          controls=[ui.download_button("export_bias_strip", "CSV", style=_BTN_STYLE_CSV)])
+
+    @output
+    @render.ui
+    def confidence_breakdown():
+        res = bias_results.get()
+        if not res:
+            return ui.HTML(
+                '<div style="color:#9ca3af;padding:20px;text-align:center;">'
+                'No analysis results yet.</div>'
+            )
+
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+        res_B = bias_results_B.get()
+
         def get_viz(data):
             try:
-                fig = create_token_bias_heatmap(data["token_labels"], data["text"])
-                return fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
-            except Exception as e: return f'<div style="color:red">Error: {e}</div>'
+                return create_confidence_breakdown(data["token_labels"])
+            except Exception as e:
+                return f'<div style="color:red">Error: {e}</div>'
+
+        man_header = (
+            "Confidence Breakdown",
+            "Biased tokens grouped by confidence tier — Low (0.50–0.70), Medium (0.70–0.85), High (0.85+)."
+        )
 
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;"},
-                ui.div(ui.HTML(get_viz(res))),
-                ui.div(ui.HTML(get_viz(res_B)))
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(ui.HTML(get_viz(res)), manual_header=man_header, style="border: 2px solid #3b82f6; height: 100%;"),
+                _wrap_card(ui.HTML(get_viz(res_B)), manual_header=man_header, style="border: 2px solid #ff5ca9; height: 100%;"),
             )
-        return ui.HTML(get_viz(res))
+        return _wrap_card(ui.HTML(get_viz(res)), manual_header=man_header)
 
     @output
     @render.ui
@@ -1291,25 +1827,95 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
 
-        def get_viz(data, s_idxs):
+        def get_viz(data, s_idxs, container_id="bias-combined-container"):
             atts = data["attentions"]
             if not atts or l_idx >= len(atts): return '<div style="color:#9ca3af;">No attention data.</div>'
             try:
-                # For Model B, if architectures differ, we might check bounds? 
-                # Assuming similar arch for now or handling index error.
                 if l_idx >= len(atts): return '<div style="color:#9ca3af;">Layer out of bounds.</div>'
                 attn = atts[l_idx][0, h_idx].cpu().numpy()
                 fig = create_combined_bias_visualization(data["tokens"], data["token_labels"], attn, l_idx, h_idx, selected_token_idx=s_idxs)
-                return fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
+                plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
+                return f'<div id="{container_id}">{plot_html}</div>'
             except Exception as e: return f'<div style="color:red">Error: {e}</div>'
+
+        man_header = ("Combined Attention & Bias View",
+                      "Attention weights for a single head with pink row/column highlights on biased tokens. Use the toolbar to change layer and head.")
+        card_style = "margin-bottom: 24px; box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
 
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; assign-items: start;"},
-                ui.div(ui.h4(f"L{l_idx}·H{h_idx} (A)", style="text-align:center;font-size:12px;color:#64748b;margin-bottom:8px;"), ui.HTML(get_viz(res, sel))),
-                ui.div(ui.h4(f"L{l_idx}·H{h_idx} (B)", style="text-align:center;font-size:12px;color:#64748b;margin-bottom:8px;"), ui.HTML(get_viz(res_B, None))) # No selection sync yet
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(ui.HTML(get_viz(res, sel, "bias-combined-container")), manual_header=man_header, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
+                           controls=[
+                               ui.download_button("export_bias_combined", "CSV", style=_BTN_STYLE_CSV),
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container', 'bias_combined_A')", style=_BTN_STYLE_PNG),
+                           ]),
+                _wrap_card(ui.HTML(get_viz(res_B, None, "bias-combined-container-B")), manual_header=man_header, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                           controls=[
+                               ui.download_button("export_bias_combined_B", "CSV", style=_BTN_STYLE_CSV),
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container-B', 'bias_combined_B')", style=_BTN_STYLE_PNG),
+                           ])
             )
-        return ui.HTML(get_viz(res, sel))
+        return _wrap_card(ui.HTML(get_viz(res, sel, "bias-combined-container")), manual_header=man_header, style=card_style,
+                          controls=[
+                              ui.download_button("export_bias_combined", "CSV", style=_BTN_STYLE_CSV),
+                              ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container', 'bias_combined')", style=_BTN_STYLE_PNG),
+                          ])
+
+    @output
+    @render.ui
+    def attention_bias_matrix():
+        res = bias_results.get()
+        if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
+        
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+        res_B = bias_results_B.get()
+        
+        # Analyzer instance for metrics
+        analyzer = AttentionBiasAnalyzer()
+
+        def get_viz(data, container_id="bias-matrix-container"):
+            try:
+                if "attentions" not in data or not data["attentions"]:
+                     return '<div style="color:#9ca3af;">No attention data.</div>'
+
+                attentions = data["attentions"]
+                biased_indices = [l["index"] for l in data["token_labels"] if l.get("is_biased") and l["token"] not in ("[CLS]","[SEP]","[PAD]")]
+                matrix = analyzer.create_attention_bias_matrix(attentions, biased_indices)
+                metrics = data.get("attention_metrics")
+                try: sl = int(input.bias_attn_layer())
+                except: sl = None
+
+                fig = create_attention_bias_matrix(matrix, metrics=metrics, selected_layer=sl)
+                plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
+                return f'<div id="{container_id}">{plot_html}</div>'
+            except Exception as e: return f'<div style="color:red">Error: {e}</div>'
+
+        header_args = ("Bias Attention Matrix",
+            "Each cell = ratio of attention a head pays to biased tokens vs. the uniform baseline.",
+            "Values centred on 1.0 (neutral). Red > 1.5 = head specializes on biased tokens. Blue < 1.0 = head avoids them.")
+        card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
+
+        if (compare_models or compare_prompts) and res_B:
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(ui.HTML(get_viz(res, "bias-matrix-container")), *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
+                           controls=[
+                               ui.download_button("export_bias_matrix", "CSV", style=_BTN_STYLE_CSV),
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container', 'bias_matrix_A')", style=_BTN_STYLE_PNG),
+                           ]),
+                _wrap_card(ui.HTML(get_viz(res_B, "bias-matrix-container-B")), *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                           controls=[
+                               ui.download_button("export_bias_matrix_B", "CSV", style=_BTN_STYLE_CSV),
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container-B', 'bias_matrix_B')", style=_BTN_STYLE_PNG),
+                           ])
+            )
+        return _wrap_card(ui.HTML(get_viz(res, "bias-matrix-container")), *header_args, style=card_style,
+                          controls=[
+                              ui.download_button("export_bias_matrix", "CSV", style=_BTN_STYLE_CSV),
+                              ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container', 'bias_matrix')", style=_BTN_STYLE_PNG),
+                          ])
 
     @output
     @render.ui
@@ -1324,19 +1930,37 @@ def bias_server_handlers(input, output, session):
         try: l_idx = int(input.bias_attn_layer())
         except: l_idx = None
 
-        def get_viz(data):
+        def get_viz(data, container_id="bias-propagation-container"):
             p = data["propagation_analysis"]["layer_propagation"]
             if not p: return "No data."
             fig = create_bias_propagation_plot(p, selected_layer=l_idx)
-            return fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
+            plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
+            return f'<div id="{container_id}">{plot_html}</div>'
+
+        header_args = ("Bias Propagation Across Layers",
+                      "Mean bias attention ratio per layer — how bias focus evolves through model depth.",
+                      "The dashed line at 1.0 represents neutral attention. Values above indicate increasing bias focus.")
+        card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
 
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px;"},
-                ui.div(ui.HTML(get_viz(res))),
-                ui.div(ui.HTML(get_viz(res_B)))
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(ui.HTML(get_viz(res, "bias-propagation-container")), *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
+                           controls=[
+                               ui.download_button("export_bias_propagation", "CSV", style=_BTN_STYLE_CSV),
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container', 'bias_propagation_A')", style=_BTN_STYLE_PNG),
+                           ]),
+                _wrap_card(ui.HTML(get_viz(res_B, "bias-propagation-container-B")), *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                           controls=[
+                               ui.download_button("export_bias_propagation_B", "CSV", style=_BTN_STYLE_CSV),
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container-B', 'bias_propagation_B')", style=_BTN_STYLE_PNG),
+                           ])
             )
-        return ui.HTML(get_viz(res))
+        return _wrap_card(ui.HTML(get_viz(res, "bias-propagation-container")), *header_args, style=card_style,
+                          controls=[
+                              ui.download_button("export_bias_propagation", "CSV", style=_BTN_STYLE_CSV),
+                              ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container', 'bias_propagation')", style=_BTN_STYLE_PNG),
+                          ])
 
     @output
     @render.ui
@@ -1353,27 +1977,72 @@ def bias_server_handlers(input, output, session):
 
         def get_table(data):
             mets = data["attention_metrics"]
-            if not mets: return '<div style="color:#9ca3af;">No metrics.</div>'
+            if not mets: return '<div style="color:#9ca3af;padding:20px;text-align:center;font-size:12px;">No metrics available.</div>'
             top = sorted(mets, key=lambda x: x.bias_attention_ratio, reverse=True)[:5]
             rows = []
-            for m in top:
+            for rank, m in enumerate(top, 1):
                 is_sel = (m.layer == l_idx and m.head == h_idx)
                 is_sig = m.specialized_for_bias
-                bg = "background:rgba(67, 56, 202, 0.15);" if is_sel else ("background:rgba(255,92,169,0.04);" if is_sig else "")
-                col = "#ff5ca9" if is_sig else "#64748b"
-                dot = "●" if is_sig else "○"
-                dot_c = "#22c55e" if is_sig else "#94a3b8"
-                rows.append(f'<tr style="{bg}"><td style="padding:4px;border-bottom:1px solid #e2e8f0;text-align:center;">L{m.layer}</td><td style="padding:4px;border-bottom:1px solid #e2e8f0;text-align:center;">H{m.head}</td><td style="padding:4px;text-align:right;color:{col};font-weight:600;">{m.bias_attention_ratio:.2f}<span style="color:{dot_c};font-size:8px;margin-left:2px;">{dot}</span></td></tr>')
-            
-            return f'<table style="width:100%;font-size:11px;"><thead><tr style="color:#64748b;"><th>Lay</th><th>Hd</th><th style="text-align:right;">BAR</th></tr></thead><tbody>{"".join(rows)}</tbody></table>'
+
+                # Row background
+                if is_sel:
+                    bg = "background:linear-gradient(90deg, rgba(99, 102, 241, 0.12), rgba(99, 102, 241, 0.05));"
+                    border_left = "border-left: 3px solid #6366f1;"
+                elif is_sig:
+                    bg = "background:rgba(255, 92, 169, 0.03);"
+                    border_left = ""
+                else:
+                    bg = ""
+                    border_left = ""
+
+                # Badge for specialization
+                if is_sig:
+                    badge = '<span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#16a34a);margin-left:6px;" title="Specialized"><span style="color:white;font-size:8px;font-weight:700;">✓</span></span>'
+                else:
+                    badge = '<span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#e2e8f0;margin-left:6px;" title="Not specialized"><span style="color:#94a3b8;font-size:8px;">○</span></span>'
+
+                # Value color
+                val_color = "#ff5ca9" if is_sig else "#475569"
+
+                rows.append(
+                    f'<tr style="{bg}{border_left}transition:all 0.2s ease;">'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-weight:500;color:#64748b;font-size:11px;">#{rank}</td>'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{m.layer}</td>'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{m.head}</td>'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{val_color};">{m.bias_attention_ratio:.3f}{badge}</td>'
+                    f'</tr>'
+                )
+
+            return (
+                '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+                '<thead>'
+                '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
+                '<th style="padding:10px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
+                '<th style="padding:10px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Layer</th>'
+                '<th style="padding:10px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
+                '<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">BAR</th>'
+                '</tr>'
+                '</thead>'
+                f'<tbody>{"".join(rows)}</tbody>'
+                '</table>'
+            )
+
+        header_args = ("Top Attention Heads by Bias Focus",
+                      "Top 5 heads ranked by bias attention ratio. Green dot = above specialization threshold (1.5).",
+                      "List of attention heads with the strongest focus on biased tokens, ranked by their Bias Attention Ratio.")
+        card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05); margin-top: 16px;"
 
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;"},
-                ui.div(ui.h4("Top Heads (A)", style="font-size:11px;margin-bottom:8px;color:#3b82f6;text-align:center;"), ui.HTML(get_table(res))),
-                ui.div(ui.h4("Top Heads (B)", style="font-size:11px;margin-bottom:8px;color:#ff5ca9;text-align:center;"), ui.HTML(get_table(res_B)))
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(ui.HTML(get_table(res)), *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
+                           controls=[ui.download_button("export_bias_top_heads", "CSV", style=_BTN_STYLE_CSV)]),
+                _wrap_card(ui.HTML(get_table(res_B)), *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                           controls=[ui.download_button("export_bias_top_heads_B", "CSV", style=_BTN_STYLE_CSV)])
             )
-        return ui.HTML(get_table(res))
+        return _wrap_card(ui.HTML(get_table(res)), *header_args, style=card_style,
+                          controls=[ui.download_button("export_bias_top_heads", "CSV", style=_BTN_STYLE_CSV)])
+
 
     def _get_label(data, is_A, compare_m):
         if compare_m: return _get_bias_model_label(data)
