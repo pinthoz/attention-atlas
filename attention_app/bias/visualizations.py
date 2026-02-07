@@ -26,78 +26,8 @@ BIAS_COLORS = {
 
 
 
-def create_token_bias_heatmap(token_labels: List[Dict], text: str) -> go.Figure:
-    """Create heatmap showing bias categories for each token.
 
-    Args:
-        token_labels: Output from GusNetDetector.detect_bias()
-        text: Original text
 
-    Returns:
-        Plotly Figure object
-    """
-    tokens = [label["token"] for label in token_labels]
-
-    # Create binary matrix for each bias type
-    categories = ["GEN", "UNFAIR", "STEREO"]
-    matrix = []
-
-    for category in categories:
-        row = [1 if category in label["bias_types"] else 0 for label in token_labels]
-        matrix.append(row)
-
-    # Custom colorscale
-    colorscale = [
-        [0.0, '#f8fafc'],  # Light background for no bias
-        [1.0, '#ff5ca9']   # Pink for detected bias
-    ]
-
-    # Create annotations for hover
-    hover_text = []
-    for i, category in enumerate(categories):
-        row_hover = []
-        for j, label in enumerate(token_labels):
-            score = label.get("scores", {}).get(category, 0.0)
-            if category in label["bias_types"]:
-                row_hover.append(f"<b>{label['token']}</b><br>{category}: <b>Detected</b> (Score: {score:.2f})<br>{label['explanation']}")
-            else:
-                row_hover.append(f"<b>{label['token']}</b><br>{category}: Not detected (Score: {score:.2f})")
-        hover_text.append(row_hover)
-
-    fig = go.Figure(data=go.Heatmap(
-        z=matrix,
-        x=tokens,
-        y=categories,
-        colorscale=colorscale,
-        showscale=False,
-        hovertemplate="%{text}<extra></extra>",
-        text=hover_text
-    ))
-
-    fig.update_layout(
-        title=dict(
-            text="Token-Level Bias Distribution Across Categories",
-            font=dict(size=14, color="#1e293b", family="Inter, sans-serif")
-        ),
-        xaxis=dict(
-            title="Tokens",
-            tickangle=-30,
-            tickfont=dict(size=10, color="#475569", family="JetBrains Mono, monospace"),
-            side="bottom",
-            automargin=True
-        ),
-        yaxis=dict(
-            title="Category",
-            tickfont=dict(size=11, color="#475569")
-        ),
-        height=280,
-        margin=dict(l=80, r=40, t=60, b=100),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, sans-serif")
-    )
-
-    return fig
 
 
 def create_attention_bias_matrix(
@@ -773,10 +703,7 @@ def create_ratio_formula_html() -> str:
         'border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;margin-bottom:16px;">'
 
         # ── Title ──
-        '<div style="margin-bottom:14px;">'
-        '<h4 style="margin:0;">'
-        'Bias Attention Ratio — Definition</h4>'
-        '</div>'
+        '<h4 style="margin:0 0 14px 0;font-size:18px;font-weight:600;color:#0f172a;text-align:center;">Bias Attention Ratio - Definition</h4>'
 
         # ── Main formula block ──
         '<div style="background:#1e293b;border-radius:8px;padding:14px 18px;margin-bottom:14px;'
@@ -948,9 +875,9 @@ def create_token_bias_strip(
 
     return (
         f'<div style="display:flex;flex-wrap:wrap;gap:3px;padding:12px 0;'
-        f'align-items:flex-start;">{"".join(cells)}</div>'
+        f'align-items:flex-start;justify-content:center;">{"".join(cells)}</div>'
         f'<div style="display:flex;gap:14px;margin-top:4px;padding-top:8px;'
-        f'border-top:1px solid #f1f5f9;">{"".join(legend_items)}</div>'
+        f'border-top:1px solid #f1f5f9;justify-content:center;">{"".join(legend_items)}</div>'
     )
 
 
@@ -1117,8 +1044,135 @@ def create_bias_sentence_preview(tokens: List[str], token_labels: List[Dict]) ->
     )
 
 
+def create_confidence_breakdown(token_labels: List[Dict]) -> str:
+    """Render biased tokens grouped by confidence tier (Low / Medium / High).
+
+    For each biased token the confidence value is
+    ``max(scores[t] for t in bias_types)``.
+
+    Tiers:
+        Low    — [0.50, 0.70)
+        Medium — [0.70, 0.85)
+        High   — [0.85, 1.00]
+
+    Returns an HTML string with:
+    * A summary bar section (one horizontal bar per tier with count + %)
+    * A token list per tier (badges with bias type(s) and max score)
+    """
+    # Collect biased tokens with their confidence
+    biased = []
+    for lbl in token_labels:
+        if not lbl.get("is_biased"):
+            continue
+        tok = lbl.get("token", "")
+        if tok in ("[CLS]", "[SEP]", "[PAD]"):
+            continue
+        types = lbl.get("bias_types", [])
+        scores = lbl.get("scores", {})
+        if not types:
+            continue
+        conf = max(scores.get(t, 0) for t in types)
+        biased.append({"label": lbl, "conf": conf, "types": types, "scores": scores})
+
+    if not biased:
+        return (
+            '<div style="color:#9ca3af;font-size:12px;padding:12px;text-align:center;">'
+            'No biased tokens to break down.</div>'
+        )
+
+    # Define tiers
+    tiers = [
+        {"name": "High",   "min": 0.85, "max": 1.01, "color": "#ef4444", "bg": "rgba(239,68,68,0.15)"},
+        {"name": "Medium", "min": 0.70, "max": 0.85, "color": "#f59e0b", "bg": "rgba(245,158,11,0.15)"},
+        {"name": "Low",    "min": 0.50, "max": 0.70, "color": "#22c55e", "bg": "rgba(34,197,94,0.15)"},
+    ]
+
+    # Bucket tokens into tiers
+    tier_buckets: Dict[str, list] = {t["name"]: [] for t in tiers}
+    for item in biased:
+        for t in tiers:
+            if t["min"] <= item["conf"] < t["max"]:
+                tier_buckets[t["name"]].append(item)
+                break
+        else:
+            # Below 0.50 — still place in Low
+            tier_buckets["Low"].append(item)
+
+    total_biased = len(biased)
+
+    # ── Summary bars ──
+    bars_html = []
+    for t in tiers:
+        count = len(tier_buckets[t["name"]])
+        pct = (count / total_biased * 100) if total_biased else 0
+        bars_html.append(
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+            f'<span style="min-width:56px;font-size:11px;font-weight:600;color:{t["color"]};'
+            f'font-family:JetBrains Mono,monospace;text-align:right;">{t["name"]}</span>'
+            f'<div style="flex:1;background:#1e293b;border-radius:4px;height:10px;overflow:hidden;">'
+            f'<div style="width:{pct:.0f}%;height:100%;background:{t["color"]};border-radius:4px;'
+            f'transition:width 0.4s;"></div></div>'
+            f'<span style="min-width:60px;font-size:10px;color:#94a3b8;'
+            f'font-family:JetBrains Mono,monospace;">{count} ({pct:.0f}%)</span>'
+            f'</div>'
+        )
+
+    # ── Token badges per tier ──
+    sections_html = []
+    for t in tiers:
+        items = tier_buckets[t["name"]]
+        if not items:
+            continue
+
+        badges = []
+        for item in sorted(items, key=lambda x: x["conf"], reverse=True):
+            lbl = item["label"]
+            clean = lbl["token"].replace("##", "").replace("\u0120", "")
+            if not clean:
+                continue
+
+            # Build category dots
+            type_dots = ""
+            for bt in item["types"]:
+                c_info = BIAS_COLORS.get(bt, BIAS_COLORS["GEN"])
+                type_dots += (
+                    f'<span style="display:inline-flex;align-items:center;gap:2px;">'
+                    f'<span style="width:6px;height:6px;border-radius:50%;'
+                    f'background:{c_info["border"]};display:inline-block;"></span>'
+                    f'<span style="font-size:9px;color:{c_info["text"]};">{bt}</span>'
+                    f'</span>'
+                )
+
+            badges.append(
+                f'<span style="display:inline-flex;align-items:center;gap:5px;'
+                f'padding:3px 8px;border-radius:6px;background:{t["bg"]};'
+                f'border:1px solid {t["color"]}30;font-family:JetBrains Mono,monospace;">'
+                f'<span style="font-size:11px;font-weight:600;color:#0f172a;">'
+                f'{html_lib.escape(clean)}</span>'
+                f'<span style="display:inline-flex;gap:4px;">{type_dots}</span>'
+                f'<span style="font-size:10px;font-weight:700;color:{t["color"]};">'
+                f'{item["conf"]:.2f}</span>'
+                f'</span>'
+            )
+
+        sections_html.append(
+            f'<div style="margin-top:10px;">'
+            f'<div style="font-size:10px;font-weight:700;color:{t["color"]};'
+            f'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">'
+            f'{t["name"]} Confidence</div>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:6px;">{"".join(badges)}</div>'
+            f'</div>'
+        )
+
+    return (
+        f'<div>'
+        f'<div style="margin-bottom:14px;">{"".join(bars_html)}</div>'
+        f'{"".join(sections_html)}'
+        f'</div>'
+    )
+
+
 __all__ = [
-    "create_token_bias_heatmap",
     "create_attention_bias_matrix",
     "create_bias_propagation_plot",
     "create_combined_bias_visualization",
@@ -1128,4 +1182,5 @@ __all__ = [
     "create_bias_criteria_html",
     "create_bias_sentence_preview",
     "create_token_bias_strip",
+    "create_confidence_breakdown",
 ]
