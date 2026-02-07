@@ -110,12 +110,13 @@ def create_attention_bias_matrix(
     ]
 
     fig = go.Figure(data=go.Heatmap(
-        z=bias_matrix,
+        z=bias_matrix.tolist(),  # Convert to list for reliable serialization
         x=[f"H{h}" for h in range(num_heads)],
         y=[f"L{l}" for l in range(num_layers)],
         colorscale=colorscale,
         zmin=z_min,
         zmax=z_max,
+        zauto=False,  # Force explicit colorscale application
         showscale=True,
         colorbar=dict(
             title=dict(
@@ -159,8 +160,9 @@ def create_attention_bias_matrix(
             tickfont=dict(size=10, color="#475569"),
             autorange="reversed"  # Layer 0 at top
         ),
-        height=max(300, num_layers * 40),
-        margin=dict(l=60, r=150, t=100, b=60),
+        autosize=True,
+        height=max(300, num_layers * 40),  # Explicit height for reliable rendering
+        margin=dict(l=60, r=150, t=100, b=60, autoexpand=True),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif")
@@ -264,8 +266,9 @@ def create_bias_propagation_plot(
             tickfont=dict(size=11, color="#64748b"),
             rangemode="tozero"
         ),
-        height=400,
-        margin=dict(l=80, r=40, t=100, b=60),
+        autosize=True,
+        height=400,  # Explicit height for reliable rendering
+        margin=dict(l=80, r=40, t=100, b=60, autoexpand=True),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif"),
@@ -436,8 +439,9 @@ def create_combined_bias_visualization(
             tickfont=dict(size=10),
             autorange="reversed",
         ),
-        height=max(500, n * 30),
-        margin=dict(l=40, r=10, t=40, b=40),
+        autosize=True,
+        height=max(500, n * 30),  # Explicit height for reliable rendering
+        margin=dict(l=40, r=10, t=40, b=40, autoexpand=True),
         plot_bgcolor="#ffffff",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#64748b", family="Inter, system-ui, sans-serif"),

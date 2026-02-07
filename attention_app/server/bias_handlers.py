@@ -1834,8 +1834,9 @@ def bias_server_handlers(input, output, session):
                 if l_idx >= len(atts): return '<div style="color:#9ca3af;">Layer out of bounds.</div>'
                 attn = atts[l_idx][0, h_idx].cpu().numpy()
                 fig = create_combined_bias_visualization(data["tokens"], data["token_labels"], attn, l_idx, h_idx, selected_token_idx=s_idxs)
-                plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
-                return f'<div id="{container_id}">{plot_html}</div>'
+                plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False, 'responsive': True})
+                resize_script = f'<script>setTimeout(function(){{ var el = document.querySelector("#{container_id} .js-plotly-plot"); if(el) Plotly.Plots.resize(el); }}, 150);</script>'
+                return f'<div id="{container_id}" style="height:600px; width:100%;">{plot_html}</div>{resize_script}'
             except Exception as e: return f'<div style="color:red">Error: {e}</div>'
 
         man_header = ("Combined Attention & Bias View",
@@ -1888,8 +1889,9 @@ def bias_server_handlers(input, output, session):
                 except: sl = None
 
                 fig = create_attention_bias_matrix(matrix, metrics=metrics, selected_layer=sl)
-                plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
-                return f'<div id="{container_id}">{plot_html}</div>'
+                plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False, 'responsive': True})
+                resize_script = f'<script>setTimeout(function(){{ var el = document.querySelector("#{container_id} .js-plotly-plot"); if(el) Plotly.Plots.resize(el); }}, 150);</script>'
+                return f'<div id="{container_id}" style="height:600px; width:100%;">{plot_html}</div>{resize_script}'
             except Exception as e: return f'<div style="color:red">Error: {e}</div>'
 
         header_args = ("Bias Attention Matrix",
@@ -1934,8 +1936,9 @@ def bias_server_handlers(input, output, session):
             p = data["propagation_analysis"]["layer_propagation"]
             if not p: return "No data."
             fig = create_bias_propagation_plot(p, selected_layer=l_idx)
-            plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False})
-            return f'<div id="{container_id}">{plot_html}</div>'
+            plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False, 'responsive': True})
+            resize_script = f'<script>setTimeout(function(){{ var el = document.querySelector("#{container_id} .js-plotly-plot"); if(el) Plotly.Plots.resize(el); }}, 150);</script>'
+            return f'<div id="{container_id}" style="height:450px; width:100%;">{plot_html}</div>{resize_script}'
 
         header_args = ("Bias Propagation Across Layers",
                       "Mean bias attention ratio per layer — how bias focus evolves through model depth.",
