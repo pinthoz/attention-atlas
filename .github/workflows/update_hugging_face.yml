@@ -51,8 +51,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git lfs install
           
-          # Track large files with LFS
-          git lfs track "*.bin" "*.h5" "*.pkl" "*.pt" "*.pth" "*.safetensors" 2>/dev/null || true
+          # Track binary files with LFS (required by Hugging Face)
+          git lfs track "*.bin" "*.h5" "*.pkl" "*.pt" "*.pth" "*.safetensors"
+          git lfs track "*.png" "*.jpg" "*.jpeg" "*.gif" "*.ico" "*.webp"
+          git lfs track "*.mp4" "*.avi" "*.mov" "*.webm"
           
           git add .
           git commit -m "Sync from GitHub: ${{ github.sha }}"
