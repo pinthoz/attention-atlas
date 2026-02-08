@@ -29,11 +29,16 @@ jobs:
           cp -r static hf_sync/
           cp app.py hf_sync/
           cp requirements.txt hf_sync/
-          cp Dockerfile hf_sync/
-          cp .gitattributes hf_sync/
+          
+          # Copy optional files if they exist
+          [ -f "Dockerfile" ] && cp Dockerfile hf_sync/ || echo "No Dockerfile"
+          [ -f ".gitattributes" ] && cp .gitattributes hf_sync/ || echo "No .gitattributes"
           
           # Copy README_HF.md as README.md
           cp README_HF.md hf_sync/README.md
+          
+          echo "Files prepared for sync:"
+          ls -la hf_sync/
 
       - name: Push to Hugging Face Spaces
         env:
@@ -47,7 +52,7 @@ jobs:
           git lfs install
           
           # Track large files with LFS
-          git lfs track "*.bin" "*.h5" "*.pkl" "*.pt" "*.pth" "*.safetensors"
+          git lfs track "*.bin" "*.h5" "*.pkl" "*.pt" "*.pth" "*.safetensors" 2>/dev/null || true
           
           git add .
           git commit -m "Sync from GitHub: ${{ github.sha }}"
