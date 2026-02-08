@@ -1,701 +1,1132 @@
-# Attention Atlas - Application Visualization Flow
+# Attention Atlas - Application Visualization & User Guide
 
-This document comprehensively explains what the Attention Atlas application visualizes, how users interact with it, and the complete data flow from input to visualization. It serves as a user guide and feature reference for understanding all interactive components and their purposes.
+This document provides a comprehensive guide to the Attention Atlas user interface, interaction workflows, and visualization interpretations. It explains the three-section navigation structure (Overview, Explore Attention, Deep Dive), interactive features, and how to use the application for mechanistic interpretability research.
 
-## Application Features & Complete Workflow
+---
+
+## Table of Contents
+
+- [Application Architecture](#application-architecture)
+- [Three-Section Navigation Structure](#three-section-navigation-structure)
+- [User Workflow](#user-workflow-from-input-to-insight)
+- [Section 1: Overview](#section-1-overview)
+- [Section 2: Explore Attention](#section-2-explore-attention)
+- [Section 3: Deep Dive](#section-3-deep-dive-advanced-mode)
+- [Bias Detection Tab](#section-4-bias-detection-tab-coming-soon)
+- [Interactive Features](#interactive-features-summary)
+- [Comparison Modes](#comparison-modes)
+- [Design Philosophy](#design-philosophy)
+- [Technical Implementation](#technical-implementation-details)
+
+---
+
+## Application Architecture
+
+Attention Atlas is organized into **three progressive exploration levels**, each designed to answer different research questions about Transformer behavior:
 
 ```mermaid
 flowchart TD
-    Start([User Opens App]) --> Input[Enter Text Input<br/>'the cat sat on the mat']
+    User[User] --> Sidebar[Sidebar Controls]
+    Sidebar --> Input[Text Input & Model Selection]
+    Input --> Generate[Click 'Generate All']
 
-    Input --> Generate[Click 'Generate All' Button]
+    Generate --> Pipeline[Heavy Computation Pipeline]
 
-    Generate --> Processing{Processing BERT Model}
+    Pipeline --> Overview[🔍 OVERVIEW SECTION]
+    Pipeline --> Explore[🎯 EXPLORE ATTENTION SECTION]
+    Pipeline --> DeepDive[⚙️ DEEP DIVE SECTION<br/>Advanced Mode]
+    Pipeline --> Bias[🛡️ BIAS DETECTION TAB<br/>Coming Soon]
 
-    Processing --> Section1[Section 1: Embeddings]
-    Processing --> Section2[Section 2: Q/K/V Projections]
-    Processing --> Section3[Section 3: Multi-Head Attention]
-    Processing --> Section4[Section 4: Head Specialization]
-    Processing --> Section5[Section 5: Token Influence Tree]
-    Processing --> Section6[Section 6: Inter-Sentence Attention]
-    Processing --> Section7[Section 7: Residual & FFN]
-    Processing --> Section8[Section 8: Output Predictions]
+    Overview --> O1[Global Metrics Dashboard]
+    Overview --> O2[MLM Token Predictions]
+    Overview --> O3[Radar Metrics Visualization]
+    Overview --> O4[Hidden States PCA]
 
-    subgraph Embeddings [Section 1: Input Embeddings]
-        Section1 --> E1[Token Embeddings<br/>Heatmap visualization<br/>768 dims per token]
-        Section1 --> E2[Segment Embeddings<br/>A/B sequence chips<br/>Color-coded tokens]
-        Section1 --> E3[Positional Embeddings<br/>Learned patterns<br/>Position encodings]
-        Section1 --> E4[Sum + LayerNorm<br/>Combined embeddings<br/>Before/after normalization]
-    end
+    Explore --> E1[Attention Heatmaps]
+    Explore --> E2[Attention Flow Diagrams]
+    Explore --> E3[Token Influence Tree]
+    Explore --> E4[Inter-Sentence Attention ISA]
+    Explore --> E5[Scaled Attention]
 
-    subgraph QKV [Section 2: Attention Projections]
-        Section2 --> Q1[Select Layer 0-11<br/>Mini dropdown selector]
-        Q1 --> Q2[Q/K/V Heatmaps<br/>Per-token projections<br/>Color: Green/Orange/Purple]
-        Q1 --> Q3[Scaled Attention Formula<br/>Focus token selector<br/>Top-3 connections shown]
-    end
+    DeepDive --> D1[Token Embeddings + PCA]
+    DeepDive --> D2[Positional & Segment Encodings]
+    DeepDive --> D3[Q/K/V Projections]
+    DeepDive --> D4[Residual Connections]
+    DeepDive --> D5[Feed-Forward Network]
+    DeepDive --> D6[Head Clustering t-SNE + K-Means]
 
-    subgraph MultiHead [Section 3: Multi-Head Attention - MAIN FEATURE]
-        Section3 --> M1[Layer Selector<br/>Choose: 0-11 or 0-23]
-        Section3 --> M2[Head Selector<br/>Choose: 0-11 or 0-15]
+    Bias --> B1[Token-Level Bias Classification]
+    Bias --> B2[Attention-Bias Interaction]
+    Bias --> B3[Bias Propagation]
 
-        M1 --> M3[Attention Map<br/>Interactive Plotly Heatmap]
-        M2 --> M3
-
-        M3 --> M4[Hover: See Calculations<br/>Q·K dot product<br/>Scaled value<br/>Softmax result]
-
-        M1 --> M5[Attention Flow Diagram<br/>Token-to-token connections]
-        M2 --> M5
-
-        M5 --> M6[Click Token Buttons<br/>Focus specific token<br/>Highlight outgoing attention]
-
-        M6 --> M7[Updated Flow View<br/>Dimmed unrelated connections<br/>Emphasized selected token]
-
-        M3 --> M8[6 Attention Metrics Cards<br/>Clickable for formulas]
-
-        M8 --> M9[Click Metric Card]
-        M9 --> M10[Modal Window Opens<br/>Formula + Interpretation<br/>Scientific Reference]
-    end
-
-    subgraph HeadSpec [Section 4: Head Specialization Analysis]
-        Section4 --> H1[Mode Toggle<br/>All Heads / Single Head]
-        H1 --> H2[Layer Selector<br/>Choose layer to analyze]
-        H1 --> H3[Head Selector<br/>For single head mode]
-        
-        H2 --> H4[Radar Chart Visualization<br/>7 behavioral dimensions]
-        H3 --> H4
-        
-        H4 --> H5[Metric Tags<br/>Click for explanations]
-        H5 --> H6[Modal: Metric Details<br/>Formula, interpretation, examples]
-    end
-
-    subgraph TokenTree [Section 5: Token Influence Tree]
-        Section5 --> T1[D3.js Interactive Tree<br/>Auto-rendered hierarchical view]
-        T1 --> T2[Click to Collapse/Expand<br/>Node interactions]
-        T1 --> T3[Hover for Details<br/>Attention weights & relationships]
-    end
-
-    subgraph ISA [Section 6: Inter-Sentence Attention]
-        Section6 --> I1[ISA Matrix Heatmap<br/>Sentence-to-sentence strength]
-        I1 --> I2[Click Matrix Cell<br/>Select sentence pair]
-        I2 --> I3[Modal Opens<br/>Token-level attention heatmap]
-        I3 --> I4[Detailed Cross-Sentence<br/>Token relationships]
-    end
-
-    subgraph Residual [Section 7: Residual Connections & FFN]
-        Section7 --> R1[Add & Norm After Attention<br/>Change magnitude bars<br/>Per-token residual impact]
-        Section7 --> R2[Feed Forward Network<br/>GELU activation heatmap<br/>3072→768 projection]
-        Section7 --> R3[Add & Norm After FFN<br/>Final residual connection<br/>Layer output visualization]
-    end
-
-    subgraph Output [Section 8: Model Outputs]
-        Section8 --> O1[Hidden States<br/>Final layer representations<br/>768 dims per token]
-        Section8 --> O2[Toggle: Use MLM Head<br/>Switch on/off]
-
-        O2 -->|ON| O3[MLM Top-5 Predictions<br/>Token probabilities<br/>Per position]
-        O2 -->|OFF| O4[Disabled Message<br/>Enable to see predictions]
-
-        O3 --> O5[Click Probability Button<br/>Show softmax calculation]
-        O5 --> O6[Expanded Formula<br/>exp logit / sum exp<br/>Detailed breakdown]
-    end
-
-    M10 --> Explore[Continue Exploring<br/>Change layers/heads/tokens]
-    O6 --> Explore
-    H6 --> Explore
-    I4 --> Explore
-    Explore --> Input
-
-    style Start fill:#e1f5ff
-    style Generate fill:#ffe1e1
-    style Embeddings fill:#fff4e6
-    style QKV fill:#e6f7ff
-    style MultiHead fill:#ffe6f7
-    style HeadSpec fill:#f0e6ff
-    style TokenTree fill:#d4edda
-    style ISA fill:#fff3cd
-    style Residual fill:#f0e6ff
-    style Output fill:#e6ffe6
+    style Overview fill:#e3f2fd
+    style Explore fill:#f3e5f5
+    style DeepDive fill:#fff3e0
+    style Bias fill:#ffebee
 ```
 
-## Interactive Features Map
+---
 
-```mermaid
-mindmap
-  root((Attention Atlas<br/>Interactive Features))
-    Model Selection
-      BERT Base Uncased
-        12 layers × 12 heads
-        768 dimensions
-      BERT Large Uncased
-        24 layers × 16 heads
-        1024 dimensions
-      BERT Multilingual
-        12 layers × 12 heads
-        104 languages
-    Layer Navigation
-      Up to 24 Encoder Layers
-      Mini Select Dropdowns
-      Real-time Updates
-    Head Selection
-      Up to 16 Attention Heads
-      Per Layer
-      Independent Exploration
-    Token Interaction
-      Click to Focus
-      Color-coded Flows
-      Reset to Show All
-      Hover for Values
-    Visualizations
-      Plotly Heatmaps
-        Hoverable
-        Zoomable
-        Calculation Details
-      Attention Flows
-        Curved Connections
-        Width = Attention Weight
-        Color = Source Token
-      Embedding Heatmaps
-        Base64 PNG strips
-        64-96 dims shown
-        Hover for values
-      Radar Charts
-        7 specialization metrics
-        All heads overlay
-        Single head detail
-      D3 Tree
-        Hierarchical dependencies
-        Collapsible nodes
-        Force-directed layout
-      ISA Matrix
-        Cross-sentence attention
-        Click for drill-down
-        Token-level detail
-    Metrics Dashboard
-      6 Attention Metrics
-        Confidence Max
-        Confidence Avg
-        Focus Entropy
-        Sparsity
-        Distribution
-        Uniformity
-      7 Specialization Metrics
-        Syntax Focus
-        Semantics Focus
-        CLS Focus
-        Punctuation Focus
-        Entities Focus
-        Long-range Attention
-        Self-attention
-      Click for Details
-        Mathematical Formula
-        Interpretation Guide
-        Scientific Paper Link
-    MLM Predictions
-      Toggle Switch
-      Top-5 Per Token
-      Expandable Formulas
-      Softmax Breakdown
-```
+## Three-Section Navigation Structure
 
-## User Interaction Flow (Detailed Sequence)
+### Design Philosophy
+
+The application follows a **progressive disclosure** pattern:
+
+1. **Overview** (Default): High-level understanding → "What is the model doing?"
+2. **Explore Attention** (Interactive): Granular attention analysis → "Which tokens attend to which?"
+3. **Deep Dive** (Advanced): Component-level inspection → "How does the architecture process this input?"
+
+### Navigation Methods
+
+- **Floating Control Bar**: Select layer, head, normalization mode
+- **Section Tabs/Accordion**: Click to expand Overview, Explore Attention, or Deep Dive
+- **View Mode Toggle**: Switch between Basic and Advanced modes
+- **Compare Modes**: Enable Model A vs. Model B or Prompt A vs. Prompt B
+
+---
+
+## User Workflow: From Input to Insight
 
 ```mermaid
 sequenceDiagram
     participant User
     participant UI as Attention Atlas UI
-    participant BERT as BERT Model
-    participant Viz as Visualizations
-    participant Metrics as Metrics Engine
-    participant ISA as ISA Engine
+    participant Backend as Server Logic
+    participant Model as BERT/GPT-2
+    participant Visualizations
 
-    User->>UI: Enter text input
-    User->>UI: Select model (base/large/multilingual)
-    User->>UI: Click "Generate All"
+    User->>UI: 1. Enter text input
+    User->>UI: 2. Select model (BERT/GPT-2)
+    User->>UI: 3. Click "Generate All"
+
     UI->>UI: Show loading spinner
-    UI->>BERT: Process text
-    BERT->>BERT: Tokenize
-    BERT->>BERT: Generate embeddings
-    BERT->>BERT: Run encoder layers (×12 or ×24)
-    BERT->>BERT: Extract attentions & states
-    BERT-->>UI: Return all outputs
+    UI->>Backend: Process request
+
+    Backend->>Model: Tokenize input
+    Model-->>Backend: Token IDs
+    Backend->>Model: Forward pass (no gradients)
+    Model-->>Backend: Attentions, hidden states, embeddings
+
+    Backend->>Backend: Compute 6 attention metrics
+    Backend->>Backend: Compute 7 head specialization metrics
+    Backend->>Backend: Compute ISA matrix
+    Backend->>Backend: Build influence tree
+    Backend->>Backend: Run head clustering (t-SNE + K-Means)
+
+    Backend-->>UI: Return all results
     UI->>UI: Hide spinner
-    
+
     par Parallel Rendering
-        UI->>Viz: Render embeddings
-        UI->>Viz: Render Q/K/V projections
-        UI->>Viz: Render attention maps
-        UI->>Metrics: Compute 6 attention metrics
-        UI->>Metrics: Compute 7 head specialization metrics
-        UI->>ISA: Compute inter-sentence attention
-        UI->>Viz: Render metrics
-        UI->>Viz: Render head specialization radar
-        UI->>Viz: Render token influence tree
-        UI->>Viz: Render ISA matrix
-        UI->>Viz: Render FFN & residuals
-        UI->>Viz: Render hidden states
+        UI->>Visualizations: Render Overview (metrics, MLM, radar)
+        UI->>Visualizations: Render Explore (heatmaps, flows, tree, ISA)
+        UI->>Visualizations: Render Deep Dive (embeddings, Q/K/V, FFN)
     end
 
+    Visualizations-->>User: Display interactive visualizations
+
     loop User Exploration
-        User->>UI: Select layer (0-11 or 0-23)
-        UI->>Viz: Update attention map
-        UI->>Viz: Update Q/K/V display
-        UI->>Viz: Update FFN display
-        UI->>Metrics: Recompute metrics for layer
-
-        User->>UI: Select head (0-11 or 0-15)
-        UI->>Viz: Update attention map
-        UI->>Viz: Update attention flow
-        UI->>Viz: Update metrics display
-
-        User->>UI: Click token button
-        UI->>Viz: Highlight token flows
-        UI->>Viz: Dim other connections
+        User->>UI: Select layer/head/token
+        UI->>Visualizations: Update displays
+        Visualizations-->>User: Show updated visualizations
 
         User->>UI: Click metric card
         UI->>UI: Show modal with formula
         User->>UI: Close modal
 
-        User->>UI: Toggle radar mode (all/single)
-        UI->>Viz: Switch radar visualization
+        User->>UI: Click ISA cell
+        UI->>UI: Show token-level heatmap modal
+        User->>UI: Close modal
 
-        User->>UI: Click ISA matrix cell
-        UI->>ISA: Extract token-level attention
-        UI->>UI: Show modal with token heatmap
-        User->>UI: Close ISA modal
-
-        User->>UI: Interact with tree
-        UI->>Viz: Collapse/expand nodes
-        UI->>UI: Show attention values on hover
-
-        User->>UI: Toggle MLM switch
-        alt MLM Enabled
-            UI->>BERT: Run MLM head
-            BERT-->>UI: Return probabilities
-            UI->>Viz: Show Top-5 predictions
-        else MLM Disabled
-            UI->>Viz: Show info message
-        end
+        User->>UI: Interact with tree (collapse/expand)
+        Visualizations-->>User: Update tree visualization
     end
 ```
 
-## Data Flow: From Input to Visualization
+### Step-by-Step Workflow
 
-```mermaid
-flowchart LR
-    subgraph Input
-        Text[Input Text] --> Tokens[Tokenized<br/>Sequence]
-    end
+**1. Input Configuration**
+- Enter text in sidebar (e.g., *"The cat sat on the mat."*)
+- Select model: BERT-base, BERT-large, BERT-multilingual, GPT-2 (Small, Medium, Large, XL)
+- Optional: Enable comparison mode (Model A vs. Model B)
 
-    subgraph ModelProcessing [BERT Model Processing]
-        Tokens --> Emb[Embeddings<br/>Layer]
-        Emb --> Layers[12 or 24<br/>Encoder<br/>Layers]
-        Layers --> HS[Hidden<br/>States]
-        HS --> MLM[MLM<br/>Head]
-        Layers --> Att[Attention<br/>Tensors]
-    end
+**2. Generate Analysis**
+- Click **"Generate All"** button
+- Wait for processing (5-15 seconds depending on model size)
+- Loading spinner indicates computation in progress
 
-    subgraph MetricsComputation [Metrics & Analysis]
-        Att --> M1[Attention<br/>Metrics]
-        Att --> M2[Head<br/>Specialization]
-        Att --> M3[ISA<br/>Computation]
-        Att --> M4[Tree<br/>Generation]
-    end
+**3. Explore Overview Section**
+- Check global metrics (Confidence, Focus, Sparsity, etc.)
+- Review MLM predictions (Top-5 tokens per position)
+- Examine radar metrics visualization
+- Inspect hidden states (Advanced mode)
 
-    subgraph Visualizations [Attention Atlas Displays]
-        Emb --> V1[Embedding<br/>Tables]
-        Layers --> V2[Attention<br/>Heatmaps]
-        Layers --> V3[QKV<br/>Projections]
-        M1 --> V4[Metrics<br/>Cards]
-        M2 --> V5[Radar<br/>Charts]
-        M3 --> V6[ISA<br/>Matrix]
-        M4 --> V7[D3 Tree]
-        Layers --> V8[FFN<br/>Displays]
-        HS --> V9[Hidden<br/>State Table]
-        MLM --> V10[Top-5<br/>Predictions]
-    end
+**4. Interactive Attention Exploration**
+- Navigate layers/heads using floating control bar
+- Click tokens to focus their attention patterns
+- Examine attention heatmaps with hover details
+- Explore attention flow diagrams
+- Drill down into ISA matrix cells
 
-    subgraph UserControls [User Controls]
-        C1[Model Selector<br/>base/large/multi] -.->|Select Model| ModelProcessing
-        C2[Layer Selector<br/>0-11 or 0-23] -.->|Select Layer| V2
-        C3[Head Selector<br/>0-11 or 0-15] -.->|Select Head| V2
-        C4[Token Click<br/>Focus] -.->|Highlight| V2
-        C5[Radar Toggle<br/>all/single] -.->|Switch Mode| V5
-        C6[ISA Cell Click<br/>Drill-down] -.->|Show Details| V6
-        C7[Toggle Switch<br/>On/Off] -.->|Enable MLM| V10
-    end
+**5. Deep Architectural Inspection (Advanced Mode)**
+- Toggle to Advanced mode
+- Inspect token embeddings with PCA visualization
+- Examine Q/K/V projections and cosine similarity
+- Analyze FFN activations and residual connections
+- Review head clustering scatter plot
 
-    V2 -.->|Update on<br/>Selection| C2
-    V2 -.->|Update on<br/>Selection| C3
-    V2 -.->|Update on<br/>Click| C4
-    V5 -.->|Update on<br/>Toggle| C5
-    V6 -.->|Update on<br/>Click| C6
-    V10 -.->|Show/Hide| C7
+---
 
-    style ModelProcessing fill:#ffe6e6
-    style MetricsComputation fill:#fff4e6
-    style Visualizations fill:#e6f7ff
-    style UserControls fill:#f0ffe6
+## Section 1: Overview
+
+**Purpose**: High-level model behavior at a glance—global metrics, predictions, and aggregate attention patterns
+
+### Available Visualizations
+
+#### A. Masked Language Model (MLM) Predictions
+
+**What it shows**: Top-5 most likely tokens for each position when masked
+
+**Visualization**:
+- Token buttons with probability percentages
+- Color-coded confidence levels
+- Expandable softmax formula breakdown
+
+**Interaction**:
+- Click any probability button → Shows detailed softmax calculation
+- Formula: `P(token) = exp(logit) / Σ exp(logits)`
+- Displays: Raw logit, exp value, sum, final probability
+
+**Use Cases**:
+- Assess model confidence in predictions
+- Understand vocabulary preferences
+- Evaluate contextual understanding
+- Compare predictions across models
+
+**Example**:
+```
+Input: "The [MASK] sat on the mat"
+Top-5: cat (48%), dog (22%), boy (12%), man (10%), bird (8%)
 ```
 
-## Detailed Visualization Components
+---
 
-### Section 1: Input Embeddings
+#### B. Global Attention Metrics Dashboard
 
-**Purpose**: Visualize the three types of embeddings that BERT combines to create initial token representations.
+**What it shows**: 6 quantitative metrics aggregated across layers/heads
 
-#### Token Embeddings
-- **What**: Learned semantic representations from vocabulary
-- **Visualization**: Heatmap strips showing first 64 of 768 dimensions
-- **Color Scale**: Intensity represents embedding values
-- **Interaction**: Hover to see exact values
-- **Insight**: Similar words have similar patterns
+**Metrics Displayed**:
 
-#### Segment Embeddings
-- **What**: Distinguishes sentence A from sentence B in pairs
-- **Visualization**: Color-coded chips (blue for A, red for B)
-- **Table**: Shows token → segment mapping
-- **Interaction**: Visual color coding per token
-- **Insight**: How BERT separates dual inputs
+| Metric | Formula | Typical Values | Interpretation |
+|--------|---------|----------------|----------------|
+| **Confidence (Max)** | `max(A)` | 0.6 - 0.9 | Peak attention strength |
+| **Confidence (Avg)** | `mean(max per row)` | 0.4 - 0.7 | Average peak strength |
+| **Focus (Entropy)** | `-Σ(A·log(A))` | 1.5 - 3.0 | Attention dispersion |
+| **Sparsity** | `% weights < 0.01` | 0.3 - 0.7 | Proportion of weak weights |
+| **Distribution (Median)** | `median(A)` | 0.05 - 0.15 | Robust central tendency |
+| **Uniformity** | `std(A)` | 0.1 - 0.3 | Weight variability |
 
-#### Positional Embeddings
-- **What**: Learned position information (not sinusoidal in BERT)
-- **Visualization**: Heatmap showing positional patterns
-- **Display**: First 64 dimensions
-- **Interaction**: Hover for values
-- **Insight**: Position encoding patterns learned during pre-training
+**Visualization**:
+- Grid of clickable metric cards
+- Color-coded values (green = good, yellow = moderate, red = concerning)
+- Mini sparkline showing per-layer trends
 
-#### Sum + LayerNorm
-- **What**: Combined embedding = Token + Segment + Position
-- **Visualization**: Before and after layer normalization comparison
-- **Display**: Magnitude changes per token
-- **Interaction**: Compare raw vs normalized
-- **Insight**: Effect of normalization on initial representations
+**Interaction**:
+- **Click any card** → Opens modal with:
+  - Mathematical formula (LaTeX-style)
+  - Interpretation guide (high/low values)
+  - Use cases and applications
+  - Scientific reference (Golshanrad & Faghih, 2024)
+- **Toggle**: Per-layer view vs. All-layers aggregate
 
-### Section 2: Q/K/V Projections
+**Use Cases**:
+- Quantify attention behavior scientifically
+- Compare heads/layers/models numerically
+- Identify anomalous attention patterns
+- Track attention evolution across layers
 
-**Purpose**: Show how input is transformed into Query, Key, Value matrices for attention computation.
+---
 
-#### Layer Selector
-- **Control**: Mini dropdown (0-11 for base/multi, 0-23 for large)
-- **Effect**: Updates all Q/K/V visualizations
-- **Real-time**: Immediate recalculation
+#### C. Radar Metrics Visualization
 
-#### Three Heatmaps
-- **Query (Green)**: What each token is looking for
-- **Key (Orange)**: What each token offers
-- **Value (Purple)**: Information to be aggregated
-- **Display**: First 48 of 64 dimensions per head
-- **Hover**: Exact projection values
+**What it shows**: Multi-dimensional radar/spider chart of attention metrics
 
-#### Scaled Attention Formula
-- **Feature**: Focus token selector
-- **Display**: Top-3 attention connections for selected token
-- **Formula**: Shows Q·K^T / √d_k computation step-by-step
-- **Educational**: Walkthrough of attention mechanism
+**Visualization**:
+- Circular plot with 6 axes (one per metric)
+- Overlay multiple layers or heads
+- Min-max normalized for fair comparison
 
-### Section 3: Multi-Head Attention (CORE FEATURE)
+**Interaction**:
+- Hover: See exact metric values
+- Legend: Click to toggle layer/head visibility
+- Mode: All-layers overlay or single-layer focus
 
-**Purpose**: Interactive exploration of attention patterns showing which tokens attend to which others.
+**Use Cases**:
+- Visual pattern recognition across heads
+- Identify distinct behavioral profiles
+- Compare attention dynamics between layers
 
-#### Attention Map
-- **Type**: Interactive Plotly heatmap
-- **Axes**: Source tokens (rows) × Target tokens (columns)
-- **Color**: Attention weight strength (0 to 1)
-- **Hover Details**:
+---
+
+#### D. Hidden States Visualization (Advanced Mode)
+
+**What it shows**: Final layer embeddings (768-dim or 1024-dim)
+
+**Visualization**:
+- Heatmap: First 64 dimensions per token
+- PCA scatter plot: 2D projection of embedding space
+- Token labels with color coding
+
+**Interaction**:
+- Hover: See dimension values
+- Zoom/Pan: Plotly controls
+- Select tokens: Highlight in both views
+
+**Use Cases**:
+- Downstream task analysis
+- Representation quality assessment
+- Token similarity in latent space
+- Contextualized embedding inspection
+
+---
+
+## Section 2: Explore Attention
+
+**Purpose**: Interactive, granular analysis of attention mechanisms and token-to-token relationships
+
+### Available Visualizations
+
+#### A. Multi-Head Attention Heatmaps
+
+**What it shows**: Source tokens (rows) × Target tokens (columns) attention matrix
+
+**Visualization**:
+- Interactive Plotly heatmap
+- Color gradient: White (low) → Blue (high) attention
+- Grid lines for token boundaries
+- Annotations with attention values
+
+**Interaction**:
+- **Hover**: Reveals detailed calculation breakdown
   - Q·K dot product (raw score)
-  - Scaled value (divided by √d_k)
+  - Scaled value (divided by √d_k = √64 = 8)
   - Softmax result (final attention weight)
-- **Click**: Inspect specific attention connections
+- **Click**: Focus on specific token pair
 - **Zoom/Pan**: Plotly interactive controls
+- **Layer/Head selection**: Floating control bar
 
-#### Attention Flow Diagram
-- **Type**: Sankey-style flow visualization
-- **Connections**: Curved lines between tokens
-- **Line Width**: Proportional to attention weight
-- **Color**: Source token color coding
-- **Threshold**: Only shows weights > 0.05 for clarity
-- **Interactive**: Click tokens to focus
+**Use Cases**:
+- Identify which tokens attend to which
+- Spot syntactic vs. semantic attention patterns
+- Compare attention across layers/heads
+- Debug model behavior on specific inputs
 
-#### Token Buttons
-- **Purpose**: Focus on specific token's attention
-- **Effect**: 
-  - Highlights outgoing attention from selected token
-  - Dims unrelated connections
-  - Emphasizes selected token in flow
-- **Reset**: Click "Show All" to reset
+**Example Patterns**:
+- **Early layers**: Local attention (neighboring tokens)
+- **Middle layers**: Syntactic dependencies (e.g., "cat" → "the")
+- **Late layers**: Semantic relationships (e.g., "cat" → "mat")
 
-#### 6 Metric Cards
-- **Display**: Grid of clickable cards
-- **Metrics**:
-  1. Confidence (Max): Highest attention weight
-  2. Confidence (Avg): Average max per query
-  3. Focus (Entropy): Attention dispersion (-ΣplogP)
-  4. Sparsity: % weights < 0.01
-  5. Distribution (Median): 50th percentile
-  6. Uniformity: Standard deviation
-- **Click**: Opens modal with:
-  - Mathematical formula
-  - Interpretation guide
-  - Use cases
-  - Scientific reference
+---
 
-### Section 4: Head Specialization Analysis
+#### B. Attention Flow Diagrams
 
-**Purpose**: Understand what linguistic and structural patterns each attention head specializes in.
+**What it shows**: Sankey-style token-to-token connection flows
 
-#### Mode Toggle
-- **Options**: "All Heads" or "Single Head"
-- **All Heads**: Overlay radar for all 12/16 heads in layer
-- **Single Head**: Focused view of one head
-- **Visual**: Custom radio button toggle
+**Visualization**:
+- Curved lines between tokens
+- Line width ∝ attention weight
+- Color: Source token color coding
+- Threshold: Only shows weights > 0.05
 
-#### Radar Chart
-- **Axes**: 7 behavioral dimensions
-  1. **Syntax Focus**: Attention to function words (DET, ADP, AUX)
-  2. **Semantics Focus**: Attention to content words (NOUN, VERB, ADJ)
-  3. **CLS Focus**: Average attention to [CLS] token
-  4. **Punctuation Focus**: Attention to punctuation marks
-  5. **Entities Focus**: Attention to named entities (NER)
-  6. **Long-range**: Attention across 5+ token distances
-  7. **Self-attention**: Diagonal attention (tokens to themselves)
-- **Scale**: 0 to 1 (min-max normalized across heads)
-- **Colors**: Different color per head for comparison
-- **Interactive Legend**: Click to toggle head visibility
+**Interaction**:
+- **Click token button**: Focus on that token's outgoing attention
+  - Highlights relevant connections
+  - Dims unrelated flows
+  - Shows attention weight labels
+- **Reset**: Click "Show All" to restore full view
+- **Hover**: Displays exact attention weight
 
-#### Metric Tags
-- **Display**: Clickable badges below radar
-- **Click**: Opens modal explaining:
-  - Formula and computation method
-  - Interpretation of high/low values
-  - Examples from literature
-  - Linguistic significance
+**Use Cases**:
+- Visual information flow analysis
+- Identify primary vs. secondary attention targets
+- Understand token influence propagation
+- Present attention patterns intuitively
 
-#### POS & NER
-- **Backend**: spaCy for tagging
-- **Languages**: Auto-detects for multilingual model
-- **Alignment**: Maps spaCy word-level tags to BERT subwords
+---
 
-### Section 5: Token Influence Tree
+#### C. Token Influence Tree
 
-**Purpose**: Hierarchical visualization of attention dependencies showing information flow.
+**What it shows**: Hierarchical multi-hop attention dependencies
 
-#### D3.js Interactive Tree
-- **Layout**: Force-directed tree
-- **Root**: Selected focus token (default: first content token)
-- **Children**: Top-k tokens with highest attention from parent
-- **Depth**: Auto-limited to prevent infinite expansion
-- **Edge Thickness**: Represents attention weight
-- **Color Coding**: Depth-based coloring
+**Visualization**:
+- D3.js force-directed tree layout
+- Root: Selected focus token (default: first content token)
+- Children: Top-k tokens with highest attention from parent
+- Edge thickness: Attention weight strength
+- Color: Depth-based coloring (root = blue, depth 1 = green, depth 2 = yellow)
 
-#### Node Interactions
-- **Click**: Collapse/expand subtree
-- **Hover**: Shows:
+**Interaction**:
+- **Click node**: Collapse/expand subtree
+- **Hover node**: Shows:
   - Token text
   - Attention weight from parent
+  - Q·K similarity score
   - Number of children
-- **Drag**: Reposition nodes (D3 physics simulation)
+- **Drag**: Reposition nodes (physics simulation)
+- **Auto-depth limiting**: Max 3-4 levels to prevent clutter
 
-#### Auto-Rendering
-- **No Controls**: Automatically generated
-- **Max Depth**: Typically 3-4 levels
-- **Pruning**: Only shows significant connections (>0.1 weight)
+**Use Cases**:
+- Compositional structure analysis
+- Multi-hop reasoning visualization
+- Dependency chain exploration
+- Attention recursion detection
 
-### Section 6: Inter-Sentence Attention (ISA)
+**Example**:
+```
+Tree for "sat" in "The cat sat on the mat":
+sat
+├── cat (0.42)
+│   └── the (0.35)
+├── on (0.28)
+│   └── mat (0.31)
+└── [CLS] (0.15)
+```
 
-**Purpose**: Analyze cross-sentence dependencies to understand discourse coherence and multi-sentence reasoning.
+---
 
-#### ISA Matrix Heatmap
-- **What**: Sentence × Sentence attention strength matrix
-- **Computation**: max(attention) across all layers, heads, and token pairs
-- **Formula**: ISA(Sa, Sb) = max_{l,h,i∈Sa,j∈Sb} A[l,h,i,j]
-- **Color**: Gradient showing attention strength
+#### D. Inter-Sentence Attention (ISA)
+
+**What it shows**: Cross-sentence dependency analysis for multi-sentence inputs
+
+**Visualization**:
+- **ISA Matrix**: Sentence × Sentence heatmap
+- **Color**: Attention strength (white = weak, red = strong)
 - **Diagonal**: Self-attention within sentences
 - **Off-diagonal**: Cross-sentence dependencies
 
-#### Sentence Segmentation
-- **Method**: NLTK sentence tokenization
-- **Display**: Sentence labels (S1, S2, ...)
-- **Text**: Hover to see full sentence text
+**Formula**:
+```
+ISA(Sa, Sb) = max_{layers, heads, i∈Sa, j∈Sb} A[l, h, i, j]
+```
 
-#### **Click for Drill-Down**
-- **Interaction**: Click any matrix cell
-- **Effect**: Opens modal showing token-level attention
-- **Modal Content**:
+**Interaction**:
+- **Hover cell**: Shows sentence texts
+- **Click cell**: Opens modal with token-level drill-down
   - Token-to-token heatmap for selected sentence pair
   - List of tokens from both sentences
   - Attention values for each token pair
-  - Close button to return
+  - Max layer/head information
+- **Close modal**: Return to ISA matrix
 
-#### Token-to-Token Heatmap
-- **Axes**: Tokens from sentence A (rows) × Tokens from sentence B (cols)
-- **Aggregation**: Max over layers and heads
-- **Color**: Attention strength
-- **Interpretation**: Shows which specific words connect sentences
+**Use Cases**:
+- Document coherence analysis
+- Coreference resolution tracking
+- Discourse structure understanding
+- Multi-sentence reasoning tasks
 
-#### Use Cases
-- **Document Coherence**: Identify sentence relationships
-- **Coreference**: Track entity mentions across sentences
-- **Discourse Structure**: Understand argument flow
-- **Multi-hop Reasoning**: See how information propagates
+**Example**:
+```
+Input: "The cat sat on the mat. It was sleeping."
+ISA Matrix:
+       S1    S2
+S1   [0.88] [0.62]   ← "cat" → "It" coreference
+S2   [0.51] [0.85]
+```
 
-### Section 7: Residual Connections & Feed-Forward Network
+---
 
-**Purpose**: Visualize the non-attention components of transformer layers.
+#### E. Scaled Attention Visualization (Advanced Mode)
 
-#### Add & Norm After Attention
-- **Display**: Bar chart showing magnitude of changes
-- **Computation**: |output - input| per token
-- **Interpretation**: How much attention modified each token
-- **Insight**: Residual connection importance
+**What it shows**: Step-by-step attention computation with different normalization modes
 
-#### Feed Forward Network
-- **Layers**:
-  1. Linear 768→3072 (expansion)
-  2. GELU activation
-  3. Linear 3072→768 (compression)
-- **Visualization**: Heatmap of intermediate activations
-- **Display**: First 96 of 3072 dimensions
-- **Color**: Activation strength after GELU
+**Visualization**:
+- Side-by-side heatmaps showing:
+  - Raw scores (Q·K^T)
+  - Scaled scores (Q·K^T / √d_k)
+  - Softmax output (final attention)
 
-#### Add & Norm After FFN
-- **Display**: Final residual connection
-- **Computation**: Layer output vs FFN input
-- **Magnitude**: Per-token change visualization
-- **Insight**: Total transformation through layer
-
-### Section 8: Model Outputs
-
-**Purpose**: Display final hidden states and optional token predictions.
-
-#### Hidden States
-- **What**: Final layer representations (after 12/24 layers)
-- **Display**: Table or heatmap
-- **Dimensions**: First 64 of 768/1024 shown
-- **Use**: Input to downstream tasks (classification, QA, etc.)
-
-#### MLM Predictions
-- **Toggle**: Switch to enable/disable
-- **When Enabled**:
-  - Runs BertForMaskedLM head
-  - Projects to vocabulary (30k or 105k tokens)
-  - Applies softmax
-  - Shows Top-5 most likely tokens per position
-- **When Disabled**: Informational message
-
-### Section 9: Compare Models (Side-by-Side)
-
-**Purpose**: Directly compare the internal representations of two different models (e.g., BERT-base vs BERT-large, or BERT vs GPT-2) for the same input.
-
-#### Dual-Column Layout
-- **Model A (Left)**: Primary model, indicated by **Blue** accents and arrows (`.arrow-blue`).
-- **Model B (Right)**: Secondary model, indicated by **Pink** accents and arrows (`.arrow-pink`).
-- **Synchronization**: Scrolling is synchronized to keep corresponding sections aligned.
-
-#### Comparative Features
-- **Visual Differences**: Spot differences in attention patterns, embedding clusters, and projection heatmaps instantly.
-- **Metric Comparison**: Compare quantitative attention metrics side-by-side.
-- **Head Specialization**: see how two models specialize their heads differently for the same text.
-- **ISA**: Compare how different models handle cross-sentence dependencies.
-
-#### Expandable Formulas
-- **Feature**: Click on any probability
-- **Display**: Softmax calculation breakdown
+**Interaction**:
+- **Normalization selector**: Raw / Layer-norm / Softmax
+- **Focus token selector**: Choose query token
+- **Formula display**: Shows computation steps
   ```
-  P(token) = exp(logit_token) / Σ exp(logit_i)
+  1. Q·K^T = [3.2, 1.8, 0.5, ...]
+  2. Scaled = [0.4, 0.225, 0.0625, ...]
+  3. Softmax = [0.42, 0.28, 0.15, ...]
   ```
-- **Shows**: Raw logit, exp value, sum, final probability
-- **Educational**: Understand probability computation
 
-## Key Interactive Features Summary
+**Use Cases**:
+- Educational tool for understanding attention mechanism
+- Debug numerical issues (vanishing/exploding attention)
+- Understand scaling factor impact
+- Validate attention computation
 
-### Real-time Processing
-- All calculations done on-demand when text is submitted
-- No pre-computed results
-- Authentic model inference
+---
+
+## Section 3: Deep Dive (Advanced Mode)
+
+**Purpose**: Component-level inspection of the complete Transformer processing pipeline
+
+**Activation**: Toggle "Advanced Mode" in sidebar
+
+### Available Visualizations
+
+#### A. Token Embeddings
+
+**What it shows**: Context-independent word representations from vocabulary
+
+**Visualization**:
+- **Heatmap**: First 64 of 768 dimensions per token
+- **PCA Scatter**: 2D projection of embedding space
+- **Similarity Table**: Top-K most similar tokens via cosine similarity
+
+**Dimensions**: 768 (BERT-base) or 1,024 (BERT-large) per token
+
+**Interaction**:
+- **Hover heatmap**: See dimension values
+- **Click token in PCA**: Highlight in heatmap
+- **Similarity table**: Click token → Navigate to that token's embeddings
+
+**Use Cases**:
+- Vocabulary structure analysis
+- Word similarity inspection
+- Embedding quality assessment
+- Subword tokenization understanding
+
+**Mathematical Representation**:
+```
+E_token[i] = Embedding_table[token_id[i]]
+where Embedding_table ∈ ℝ^(vocab_size × hidden_size)
+```
+
+---
+
+#### B. Segment Embeddings (BERT Only)
+
+**What it shows**: Binary encoding distinguishing Sentence A from Sentence B
+
+**Visualization**:
+- Color-coded token chips (Blue = Sentence A, Red = Sentence B)
+- Table: Token → Segment ID mapping
+- Heatmap: 768-dim segment embedding vectors
+
+**Use Cases**:
+- Question-answering task analysis
+- Natural language inference inspection
+- Sentence pair task understanding
+
+**Example**:
+```
+Input: "What is the cat? [SEP] The cat is an animal."
+Segment: [A A A A A A     B B B B B B B B]
+IDs:     [0 0 0 0 0 0     1 1 1 1 1 1 1 1]
+```
+
+---
+
+#### C. Positional Embeddings
+
+**What it shows**: Position encoding patterns
+
+**BERT**: Learned position embeddings (768-dim vectors for positions 0-511)
+**GPT-2**: Sinusoidal position encodings
+
+**Visualization**:
+- Heatmap: Position × Dimension
+- Pattern recognition: Periodic structures in sinusoidal (GPT-2)
+
+**Use Cases**:
+- Position sensitivity analysis
+- Sequence length impact understanding
+- Attention bias due to position
+
+---
+
+#### D. Sum & Layer Normalization
+
+**What it shows**: Combined embeddings before entering Transformer blocks
+
+**Formula**:
+```
+E_combined = TokenEmb + PositionalEmb + SegmentEmb  (BERT)
+E_normalized = LayerNorm(E_combined)
+```
+
+**Visualization**:
+- **Before LayerNorm**: Raw combined embeddings
+- **After LayerNorm**: Normalized values (mean=0, std=1)
+- **Bar chart**: Magnitude changes per token
+
+**Use Cases**:
+- Understand normalization impact
+- Identify embedding scale issues
+- Debug initialization problems
+
+---
+
+#### E. Query/Key/Value (Q/K/V) Projections
+
+**What it shows**: Linear projections for multi-head attention
+
+**Visualization**:
+- **Three heatmaps**: Q (green), K (orange), V (purple)
+- **Dimensions displayed**: First 48 of 64 per head
+- **Cosine similarity matrix**: Q·K compatibility scores
+- **Top-K table**: Most relevant keys per query
+- **Combined PCA**: Q/K/V in shared 2D space
+
+**Formula**:
+```
+Q_i = X · W^Q_i  where W^Q_i ∈ ℝ^(768×64)
+K_i = X · W^K_i  where W^K_i ∈ ℝ^(768×64)
+V_i = X · W^V_i  where W^V_i ∈ ℝ^(768×64)
+```
+
+**Interaction**:
+- **Layer/Head selector**: Choose which projection to display
+- **Hover**: See exact projection values
+- **Cosine similarity**: Click to see formula
+  ```
+  sim(Q_i, K_j) = (Q_i · K_j) / (|Q_i| · |K_j|)
+  ```
+
+**Use Cases**:
+- Understand attention compatibility computation
+- Identify which queries match which keys
+- Analyze projection quality
+- Debug attention anomalies
+
+---
+
+#### F. Residual Connections & Add + Norm
+
+**What it shows**: Residual skip connections and layer normalization
+
+**Two locations**:
+1. **Post-Attention**: `output = LayerNorm(input + MultiHeadAttention(input))`
+2. **Post-FFN**: `output = LayerNorm(intermediate + FFN(intermediate))`
+
+**Visualization**:
+- **Bar chart**: Δ magnitude per token (`|output - input|`)
+- **Color**: Change intensity (blue = small, red = large)
+- **Table**: Before/after values
+
+**Use Cases**:
+- Assess how much each sub-layer modifies tokens
+- Identify layers with large transformations
+- Understand gradient flow in deep networks
+- Debug exploding/vanishing gradients
+
+---
+
+#### G. Feed-Forward Network (FFN)
+
+**What it shows**: Non-linear transformation in each encoder layer
+
+**Architecture**:
+```
+FFN(x) = W₂ · GELU(W₁ · x + b₁) + b₂
+768 → 3,072 → 768 (4× expansion)
+```
+
+**Visualization**:
+- **Heatmap**: Intermediate activations (first 96 of 3,072 dimensions)
+- **Color**: Activation intensity after GELU
+- **Histogram**: Distribution of activation values
+
+**Use Cases**:
+- Understand non-linear transformations
+- Identify dead/saturated neurons
+- Analyze task-specific feature learning
+- Compare FFN behavior across layers
+
+---
+
+#### H. Head Clustering & Specialization
+
+**What it shows**: Automatic grouping of attention heads into behavioral clusters
+
+**Algorithm**:
+1. Compute 7 specialization metrics per head (Syntax, Semantics, CLS, Punct, Entities, LongRange, Self)
+2. Apply t-SNE: 7D → 2D projection
+3. Run K-Means: Cluster heads (optimal K via Silhouette Score)
+4. Semantic naming: e.g., "Syntactic Specialists", "Long-Range Heads"
+
+**Visualization**:
+- **2D scatter plot**: Heads colored by cluster
+- **Cluster labels**: Descriptive names
+- **Silhouette score**: Clustering quality metric
+
+**Interaction**:
+- **Hover point**: Shows head ID, layer, cluster, metrics
+- **Click cluster**: Filter to show only that cluster's heads
+- **Legend**: Toggle cluster visibility
+
+**Use Cases**:
+- Architectural interpretation
+- Head redundancy analysis
+- Pruning candidate identification
+- Behavioral pattern discovery
+
+**Example**:
+```
+Cluster 1 (Blue): "Syntactic Specialists"
+  - High Syntax Focus (0.8)
+  - Low Semantics Focus (0.2)
+  - Heads: L2H3, L3H1, L5H7
+
+Cluster 2 (Red): "Long-Range Heads"
+  - High Long-Range (0.75)
+  - Low Self-Attention (0.15)
+  - Heads: L9H4, L10H2, L11H8
+```
+
+---
+
+## Section 4: Bias Detection Tab (Coming Soon)
+
+**Purpose**: Ethical AI analysis—detect, quantify, and understand how attention mechanisms process biased content
+
+### Planned Features
+
+#### A. Token-Level Bias Classification
+
+**Categories**:
+- **Generalization (GEN)**: Overgeneralizations (e.g., "all lawyers are rich")
+- **Unfairness (UNFAIR)**: Discriminatory language (e.g., "women can't code")
+- **Stereotypes (STEREO)**: Cultural/social stereotypes (e.g., "Asians are good at math")
+
+**Visualization**:
+- Heatmap: Tokens colored by bias type
+- Table: Token → Bias category → Confidence score
+- Spans: Highlighted biased phrases
+
+---
+
+#### B. Attention-Bias Interaction Analysis
+
+**What it shows**: Which attention heads focus on biased tokens
+
+**Formula**:
+```
+AttentionToBias(head_h) = Σ_{i∈BiasTokens} mean_j(A_h[j, i])
+```
+
+**Visualization**:
+- Head × Bias Type matrix heatmap
+- Identifies heads that amplify vs. mitigate bias
+
+---
+
+#### C. Bias Propagation Across Layers
+
+**What it shows**: How bias signals evolve through encoder stack
+
+**Visualization**:
+- Line plot: Bias intensity vs. Layer
+- Tracks amplification (increasing) vs. mitigation (decreasing)
+
+**Use Cases**:
+- Ethical AI auditing
+- Bias mitigation strategy development
+- Model fairness assessment
+
+---
+
+## Interactive Features Summary
+
+### Real-Time Processing
+- All calculations on-demand (no pre-computed results)
+- Authentic model inference via PyTorch
+- 5-15 second processing depending on model size
 
 ### Comprehensive Coverage
-- **144 attention heads** (base/multilingual) or **384 heads** (large)
-- **All 12 or 24 layers** fully explorable
-- **Every token pair** attention visualized
-- **6 quantitative metrics** per head
-- **7 specialization metrics** per head
+- **144-384 attention heads**: Full coverage of all models
+- **All 12 or 24 layers**: Completely explorable
+- **Every token pair**: Complete attention matrix
+- **13 quantitative metrics**: 6 attention + 7 specialization
 
-### Interactive Plots
-- **Hover**: See detailed calculations
-- **Click**: Focus on specific elements
-- **Zoom/Pan**: Plotly controls
-- **Select**: Choose layers, heads, tokens
-- **Toggle**: Switch visualization modes
+### Interactive Controls
+
+| Control | Location | Effect |
+|---------|----------|--------|
+| **Layer Selector** | Floating control bar | Changes layer for all visualizations |
+| **Head Selector** | Floating control bar | Changes head for attention heatmap/flow |
+| **Token Click** | Attention flow | Focuses on token's outgoing attention |
+| **Metric Card Click** | Overview section | Opens formula modal |
+| **ISA Cell Click** | ISA matrix | Opens token-level drill-down modal |
+| **Tree Node Click** | Token influence tree | Collapses/expands subtree |
+| **View Mode Toggle** | Sidebar | Switches Basic ↔ Advanced |
+| **Normalization Selector** | Floating control bar | Changes attention normalization |
+| **Top-K Selector** | Floating control bar | Adjusts number of connections shown |
 
 ### Educational Modals
-- Mathematical formulas with LaTeX-style formatting
-- Interpretation guides
-- Example use cases
-- Scientific research references
 
-### Multi-Model Support
-- Switch between BERT variants
-- Automatic adaptation of UI (layer/head counts)
-- Consistent visualization across models
+When you click on metric cards, you see:
+- **Mathematical formula**: LaTeX-style with proper notation
+- **Interpretation guide**: What high/low values mean
+- **Use cases**: Research applications
+- **Scientific reference**: Original paper citation
 
-### Scientific Grounding
-- Metrics from peer-reviewed research
-- References to original papers
-- Reproducible computations
-- Transparent methodology
+**Example (Confidence Max)**:
+```
+Formula: C_max = max_{i,j}(A_ij)
+
+Interpretation:
+- High values (> 0.8): Strong, decisive attention focus
+- Low values (< 0.3): Distributed, uncertain attention
+
+Use Cases:
+- Quantify attention sharpness
+- Compare heads/layers/models
+- Identify confident vs. uncertain predictions
+
+Reference:
+Golshanrad & Faghih (2024), "From Attention to Assurance"
+DOI: 10.2139/ssrn.4856933
+```
+
+---
+
+## Comparison Modes
+
+### Mode 1: Compare Models (Model A vs. Model B)
+
+**Purpose**: Side-by-side architectural behavior analysis
+
+**Activation**: Enable "Compare Models" in sidebar
+
+**Layout**:
+- Dual-column layout
+- Model A (Blue) on left
+- Model B (Pink) on right
+- Synchronized scrolling
+
+**Features**:
+- Independent model selection per column
+- Shared layer/head controls (optional)
+- Visual differences highlighted
+- Metric comparison tables
+
+**Use Cases**:
+- BERT-base vs. BERT-large comparison
+- BERT vs. GPT-2 architectural differences
+- English vs. Multilingual model behavior
+- Fine-tuned vs. Pre-trained comparison
+
+---
+
+### Mode 2: Compare Prompts (Prompt A vs. Prompt B)
+
+**Purpose**: Analyze model consistency across different inputs
+
+**Activation**: Enable "Compare Prompts" in sidebar
+
+**Layout**:
+- Tab interface for switching between prompts
+- Same model, different inputs
+- Overlay visualizations for direct comparison
+
+**Use Cases**:
+- Input perturbation analysis
+- Model robustness testing
+- Attention consistency evaluation
+- Adversarial input detection
+
+---
 
 ## Design Philosophy
 
 ### Minimalist Aesthetic
-- **Color Palette**: Blue, dark blue, light blue, pink
-- **Typography**: Clean, modern fonts
-- **Layout**: Reduced clutter, focus on visualizations
-- **Whitespace**: Generous spacing for readability
+
+**Color Palette**:
+- Primary: Blue (#2196F3), Dark Blue (#1565C0)
+- Secondary: Pink (#E91E63) for Model B
+- Neutral: Gray (#757575), Light Gray (#EEEEEE)
+- Accent: Green (success), Red (error), Yellow (warning)
+
+**Typography**:
+- Headers: Inter, -apple-system, sans-serif
+- Body: System fonts for performance
+- Code: Fira Code, monospace
+
+**Layout**:
+- Dark sidebar (left, fixed position)
+- Light content area (right, scrollable)
+- Generous whitespace for readability
+- Card-based component organization
+
+---
 
 ### Responsive Design
-- **Dark Sidebar**: Fixed position controls
-- **Light Content**: Scrollable visualization area
-- **Adaptive**: Works on various screen sizes
-- **Loading States**: Spinners for async operations
+
+**Breakpoints**:
+- Desktop: ≥1200px (full two-column layout)
+- Tablet: 768px-1199px (stacked layout)
+- Mobile: <768px (single column, simplified)
+
+**Adaptive Elements**:
+- Sidebar collapses to hamburger menu on mobile
+- Heatmaps resize to fit viewport
+- Tables become scrollable horizontally
+- Modals overlay fullscreen on small screens
+
+---
 
 ### Accessibility
-- Unique IDs for all interactive elements
+
+**Features**:
 - Semantic HTML structure
-- Keyboard navigation support
-- ARIA labels where appropriate
+- ARIA labels for interactive elements
+- Keyboard navigation support (Tab, Enter, Esc)
+- Focus indicators on all controls
+- High contrast text (WCAG AA compliant)
+- Alt text for all visualizations
 
-## Technical Implementation
+---
 
-### Frontend
-- **Framework**: Shiny for Python
-- **Plotting**: Plotly (attention maps, radar, ISA)
-- **Tree**: D3.js force-directed layout
-- **Styling**: Custom CSS with CSS variables
-- **Interaction**: JavaScript event handlers
+## Technical Implementation Details
 
-### Backend
-- **Model**: HuggingFace Transformers
-- **Inference**: PyTorch
-- **NLP**: spaCy (POS, NER), NLTK (sentence splitting)
-- **Computation**: NumPy for metrics
-- **Caching**: Smart state management for performance
+### Frontend Stack
 
-### Data Flow
-1. User input → Tokenization
-2. BERT forward pass → Extract attentions, states
-3. Metric computation → 6 + 7 metrics per head
-4. ISA computation → Sentence attention matrix
-5. Tree generation → Hierarchical attention structure
-6. Rendering → All visualizations simultaneously
-7. Interactive updates → Layer/head/token selection
+**Framework**: Shiny for Python
+- Reactive programming model
+- Automatic UI updates on state changes
+- Server-side rendering for security
+
+**Plotting Libraries**:
+- **Plotly**: Attention heatmaps, radar charts, ISA matrices
+  - Interactive hover/zoom/pan
+  - High-performance WebGL rendering
+- **D3.js**: Token Influence Tree
+  - Force-directed layout simulation
+  - Collapsible nodes with transitions
+
+**Styling**:
+- Custom CSS with CSS variables for theming
+- Flexbox & Grid for responsive layouts
+- Smooth transitions and animations
+
+---
+
+### Backend Stack
+
+**Model Loading**: `ModelManager` singleton
+- Lazy loading (only loads when first used)
+- Caching in memory for fast switching
+- Device management (CUDA/CPU auto-detection)
+
+**Computation Pipeline** (`heavy_compute` function):
+1. Tokenization (WordPiece for BERT, BPE for GPT-2)
+2. Model inference (forward pass, no gradients)
+3. Extraction: Attentions, hidden states, embeddings
+4. Metrics computation: 6 attention + 7 specialization
+5. ISA computation: Sentence segmentation + aggregation
+6. Tree generation: Multi-hop attention traversal
+7. Head clustering: t-SNE + K-Means + semantic naming
+
+**State Management**:
+- `cached_result`: Model A outputs
+- `cached_result_B`: Model B outputs (comparison mode)
+- `global_layer`, `global_head`, `global_topk`: Shared controls
+- `view_mode`: Basic or Advanced
+- `compare_mode`: Single or dual model
+
+---
+
+### Performance Optimizations
+
+**Caching Strategy**:
+- Results cached until text/model changes
+- Visualizations cached until layer/head changes
+- PCA projections computed once per input
+
+**Lazy Rendering**:
+- Deep Dive components only rendered in Advanced mode
+- ISA drill-down modals rendered on-demand
+- Tree visualization deferred until section expanded
+
+**Data Reduction**:
+- Heatmaps show subset of dimensions (64 of 768)
+- FFN displays first 96 of 3,072 intermediate dims
+- Attention flow thresholded (>0.05) to reduce clutter
+
+---
 
 ## Conclusion
 
-Attention Atlas provides an unprecedented level of transparency into BERT's attention mechanisms, combining:
+Attention Atlas provides a comprehensive, user-friendly interface for exploring Transformer attention mechanisms across **three progressive levels**:
 
-- **Quantitative Analysis**: 6 attention metrics + 7 specialization metrics
-- **Visual Exploration**: Heatmaps, radar charts, trees, flows
-- **Interactive Discovery**: Click, hover, select, toggle
-- **Educational Value**: Formulas, interpretations, references
-- **Scientific Rigor**: Grounded in research, reproducible results
+1. **Overview**: High-level metrics and predictions
+2. **Explore Attention**: Interactive attention analysis
+3. **Deep Dive**: Component-level architectural inspection
 
-Whether you're a researcher analyzing attention patterns, a student learning about transformers, or a practitioner debugging model behavior, Attention Atlas offers the tools and visualizations to deeply understand how BERT processes language.
+Whether you're:
+- **Researching** mechanistic interpretability
+- **Teaching** Transformer architecture
+- **Debugging** model behavior
+- **Auditing** for bias and fairness
+
+...Attention Atlas offers the tools and visualizations to deeply understand how BERT and GPT-2 process language, from raw text input to final predictions.
+
+---
+
+**Navigation Summary**:
+
+| Section | Key Visualizations | Primary Use |
+|---------|-------------------|-------------|
+| **Overview** | Metrics, MLM, Radar, Hidden States | Model behavior at a glance |
+| **Explore Attention** | Heatmaps, Flows, Tree, ISA | Token-to-token relationships |
+| **Deep Dive** | Embeddings, Q/K/V, FFN, Clustering | Architectural component analysis |
+| **Bias Detection** | Token bias, Attention-bias, Propagation | Ethical AI auditing |
+
+Start with **Overview** to understand what the model is doing, move to **Explore Attention** to see how it's doing it, and dive into **Deep Dive** to inspect why it works the way it does.
+
+---
+
+## Planned Features (Thesis Validation Phase)
+
+The following features are **planned for implementation** as part of the Master's thesis validation:
+
+### 1. Faithfulness Validation Panel
+
+**Location**: New tab "Faithfulness Analysis"
+
+**What it will show**: Side-by-side comparison of attention weights vs. gradient-based attributions
+
+**Components**:
+- **Dual Heatmaps**: Attention (left) vs. Integrated Gradients (right)
+- **Correlation Score**: Spearman-r coefficient with color-coded interpretation
+  - Green (r > 0.5): Strong correlation → attention is faithful
+  - Yellow (0.3 < r < 0.5): Moderate correlation
+  - Red (r < 0.3): Weak correlation → attention may be misleading
+- **Toggle Options**: Switch between IG, LRP, Gradient×Input baselines
+- **Token Highlighting**: Click token to see its attribution from both methods
+
+**Research Value**: Quantifies when attention is/isn't a reliable interpretability signal
+
+---
+
+### 2. Correlation Dashboard
+
+**Location**: New tab "Correlation Analysis"
+
+**What it will show**: Three-way relationships between attention, performance, and fairness
+
+**Three Panels**:
+
+#### Panel A: Attention ↔ Performance
+- **Scatter Plot**: Each point = one attention head
+- **X-axis**: Attention metric (Confidence, Focus, Sparsity, etc.)
+- **Y-axis**: Head contribution to task accuracy (via ablation)
+- **Color**: Layer (early layers = blue, late layers = red)
+- **Interaction**: Click point to jump to that head's visualizations
+
+#### Panel B: Attention ↔ Fairness
+- **Scatter Plot**: Each point = one attention head
+- **X-axis**: Attention to bias tokens (proportion)
+- **Y-axis**: StereoSet bias score (SS)
+- **Color**: Head cluster (Syntactic, Semantic, etc.)
+- **Finding**: Identify "bias-amplifying" heads (high SS)
+
+#### Panel C: Performance ↔ Fairness Trade-off
+- **Scatter Plot**: Each point = one attention head
+- **X-axis**: Task accuracy
+- **Y-axis**: Fairness (1 - bias_score)
+- **Pareto Frontier**: Line connecting optimal heads (high accuracy, high fairness)
+- **Use Case**: Inform model pruning decisions (remove bias-amplifying heads)
+
+**Correlation Matrix Heatmap**:
+- Rows/Columns: All metrics (6 attention + performance + fairness)
+- Cell color: Pearson correlation coefficient
+- **Example Finding**: "Focus (Entropy) negatively correlates with bias (r = -0.45)"
+
+---
+
+### 3. Benchmark Integration
+
+**Location**: Sidebar dropdown "Dataset Selector"
+
+**Supported Benchmarks**:
+- **GLUE**: CoLA, SST-2, MRPC, QQP, MNLI, QNLI, RTE, WNLI
+- **SuperGLUE**: BoolQ, CB, COPA, MultiRC, ReCoRD, WiC
+- **StereoSet**: Intra-sentence, Inter-sentence bias examples
+
+**Workflow**:
+1. User selects dataset + task (e.g., "GLUE → MNLI")
+2. System loads examples from dataset
+3. Dropdown shows example selector (e.g., "Example 1/9815")
+4. Click "Generate" to analyze that example
+5. Batch processing option: "Analyze all 100 examples" → CSV export with metrics
+
+**Aggregated Statistics**:
+- Average attention metrics per task
+- Head importance ranking per task
+- Cross-task comparison (e.g., "Which heads are important for both SST-2 and MNLI?")
+
+---
+
+### 4. StereoSet Analysis Panel
+
+**Location**: Enhanced "Bias Detection" tab
+
+**New Components**:
+
+#### StereoSet Score Card
+- **LMS (Language Modeling Score)**: Model quality (0-100%)
+- **SS (Stereotype Score)**: Bias preference (ideal = 50%)
+- **ICAT**: Balanced metric (higher = better)
+- **Breakdown by bias type**: Gender, race, profession, religion
+
+#### Attention-to-Bias Heatmap
+- **Head × Bias Type Matrix**: Shows which heads attend to which bias categories
+- **Example**: "Layer 9, Head 4 strongly attends to gender-biased tokens (0.78)"
+
+#### Bias Propagation Plot
+- **Line Graph**: Bias intensity vs. Layer
+- **Finding**: "Bias amplifies from layer 6 onwards"
+
+---
+
+### 5. User Study Interface
+
+**Location**: Hidden by default, activated via URL parameter `?study_mode=true`
+
+**Components**:
+
+#### Task Overlay
+- **Task Instructions**: Clear description of current task
+- **Timer**: Countdown for task completion time measurement
+- **Submit Button**: Records answer and moves to next task
+
+#### Interaction Logger
+- Logs every click, hover, scroll
+- Tracks time spent on each visualization
+- Navigation path analysis (which features are used most?)
+
+#### Post-Task Questionnaire
+- System Usability Scale (SUS) - 10 questions, 5-point Likert scale
+- NASA-TLX Cognitive Load - 6 dimensions
+- Open-ended feedback: "What was most helpful?" "What was confusing?"
+
+**Data Export**: CSV with columns: `participant_id, task_id, completion_time, accuracy, clicks, sus_score, feedback`
+
+---
+
+## Implementation Priority
+
+| Feature | Priority | Estimated Effort | Target Completion |
+|---------|----------|------------------|-------------------|
+| **Faithfulness Validation** | 🔴 Critical | 3-4 weeks | Week 12 |
+| **Correlation Dashboard** | 🔴 Critical | 2 weeks | Week 13 |
+| **StereoSet Integration** | 🔴 High | 1-2 weeks | Week 14 |
+| **GLUE Integration** | 🟡 Medium | 1 week | Week 14 |
+| **User Study Interface** | 🟡 Medium | 0.5 weeks | Week 15 |
+
+**Detailed Timeline**: See [ROADMAP.md](../ROADMAP.md) for complete implementation plan.
+
+---
+
+**Attention Atlas** — Making Transformer attention mechanisms interpretable, one head at a time.
+
+**Academic Context**: This user guide documents the current implementation and planned extensions for a Master's thesis on **Interpretable Large Language Models through Attention Mechanism Visualization**. For full thesis objectives and validation strategy, see [README.md](../README.md).

@@ -1,97 +1,206 @@
 """GUS-Net Neural Bias Detector.
 
-Wraps the pre-trained ethical-spectacle/social-bias-ner model for
-token-level social bias detection using NER.
+Supports two backbone architectures for token-level social bias detection:
 
-Label scheme (BIO):
-  O, B-STEREO, I-STEREO, B-GEN, I-GEN, B-UNFAIR, I-UNFAIR
+  1. BERT  (ethical-spectacle/social-bias-ner)  — 7-label BIO scheme
+  2. GPT-2 (locally fine-tuned)                — 7-label BIO scheme
+
+Both models share the same label layout:
+
+    Index  Label
+    ─────  ─────────
+      0    O
+      1    B-STEREO
+      2    I-STEREO
+      3    B-GEN
+      4    I-GEN
+      5    B-UNFAIR
+      6    I-UNFAIR
+
+Both output per-token sigmoid probabilities that are thresholded to produce
+categorical bias labels (GEN, UNFAIR, STEREO).
 """
 
 import torch
-from transformers import BertTokenizerFast, BertForTokenClassification
-from typing import List, Dict, Optional
-from dataclasses import dataclass
+import numpy as np
+from pathlib import Path
+from transformers import (
+    BertTokenizerFast,
+    BertForTokenClassification,
+    AutoTokenizer,
+    GPT2ForTokenClassification,
+)
+from typing import List, Dict
 
 
-LABEL2ID = {
-    'O': 0,
-    'B-STEREO': 1, 'I-STEREO': 2,
-    'B-GEN': 3, 'I-GEN': 4,
-    'B-UNFAIR': 5, 'I-UNFAIR': 6,
-}
-ID2LABEL = {v: k for k, v in LABEL2ID.items()}
-NUM_LABELS = len(LABEL2ID)
+# ── Bidirectional fix for GPT-2 inference ────────────────────────────────────
 
-# Merged category indices for score extraction
+def _make_gpt2_bidirectional(model):
+    """Remove the causal attention mask from a GPT-2 model.
+
+    The ``attn.bias`` buffer is registered with ``persistent=False`` so it
+    is NOT included in ``save_pretrained`` / ``state_dict``.  After loading
+    a bidirectionally-trained GPT-2 model, this function must be called to
+    restore full self-attention (replace lower-triangular with all-ones).
+    """
+    for block in model.transformer.h:
+        attn = block.attn
+        if hasattr(attn, "bias") and attn.bias is not None:
+            attn.bias = torch.ones_like(attn.bias)
+
+
+# ── Shared label scheme (7 labels — identical for BERT and GPT-2) ────────────
+
+NUM_LABELS = 7
 CATEGORY_INDICES = {
     "STEREO": [1, 2],   # B-STEREO, I-STEREO
-    "GEN": [3, 4],      # B-GEN, I-GEN
+    "GEN":    [3, 4],   # B-GEN,    I-GEN
     "UNFAIR": [5, 6],   # B-UNFAIR, I-UNFAIR
+}
+O_INDEX = 0
+
+
+# ── Model registry ───────────────────────────────────────────────────────────
+
+_BIAS_DIR = Path(__file__).parent
+
+MODEL_REGISTRY = {
+    "gusnet-bert": {
+        "path": "ethical-spectacle/social-bias-ner",
+        "architecture": "bert",
+        "tokenizer": "bert-base-uncased",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
+        "display_name": "GUS-Net (BERT)",
+    },
+    "gusnet-bert-large": {
+        "path": str(_BIAS_DIR / "gus-net-bert-large-final"),
+        "architecture": "bert",
+        "tokenizer": "bert-large-uncased",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
+        "display_name": "GUS-Net (BERT Large)",
+    },
+    "gusnet-gpt2": {
+        "path": str(_BIAS_DIR / "gus-net-gpt2-final"),
+        "architecture": "gpt2",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"<|endoftext|>"},
+        "display_name": "GUS-Net (GPT-2)",
+    },
+    "gusnet-gpt2-medium": {
+        "path": str(_BIAS_DIR / "gus-net-gpt2-medium-final"),
+        "architecture": "gpt2",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"<|endoftext|>"},
+        "display_name": "GUS-Net (GPT-2 Medium)",
+    },
 }
 
 
 class GusNetDetector:
-    """Neural bias detector using the GUS-Net (social-bias-ner) model."""
+    """Neural bias detector supporting BERT and GPT-2 GUS-Net backbones.
 
-    _instance = None
-    _model = None
-    _tokenizer = None
+    Models are cached at class level to avoid redundant reloading.  When the
+    requested model differs from the cached one, only the new model is loaded
+    (previous entries stay in cache until memory pressure forces eviction).
+    """
+
+    _cache: Dict[str, tuple] = {}
 
     def __init__(
         self,
-        model_name: str = "ethical-spectacle/social-bias-ner",
+        model_key: str = "gusnet-bert",
         threshold: float = 0.5,
     ):
-        self.model_name = model_name
+        if model_key not in MODEL_REGISTRY:
+            raise ValueError(
+                f"Unknown model key '{model_key}'. "
+                f"Available: {list(MODEL_REGISTRY.keys())}"
+            )
+        self.model_key = model_key
+        self.config = MODEL_REGISTRY[model_key]
         self.threshold = threshold
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    @classmethod
-    def _load_model(cls, model_name: str, device: str):
-        """Load and cache the GUS-Net model (singleton)."""
-        if cls._model is not None:
-            return cls._tokenizer, cls._model
+    # ── Model loading ────────────────────────────────────────────────────
 
-        print(f"Loading GUS-Net model: {model_name}...")
+    @classmethod
+    def _load_model(cls, model_key: str, device: str):
+        """Load and cache the model identified by *model_key*."""
+        if model_key in cls._cache:
+            return cls._cache[model_key]
+
+        cfg = MODEL_REGISTRY[model_key]
+        model_path = cfg["path"]
+        arch = cfg["architecture"]
+
+        print(f"[GUS-Net] Loading {cfg['display_name']} from {model_path} ...")
+
         try:
-            cls._tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
-            cls._model = BertForTokenClassification.from_pretrained(
-                model_name, num_labels=NUM_LABELS
-            )
-            cls._model.eval()
-            cls._model.to(device)
-            print("GUS-Net model loaded successfully.")
+            if arch == "gpt2":
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_path, add_prefix_space=True,
+                )
+                if tokenizer.pad_token is None:
+                    tokenizer.pad_token = tokenizer.eos_token
+                model = GPT2ForTokenClassification.from_pretrained(model_path)
+                # Restore bidirectional attention (buffer is not persisted)
+                _make_gpt2_bidirectional(model)
+            else:
+                # BERT: use tokenizer from registry (model repo may lack one)
+                tok_name = cfg.get("tokenizer", "bert-base-uncased")
+                tokenizer = BertTokenizerFast.from_pretrained(tok_name)
+                model = BertForTokenClassification.from_pretrained(
+                    model_path, num_labels=cfg["num_labels"]
+                )
+
+            model.eval()
+            model.to(device)
+            cls._cache[model_key] = (tokenizer, model)
+            print(f"[GUS-Net] {cfg['display_name']} loaded successfully.")
         except Exception as e:
-            print(f"WARNING: Failed to load GUS-Net model: {e}")
-            cls._model = None
-            cls._tokenizer = None
+            print(f"[GUS-Net] WARNING — failed to load {cfg['display_name']}: {e}")
             raise
 
-        return cls._tokenizer, cls._model
+        return cls._cache[model_key]
 
     @property
     def is_available(self) -> bool:
-        """Check if the model was loaded successfully."""
+        """Check whether the model can be loaded."""
         try:
-            self._load_model(self.model_name, self._device)
-            return self._model is not None
+            self._load_model(self.model_key, self._device)
+            return True
         except Exception:
             return False
 
+    # ── Inference ────────────────────────────────────────────────────────
+
     def detect_bias(self, text: str) -> List[Dict]:
-        """Run GUS-Net inference on text.
+        """Run GUS-Net inference on *text*.
 
-        Args:
-            text: Raw input text.
-
-        Returns:
-            List of per-token dicts with keys:
-                token, index, bias_types, is_biased, scores, method,
-                explanation, threshold
+        Returns a list of per-token dicts with keys:
+            token, index, bias_types, is_biased, scores, method,
+            explanation, threshold
         """
-        tokenizer, model = self._load_model(self.model_name, self._device)
+        tokenizer, model = self._load_model(self.model_key, self._device)
+        cfg = self.config
 
-        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        inputs = tokenizer(
+            text, return_tensors="pt", truncation=True, max_length=512
+        )
         inputs = {k: v.to(self._device) for k, v in inputs.items()}
 
         with torch.no_grad():
@@ -100,39 +209,37 @@ class GusNetDetector:
         probabilities = torch.sigmoid(logits)[0].cpu()  # [seq_len, num_labels]
         tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].cpu())
 
-        results = []
+        results: List[Dict] = []
         for idx, (token, probs) in enumerate(zip(tokens, probabilities)):
             # Skip special tokens
-            if token in ("[CLS]", "[SEP]", "[PAD]"):
-                results.append({
-                    "token": token,
-                    "index": idx,
-                    "bias_types": [],
-                    "is_biased": False,
-                    "scores": {"O": 0.0, "GEN": 0.0, "UNFAIR": 0.0, "STEREO": 0.0},
-                    "method": "gusnet",
-                    "explanation": "",
-                    "threshold": self.threshold,
-                })
+            if token in cfg["special_tokens"]:
+                results.append(self._empty_label(token, idx))
                 continue
 
-            # Compute per-category score (max of B/I probabilities)
-            scores = {"O": float(probs[0].item())}
-            for cat, indices in CATEGORY_INDICES.items():
+            # Per-category score = max(B-prob, I-prob)
+            scores: Dict[str, float] = {}
+            for cat, indices in cfg["category_indices"].items():
                 scores[cat] = float(max(probs[i].item() for i in indices))
 
-            # Determine which categories exceed threshold (exclude O — it's not a bias type)
-            bias_types = [cat for cat, score in scores.items() if score >= self.threshold and cat != "O"]
+            # O score: direct from model output (both BERT and GPT-2 have O at index 0)
+            scores["O"] = float(probs[cfg["o_index"]].item())
 
-            # Build explanation
-            explanations = []
-            for cat in bias_types:
-                if cat == "GEN":
-                    explanations.append(f"Generalization (score: {scores[cat]:.2f})")
-                elif cat == "UNFAIR":
-                    explanations.append(f"Unfair language (score: {scores[cat]:.2f})")
-                elif cat == "STEREO":
-                    explanations.append(f"Stereotype (score: {scores[cat]:.2f})")
+            # Threshold to determine active bias types
+            bias_types = [
+                cat for cat in ("GEN", "UNFAIR", "STEREO")
+                if scores.get(cat, 0.0) >= self.threshold
+            ]
+
+            # Human-readable explanation
+            _CAT_LABEL = {
+                "GEN": "Generalization",
+                "UNFAIR": "Unfair language",
+                "STEREO": "Stereotype",
+            }
+            explanations = [
+                f"{_CAT_LABEL[cat]} (score: {scores[cat]:.2f})"
+                for cat in bias_types
+            ]
 
             results.append({
                 "token": token,
@@ -141,15 +248,18 @@ class GusNetDetector:
                 "is_biased": len(bias_types) > 0,
                 "scores": scores,
                 "method": "gusnet",
-                "explanation": "; ".join(explanations) if explanations else "",
+                "explanation": "; ".join(explanations),
                 "threshold": self.threshold,
             })
 
         return results
 
+    # ── Post-processing ──────────────────────────────────────────────────
+
     def get_bias_summary(self, token_labels: List[Dict]) -> Dict:
         """Generate summary statistics from detect_bias output."""
-        content_tokens = [t for t in token_labels if t["token"] not in ("[CLS]", "[SEP]", "[PAD]")]
+        special = self.config["special_tokens"]
+        content_tokens = [t for t in token_labels if t["token"] not in special]
         total = len(content_tokens)
         biased = [t for t in content_tokens if t["is_biased"]]
 
@@ -157,13 +267,13 @@ class GusNetDetector:
         unfair_count = sum(1 for t in biased if "UNFAIR" in t["bias_types"])
         stereo_count = sum(1 for t in biased if "STEREO" in t["bias_types"])
 
-        # Average confidence across biased tokens
         avg_confidence = 0.0
         if biased:
-            all_scores = []
-            for t in biased:
-                for cat in t["bias_types"]:
-                    all_scores.append(t["scores"].get(cat, 0.0))
+            all_scores = [
+                t["scores"].get(cat, 0.0)
+                for t in biased
+                for cat in t["bias_types"]
+            ]
             avg_confidence = sum(all_scores) / len(all_scores) if all_scores else 0.0
 
         return {
@@ -175,7 +285,12 @@ class GusNetDetector:
             "stereotype_count": stereo_count,
             "avg_confidence": avg_confidence,
             "categories_found": [
-                cat for cat, count in [("GEN", gen_count), ("UNFAIR", unfair_count), ("STEREO", stereo_count)]
+                cat
+                for cat, count in [
+                    ("GEN", gen_count),
+                    ("UNFAIR", unfair_count),
+                    ("STEREO", stereo_count),
+                ]
                 if count > 0
             ],
         }
@@ -186,11 +301,12 @@ class GusNetDetector:
         Returns list of dicts with: start_idx, end_idx, tokens, bias_types,
         avg_score, method, explanation
         """
-        spans = []
+        special = self.config["special_tokens"]
+        spans: List[Dict] = []
         current = None
 
         for label in token_labels:
-            if label["token"] in ("[CLS]", "[SEP]", "[PAD]"):
+            if label["token"] in special:
                 if current is not None:
                     spans.append(self._finalize_span(current))
                     current = None
@@ -222,14 +338,31 @@ class GusNetDetector:
 
         return spans
 
+    # ── Helpers ───────────────────────────────────────────────────────────
+
+    def _empty_label(self, token: str, index: int) -> Dict:
+        """Return a zeroed label dict for special tokens."""
+        return {
+            "token": token,
+            "index": index,
+            "bias_types": [],
+            "is_biased": False,
+            "scores": {"O": 0.0, "GEN": 0.0, "UNFAIR": 0.0, "STEREO": 0.0},
+            "method": "gusnet",
+            "explanation": "",
+            "threshold": self.threshold,
+        }
+
     @staticmethod
     def _finalize_span(current: Dict) -> Dict:
         """Compute averaged scores for a span."""
         all_cats = list(current["bias_types"])
-        avg_scores = {}
+        avg_scores: Dict[str, float] = {}
         for cat in ("GEN", "UNFAIR", "STEREO"):
             cat_scores = [s.get(cat, 0.0) for s in current["scores"]]
-            avg_scores[cat] = sum(cat_scores) / len(cat_scores) if cat_scores else 0.0
+            avg_scores[cat] = (
+                sum(cat_scores) / len(cat_scores) if cat_scores else 0.0
+            )
 
         overall_avg = 0.0
         if all_cats:
@@ -246,4 +379,4 @@ class GusNetDetector:
         }
 
 
-__all__ = ["GusNetDetector"]
+__all__ = ["GusNetDetector", "MODEL_REGISTRY"]

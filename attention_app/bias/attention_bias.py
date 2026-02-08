@@ -1,7 +1,17 @@
-"""Attention × Bias Analysis Module.
+"""Attention × Bias Interaction Analysis.
 
-This module analyzes how attention mechanisms interact with biased content,
-revealing which attention heads focus on or amplify bias patterns.
+Quantifies how each attention head interacts with tokens flagged as
+socially biased (by GUS-Net NER), using two complementary metrics:
+
+  BAR  — Bias Attention Ratio
+         Measures whether a head *over-attends* to biased tokens
+         relative to a uniform baseline.
+
+  BSR  — Bias Self-Reinforcement
+         Measures whether biased tokens disproportionately attend
+         to *each other*, forming attention "echo-chambers".
+
+Both are expressed as observed / expected ratios centred at 1.0.
 """
 
 import numpy as np
@@ -12,13 +22,27 @@ from dataclasses import dataclass
 
 @dataclass
 class HeadBiasMetrics:
-    """Metrics for a single attention head's interaction with bias."""
+    """Per-head bias interaction metrics.
+
+    Attributes
+    ----------
+    bias_attention_ratio : float
+        BAR(l,h) = μ̂_B / μ₀   where
+            μ̂_B = (1/N) Σ_i Σ_{j∈B} α_ij   (observed)
+            μ₀   = |B| / N                   (expected under uniform)
+        Centred at 1.0; values > 1.5 indicate specialisation.
+
+    amplification_score : float
+        BSR(l,h) = (1/|B|) Σ_{i∈B} Σ_{j∈B} α_ij  /  (|B|/N)
+        Measures bias self-reinforcement (biased→biased attention).
+        Centred at 1.0; high values indicate echo-chamber patterns.
+    """
     layer: int
     head: int
-    bias_attention_ratio: float  # Ratio of attention TO biased tokens vs average
-    amplification_score: float   # Ratio of attention FROM biased tokens vs average
-    max_bias_attention: float    # Maximum attention weight to any biased token
-    specialized_for_bias: bool   # Whether head appears to specialize in bias
+    bias_attention_ratio: float   # BAR — observed / expected attention to biased tokens
+    amplification_score: float    # BSR — biased-to-biased self-reinforcement
+    max_bias_attention: float     # max α_ij where j ∈ B
+    specialized_for_bias: bool    # BAR > 1.5
 
 
 class AttentionBiasAnalyzer:
@@ -78,46 +102,52 @@ class AttentionBiasAnalyzer:
         layer_idx: int,
         head_idx: int
     ) -> HeadBiasMetrics:
-        """Compute bias metrics for a single attention head.
+        """Compute BAR and BSR for a single attention head.
 
-        Args:
-            attention_matrix: Attention weights [seq_len, seq_len]
-            biased_indices: Set of biased token indices
-            layer_idx: Layer index
-            head_idx: Head index
+        Let A ∈ ℝ^{N×N} be the attention matrix (rows = queries,
+        cols = keys) and B ⊆ {1,…,N} the biased-token indices.
 
-        Returns:
-            HeadBiasMetrics object
+        BAR (Bias Attention Ratio)
+        ──────────────────────────
+        μ̂_B  = (1/N) Σ_i Σ_{j∈B} α_{ij}     (observed)
+        μ₀   = |B| / N                        (expected, uniform)
+        BAR  = μ̂_B / μ₀
+
+        BSR (Bias Self-Reinforcement)
+        ─────────────────────────────
+        ν̂   = (1/|B|) Σ_{i∈B} Σ_{j∈B} α_{ij}   (observed)
+        ν₀   = |B| / N                            (expected, uniform)
+        BSR  = ν̂ / ν₀
         """
         seq_len = attention_matrix.shape[0]
-
-        # Create mask for biased tokens
         biased_mask = np.array([i in biased_indices for i in range(seq_len)])
+        n_biased = int(biased_mask.sum())
 
-        # Average attention across all positions
-        avg_attention = attention_matrix.mean()
+        if n_biased == 0:
+            return HeadBiasMetrics(
+                layer=layer_idx, head=head_idx,
+                bias_attention_ratio=0.0, amplification_score=0.0,
+                max_bias_attention=0.0, specialized_for_bias=False,
+            )
 
-        # Attention TO biased tokens (column-wise)
-        # For each query position, how much does it attend to biased keys?
-        attention_to_biased = attention_matrix[:, biased_mask].mean() if biased_mask.any() else 0.0
+        # ── BAR: Bias Attention Ratio ──────────────────────────
+        # μ̂_B = (1/N) Σ_i Σ_{j∈B} α_ij   (mean attention mass → biased keys)
+        mu_observed = attention_matrix[:, biased_mask].sum() / seq_len
+        # μ₀  = |B| / N                   (expected under uniform)
+        mu_expected = n_biased / seq_len
+        bias_attention_ratio = mu_observed / mu_expected if mu_expected > 0 else 0.0
 
-        # Attention FROM biased tokens (row-wise)
-        # When query is a biased token, how much total attention does it give?
-        attention_from_biased = attention_matrix[biased_mask, :].mean() if biased_mask.any() else 0.0
+        # ── BSR: Bias Self-Reinforcement ───────────────────────
+        # ν̂ = (1/|B|) Σ_{i∈B} Σ_{j∈B} α_ij
+        #    → average attention from a biased query to all biased keys
+        nu_observed = attention_matrix[biased_mask][:, biased_mask].sum() / n_biased
+        # ν₀ = |B| / N  (same expected baseline)
+        amplification_score = nu_observed / mu_expected if mu_expected > 0 else 0.0
 
-        # Maximum attention to any biased token
-        max_bias_attention = attention_matrix[:, biased_mask].max() if biased_mask.any() else 0.0
+        # Maximum single attention weight to any biased key
+        max_bias_attention = float(attention_matrix[:, biased_mask].max())
 
-        # Calculate ratios (avoid division by zero)
-        if avg_attention > 0:
-            bias_attention_ratio = attention_to_biased / avg_attention
-            amplification_score = attention_from_biased / avg_attention
-        else:
-            bias_attention_ratio = 0.0
-            amplification_score = 0.0
-
-        # A head is considered "specialized for bias" if it pays
-        # significantly more attention to biased tokens (threshold: 1.5x average)
+        # Specialisation flag: BAR > 1.5
         specialized_for_bias = bias_attention_ratio > 1.5
 
         return HeadBiasMetrics(
@@ -126,7 +156,7 @@ class AttentionBiasAnalyzer:
             bias_attention_ratio=float(bias_attention_ratio),
             amplification_score=float(amplification_score),
             max_bias_attention=float(max_bias_attention),
-            specialized_for_bias=bool(specialized_for_bias)
+            specialized_for_bias=bool(specialized_for_bias),
         )
 
     def get_bias_focused_heads(

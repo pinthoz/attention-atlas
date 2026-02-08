@@ -4,10 +4,9 @@ Neural bias detection via GUS-Net (ethical-spectacle/social-bias-ner)
 with attention x bias interaction analysis.
 """
 
-from .gusnet_detector import GusNetDetector
+from .gusnet_detector import GusNetDetector, MODEL_REGISTRY
 from .attention_bias import AttentionBiasAnalyzer, HeadBiasMetrics
 from .visualizations import (
-    create_token_bias_heatmap,
     create_attention_bias_matrix,
     create_bias_propagation_plot,
     create_combined_bias_visualization,
@@ -17,16 +16,17 @@ from .visualizations import (
     create_bias_criteria_html,
     create_bias_sentence_preview,
     create_token_bias_strip,
+    create_confidence_breakdown,
 )
 
 __all__ = [
     # Detectors
     "GusNetDetector",
+    "MODEL_REGISTRY",
     "AttentionBiasAnalyzer",
     # Data classes
     "HeadBiasMetrics",
     # Visualizations
-    "create_token_bias_heatmap",
     "create_attention_bias_matrix",
     "create_bias_propagation_plot",
     "create_combined_bias_visualization",
@@ -36,4 +36,5 @@ __all__ = [
     "create_bias_criteria_html",
     "create_bias_sentence_preview",
     "create_token_bias_strip",
+    "create_confidence_breakdown",
 ]
