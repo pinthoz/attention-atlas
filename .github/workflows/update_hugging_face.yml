@@ -1,0 +1,56 @@
+name: Sync to Hugging Face Spaces
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  sync-to-huggingface:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout GitHub repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Setup Git LFS
+        run: git lfs install
+
+      - name: Prepare Hugging Face directory
+        run: |
+          mkdir -p hf_sync
+          
+          # Copy only the files/folders needed for Hugging Face
+          cp -r attention_app hf_sync/
+          cp -r static hf_sync/
+          cp app.py hf_sync/
+          cp requirements.txt hf_sync/
+          cp Dockerfile hf_sync/
+          cp .gitattributes hf_sync/
+          
+          # Copy README_HF.md as README.md
+          cp README_HF.md hf_sync/README.md
+
+      - name: Push to Hugging Face Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          cd hf_sync
+          
+          git init
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git lfs install
+          
+          # Track large files with LFS
+          git lfs track "*.bin" "*.h5" "*.pkl" "*.pt" "*.pth" "*.safetensors"
+          
+          git add .
+          git commit -m "Sync from GitHub: ${{ github.sha }}"
+          
+          # Force push to Hugging Face
+          git push --force https://pinthoz:$HF_TOKEN@huggingface.co/spaces/pinthoz/attention-atlas main
