@@ -603,8 +603,13 @@ def _align_tokens_to_text(text: str, tokens: List[str]) -> List[tuple]:
     return positions
 
 
-def create_method_info_html() -> str:
-    """Render a compact, visually rich info panel for GUS-Net."""
+def create_method_info_html(model_key: str = "gusnet-bert") -> str:
+    """Render a compact, visually rich info panel for GUS-Net.
+    
+    Shows different information depending on the selected model:
+    - gusnet-bert: Original ethical-spectacle/social-bias-ner
+    - gusnet-bert-large, gusnet-gpt2, gusnet-gpt2-medium: Custom-trained
+    """
     # Category badges
     cat_badges = []
     for cat, info in BIAS_COLORS.items():
@@ -626,6 +631,106 @@ def create_method_info_html() -> str:
             f'<b style="color:#475569;">{title}:</b> {text}</span></div>'
         )
 
+    # Model-specific information
+    MODEL_INFO = {
+        "gusnet-bert": {
+            "display_name": "GUS-Net (BERT)",
+            "model_path": "ethical-spectacle/social-bias-ner",
+            "base_model": "bert-base-uncased",
+            "is_original": True,
+            "paper": "arxiv.org/pdf/2410.08388",
+            "huggingface": "ethical-spectacle/gus-net",
+        },
+        "gusnet-bert-large": {
+            "display_name": "GUS-Net (BERT Large)",
+            "model_path": "models/gusnet-bert-large",
+            "base_model": "bert-large-uncased",
+            "is_original": False,
+            "training_script": "gus_net_training.py",
+        },
+        "gusnet-gpt2": {
+            "display_name": "GUS-Net (GPT-2)",
+            "model_path": "models/gusnet-gpt2",
+            "base_model": "gpt2",
+            "is_original": False,
+            "training_script": "gus_net_training.py",
+        },
+        "gusnet-gpt2-medium": {
+            "display_name": "GUS-Net (GPT-2 Medium)",
+            "model_path": "models/gusnet-gpt2-medium",
+            "base_model": "gpt2-medium",
+            "is_original": False,
+            "training_script": "gus_net_training.py",
+        },
+    }
+
+    info = MODEL_INFO.get(model_key, MODEL_INFO["gusnet-bert"])
+    
+    # Build different specs based on whether it's the original model or custom-trained
+    if info["is_original"]:
+        specs_html = (
+            '<span style="color:#94a3b8;font-weight:600;">Model</span>'
+            '<code style="font-size:10px;padding:1px 6px;background:rgba(148,163,184,0.1);'
+            'border-radius:3px;color:#475569;font-family:JetBrains Mono,monospace;">'
+            f'{info["model_path"]}</code>'
+
+            '<span style="color:#94a3b8;font-weight:600;">Paper</span>'
+            f'<a href="https://arxiv.org/pdf/2410.08388" target="_blank" '
+            'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
+            f'{info["paper"]}</a>'
+
+            '<span style="color:#94a3b8;font-weight:600;">HuggingFace</span>'
+            f'<a href="https://huggingface.co/collections/ethical-spectacle/gus-net" target="_blank" '
+            'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
+            f'{info["huggingface"]}</a>'
+
+            '<span style="color:#94a3b8;font-weight:600;">Technique</span>'
+            '<span style="color:#475569;">Multi-label token classification (sigmoid)</span>'
+
+            '<span style="color:#94a3b8;font-weight:600;">Categories</span>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:4px;">{badges_html}</div>'
+        )
+        limitations_html = (
+            bullet('Sub-word split',
+                   'BERT tokenization may fragment entities, lowering scores on pieces')
+            + bullet('Ambiguity',
+                     'Some adjectives (e.g. <em>emotional</em>) score high regardless of context')
+            + bullet('Fixed scope',
+                     'Trained on specific datasets &mdash; may miss niche or subtle bias')
+        )
+    else:
+        # Custom-trained models
+        base_model = info["base_model"]
+        tokenization_type = "BERT" if "bert" in base_model else "GPT-2"
+        specs_html = (
+            '<span style="color:#94a3b8;font-weight:600;">Base Model</span>'
+            '<code style="font-size:10px;padding:1px 6px;background:rgba(148,163,184,0.1);'
+            f'border-radius:3px;color:#475569;font-family:JetBrains Mono,monospace;">'
+            f'{base_model}</code>'
+
+            '<span style="color:#94a3b8;font-weight:600;">Training</span>'
+            '<code style="font-size:10px;padding:1px 6px;background:rgba(148,163,184,0.1);'
+            f'border-radius:3px;color:#475569;font-family:JetBrains Mono,monospace;">'
+            f'{info["training_script"]}</code>'
+
+            '<span style="color:#94a3b8;font-weight:600;">Dataset</span>'
+            '<span style="color:#475569;">ethical-spectacle/gus-dataset-v1</span>'
+
+            '<span style="color:#94a3b8;font-weight:600;">Technique</span>'
+            '<span style="color:#475569;">Multi-label token classification (sigmoid)</span>'
+
+            '<span style="color:#94a3b8;font-weight:600;">Categories</span>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:4px;">{badges_html}</div>'
+        )
+        limitations_html = (
+            bullet('Sub-word split',
+                   f'{tokenization_type} tokenization may fragment entities, lowering scores on pieces')
+            + bullet('Ambiguity',
+                     'Some adjectives (e.g. <em>emotional</em>) score high regardless of context')
+            + bullet('Custom training',
+                     'Fine-tuned on specific dataset &mdash; may differ from original GUS-Net')
+        )
+
     return (
         '<div style="margin-top:20px;padding:16px 20px;'
         'background:linear-gradient(135deg,rgba(248,250,252,0.8),rgba(241,245,249,0.4));'
@@ -633,8 +738,13 @@ def create_method_info_html() -> str:
 
         # ── Header ──
         '<div style="margin-bottom:14px;">'
-        '<div style="font-size:14px;font-weight:700;color:#1e293b;line-height:1.2;">'
-        'GUS-Net</div>'
+        '<div style="font-size:14px;font-weight:700;color:#1e293b;line-height:1.2;display:flex;align-items:center;gap:6px;">'
+        f'{info["display_name"]}'
+        '<span style="display:inline-flex;align-items:center;justify-content:center;'
+        'width:14px;height:14px;border-radius:50%;background:rgba(59,130,246,0.1);'
+        'color:#3b82f6;font-size:9px;font-weight:600;cursor:help;" '
+        'title="GUS-Net = Generalization, Unfairness, and Stereotype Network">ℹ</span>'
+        '</div>'
         '<div style="font-size:11px;color:#64748b;">'
         'Social Bias Named Entity Recognition</div>'
         '</div>'
@@ -643,27 +753,7 @@ def create_method_info_html() -> str:
         '<div style="display:grid;grid-template-columns:90px 1fr;gap:6px 12px;'
         'font-size:11px;margin-bottom:14px;padding-bottom:14px;'
         'border-bottom:1px dashed rgba(203,213,225,0.5);">'
-
-        '<span style="color:#94a3b8;font-weight:600;">Model</span>'
-        '<code style="font-size:10px;padding:1px 6px;background:rgba(148,163,184,0.1);'
-        'border-radius:3px;color:#475569;font-family:JetBrains Mono,monospace;">'
-        'ethical-spectacle/social-bias-ner</code>'
-
-        '<span style="color:#94a3b8;font-weight:600;">Paper</span>'
-        '<a href="https://arxiv.org/pdf/2410.08388" target="_blank" '
-        'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
-        'arxiv.org/pdf/2410.08388</a>'
-
-        '<span style="color:#94a3b8;font-weight:600;">HuggingFace</span>'
-        '<a href="https://huggingface.co/collections/ethical-spectacle/gus-net" target="_blank" '
-        'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
-        'ethical-spectacle/gus-net</a>'
-
-        '<span style="color:#94a3b8;font-weight:600;">Technique</span>'
-        '<span style="color:#475569;">Multi-label token classification (sigmoid)</span>'
-
-        '<span style="color:#94a3b8;font-weight:600;">Categories</span>'
-        f'<div style="display:flex;flex-wrap:wrap;gap:4px;">{badges_html}</div>'
+        + specs_html +
         '</div>'
 
         # ── Limitations ──
@@ -671,12 +761,7 @@ def create_method_info_html() -> str:
         '<div style="font-size:9px;font-weight:700;color:#94a3b8;'
         'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">'
         'Limitations</div>'
-        + bullet('Sub-word split',
-                 'BERT tokenization may fragment entities, lowering scores on pieces')
-        + bullet('Ambiguity',
-                 'Some adjectives (e.g. <em>emotional</em>) score high regardless of context')
-        + bullet('Fixed scope',
-                 'Trained on specific datasets &mdash; may miss niche or subtle bias')
+        + limitations_html
         + '</div></div>'
     )
 

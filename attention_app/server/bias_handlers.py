@@ -13,7 +13,7 @@ from shiny import ui, render, reactive
 import traceback
 from ..models import ModelManager
 from ..bias import (
-    GusNetDetector,
+    GusNetDetector, EnsembleGusNetDetector,
     AttentionBiasAnalyzer,
     create_attention_bias_matrix,
     create_bias_propagation_plot,
@@ -791,7 +791,14 @@ def bias_server_handlers(input, output, session):
             # ── Token-level bias detection (GUS-Net) ──
             log_debug(f"Initializing GusNetDetector (model_key={bias_model_key})...")
             print(f"DEBUG: Initializing GusNetDetector (model_key={bias_model_key})...")
-            gus_detector = GusNetDetector(model_key=bias_model_key, threshold=threshold)
+            if bias_model_key == "gusnet-ensemble":
+                gus_detector = EnsembleGusNetDetector(
+                    model_key_a="gusnet-bert",
+                    model_key_b="gusnet-bert-custom",
+                    threshold=threshold,
+                )
+            else:
+                gus_detector = GusNetDetector(model_key=bias_model_key, threshold=threshold)
             log_debug("Running detect_bias...")
             print("DEBUG: Running detect_bias...")
             gusnet_labels = gus_detector.detect_bias(text)
@@ -1362,7 +1369,11 @@ def bias_server_handlers(input, output, session):
     @output
     @render.ui
     def bias_method_info():
-        html = create_method_info_html()
+        try:
+            model_key = input.bias_model_key()
+        except Exception:
+            model_key = "gusnet-bert"
+        html = create_method_info_html(model_key)
         return ui.HTML(html)
 
     # ── Summary with explicit criteria ──
@@ -1727,16 +1738,37 @@ def bias_server_handlers(input, output, session):
         # So we should append it to content.
         # But bias_method_info is a separate renderer. We can't easily call it here unless we duplicate it or it returns string.
         # `create_method_info_html` returns string. So we can just call that.
+        try:
+            model_key_A = input.bias_model_key()
+        except Exception:
+            model_key_A = "gusnet-bert"
         
-        method_html = create_method_info_html()
-        method_footer = f'<div style="margin-top: auto;"><hr style="margin:16px 0;opacity:0.3;"/>{method_html}</div>'
-
         if (compare_models or compare_prompts) and res_B:
+            # Get Model B key for compare models mode
+            if compare_models:
+                try:
+                    model_key_B = input.bias_model_key_B()
+                    if not model_key_B:
+                        model_key_B = "gusnet-gpt2"
+                except Exception:
+                    model_key_B = "gusnet-gpt2"
+            else:
+                # Compare prompts uses the same model for both
+                model_key_B = model_key_A
+            
+            method_html_A = create_method_info_html(model_key_A)
+            method_html_B = create_method_info_html(model_key_B)
+            method_footer_A = f'<div style="margin-top: auto;"><hr style="margin:16px 0;opacity:0.3;"/>{method_html_A}</div>'
+            method_footer_B = f'<div style="margin-top: auto;"><hr style="margin:16px 0;opacity:0.3;"/>{method_html_B}</div>'
+            
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res, False)}</div>' + method_footer), manual_header=man_header, style="border: 2px solid #3b82f6; height: 100%;"),
-                _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res_B, True)}</div>' + method_footer), manual_header=man_header, style="border: 2px solid #ff5ca9; height: 100%;")
+                _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res, False)}</div>' + method_footer_A), manual_header=man_header, style="border: 2px solid #3b82f6; height: 100%;"),
+                _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res_B, True)}</div>' + method_footer_B), manual_header=man_header, style="border: 2px solid #ff5ca9; height: 100%;")
             )
+        
+        method_html = create_method_info_html(model_key_A)
+        method_footer = f'<div style="margin-top: auto;"><hr style="margin:16px 0;opacity:0.3;"/>{method_html}</div>'
         return _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res, False)}</div>' + method_footer), manual_header=man_header)
 
     @output

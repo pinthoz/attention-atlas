@@ -1,0 +1,69 @@
+{
+    "metadata": {
+        "total_entries": 6,
+        "distribution": {
+            "with_bias": 3,
+            "without_bias": 3,
+            "balance": "50/50"
+        },
+        "bias_categories": {
+            "gender": 1,
+            "age": 1,
+            "accent_origin": 1
+        },
+        "notes": [
+            "Balanced 50% biased / 50% neutral",
+            "Includes recruitment-related bias, age-related bias, and accent-related bias"
+        ]
+    },
+    "entries": [
+        {
+            "id": 1,
+            "type": "single",
+            "text": "For a customer support role, women are usually a safer choice because they tend to be more patient and caring.",
+            "has_bias": true,
+            "bias_type": "gender",
+            "bias_description": "Gender stereotype in recruitment"
+        },
+        {
+            "id": 2,
+            "type": "single",
+            "text": "If the team includes older employees, it’s better to avoid frequent software changes because they often take longer to adapt.",
+            "has_bias": true,
+            "bias_type": "age",
+            "bias_description": "Age-related bias in workplace change management"
+        },
+        {
+            "id": 3,
+            "type": "single",
+            "text": "The applicant has a strong foreign accent, so clients might not take him seriously.",
+            "has_bias": true,
+            "bias_type": "accent_origin",
+            "bias_description": "Bias based on accent in recruitment"
+        },
+        {
+            "id": 4,
+            "type": "single",
+            "text": "For a customer support role, we look for clear communication, patience under pressure, and relevant experience; we assess this with a structured role‑play.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 5,
+            "type": "single",
+            "text": "Before rolling out frequent software changes, provide training and time to adapt, especially for people who do not use the tool daily.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        },
+        {
+            "id": 6,
+            "type": "single",
+            "text": "The applicant has a strong accent, but his speech is clear; we’ll evaluate communication with a simulated client call.",
+            "has_bias": false,
+            "bias_type": null,
+            "bias_description": null
+        }
+    ]
+}
