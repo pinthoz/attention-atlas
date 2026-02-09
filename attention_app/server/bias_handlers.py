@@ -25,7 +25,14 @@ from ..bias import (
     create_bias_sentence_preview,
     create_token_bias_strip,
     create_confidence_breakdown,
+    create_ablation_impact_chart,
+    create_ig_correlation_chart,
+    create_ig_token_comparison_chart,
+    create_ig_distribution_chart,
+    create_ig_layer_summary_chart,
 )
+from ..bias.head_ablation import batch_ablate_top_heads, HeadAblationResult
+from ..bias.integrated_gradients import batch_compute_ig_correlation, IGCorrelationResult, IGAnalysisBundle
 from ..ui.bias_ui import create_bias_accordion, create_floating_bias_toolbar
 from ..ui.components import viz_header
 
@@ -187,6 +194,10 @@ def bias_server_handlers(input, output, session):
     bias_results = reactive.value(None)
     bias_results_B = reactive.value(None)  # For comparison
     bias_history = reactive.Value([])
+    ablation_results = reactive.value(None)
+    ablation_running = reactive.value(False)
+    ig_results = reactive.value(None)
+    ig_running = reactive.value(False)
 
     # Snapshots of compare mode state - Updated ONLY on 'Analyze Bias'
     active_bias_compare_models = reactive.Value(False)
@@ -873,6 +884,7 @@ def bias_server_handlers(input, output, session):
                 "propagation_analysis": propagation_analysis,
                 "bias_matrix": bias_matrix,
                 "bias_model_key": bias_model_key,
+                "model_name": model_name,
             }
         except Exception as e:
             msg = f"ERROR in heavy_bias_compute: {e}"
@@ -1920,7 +1932,9 @@ def bias_server_handlers(input, output, session):
                 try: sl = int(input.bias_attn_layer())
                 except: sl = None
 
-                fig = create_attention_bias_matrix(matrix, metrics=metrics, selected_layer=sl)
+                try: _bar_th = float(input.bias_bar_threshold())
+                except Exception: _bar_th = 1.5
+                fig = create_attention_bias_matrix(matrix, metrics=metrics, selected_layer=sl, bar_threshold=_bar_th)
                 plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False, 'responsive': True})
                 resize_script = f'<script>setTimeout(function(){{ var el = document.querySelector("#{container_id} .js-plotly-plot"); if(el) Plotly.Plots.resize(el); }}, 150);</script>'
                 return f'<div id="{container_id}" style="height:600px; width:100%;">{plot_html}</div>{resize_script}'
@@ -2002,22 +2016,41 @@ def bias_server_handlers(input, output, session):
     def bias_focused_heads_table():
         res = bias_results.get()
         if not res: return None
-        
+
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
-        
+
         try: l_idx, h_idx = int(input.bias_attn_layer()), int(input.bias_attn_head())
         except: l_idx, h_idx = -1, -1
+
+        # Read dynamic Top-K and BAR threshold
+        try: k = int(input.bias_top_k())
+        except Exception: k = 5
+        try: bar_threshold = float(input.bias_bar_threshold())
+        except Exception: bar_threshold = 1.5
 
         def get_table(data):
             mets = data["attention_metrics"]
             if not mets: return '<div style="color:#9ca3af;padding:20px;text-align:center;font-size:12px;">No metrics available.</div>'
-            top = sorted(mets, key=lambda x: x.bias_attention_ratio, reverse=True)[:5]
+            top = sorted(mets, key=lambda x: x.bias_attention_ratio, reverse=True)[:k]
+            any_above = any(m.bias_attention_ratio > bar_threshold for m in top)
+
+            # Note when no heads exceed threshold
+            note_html = ""
+            if not any_above and top:
+                note_html = (
+                    f'<div style="padding:8px 12px;margin-bottom:8px;background:rgba(245,158,11,0.08);'
+                    f'border:1px solid rgba(245,158,11,0.2);border-radius:6px;font-size:11px;color:#92400e;line-height:1.5;">'
+                    f'No heads exceed the specialization threshold ({bar_threshold:.1f}). '
+                    f'Showing top-{len(top)} by BAR value. Bias may be lexical rather than concentrated in specific attention heads.'
+                    f'</div>'
+                )
+
             rows = []
             for rank, m in enumerate(top, 1):
                 is_sel = (m.layer == l_idx and m.head == h_idx)
-                is_sig = m.specialized_for_bias
+                is_sig = m.bias_attention_ratio > bar_threshold
 
                 # Row background
                 if is_sel:
@@ -2049,6 +2082,7 @@ def bias_server_handlers(input, output, session):
                 )
 
             return (
+                f'{note_html}'
                 '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
                 '<thead>'
                 '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
@@ -2062,8 +2096,8 @@ def bias_server_handlers(input, output, session):
                 '</table>'
             )
 
-        header_args = ("Top Attention Heads by Bias Focus",
-                      "Top 5 heads ranked by bias attention ratio. Green dot = above specialization threshold (1.5).",
+        header_args = (f"Top {k} Attention Heads by Bias Focus",
+                      f"Ranked by bias attention ratio. Green dot = above specialization threshold ({bar_threshold:.1f}).",
                       "List of attention heads with the strongest focus on biased tokens, ranked by their Bias Attention Ratio.")
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05); margin-top: 16px;"
 
@@ -2078,6 +2112,372 @@ def bias_server_handlers(input, output, session):
         return _wrap_card(ui.HTML(get_table(res)), *header_args, style=card_style,
                           controls=[ui.download_button("export_bias_top_heads", "CSV", style=_BTN_STYLE_CSV)])
 
+
+    # ── Ablation handlers ─────────────────────────────────────────────
+
+    @reactive.effect
+    async def compute_ablation():
+        """Automatically run ablation when bias analysis is complete."""
+        res = bias_results.get()
+        if not res:
+            return
+
+        ablation_running.set(True)
+        ablation_results.set(None)
+
+        try:
+            try: k = int(input.bias_top_k())
+            except Exception: k = 5
+
+            text = res["text"]
+            metrics = res.get("attention_metrics", [])
+            if not metrics:
+                ablation_running.set(False)
+                return
+
+            top_heads = sorted(
+                metrics, key=lambda m: m.bias_attention_ratio, reverse=True
+            )[:k]
+
+            model_name = res.get("model_name", "bert-base-uncased")
+            is_gpt2 = "gpt2" in model_name
+
+            tokenizer, encoder_model, lm_head_model = ModelManager.get_model(model_name)
+
+            loop = asyncio.get_running_loop()
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                results = await loop.run_in_executor(
+                    pool,
+                    batch_ablate_top_heads,
+                    encoder_model, lm_head_model, tokenizer,
+                    text, top_heads, is_gpt2,
+                )
+
+            ablation_results.set(results)
+        except Exception as e:
+            log_debug(f"Ablation error: {e}")
+            traceback.print_exc()
+        finally:
+            ablation_running.set(False)
+
+    @output
+    @render.ui
+    def ablation_results_display():
+        running = ablation_running.get()
+        results = ablation_results.get()
+
+        if running:
+            return ui.div(
+                {"style": "text-align:center;padding:40px;"},
+                ui.HTML(
+                    '<div style="color:#f59e0b;font-size:13px;">'
+                    '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;"></i>'
+                    'Running ablation (one forward pass per head)...</div>'
+                ),
+            )
+
+        if not results:
+            # Show loading state while waiting for auto-computation
+            return ui.div(
+                {"style": "text-align:center;padding:40px;"},
+                ui.HTML(
+                    '<div style="color:#f59e0b;font-size:13px;">'
+                    '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;"></i>'
+                    'Computing ablation analysis...</div>'
+                ),
+            )
+
+        try: bar_threshold = float(input.bias_bar_threshold())
+        except Exception: bar_threshold = 1.5
+
+        fig = create_ablation_impact_chart(results, bar_threshold=bar_threshold)
+        chart_html = fig.to_html(
+            include_plotlyjs="cdn", full_html=False,
+            config={"displayModeBar": False, "responsive": True},
+        )
+
+        table_rows = []
+        for rank, r in enumerate(results, 1):
+            impact_color = "#ff5ca9" if r.representation_impact > 0.05 else "#64748b"
+            kl_cell = f"{r.kl_divergence:.4f}" if r.kl_divergence is not None else "N/A"
+            specialized = "Yes" if r.bar_original > bar_threshold else "No"
+            table_rows.append(
+                f'<tr>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{impact_color};">{r.representation_impact:.4f}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{kl_cell}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
+                f'</tr>'
+            )
+
+        table_html = (
+            '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;">'
+            '<thead>'
+            '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
+            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
+            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Layer</th>'
+            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
+            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Impact</th>'
+            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">KL Div</th>'
+            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">BAR</th>'
+            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Specialized</th>'
+            '</tr>'
+            '</thead>'
+            f'<tbody>{"".join(table_rows)}</tbody>'
+            '</table>'
+        )
+
+        return _wrap_card(
+            ui.div(
+                ui.HTML(f'<div id="ablation-chart-container" style="width:100%;">{chart_html}</div>'),
+                ui.HTML(table_html),
+            ),
+            "Head Ablation Results",
+            "Measures the causal impact of each attention head by zeroing its output and measuring the change in the model's internal representation.",
+            "Higher impact means removing this head significantly alters the output. Compare with BAR to assess faithfulness.",
+            controls=[
+                ui.download_button("export_ablation_csv", "CSV", style=_BTN_STYLE_CSV),
+                ui.tags.button("PNG", onclick="downloadPlotlyPNG('ablation-chart-container', 'ablation_impact')", style=_BTN_STYLE_PNG),
+            ],
+        )
+
+    @render.download(filename="ablation_results.csv")
+    def export_ablation_csv():
+        results = ablation_results.get()
+        if not results:
+            yield "No ablation data"
+            return
+        lines = ["rank,layer,head,representation_impact,kl_divergence,bar_original"]
+        for i, r in enumerate(results, 1):
+            kl = f"{r.kl_divergence:.6f}" if r.kl_divergence is not None else ""
+            lines.append(f"{i},{r.layer},{r.head},{r.representation_impact:.6f},{kl},{r.bar_original:.4f}")
+        yield "\n".join(lines)
+
+    # ── Integrated Gradients handlers ─────────────────────────────────
+
+    @reactive.effect
+    async def compute_ig():
+        """Automatically run IG correlation when bias analysis is complete."""
+        res = bias_results.get()
+        if not res:
+            return
+
+        ig_running.set(True)
+        ig_results.set(None)
+
+        try:
+            text = res["text"]
+            attentions = res.get("attentions")
+            metrics = res.get("attention_metrics", [])
+            if not attentions or not metrics:
+                ig_running.set(False)
+                return
+
+            model_name = res.get("model_name", "bert-base-uncased")
+            is_gpt2 = "gpt2" in model_name
+
+            tokenizer, encoder_model, _ = ModelManager.get_model(model_name)
+
+            loop = asyncio.get_running_loop()
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                results = await loop.run_in_executor(
+                    pool,
+                    batch_compute_ig_correlation,
+                    encoder_model, tokenizer, text,
+                    list(attentions), metrics, is_gpt2,
+                )
+
+            ig_results.set(results)
+        except Exception as e:
+            log_debug(f"IG error: {e}")
+            traceback.print_exc()
+        finally:
+            ig_running.set(False)
+
+    @output
+    @render.ui
+    def ig_results_display():
+        running = ig_running.get()
+        bundle = ig_results.get()
+
+        if running:
+            return ui.div(
+                {"style": "text-align:center;padding:40px;"},
+                ui.HTML(
+                    '<div style="color:#f59e0b;font-size:13px;">'
+                    '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;"></i>'
+                    'Computing Integrated Gradients (Captum LayerIG, ~30 steps)...</div>'
+                ),
+            )
+
+        if not bundle:
+            return ui.div(
+                {"style": "text-align:center;padding:40px;"},
+                ui.HTML(
+                    '<div style="color:#f59e0b;font-size:13px;">'
+                    '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;"></i>'
+                    'Computing Integrated Gradients correlation...</div>'
+                ),
+            )
+
+        # Unpack bundle (IGAnalysisBundle or legacy list)
+        if isinstance(bundle, IGAnalysisBundle):
+            results = bundle.correlations
+            token_attrs = bundle.token_attributions
+            tokens = bundle.tokens
+        else:
+            results = bundle
+            token_attrs = None
+            tokens = None
+
+        try: bar_threshold = float(input.bias_bar_threshold())
+        except Exception: bar_threshold = 1.5
+
+        # ── Chart 1: Correlation heatmap + BAR scatter (existing) ──
+        fig1 = create_ig_correlation_chart(results, bar_threshold=bar_threshold)
+        chart1_html = fig1.to_html(
+            include_plotlyjs="cdn", full_html=False,
+            config={"displayModeBar": False, "responsive": True},
+        )
+
+        # ── Chart 2: Token-level IG vs Attention comparison ──
+        chart2_html = ""
+        res = bias_results.get()
+        attentions = res.get("attentions") if res else None
+        if token_attrs is not None and tokens and attentions:
+            # Pick top-3 heads by BAR for comparison
+            top_bar_heads = sorted(results, key=lambda r: r.bar_original, reverse=True)[:3]
+            fig2 = create_ig_token_comparison_chart(
+                tokens, token_attrs, list(attentions), top_bar_heads,
+            )
+            chart2_html = fig2.to_html(
+                include_plotlyjs="cdn", full_html=False,
+                config={"displayModeBar": False, "responsive": True},
+            )
+
+        # ── Chart 3: Distribution violin (specialized vs non-specialized) ──
+        fig3 = create_ig_distribution_chart(results, bar_threshold=bar_threshold)
+        chart3_html = fig3.to_html(
+            include_plotlyjs="cdn", full_html=False,
+            config={"displayModeBar": False, "responsive": True},
+        )
+
+        # ── Chart 4: Layer-wise mean faithfulness ──
+        fig4 = create_ig_layer_summary_chart(results)
+        chart4_html = fig4.to_html(
+            include_plotlyjs="cdn", full_html=False,
+            config={"displayModeBar": False, "responsive": True},
+        )
+
+        # ── Summary stats ──
+        sig_results = [r for r in results if r.spearman_pvalue < 0.05]
+        mean_rho = np.mean([r.spearman_rho for r in results])
+        n_positive = sum(1 for r in sig_results if r.spearman_rho > 0)
+        n_negative = sum(1 for r in sig_results if r.spearman_rho < 0)
+
+        summary_html = (
+            f'<div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;">'
+            f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(37,99,235,0.06);border:1px solid rgba(37,99,235,0.15);border-radius:8px;text-align:center;">'
+            f'<div style="font-size:20px;font-weight:700;color:#2563eb;font-family:JetBrains Mono,monospace;">{mean_rho:.3f}</div>'
+            f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Mean Spearman ρ</div></div>'
+            f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.15);border-radius:8px;text-align:center;">'
+            f'<div style="font-size:20px;font-weight:700;color:#22c55e;font-family:JetBrains Mono,monospace;">{len(sig_results)}/{len(results)}</div>'
+            f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Significant (p&lt;0.05)</div></div>'
+            f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.15);border-radius:8px;text-align:center;">'
+            f'<div style="font-size:20px;font-weight:700;color:#f59e0b;font-family:JetBrains Mono,monospace;">{n_positive}+ / {n_negative}−</div>'
+            f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Positive / Negative</div></div>'
+            f'</div>'
+        )
+
+        # ── Top-10 table ──
+        top10 = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)[:10]
+        table_rows = []
+        for rank, r in enumerate(top10, 1):
+            rho_color = "#2563eb" if r.spearman_rho > 0 else "#dc2626"
+            sig_badge = '<span style="color:#22c55e;font-weight:600;">*</span>' if r.spearman_pvalue < 0.05 else ""
+            specialized = "Yes" if r.bar_original > bar_threshold else "No"
+            table_rows.append(
+                f'<tr>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{rho_color};">{r.spearman_rho:.3f}{sig_badge}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.spearman_pvalue:.4f}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
+                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
+                f'</tr>'
+            )
+
+        table_html = (
+            '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;">'
+            '<thead>'
+            '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
+            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
+            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Layer</th>'
+            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
+            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Spearman ρ</th>'
+            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">p-value</th>'
+            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">BAR</th>'
+            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Specialized</th>'
+            '</tr>'
+            '</thead>'
+            f'<tbody>{"".join(table_rows)}</tbody>'
+            '</table>'
+        )
+
+        # ── Assemble all sections ──
+        sections = [
+            ui.HTML(f'<div id="ig-chart-container" style="width:100%;">{chart1_html}</div>'),
+            ui.HTML(summary_html),
+            ui.HTML(table_html),
+        ]
+
+        if chart2_html:
+            sections.append(ui.HTML(
+                '<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'
+            ))
+            sections.append(ui.HTML(
+                f'<div id="ig-token-chart-container" style="width:100%;">{chart2_html}</div>'
+            ))
+
+        sections.append(ui.HTML(
+            '<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'
+        ))
+        sections.append(ui.HTML(
+            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
+            f'<div id="ig-dist-chart-container">{chart3_html}</div>'
+            f'<div id="ig-layer-chart-container">{chart4_html}</div>'
+            f'</div>'
+        ))
+
+        return _wrap_card(
+            ui.div(*sections),
+            "Attention vs Integrated Gradients",
+            "Captum LayerIntegratedGradients — faithfulness analysis comparing attention patterns with gradient-based token attribution.",
+            "Positive ρ = attention aligns with what gradients say matters. * = statistically significant (p<0.05).",
+            controls=[
+                ui.download_button("export_ig_csv", "CSV", style=_BTN_STYLE_CSV),
+                ui.tags.button("PNG", onclick="downloadPlotlyPNG('ig-chart-container', 'ig_correlation')", style=_BTN_STYLE_PNG),
+            ],
+        )
+
+    @render.download(filename="ig_correlation_results.csv")
+    def export_ig_csv():
+        bundle = ig_results.get()
+        if not bundle:
+            yield "No IG data"
+            return
+        results = bundle.correlations if isinstance(bundle, IGAnalysisBundle) else bundle
+        lines = ["rank,layer,head,spearman_rho,spearman_pvalue,bar_original"]
+        sorted_results = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)
+        for i, r in enumerate(sorted_results, 1):
+            lines.append(f"{i},{r.layer},{r.head},{r.spearman_rho:.6f},{r.spearman_pvalue:.6f},{r.bar_original:.4f}")
+        yield "\n".join(lines)
+
+    # ── Helpers ────────────────────────────────────────────────────────
 
     def _get_label(data, is_A, compare_m):
         if compare_m: return _get_bias_model_label(data)

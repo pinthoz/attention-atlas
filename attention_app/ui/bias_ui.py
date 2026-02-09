@@ -113,7 +113,7 @@ def create_bias_sidebar():
                     ui.div(
                         {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
                         ui.tags.select(
-                            ui.tags.option("GUS-Net (BERT)", value="gusnet-bert"),
+                            ui.tags.option("GUS-Net (BERT)", value="gusnet-bert", selected="selected"),
                             ui.tags.option("GUS-Net Ensemble", value="gusnet-ensemble"),
                             ui.tags.option("GUS-Net (BERT Large)", value="gusnet-bert-large"),
                             ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2"),
@@ -619,6 +619,11 @@ def create_bias_content():
                 color: #3b82f6 !important;
                 border: 1px solid rgba(59, 130, 246, 0.3) !important;
             }
+            .accordion-panel-badge.validation {
+                background: rgba(245, 158, 11, 0.15) !important;
+                color: #f59e0b !important;
+                border: 1px solid rgba(245, 158, 11, 0.3) !important;
+            }
             .accordion-button:not(.collapsed) .accordion-panel-badge {
                 background: rgba(255, 255, 255, 0.2) !important;
                 color: white !important;
@@ -681,6 +686,23 @@ def create_bias_accordion():
             ui.output_ui("bias_propagation_plot"),
             ui.output_ui("bias_focused_heads_table"),
             value="attention_bias"
+        ),
+
+        # Panel 4: Faithfulness & Ablation
+        ui.accordion_panel(
+            ui.span(
+                "Faithfulness & Ablation",
+                ui.span({"class": "accordion-panel-badge validation"}, "Validation"),
+            ),
+            ui.div(
+                {"style": "padding: 8px 0;"},
+                ui.output_ui("ablation_results_display"),
+
+                # ── Integrated Gradients section ──
+                ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 24px 0 16px;"),
+                ui.output_ui("ig_results_display"),
+            ),
+            value="ablation",
         ),
         id="bias_accordion",
         open="overview",
@@ -748,6 +770,23 @@ def create_floating_bias_toolbar():
 
                     # Divider Right
                     ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
+
+                    # BAR Threshold slider
+                    ui.div(
+                        {"class": "control-group",
+                         "title": "Bias Attention Ratio (BAR) specialization threshold.\n"
+                                  "BAR = observed attention to biased tokens / expected under uniform.\n"
+                                  "Heads with BAR above this value are marked as 'specialized'.\n"
+                                  "= 1.0: head attends uniformly (no bias focus)\n"
+                                  "> 1.5: head over-attends to biased tokens (default threshold)\n"
+                                  "Lower values detect subtler patterns; higher values are stricter."},
+                        ui.span("BAR Threshold", class_="control-label"),
+                        ui.div(
+                            {"class": "slider-container"},
+                            ui.tags.span("1.5", id="bias-bar-threshold-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="bias-bar-threshold-slider", min="1.0", max="3.0", value="1.5", step="0.1"),
+                        ),
+                    ),
 
                     # Top-K slider
                     ui.div(
@@ -860,6 +899,7 @@ def create_floating_bias_toolbar():
             var setLayer = debounce(function(v){ _setSelectize('bias_attn_layer', v); }, 200);
             var setHead  = debounce(function(v){ _setSelectize('bias_attn_head', v); }, 200);
             var setTopK  = debounce(function(v){ Shiny.setInputValue('bias_top_k', parseInt(v), {priority:'event'}); }, 200);
+            var setBarThreshold = debounce(function(v){ Shiny.setInputValue('bias_bar_threshold', parseFloat(v), {priority:'event'}); }, 200);
 
             function bindSlider(sliderId, valId, setter) {
                 var el = document.getElementById(sliderId);
@@ -870,6 +910,7 @@ def create_floating_bias_toolbar():
             }
             bindSlider('bias-layer-slider', 'bias-layer-value', setLayer);
             bindSlider('bias-head-slider', 'bias-head-value', setHead);
+            bindSlider('bias-bar-threshold-slider', 'bias-bar-threshold-value', setBarThreshold);
             bindSlider('bias-topk-slider', 'bias-topk-value', setTopK);
 
             setTimeout(function() {

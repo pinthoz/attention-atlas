@@ -11,6 +11,7 @@ import html as html_lib
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
+from plotly.subplots import make_subplots
 from typing import List, Dict, Optional, Union
 from .attention_bias import HeadBiasMetrics
 
@@ -33,7 +34,8 @@ BIAS_COLORS = {
 def create_attention_bias_matrix(
     bias_matrix: np.ndarray,
     metrics: Optional[List[HeadBiasMetrics]] = None,
-    selected_layer: Optional[int] = None
+    selected_layer: Optional[int] = None,
+    bar_threshold: float = 1.5,
 ) -> go.Figure:
     """Create heatmap showing attention to bias for each (layer, head).
 
@@ -177,7 +179,7 @@ def create_attention_bias_matrix(
         text=(
             "<b>BAR(l, h) = μ̂<sub>B</sub> / μ₀</b><br>"
             "<span style='font-size:9px'>observed / expected attention</span><br><br>"
-            "<span style='color:#dc2626'>■</span> <b>≥ 1.5</b> Specialised<br>"
+            f"<span style='color:#dc2626'>■</span> <b>≥ {bar_threshold:.1f}</b> Specialised<br>"
             "<span style='color:#93c5fd'>■</span> <b>= 1.0</b> Uniform<br>"
             "<span style='color:#3b82f6'>■</span> <b>&lt; 1.0</b> Under-attends"
         ),
@@ -1261,6 +1263,526 @@ def create_confidence_breakdown(token_labels: List[Dict]) -> str:
     )
 
 
+def create_ablation_impact_chart(
+    ablation_results: list,
+    bar_threshold: float = 1.5,
+) -> go.Figure:
+    """Create a bar chart showing ablation impact per head.
+
+    Parameters
+    ----------
+    ablation_results : list[HeadAblationResult]
+        Results from batch_ablate_top_heads().
+    bar_threshold : float
+        BAR specialization threshold for color coding.
+    """
+    if not ablation_results:
+        fig = go.Figure()
+        fig.update_layout(
+            title="No ablation results",
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+        )
+        return fig
+
+    labels = [f"L{r.layer}H{r.head}" for r in ablation_results]
+    impacts = [r.representation_impact for r in ablation_results]
+    bars_original = [r.bar_original for r in ablation_results]
+    kl_divs = [r.kl_divergence for r in ablation_results]
+
+    colors = [
+        "#ff5ca9" if bar > bar_threshold else "#94a3b8"
+        for bar in bars_original
+    ]
+
+    hover_text = []
+    for r in ablation_results:
+        parts = [
+            f"<b>L{r.layer} H{r.head}</b>",
+            f"Representation Impact: {r.representation_impact:.4f}",
+            f"BAR (original): {r.bar_original:.3f}",
+        ]
+        if r.kl_divergence is not None:
+            parts.append(f"KL Divergence: {r.kl_divergence:.4f}")
+        hover_text.append("<br>".join(parts))
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=labels,
+        y=impacts,
+        marker_color=colors,
+        hovertemplate="%{text}<extra></extra>",
+        text=hover_text,
+        name="Rep. Impact",
+    ))
+
+    has_kl = any(kl is not None for kl in kl_divs)
+    if has_kl:
+        kl_vals = [kl if kl is not None else 0 for kl in kl_divs]
+        fig.add_trace(go.Scatter(
+            x=labels,
+            y=kl_vals,
+            mode="lines+markers",
+            line=dict(color="#f59e0b", width=2),
+            marker=dict(size=6),
+            name="KL Divergence",
+            yaxis="y2",
+        ))
+
+    layout_kwargs = dict(
+        title=dict(
+            text="Head Ablation Impact<br><sub>Causal effect of zeroing each head on model representation</sub>",
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        xaxis=dict(title="Attention Head", tickfont=dict(size=10, color="#475569")),
+        yaxis=dict(title="1 − cos_sim (higher = more impact)", tickfont=dict(size=10, color="#475569")),
+        autosize=True,
+        height=400,
+        margin=dict(l=80, r=80, t=100, b=60),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        showlegend=has_kl,
+        legend=dict(x=0.5, y=1.12, xanchor="center", orientation="h"),
+    )
+    if has_kl:
+        layout_kwargs["yaxis2"] = dict(
+            title="KL Divergence",
+            overlaying="y",
+            side="right",
+            tickfont=dict(size=10, color="#f59e0b"),
+        )
+
+    fig.update_layout(**layout_kwargs)
+    return fig
+
+
+def create_ig_correlation_chart(
+    ig_results: list,
+    bar_threshold: float = 1.5,
+) -> go.Figure:
+    """Create a combined heatmap + scatter showing IG vs attention correlation.
+
+    Parameters
+    ----------
+    ig_results : list[IGCorrelationResult]
+        Results from batch_compute_ig_correlation().
+    bar_threshold : float
+        BAR specialization threshold for annotations.
+
+    Returns
+    -------
+    Plotly Figure with two subplots:
+        Left: layer × head heatmap of Spearman ρ
+        Right: scatter of BAR vs Spearman ρ (one dot per head)
+    """
+    if not ig_results:
+        fig = go.Figure()
+        fig.update_layout(
+            title="No IG correlation results",
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+        )
+        return fig
+
+    # Determine grid dimensions
+    max_layer = max(r.layer for r in ig_results)
+    max_head = max(r.head for r in ig_results)
+    num_layers = max_layer + 1
+    num_heads = max_head + 1
+
+    # Build correlation matrix
+    rho_matrix = np.zeros((num_layers, num_heads))
+    lookup = {}
+    for r in ig_results:
+        rho_matrix[r.layer, r.head] = r.spearman_rho
+        lookup[(r.layer, r.head)] = r
+
+    # Hover text for heatmap
+    hover_text = []
+    for layer in range(num_layers):
+        row = []
+        for head in range(num_heads):
+            r = lookup.get((layer, head))
+            if r:
+                sig = "Yes" if r.spearman_pvalue < 0.05 else "No"
+                row.append(
+                    f"<b>L{layer} H{head}</b><br>"
+                    f"Spearman ρ: {r.spearman_rho:.3f}<br>"
+                    f"p-value: {r.spearman_pvalue:.4f}<br>"
+                    f"Significant (p<0.05): {sig}<br>"
+                    f"BAR: {r.bar_original:.3f}"
+                )
+            else:
+                row.append(f"<b>L{layer} H{head}</b><br>No data")
+            row_text = row  # keep reference
+        hover_text.append(row)
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=(
+            "Attention–IG Correlation per Head",
+            "BAR vs Faithfulness (Spearman ρ)",
+        ),
+        column_widths=[0.55, 0.45],
+        horizontal_spacing=0.12,
+    )
+
+    # ── Left: Correlation heatmap ──
+    # Divergent colorscale centered at 0: red (negative) → white (0) → blue (positive)
+    rho_abs_max = max(abs(rho_matrix.min()), abs(rho_matrix.max()), 0.3)
+    colorscale = [
+        [0.0, "#dc2626"],     # Negative: red
+        [0.5, "#ffffff"],     # Zero: white
+        [1.0, "#2563eb"],     # Positive: blue
+    ]
+
+    fig.add_trace(
+        go.Heatmap(
+            z=rho_matrix.tolist(),
+            x=[f"H{h}" for h in range(num_heads)],
+            y=[f"L{l}" for l in range(num_layers)],
+            colorscale=colorscale,
+            zmin=-rho_abs_max,
+            zmax=rho_abs_max,
+            zauto=False,
+            showscale=True,
+            colorbar=dict(
+                title=dict(text="Spearman ρ", font=dict(size=11, color="#64748b")),
+                tickfont=dict(size=10, color="#64748b"),
+                x=0.48,
+                len=0.9,
+            ),
+            hovertemplate="%{text}<extra></extra>",
+            text=hover_text,
+        ),
+        row=1, col=1,
+    )
+
+    # ── Right: Scatter (BAR vs Spearman ρ) ──
+    bars = [r.bar_original for r in ig_results]
+    rhos = [r.spearman_rho for r in ig_results]
+    significant = [r.spearman_pvalue < 0.05 for r in ig_results]
+    labels = [f"L{r.layer}H{r.head}" for r in ig_results]
+
+    colors = [
+        "#2563eb" if sig else "#cbd5e1"
+        for sig in significant
+    ]
+
+    scatter_hover = [
+        f"<b>{lbl}</b><br>BAR: {b:.3f}<br>ρ: {rh:.3f}<br>"
+        f"p: {r.spearman_pvalue:.4f}<br>Significant: {'Yes' if s else 'No'}"
+        for lbl, b, rh, r, s in zip(labels, bars, rhos, ig_results, significant)
+    ]
+
+    fig.add_trace(
+        go.Scatter(
+            x=bars,
+            y=rhos,
+            mode="markers",
+            marker=dict(
+                size=8,
+                color=colors,
+                line=dict(width=1, color="#475569"),
+                opacity=0.8,
+            ),
+            hovertemplate="%{text}<extra></extra>",
+            text=scatter_hover,
+            showlegend=False,
+        ),
+        row=1, col=2,
+    )
+
+    # Reference lines on scatter
+    fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8", line_width=1, row=1, col=2)
+    fig.add_vline(x=bar_threshold, line_dash="dash", line_color="#ff5ca9",
+                  line_width=1, row=1, col=2,
+                  annotation_text=f"BAR={bar_threshold}", annotation_position="top right",
+                  annotation_font_size=9, annotation_font_color="#ff5ca9")
+
+    fig.update_layout(
+        height=450,
+        autosize=True,
+        margin=dict(l=60, r=40, t=80, b=60),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        title=dict(
+            text="Integrated Gradients Faithfulness Analysis<br>"
+                 "<sub>Does attention correlate with gradient-based token importance?</sub>",
+            font=dict(size=16, color="#1e293b"),
+        ),
+    )
+
+    # Axis labels
+    fig.update_xaxes(title_text="Head", row=1, col=1, tickfont=dict(size=10, color="#475569"))
+    fig.update_yaxes(title_text="Layer", row=1, col=1, tickfont=dict(size=10, color="#475569"),
+                     autorange="reversed")
+    fig.update_xaxes(title_text="BAR (bias attention ratio)", row=1, col=2,
+                     tickfont=dict(size=10, color="#475569"))
+    fig.update_yaxes(title_text="Spearman ρ (attention vs IG)", row=1, col=2,
+                     tickfont=dict(size=10, color="#475569"))
+
+    return fig
+
+
+def create_ig_token_comparison_chart(
+    tokens: list,
+    token_attributions: "np.ndarray",
+    attentions: list,
+    top_heads: list,
+    max_heads: int = 3,
+) -> go.Figure:
+    """Grouped bar chart: IG attribution vs attention column-mean per token.
+
+    Shows side-by-side comparison for the top-N heads (by BAR), so you can
+    visually check whether attention and IG agree on which tokens matter.
+
+    Parameters
+    ----------
+    tokens : list[str]
+        Sub-word tokens (from tokenizer).
+    token_attributions : np.ndarray, shape [seq_len]
+        Absolute IG attribution per token.
+    attentions : list of torch.Tensor
+        Attention weights per layer [batch, heads, seq, seq].
+    top_heads : list of IGCorrelationResult
+        Heads to display (will use first *max_heads*).
+    max_heads : int
+        Maximum number of heads to overlay (default 3).
+    """
+    import torch
+
+    if not tokens or token_attributions is None or len(token_attributions) == 0:
+        fig = go.Figure()
+        fig.update_layout(title="No token data", plot_bgcolor="rgba(0,0,0,0)",
+                          paper_bgcolor="rgba(0,0,0,0)")
+        return fig
+
+    seq_len = len(tokens)
+    heads_to_show = top_heads[:max_heads]
+
+    # Normalize IG to [0, 1] for visual comparison
+    ig = token_attributions[:seq_len].copy()
+    ig_max = ig.max() if ig.max() > 0 else 1.0
+    ig_norm = ig / ig_max
+
+    head_colors = ["#2563eb", "#f59e0b", "#22c55e"]
+
+    fig = go.Figure()
+
+    # IG attribution bars
+    fig.add_trace(go.Bar(
+        x=list(range(seq_len)),
+        y=ig_norm,
+        name="IG Attribution",
+        marker_color="#dc2626",
+        opacity=0.7,
+        hovertemplate="<b>%{customdata}</b><br>IG (norm): %{y:.3f}<extra>IG</extra>",
+        customdata=tokens[:seq_len],
+    ))
+
+    # Attention column-mean for each top head
+    for i, head in enumerate(heads_to_show):
+        layer_attn = attentions[head.layer]
+        if isinstance(layer_attn, torch.Tensor):
+            attn_matrix = layer_attn[0, head.head].cpu().numpy()
+        else:
+            attn_matrix = np.array(layer_attn[0, head.head])
+        attn_imp = attn_matrix.mean(axis=0)[:seq_len]
+        # Normalize to [0, 1]
+        attn_max = attn_imp.max() if attn_imp.max() > 0 else 1.0
+        attn_norm = attn_imp / attn_max
+
+        fig.add_trace(go.Bar(
+            x=list(range(seq_len)),
+            y=attn_norm,
+            name=f"Attn L{head.layer}H{head.head} (ρ={head.spearman_rho:.2f})",
+            marker_color=head_colors[i % len(head_colors)],
+            opacity=0.6,
+            hovertemplate=(
+                f"<b>%{{customdata}}</b><br>"
+                f"Attn L{head.layer}H{head.head} (norm): %{{y:.3f}}"
+                f"<extra>L{head.layer}H{head.head}</extra>"
+            ),
+            customdata=tokens[:seq_len],
+        ))
+
+    fig.update_layout(
+        barmode="group",
+        title=dict(
+            text="Token-Level: IG Attribution vs Attention<br>"
+                 "<sub>Normalized comparison — do attention and gradients agree on important tokens?</sub>",
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        xaxis=dict(
+            tickvals=list(range(seq_len)),
+            ticktext=tokens[:seq_len],
+            tickangle=45,
+            tickfont=dict(size=9, color="#475569", family="JetBrains Mono, monospace"),
+            title="Token",
+        ),
+        yaxis=dict(title="Normalized importance", tickfont=dict(size=10, color="#475569")),
+        height=400,
+        autosize=True,
+        margin=dict(l=60, r=40, t=80, b=100),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        legend=dict(x=0.5, y=1.15, xanchor="center", orientation="h",
+                    font=dict(size=10)),
+    )
+    return fig
+
+
+def create_ig_distribution_chart(
+    ig_results: list,
+    bar_threshold: float = 1.5,
+) -> go.Figure:
+    """Violin plot of Spearman ρ, split by specialized vs non-specialized heads.
+
+    Directly answers: "Are heads that focus on biased tokens faithful?"
+
+    Parameters
+    ----------
+    ig_results : list[IGCorrelationResult]
+    bar_threshold : float
+        BAR threshold to split specialized vs non-specialized.
+    """
+    if not ig_results:
+        fig = go.Figure()
+        fig.update_layout(title="No IG data", plot_bgcolor="rgba(0,0,0,0)",
+                          paper_bgcolor="rgba(0,0,0,0)")
+        return fig
+
+    specialized_rhos = [r.spearman_rho for r in ig_results if r.bar_original > bar_threshold]
+    non_specialized_rhos = [r.spearman_rho for r in ig_results if r.bar_original <= bar_threshold]
+
+    fig = go.Figure()
+
+    if non_specialized_rhos:
+        fig.add_trace(go.Violin(
+            y=non_specialized_rhos,
+            name=f"Non-specialized (BAR ≤ {bar_threshold})",
+            box_visible=True,
+            meanline_visible=True,
+            fillcolor="rgba(148,163,184,0.3)",
+            line_color="#64748b",
+            marker_color="#64748b",
+            points="all",
+            jitter=0.3,
+            pointpos=-0.5,
+            hovertemplate="ρ = %{y:.3f}<extra>Non-specialized</extra>",
+        ))
+
+    if specialized_rhos:
+        fig.add_trace(go.Violin(
+            y=specialized_rhos,
+            name=f"Specialized (BAR > {bar_threshold})",
+            box_visible=True,
+            meanline_visible=True,
+            fillcolor="rgba(255,92,169,0.25)",
+            line_color="#ff5ca9",
+            marker_color="#ff5ca9",
+            points="all",
+            jitter=0.3,
+            pointpos=-0.5,
+            hovertemplate="ρ = %{y:.3f}<extra>Specialized</extra>",
+        ))
+
+    fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8", line_width=1)
+
+    fig.update_layout(
+        title=dict(
+            text="Faithfulness by Specialization<br>"
+                 "<sub>Do bias-specialized heads have faithful attention patterns?</sub>",
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        yaxis=dict(title="Spearman ρ (attention vs IG)", tickfont=dict(size=10, color="#475569")),
+        height=380,
+        autosize=True,
+        margin=dict(l=60, r=40, t=80, b=40),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        legend=dict(x=0.5, y=1.12, xanchor="center", orientation="h",
+                    font=dict(size=10)),
+        violinmode="group",
+    )
+    return fig
+
+
+def create_ig_layer_summary_chart(
+    ig_results: list,
+) -> go.Figure:
+    """Bar chart of mean Spearman ρ per layer with std error bars.
+
+    Shows which layers have more faithful attention patterns.
+
+    Parameters
+    ----------
+    ig_results : list[IGCorrelationResult]
+    """
+    if not ig_results:
+        fig = go.Figure()
+        fig.update_layout(title="No IG data", plot_bgcolor="rgba(0,0,0,0)",
+                          paper_bgcolor="rgba(0,0,0,0)")
+        return fig
+
+    # Aggregate by layer
+    from collections import defaultdict
+    layer_rhos = defaultdict(list)
+    for r in ig_results:
+        layer_rhos[r.layer].append(r.spearman_rho)
+
+    layers = sorted(layer_rhos.keys())
+    means = [np.mean(layer_rhos[l]) for l in layers]
+    stds = [np.std(layer_rhos[l]) for l in layers]
+    n_heads = [len(layer_rhos[l]) for l in layers]
+
+    # Color gradient: blue for positive mean, red for negative
+    colors = ["#2563eb" if m >= 0 else "#dc2626" for m in means]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=[f"L{l}" for l in layers],
+        y=means,
+        error_y=dict(type="data", array=stds, visible=True, color="#94a3b8", thickness=1.5),
+        marker_color=colors,
+        opacity=0.85,
+        hovertemplate=(
+            "<b>Layer %{x}</b><br>"
+            "Mean ρ: %{y:.3f}<br>"
+            "Std: %{customdata[0]:.3f}<br>"
+            "Heads: %{customdata[1]}"
+            "<extra></extra>"
+        ),
+        customdata=list(zip(stds, n_heads)),
+    ))
+
+    fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8", line_width=1)
+
+    fig.update_layout(
+        title=dict(
+            text="Layer-wise Faithfulness<br>"
+                 "<sub>Mean Spearman ρ per layer (error bars = ±1 std across heads)</sub>",
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        xaxis=dict(title="Layer", tickfont=dict(size=10, color="#475569")),
+        yaxis=dict(title="Mean Spearman ρ", tickfont=dict(size=10, color="#475569")),
+        height=350,
+        autosize=True,
+        margin=dict(l=60, r=40, t=80, b=50),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        showlegend=False,
+    )
+    return fig
+
+
 __all__ = [
     "create_attention_bias_matrix",
     "create_bias_propagation_plot",
@@ -1272,4 +1794,9 @@ __all__ = [
     "create_bias_sentence_preview",
     "create_token_bias_strip",
     "create_confidence_breakdown",
+    "create_ablation_impact_chart",
+    "create_ig_correlation_chart",
+    "create_ig_token_comparison_chart",
+    "create_ig_distribution_chart",
+    "create_ig_layer_summary_chart",
 ]

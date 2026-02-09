@@ -56,7 +56,8 @@ class AttentionBiasAnalyzer:
         self,
         attention_weights: List[torch.Tensor],
         biased_token_indices: List[int],
-        tokens: List[str]
+        tokens: List[str],
+        bar_threshold: float = 1.5,
     ) -> List[HeadBiasMetrics]:
         """Analyze how much each attention head focuses on biased tokens.
 
@@ -88,7 +89,8 @@ class AttentionBiasAnalyzer:
                     head_attn,
                     biased_indices_set,
                     layer_idx,
-                    head_idx
+                    head_idx,
+                    bar_threshold=bar_threshold,
                 )
 
                 results.append(metrics)
@@ -100,7 +102,8 @@ class AttentionBiasAnalyzer:
         attention_matrix: np.ndarray,
         biased_indices: set,
         layer_idx: int,
-        head_idx: int
+        head_idx: int,
+        bar_threshold: float = 1.5,
     ) -> HeadBiasMetrics:
         """Compute BAR and BSR for a single attention head.
 
@@ -147,8 +150,8 @@ class AttentionBiasAnalyzer:
         # Maximum single attention weight to any biased key
         max_bias_attention = float(attention_matrix[:, biased_mask].max())
 
-        # Specialisation flag: BAR > 1.5
-        specialized_for_bias = bias_attention_ratio > 1.5
+        # Specialisation flag: BAR > threshold
+        specialized_for_bias = bias_attention_ratio > bar_threshold
 
         return HeadBiasMetrics(
             layer=layer_idx,
