@@ -28,7 +28,6 @@ jobs:
           
           # Copy optional files if they exist
           [ -f "Dockerfile" ] && cp Dockerfile hf_sync/ || echo "No Dockerfile"
-          [ -f ".gitattributes" ] && cp .gitattributes hf_sync/ || echo "No .gitattributes"
           
           # Copy README_HF.md as README.md
           cp README_HF.md hf_sync/README.md
@@ -44,6 +43,12 @@ jobs:
           git init -b main
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
+          
+          # Setup LFS for binary files (required by HuggingFace)
+          git lfs install
+          git lfs track "*.ico" "*.png" "*.jpg" "*.jpeg" "*.gif" "*.webp"
+          git lfs track "*.bin" "*.pt" "*.pth" "*.h5" "*.safetensors" "*.pkl"
+          
           git add .
           git commit -m "Sync from GitHub: ${{ github.sha }}"
           git push --force https://pinthoz:$HF_TOKEN@huggingface.co/spaces/pinthoz/attention-atlas main
