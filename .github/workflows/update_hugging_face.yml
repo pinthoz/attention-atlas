@@ -24,7 +24,7 @@ jobs:
         run: |
           mkdir -p hf_sync
           
-          # Copy only the files/folders needed for Hugging Face
+          # Copy necessary files for Hugging Face
           cp -r attention_app hf_sync/
           cp -r static hf_sync/
           cp app.py hf_sync/
@@ -40,24 +40,66 @@ jobs:
           echo "Files prepared for sync:"
           ls -la hf_sync/
 
-      - name: Push to Hugging Face Spaces
+      - name: Handle Files Larger than 100MB
+        id: check_files
+        run: |
+          # Check for files larger than 100MB
+          LARGE_FILES=$(find . -type f -size +100M)
+          if [ ! -z "$LARGE_FILES" ]; then
+            echo "Files larger than 100MB detected: $LARGE_FILES"
+            echo "files_larger_than_100MB=true" >> $GITHUB_ENV
+          else
+            echo "No large files detected."
+            echo "files_larger_than_100MB=false" >> $GITHUB_ENV
+          fi
+
+      - name: Push to Hugging Face (Standard)
+        if: env.files_larger_than_100MB == 'false'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           cd hf_sync
-          
+          git init -b main
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add .
+          git commit -m "Sync from GitHub: ${{ github.sha }}"
+          git push --force https://pinthoz:$HF_TOKEN@huggingface.co/spaces/pinthoz/attention-atlas main
+
+      - name: Push to GitHub (Standard)
+        if: env.files_larger_than_100MB == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add .
+          # Only commit if there are changes
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -m "Sync from GitHub: ${{ github.sha }}"
+            git push https://$GH_TOKEN@github.com/pinthoz/attention-atlas.git main
+          else
+            echo "No changes to push to GitHub."
+          fi
+
+      - name: Push to Hugging Face (if files > 100MB)
+        if: env.files_larger_than_100MB == 'true'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          cd hf_sync
           git init -b main
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git lfs install
           
-          # Track binary files with LFS (required by Hugging Face)
+          # Track binary and large files with LFS (required for Hugging Face)
           git lfs track "*.bin" "*.h5" "*.pkl" "*.pt" "*.pth" "*.safetensors"
           git lfs track "*.png" "*.jpg" "*.jpeg" "*.gif" "*.ico" "*.webp"
           git lfs track "*.mp4" "*.avi" "*.mov" "*.webm"
           
           git add .
           git commit -m "Sync from GitHub: ${{ github.sha }}"
-          
+
           # Force push to Hugging Face
           git push --force https://pinthoz:$HF_TOKEN@huggingface.co/spaces/pinthoz/attention-atlas main

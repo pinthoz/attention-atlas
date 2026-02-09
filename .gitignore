@@ -4,6 +4,35 @@ __pycache__/
 *.pyc
 *.todo
 *.pkl
+*.log
+
+
+# Notebooks env
+notebooks/.env
+
+# Downloads and generated files
+downloads/
+**/architecture*.html
+static/images/architecture_old.png
+
+# Ignore all model folders
+models/
+
+# Ignore bias training/intermediate folders (NOT used by Attention Atlas)
+attention_app/bias/checkpoints/
+attention_app/bias/extracted_features/
+attention_app/bias/lightning_logs/
+attention_app/bias/gus-net-bert-final/
+attention_app/bias/gus-net-gpt2/
+attention_app/bias/gus-net-gpt2-causal-final/
+attention_app/bias/gus-net-gpt2-medium/
+
 
 # Allow specific notebooks
 !attention_app/bias/*.ipynb
+
+# Documentation: Ignore all .md files except those listed
+*.md
+!README*md
+!ARCHITECTURE.md
+!APP_VISUALIZATION.md

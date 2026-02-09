@@ -15,7 +15,8 @@ def verify_models():
         "bert-base-multilingual-uncased",
         "gpt2",
         "gpt2-medium",
-        "gpt2-large"
+        "gpt2-large",
+        "gpt2-xl"
     ]
     
     print("Starting model verification...")
