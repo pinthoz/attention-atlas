@@ -87,6 +87,17 @@ MODEL_REGISTRY = {
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT Large)",
     },
+    "gusnet-bert-custom": {
+        "path": str(_BIAS_DIR / "gus-net-bert-final-my"),
+        "architecture": "bert",
+        "tokenizer": "bert-base-uncased",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
+        "display_name": "GUS-Net (BERT Custom)",
+    },
     "gusnet-gpt2": {
         "path": str(_BIAS_DIR / "gus-net-gpt2-final"),
         "architecture": "gpt2",
@@ -379,4 +390,147 @@ class GusNetDetector:
         }
 
 
-__all__ = ["GusNetDetector", "MODEL_REGISTRY"]
+class EnsembleGusNetDetector:
+    """Ensemble bias detector combining two GUS-Net BERT models.
+
+    Runs both models on the same input and combines their per-category
+    sigmoid probabilities using configurable weights.  This allows
+    leveraging each model's strengths (e.g. Model A for GEN, Model B
+    for STEREO / UNFAIR).
+
+    Both models must share the same tokenizer (bert-base-uncased) so
+    tokens align 1-to-1.
+    """
+
+    # Default per-category weights: (model_a_weight, model_b_weight)
+    # Model A = HF ethical-spectacle/social-bias-ner  (better STEREO/UNFAIR)
+    # Model B = custom gus-net-bert-final-my          (better GEN)
+    DEFAULT_WEIGHTS = {
+        "GEN":    (0.3, 0.7),   # favor custom model
+        "UNFAIR": (0.7, 0.3),   # favor HF model
+        "STEREO": (0.7, 0.3),   # favor HF model
+        "O":      (0.5, 0.5),   # equal
+    }
+
+    def __init__(
+        self,
+        model_key_a: str = "gusnet-bert",
+        model_key_b: str = "gusnet-bert-custom",
+        threshold: float = 0.5,
+        weights: Dict[str, tuple] = None,
+    ):
+        self.model_key_a = model_key_a
+        self.model_key_b = model_key_b
+        self.threshold = threshold
+        self.weights = weights or self.DEFAULT_WEIGHTS
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        # Both models must be BERT with the same tokenizer
+        cfg_a = MODEL_REGISTRY[model_key_a]
+        cfg_b = MODEL_REGISTRY[model_key_b]
+        self.config = cfg_a  # use model A's config for special tokens, etc.
+
+    @property
+    def is_available(self) -> bool:
+        try:
+            GusNetDetector._load_model(self.model_key_a, self._device)
+            GusNetDetector._load_model(self.model_key_b, self._device)
+            return True
+        except Exception:
+            return False
+
+    def _get_raw_probs(self, model_key: str, text: str) -> torch.Tensor:
+        """Run a single model and return sigmoid probabilities [seq_len, 7]."""
+        tokenizer, model = GusNetDetector._load_model(model_key, self._device)
+        inputs = tokenizer(
+            text, return_tensors="pt", truncation=True, max_length=512
+        )
+        inputs = {k: v.to(self._device) for k, v in inputs.items()}
+        with torch.no_grad():
+            logits = model(**inputs).logits
+        return torch.sigmoid(logits)[0].cpu()
+
+    def detect_bias(self, text: str) -> List[Dict]:
+        """Run ensemble inference combining both models."""
+        probs_a = self._get_raw_probs(self.model_key_a, text)
+        probs_b = self._get_raw_probs(self.model_key_b, text)
+
+        # Get tokens from model A's tokenizer (shared)
+        tokenizer_a, _ = GusNetDetector._load_model(self.model_key_a, self._device)
+        inputs = tokenizer_a(
+            text, return_tensors="pt", truncation=True, max_length=512
+        )
+        tokens = tokenizer_a.convert_ids_to_tokens(inputs["input_ids"][0].cpu())
+
+        cfg = self.config
+        results: List[Dict] = []
+
+        for idx, token in enumerate(tokens):
+            if token in cfg["special_tokens"]:
+                results.append({
+                    "token": token, "index": idx, "bias_types": [],
+                    "is_biased": False,
+                    "scores": {"O": 0.0, "GEN": 0.0, "UNFAIR": 0.0, "STEREO": 0.0},
+                    "method": "gusnet-ensemble",
+                    "explanation": "", "threshold": self.threshold,
+                })
+                continue
+
+            pa = probs_a[idx]
+            pb = probs_b[idx]
+
+            # Weighted combination per category
+            scores: Dict[str, float] = {}
+            for cat, cat_indices in cfg["category_indices"].items():
+                w_a, w_b = self.weights.get(cat, (0.5, 0.5))
+                score_a = float(max(pa[i].item() for i in cat_indices))
+                score_b = float(max(pb[i].item() for i in cat_indices))
+                scores[cat] = w_a * score_a + w_b * score_b
+
+            w_o_a, w_o_b = self.weights.get("O", (0.5, 0.5))
+            scores["O"] = w_o_a * pa[cfg["o_index"]].item() + w_o_b * pb[cfg["o_index"]].item()
+
+            bias_types = [
+                cat for cat in ("GEN", "UNFAIR", "STEREO")
+                if scores.get(cat, 0.0) >= self.threshold
+            ]
+
+            _CAT_LABEL = {
+                "GEN": "Generalization",
+                "UNFAIR": "Unfair language",
+                "STEREO": "Stereotype",
+            }
+            explanations = [
+                f"{_CAT_LABEL[cat]} (score: {scores[cat]:.2f})"
+                for cat in bias_types
+            ]
+
+            results.append({
+                "token": token,
+                "index": idx,
+                "bias_types": bias_types,
+                "is_biased": len(bias_types) > 0,
+                "scores": scores,
+                "method": "gusnet-ensemble",
+                "explanation": "; ".join(explanations),
+                "threshold": self.threshold,
+            })
+
+        return results
+
+    def get_bias_summary(self, token_labels: List[Dict]) -> Dict:
+        """Reuse GusNetDetector's summary logic."""
+        det = GusNetDetector.__new__(GusNetDetector)
+        det.config = self.config
+        det.threshold = self.threshold
+        return det.get_bias_summary(token_labels)
+
+    def get_biased_spans(self, token_labels: List[Dict]) -> List[Dict]:
+        """Reuse GusNetDetector's span logic."""
+        det = GusNetDetector.__new__(GusNetDetector)
+        det.config = self.config
+        det.threshold = self.threshold
+        return det.get_biased_spans(token_labels)
+
+
+__all__ = ["GusNetDetector", "EnsembleGusNetDetector", "MODEL_REGISTRY"]
