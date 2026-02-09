@@ -23,9 +23,15 @@ attention_app/bias/checkpoints/
 attention_app/bias/extracted_features/
 attention_app/bias/lightning_logs/
 attention_app/bias/gus-net-bert-final/
+attention_app/bias/gus-net-bert-final-my/
+attention_app/bias/gus-net-bert-large-final/
 attention_app/bias/gus-net-gpt2/
 attention_app/bias/gus-net-gpt2-causal-final/
+attention_app/bias/gus-net-gpt2-final/
+attention_app/bias/gus-net-gpt2-final-my/
 attention_app/bias/gus-net-gpt2-medium/
+attention_app/bias/gus-net-gpt2-medium-final/
+
 
 
 # Allow specific notebooks
