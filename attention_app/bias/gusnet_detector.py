@@ -221,12 +221,6 @@ class GusNetDetector:
         probabilities = torch.sigmoid(logits)[0].cpu()  # [seq_len, num_labels]
         tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].cpu())
 
-        # Debug: trace model path and inference values
-        print(f"[GUS-Net DEBUG] model_key={self.model_key}, path={cfg['path']}, threshold={self.threshold}")
-        print(f"[GUS-Net DEBUG] num_tokens={len(tokens)}, logits_shape={logits.shape}")
-        for i, (tok, prob) in enumerate(zip(tokens, probabilities)):
-            print(f"[GUS-Net DEBUG]   {i}: {tok:15} probs={[round(p.item(),3) for p in prob]}")
-
         results: List[Dict] = []
         for idx, (token, probs) in enumerate(zip(tokens, probabilities)):
             # Skip special tokens
