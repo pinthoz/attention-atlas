@@ -62,6 +62,7 @@ O_INDEX = 0
 
 # ── Model registry ───────────────────────────────────────────────────────────
 
+# Version: 2026-02-09-v2 - Models now loaded from HuggingFace Hub
 _BIAS_DIR = Path(__file__).parent
 
 MODEL_REGISTRY = {
