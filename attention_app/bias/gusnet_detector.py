@@ -77,7 +77,7 @@ MODEL_REGISTRY = {
         "display_name": "GUS-Net (BERT)",
     },
     "gusnet-bert-large": {
-        "path": str(_BIAS_DIR / "gus-net-bert-large-final"),
+        "path": "pinthoz/gus-net-bert-large",
         "architecture": "bert",
         "tokenizer": "bert-large-uncased",
         "num_labels": NUM_LABELS,
@@ -88,7 +88,7 @@ MODEL_REGISTRY = {
         "display_name": "GUS-Net (BERT Large)",
     },
     "gusnet-bert-custom": {
-        "path": str(_BIAS_DIR / "gus-net-bert-final-my"),
+        "path": "pinthoz/gus-net-bert-custom",
         "architecture": "bert",
         "tokenizer": "bert-base-uncased",
         "num_labels": NUM_LABELS,
@@ -99,7 +99,7 @@ MODEL_REGISTRY = {
         "display_name": "GUS-Net (BERT Custom)",
     },
     "gusnet-gpt2": {
-        "path": str(_BIAS_DIR / "gus-net-gpt2-final"),
+        "path": "pinthoz/gus-net-gpt2",
         "architecture": "gpt2",
         "num_labels": NUM_LABELS,
         "has_o_label": True,
@@ -109,7 +109,7 @@ MODEL_REGISTRY = {
         "display_name": "GUS-Net (GPT-2)",
     },
     "gusnet-gpt2-medium": {
-        "path": str(_BIAS_DIR / "gus-net-gpt2-medium-final"),
+        "path": "pinthoz/gus-net-gpt2-medium",
         "architecture": "gpt2",
         "num_labels": NUM_LABELS,
         "has_o_label": True,
