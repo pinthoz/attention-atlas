@@ -1216,7 +1216,10 @@ def create_bias_criteria_html(summary: Dict, weights: Optional[Dict] = None) -> 
 
 
 
-def create_confidence_breakdown(token_labels: List[Dict]) -> str:
+def create_confidence_breakdown(
+    token_labels: List[Dict],
+    selected_token_idx: Optional[Union[int, List[int]]] = None,
+) -> str:
     """Render biased tokens grouped by confidence tier (Low / Medium / High).
 
     For each biased token the confidence value is
@@ -1231,6 +1234,13 @@ def create_confidence_breakdown(token_labels: List[Dict]) -> str:
     * A summary bar section (one horizontal bar per tier with count + %)
     * A token list per tier (badges with bias type(s) and max score)
     """
+    # Normalize selection
+    selected_indices = set()
+    if isinstance(selected_token_idx, list):
+        selected_indices = set(selected_token_idx)
+    elif isinstance(selected_token_idx, int) and selected_token_idx >= 0:
+        selected_indices = {selected_token_idx}
+
     # Collect biased tokens with their confidence
     biased = []
     for lbl in token_labels:
@@ -1303,6 +1313,14 @@ def create_confidence_breakdown(token_labels: List[Dict]) -> str:
             if not clean:
                 continue
 
+            # Check if this token is selected
+            token_index = lbl.get("index", -1)
+            is_selected = token_index in selected_indices
+            highlight_style = (
+                "box-shadow:0 0 0 2px #ff5ca9;transform:translateY(-1px);"
+                if is_selected else ""
+            )
+
             # Build category dots
             type_dots = ""
             for bt in item["types"]:
@@ -1318,7 +1336,8 @@ def create_confidence_breakdown(token_labels: List[Dict]) -> str:
             badges.append(
                 f'<span style="display:inline-flex;align-items:center;gap:5px;'
                 f'padding:3px 8px;border-radius:6px;background:{t["bg"]};'
-                f'border:1px solid {t["color"]}30;font-family:JetBrains Mono,monospace;">'
+                f'border:1px solid {t["color"]}30;font-family:JetBrains Mono,monospace;'
+                f'transition:all 0.2s ease;{highlight_style}">'
                 f'<span style="font-size:11px;font-weight:600;color:#0f172a;">'
                 f'{html_lib.escape(clean)}</span>'
                 f'<span style="display:inline-flex;gap:4px;">{type_dots}</span>'
@@ -1347,6 +1366,7 @@ def create_confidence_breakdown(token_labels: List[Dict]) -> str:
 def create_ablation_impact_chart(
     ablation_results: list,
     bar_threshold: float = 1.5,
+    selected_head: Optional[tuple] = None,
 ) -> go.Figure:
     """Create a bar chart showing ablation impact per head.
 
@@ -1387,12 +1407,26 @@ def create_ablation_impact_chart(
             parts.append(f"KL Divergence: {r.kl_divergence:.4f}")
         hover_text.append("<br>".join(parts))
 
+    # Build per-bar outline for selected head
+    line_widths = []
+    line_colors = []
+    for r in ablation_results:
+        if selected_head and (r.layer, r.head) == selected_head:
+            line_widths.append(3)
+            line_colors.append("#ffffff")
+        else:
+            line_widths.append(0)
+            line_colors.append("rgba(0,0,0,0)")
+
     fig = go.Figure()
 
     fig.add_trace(go.Bar(
         x=labels,
         y=impacts,
-        marker_color=colors,
+        marker=dict(
+            color=colors,
+            line=dict(width=line_widths, color=line_colors),
+        ),
         hovertemplate="%{text}<extra></extra>",
         text=hover_text,
         name="Rep. Impact",
@@ -1442,6 +1476,7 @@ def create_ablation_impact_chart(
 def create_ig_correlation_chart(
     ig_results: list,
     bar_threshold: float = 1.5,
+    selected_head: Optional[tuple] = None,
 ) -> go.Figure:
     """Create a combined heatmap + scatter showing IG vs attention correlation.
 
@@ -1541,6 +1576,19 @@ def create_ig_correlation_chart(
         row=1, col=1,
     )
 
+    # Highlight selected head cell on heatmap
+    if selected_head is not None:
+        sel_layer, sel_head_idx = selected_head
+        if 0 <= sel_layer < num_layers and 0 <= sel_head_idx < num_heads:
+            fig.add_shape(
+                type="rect",
+                x0=sel_head_idx - 0.5, x1=sel_head_idx + 0.5,
+                y0=sel_layer - 0.5, y1=sel_layer + 0.5,
+                line=dict(color="#ff5ca9", width=3),
+                fillcolor="rgba(0,0,0,0)",
+                row=1, col=1,
+            )
+
     # ── Right: Scatter (BAR vs Spearman ρ) ──
     bars = [r.bar_original for r in ig_results]
     rhos = [r.spearman_rho for r in ig_results]
@@ -1575,6 +1623,22 @@ def create_ig_correlation_chart(
         ),
         row=1, col=2,
     )
+
+    # Highlight selected head point on scatter
+    if selected_head is not None:
+        for r in ig_results:
+            if (r.layer, r.head) == selected_head:
+                fig.add_trace(
+                    go.Scatter(
+                        x=[r.bar_original], y=[r.spearman_rho],
+                        mode="markers",
+                        marker=dict(size=14, color="rgba(0,0,0,0)",
+                                    line=dict(width=3, color="#ff5ca9")),
+                        hoverinfo="skip", showlegend=False,
+                    ),
+                    row=1, col=2,
+                )
+                break
 
     # Reference lines on scatter
     fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8", line_width=1, row=1, col=2)
@@ -1721,6 +1785,7 @@ def create_ig_token_comparison_chart(
 def create_ig_distribution_chart(
     ig_results: list,
     bar_threshold: float = 1.5,
+    selected_head: Optional[tuple] = None,
 ) -> go.Figure:
     """Violin plot of Spearman ρ, split by specialized vs non-specialized heads.
 
@@ -1773,6 +1838,30 @@ def create_ig_distribution_chart(
             hovertemplate="ρ = %{y:.3f}<extra>Specialized</extra>",
         ))
 
+    # Highlight selected head point
+    if selected_head is not None:
+        for r in ig_results:
+            if (r.layer, r.head) == selected_head:
+                is_spec = r.bar_original > bar_threshold
+                group_name = (
+                    f"Specialized (BAR > {bar_threshold})"
+                    if is_spec
+                    else f"Non-specialized (BAR \u2264 {bar_threshold})"
+                )
+                fig.add_trace(go.Scatter(
+                    x=[group_name], y=[r.spearman_rho],
+                    mode="markers",
+                    marker=dict(size=12, color="rgba(0,0,0,0)",
+                                line=dict(width=3, color="#ff5ca9"), symbol="circle"),
+                    showlegend=False,
+                    hovertemplate=(
+                        f"<b>L{r.layer}H{r.head}</b><br>"
+                        f"\u03c1 = {r.spearman_rho:.3f}<br>"
+                        f"BAR: {r.bar_original:.3f}<extra></extra>"
+                    ),
+                ))
+                break
+
     fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8", line_width=1)
 
     fig.update_layout(
@@ -1797,6 +1886,7 @@ def create_ig_distribution_chart(
 
 def create_ig_layer_summary_chart(
     ig_results: list,
+    selected_layer: Optional[int] = None,
 ) -> go.Figure:
     """Bar chart of mean Spearman ρ per layer with std error bars.
 
@@ -1805,6 +1895,8 @@ def create_ig_layer_summary_chart(
     Parameters
     ----------
     ig_results : list[IGCorrelationResult]
+    selected_layer : int or None
+        Layer index to highlight.
     """
     if not ig_results:
         fig = go.Figure()
@@ -1826,12 +1918,26 @@ def create_ig_layer_summary_chart(
     # Color gradient: blue for positive mean, red for negative
     colors = ["#2563eb" if m >= 0 else "#dc2626" for m in means]
 
+    # Build per-bar outline for selected layer
+    line_widths = []
+    line_colors = []
+    for l in layers:
+        if selected_layer is not None and l == selected_layer:
+            line_widths.append(3)
+            line_colors.append("#ff5ca9")
+        else:
+            line_widths.append(0)
+            line_colors.append("rgba(0,0,0,0)")
+
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=[f"L{l}" for l in layers],
         y=means,
         error_y=dict(type="data", array=stds, visible=True, color="#94a3b8", thickness=1.5),
-        marker_color=colors,
+        marker=dict(
+            color=colors,
+            line=dict(width=line_widths, color=line_colors),
+        ),
         opacity=0.85,
         hovertemplate=(
             "<b>Layer %{x}</b><br>"

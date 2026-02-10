@@ -885,6 +885,22 @@ def create_floating_bias_toolbar():
             Shiny.setInputValue('bias_selected_tokens', Array.from(window.selectedBiasTokens), {priority: 'event'});
         };
 
+        window.setBiasHead = function(layer, head) {
+            var _set = function(id, val) {
+                var el = document.getElementById(id);
+                if (!el) return;
+                var s = el.selectize || ($(el)[0] && $(el)[0].selectize);
+                if (s) s.setValue(val.toString());
+                else { el.value = val.toString(); $(el).trigger('change'); }
+            };
+            _set('bias_attn_layer', layer);
+            _set('bias_attn_head', head);
+            var lS = document.getElementById('bias-layer-slider');
+            var hS = document.getElementById('bias-head-slider');
+            if (lS) { lS.value = layer; document.getElementById('bias-layer-value').textContent = layer; }
+            if (hS) { hS.value = head; document.getElementById('bias-head-value').textContent = head; }
+        };
+
         (function() {
             function debounce(fn, ms) {
                 var t; return function() { var a=arguments,c=this; clearTimeout(t); t=setTimeout(function(){fn.apply(c,a);},ms); };

@@ -1803,10 +1803,15 @@ def bias_server_handlers(input, output, session):
         res_B = bias_results_B.get()
         
         # Get selected token index for highlighting
+        selected_idx = None
         try:
             sel = input.bias_selected_tokens()
-            selected_idx = [int(sel)] if sel else None
-        except:
+            if sel:
+                selected_idx = (
+                    [int(sel)] if isinstance(sel, (int, str))
+                    else [int(x) for x in sel if x is not None]
+                )
+        except Exception:
             selected_idx = None
         
         def get_viz(data, sel_idx=None):
@@ -1842,9 +1847,21 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
 
-        def get_viz(data):
+        # Get selected token index for highlighting
+        selected_idx = None
+        try:
+            sel = input.bias_selected_tokens()
+            if sel:
+                selected_idx = (
+                    [int(sel)] if isinstance(sel, (int, str))
+                    else [int(x) for x in sel if x is not None]
+                )
+        except Exception:
+            selected_idx = None
+
+        def get_viz(data, sel_idx=None):
             try:
-                return create_confidence_breakdown(data["token_labels"])
+                return create_confidence_breakdown(data["token_labels"], selected_token_idx=sel_idx)
             except Exception as e:
                 return f'<div style="color:red">Error: {e}</div>'
 
@@ -1856,10 +1873,10 @@ def bias_server_handlers(input, output, session):
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(ui.HTML(get_viz(res)), manual_header=man_header, style="border: 2px solid #3b82f6; height: 100%;"),
+                _wrap_card(ui.HTML(get_viz(res, selected_idx)), manual_header=man_header, style="border: 2px solid #3b82f6; height: 100%;"),
                 _wrap_card(ui.HTML(get_viz(res_B)), manual_header=man_header, style="border: 2px solid #ff5ca9; height: 100%;"),
             )
-        return _wrap_card(ui.HTML(get_viz(res)), manual_header=man_header)
+        return _wrap_card(ui.HTML(get_viz(res, selected_idx)), manual_header=man_header)
 
     @output
     @render.ui
@@ -2181,7 +2198,16 @@ def bias_server_handlers(input, output, session):
         try: bar_threshold = float(input.bias_bar_threshold())
         except Exception: bar_threshold = 1.5
 
-        fig = create_ablation_impact_chart(results, bar_threshold=bar_threshold)
+        # Get selected head for highlighting
+        selected_head = None
+        try:
+            sel_l = int(input.bias_attn_layer())
+            sel_h = int(input.bias_attn_head())
+            selected_head = (sel_l, sel_h)
+        except Exception:
+            pass
+
+        fig = create_ablation_impact_chart(results, bar_threshold=bar_threshold, selected_head=selected_head)
         chart_html = fig.to_html(
             include_plotlyjs="cdn", full_html=False,
             config={"displayModeBar": False, "responsive": True},
@@ -2192,8 +2218,9 @@ def bias_server_handlers(input, output, session):
             impact_color = "#ff5ca9" if r.representation_impact > 0.05 else "#64748b"
             kl_cell = f"{r.kl_divergence:.4f}" if r.kl_divergence is not None else "N/A"
             specialized = "Yes" if r.bar_original > bar_threshold else "No"
+            row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
             table_rows.append(
-                f'<tr>'
+                f'<tr style="{row_bg}">'
                 f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
                 f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
                 f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
@@ -2310,8 +2337,19 @@ def bias_server_handlers(input, output, session):
         try: bar_threshold = float(input.bias_bar_threshold())
         except Exception: bar_threshold = 1.5
 
+        # Get selected head/layer for highlighting
+        selected_head = None
+        selected_layer = None
+        try:
+            sel_l = int(input.bias_attn_layer())
+            sel_h = int(input.bias_attn_head())
+            selected_head = (sel_l, sel_h)
+            selected_layer = sel_l
+        except Exception:
+            pass
+
         # ── Chart 1: Correlation heatmap + BAR scatter (existing) ──
-        fig1 = create_ig_correlation_chart(results, bar_threshold=bar_threshold)
+        fig1 = create_ig_correlation_chart(results, bar_threshold=bar_threshold, selected_head=selected_head)
         chart1_html = fig1.to_html(
             include_plotlyjs="cdn", full_html=False,
             config={"displayModeBar": False, "responsive": True},
@@ -2333,14 +2371,14 @@ def bias_server_handlers(input, output, session):
             )
 
         # ── Chart 3: Distribution violin (specialized vs non-specialized) ──
-        fig3 = create_ig_distribution_chart(results, bar_threshold=bar_threshold)
+        fig3 = create_ig_distribution_chart(results, bar_threshold=bar_threshold, selected_head=selected_head)
         chart3_html = fig3.to_html(
             include_plotlyjs="cdn", full_html=False,
             config={"displayModeBar": False, "responsive": True},
         )
 
         # ── Chart 4: Layer-wise mean faithfulness ──
-        fig4 = create_ig_layer_summary_chart(results)
+        fig4 = create_ig_layer_summary_chart(results, selected_layer=selected_layer)
         chart4_html = fig4.to_html(
             include_plotlyjs="cdn", full_html=False,
             config={"displayModeBar": False, "responsive": True},
@@ -2373,8 +2411,9 @@ def bias_server_handlers(input, output, session):
             rho_color = "#2563eb" if r.spearman_rho > 0 else "#dc2626"
             sig_badge = '<span style="color:#22c55e;font-weight:600;">*</span>' if r.spearman_pvalue < 0.05 else ""
             specialized = "Yes" if r.bar_original > bar_threshold else "No"
+            row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
             table_rows.append(
-                f'<tr>'
+                f'<tr style="{row_bg}">'
                 f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
                 f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
                 f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
