@@ -101,7 +101,7 @@ GPT2_CONFIG = {
     "llrd_decay_factor": 0.85,
     "classifier_lr": 2e-4,
     "save_dir": _SCRIPT_DIR / "gus-net-gpt2-final-my",
-    "training_output_dir": str(_SCRIPT_DIR / "gus-net-gpt2"),
+    "training_output_dir": str(_SCRIPT_DIR / "gus-net-gpt2-2nd"),
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,

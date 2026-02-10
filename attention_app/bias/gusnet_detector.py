@@ -158,7 +158,12 @@ class GusNetDetector:
         self.model_key = model_key
         self.config = MODEL_REGISTRY[model_key]
         self.threshold = threshold
-        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Always use CPU for bias inference to guarantee reproducible
+        # sigmoid probabilities across environments.  CUDA kernels for
+        # GPT-2 base introduce enough numerical drift over 12 layers to
+        # distort the output.  Sequences are short (≤512 tokens) so CPU
+        # inference is fast enough.
+        self._device = "cpu"
 
     # ── Model loading ────────────────────────────────────────────────────
 
@@ -193,7 +198,7 @@ class GusNetDetector:
             model.eval()
             model.to(device)
             cls._cache[model_key] = (tokenizer, model)
-            print(f"[GUS-Net] {cfg['display_name']} loaded successfully.")
+            print(f"[GUS-Net] {cfg['display_name']} loaded successfully on {device}.")
         except Exception as e:
             print(f"[GUS-Net] WARNING — failed to load {cfg['display_name']}: {e}")
             raise
@@ -520,7 +525,7 @@ class EnsembleGusNetDetector:
         self.model_key_b = model_key_b
         self.threshold = threshold
         self.weights = weights or self.DEFAULT_WEIGHTS
-        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._device = "cpu"
 
         # Both models must be BERT with the same tokenizer
         cfg_a = MODEL_REGISTRY[model_key_a]
