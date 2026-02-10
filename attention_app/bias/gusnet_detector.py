@@ -119,7 +119,7 @@ MODEL_REGISTRY = {
         "has_o_label": True,
         "o_index": O_INDEX,
         "category_indices": CATEGORY_INDICES,
-        "special_tokens": {"<|endoftext|>"},
+        "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (GPT-2)",
     },
     "gusnet-gpt2-medium": {
@@ -129,7 +129,7 @@ MODEL_REGISTRY = {
         "has_o_label": True,
         "o_index": O_INDEX,
         "category_indices": CATEGORY_INDICES,
-        "special_tokens": {"<|endoftext|>"},
+        "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (GPT-2 Medium)",
     },
 }
@@ -282,9 +282,64 @@ class GusNetDetector:
     def get_bias_summary(self, token_labels: List[Dict]) -> Dict:
         """Generate summary statistics from detect_bias output."""
         special = self.config["special_tokens"]
-        content_tokens = [t for t in token_labels if t["token"] not in special]
-        total = len(content_tokens)
-        biased = [t for t in content_tokens if t["is_biased"]]
+        
+        # Determine tokenizer type from tokens
+        # BERT has ##, GPT-2 has Ġ (u0120)
+        has_gpt2_tokens = any("\u0120" in t["token"] for t in token_labels)
+        has_bert_tokens = any("##" in t["token"] for t in token_labels)
+        
+        # Merge subwords to count "whole words"
+        whole_words = []
+        current_word = None
+        
+        for t in token_labels:
+            tok = t["token"]
+            if tok in special:
+                if current_word:
+                    whole_words.append(current_word)
+                    current_word = None
+                continue
+            
+            # Decide if we merge
+            should_merge = False
+            
+            if has_gpt2_tokens:
+                # GPT-2: Merge if NO Ġ (continuation) but NOT standalone punctuation
+                clean_tok = tok.replace("\u0120", "")
+                is_punct = clean_tok and not any(c.isalnum() for c in clean_tok)
+                if "\u0120" not in tok and current_word and not is_punct:
+                    should_merge = True
+            elif has_bert_tokens:
+                # BERT: User explicitly wants SPLIT. So never merge ##.
+                should_merge = False
+            else:
+                # Fallback/Ambiguous: Only merge if explicitly starting with ## (Old behavior)
+                # BUT user wants split for BERT. So actually, default to False.
+                should_merge = False
+
+            if should_merge:
+                # Merge logic: if any part is biased, the whole word is biased
+                current_word["is_biased"] = current_word["is_biased"] or t["is_biased"]
+                # Collect all bias types
+                current_word["bias_types"] = list(set(current_word["bias_types"] + t["bias_types"]))
+                # Merge scores (max)
+                for k, v in t["scores"].items():
+                    current_word["scores"][k] = max(current_word["scores"].get(k, 0.0), v)
+            else:
+                if current_word:
+                    whole_words.append(current_word)
+                # Start new word (deep copy to avoid mutating original)
+                current_word = {
+                    "token": tok,
+                    "is_biased": t["is_biased"],
+                    "bias_types": list(t["bias_types"]),
+                    "scores": t["scores"].copy()
+                }
+        if current_word:
+            whole_words.append(current_word)
+
+        total = len(whole_words)
+        biased = [t for t in whole_words if t["is_biased"]]
 
         gen_count = sum(1 for t in biased if "GEN" in t["bias_types"])
         unfair_count = sum(1 for t in biased if "UNFAIR" in t["bias_types"])
@@ -336,6 +391,14 @@ class GusNetDetector:
                 continue
 
             if label["is_biased"]:
+                # Check for explicit split required (BERT subword)
+                # If we encounter ##, user wants it split from previous span.
+                force_split = label["token"].startswith("##")
+                
+                if force_split and current is not None:
+                     spans.append(self._finalize_span(current))
+                     current = None
+
                 if current is None:
                     current = {
                         "start": label["index"],
@@ -391,10 +454,32 @@ class GusNetDetector:
         if all_cats:
             overall_avg = sum(avg_scores[c] for c in all_cats) / len(all_cats)
 
+        span_text = ""
+        for t in current["tokens"]:
+            # For BERT, do we remove ## in the span text?
+            # If user wants them separated, the span text for "##turing" should probably be "##turing".
+            # The previous logic merged ##: span_text += t[2:].
+            # But now spans are split. So current["tokens"] will trigger ONCE per token.
+            # So "##turing" startswith ##.
+            # If we do t[2:], we get "turing".
+            # If we want to show ##, we should keep it.
+            # Let's clean it but maybe keep ## if it's the start?
+            # Actually, standard is to show "##" to indicate subword.
+            if t.startswith("##"):
+                 span_text += t # Keep ## for display in list
+            else:
+                if span_text:
+                    span_text += " "
+                
+                # Clean GPT-2 markers
+                clean_t = t.replace("\u0120", "")
+                span_text += clean_t
+
         return {
             "start_idx": current["start"],
             "end_idx": current["end"],
             "tokens": current["tokens"],
+            "text": span_text,
             "bias_types": all_cats,
             "avg_score": overall_avg,
             "method": "gusnet",

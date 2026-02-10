@@ -876,10 +876,10 @@ def create_token_bias_strip(
     selected_token_idx: Optional[Union[int, List[int]]] = None
 ) -> str:
     """Render a compact HTML strip showing per-token bias categories.
-
-    Each token is displayed with small coloured dots beneath it indicating
-    which categories (GEN / UNFAIR / STEREO) are active.  This replaces
-    the Plotly heatmap with a lighter, card-free visualisation.
+    
+    Logic:
+    - BERT (detected by "##"): Keep split and show "##" (e.g. "nur", "##turing").
+    - GPT-2 (detected by "Ġ" absence): Merge subwords.
     """
     # Normalize selection
     selected_indices = set()
@@ -891,31 +891,74 @@ def create_token_bias_strip(
     cats = ["O", "GEN", "UNFAIR", "STEREO"]
     cat_colors = {"O": "#64748b", "GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
 
-    cells = []
-    for lbl in token_labels:
+    # Detect global tokenizer mode for safe merging defaults
+    has_gpt2_tokens = any("\u0120" in lbl["token"] for lbl in token_labels)
+    # If we see Ġ, assume GPT-2 merging logic is active. 
+    # But if we see ##, that takes precedence for blocking merge on that specific token.
+    
+    merged_tokens = []
+    current_token = None
+
+    for i, lbl in enumerate(token_labels):
         tok = lbl["token"]
-        if tok in ("[CLS]", "[SEP]", "[PAD]"):
+        if tok in ("[CLS]", "[SEP]", "[PAD]", "<|endoftext|>"):
             continue
-        clean = tok.replace("##", "").replace("\u0120", "")
-        if not clean:
+            
+        # Determine if this token is a subword that should be merged
+        # It is a merge candidate if:
+        # 1. We are in GPT-2 mode (have seen Ġ in sequence)
+        # 2. It does NOT have a Ġ (continuation in GPT-2)
+        # 3. It does NOT start with ## (BERT subword - keep split)
+        # 4. It is not the first token (current_token exists)
+        
+        is_gpt2_subword = ("\u0120" not in tok) and has_gpt2_tokens
+        is_bert_subword = tok.startswith("##")
+
+        # Prepare text for display (remove markers)
+        # For BERT ##, we want to KEEP ## in the visual text per user request.
+        # For GPT-2 Ġ, we remove it.
+        clean_text = tok.replace("\u0120", "").replace("##", "")
+
+        # Standalone punctuation (no alphanumeric chars) should NOT be merged
+        is_standalone_punct = clean_text and not any(c.isalnum() for c in clean_text)
+        should_merge_this = is_gpt2_subword and not is_bert_subword and (current_token is not None) and not is_standalone_punct
+        
+        if not clean_text:
             continue
 
-        idx = lbl.get("index", -1)
-        is_selected = (idx in selected_indices)
+        if should_merge_this:
+            # Merge with previous
+            current_token["text"] += clean_text
+            current_token["is_biased"] = current_token["is_biased"] or lbl.get("is_biased", False)
+            current_token["bias_types"] = list(set(current_token["bias_types"] + lbl.get("bias_types", [])))
+            for cat, score in lbl.get("scores", {}).items():
+                current_token["scores"][cat] = max(current_token["scores"].get(cat, 0), score)
+            current_token["indices"].append(lbl.get("index", -1))
+        else:
+            # New token (or preserved split BERT token)
+            current_token = {
+                "text": clean_text,
+                "is_biased": lbl.get("is_biased", False),
+                "bias_types": lbl.get("bias_types", []),
+                "scores": lbl.get("scores", {}).copy(),
+                "indices": [lbl.get("index", -1)]
+            }
+            merged_tokens.append(current_token)
+
+    # 2. Render HTML
+    cells = []
+    for item in merged_tokens:
+        text = item["text"]
+        is_selected = any(idx in selected_indices for idx in item["indices"])
+        is_biased = item["is_biased"]
         
-        is_biased = lbl.get("is_biased", False)
-        
-        # Base background
         bg_style = "background:rgba(236,72,153,0.06);" if is_biased else ""
-        
-        # Enhanced style for selected token
         if is_selected:
             bg_style = "background:rgba(255, 92, 169, 0.2); box-shadow: 0 0 0 2px #ff5ca9; transform: translateY(-1px);"
 
-        types = lbl.get("bias_types", [])
-        scores = lbl.get("scores", {})
+        types = item["bias_types"]
+        scores = item["scores"]
 
-        # Category score indicators (always show numeric value)
         score_items = []
         for cat in cats:
             active = cat in types
@@ -934,7 +977,7 @@ def create_token_bias_strip(
             f'{"".join(score_items)}</span>'
         )
 
-        tooltip = html_lib.escape(clean)
+        tooltip = html_lib.escape(text)
         for cat in cats:
             sc = scores.get(cat, 0)
             marker = " *" if cat in types else ""
@@ -945,7 +988,7 @@ def create_token_bias_strip(
             f'padding:4px 6px;border-radius:6px;{bg_style}'
             f'font-family:JetBrains Mono,monospace;font-size:12px;cursor:help;transition:all 0.2s ease;" '
             f'title="{tooltip}">'
-            f'<span style="line-height:1.2;color:#0f172a;">{html_lib.escape(clean)}</span>'
+            f'<span style="line-height:1.2;color:#0f172a;">{html_lib.escape(text)}</span>'
             f'{scores_row}'
             f'</span>'
         )
@@ -954,7 +997,7 @@ def create_token_bias_strip(
         return '<div style="color:#9ca3af;font-size:12px;">No tokens to display.</div>'
 
     # Legend
-    cat_labels = {"O": "Outside — neutral, no bias detected", "GEN": "Generalization", "UNFAIR": "Unfair Language", "STEREO": "Stereotype"}
+    cat_labels = {"O": "Outside \u2014 neutral, no bias detected", "GEN": "Generalization", "UNFAIR": "Unfair Language", "STEREO": "Stereotype"}
     legend_items = []
     for cat in cats:
         legend_items.append(
@@ -969,6 +1012,115 @@ def create_token_bias_strip(
         f'align-items:flex-start;justify-content:center;">{"".join(cells)}</div>'
         f'<div style="display:flex;gap:14px;margin-top:4px;padding-top:8px;'
         f'border-top:1px solid #f1f5f9;justify-content:center;">{"".join(legend_items)}</div>'
+    )
+
+
+def create_bias_sentence_preview(tokens: List[str], token_labels: List[Dict]) -> str:
+    """Create a token-viz style sentence preview with bias coloring.
+    
+    Logic matches create_token_bias_strip:
+    - BERT (##): Split and show ##
+    - GPT-2 (Ġ): Merge subwords
+    """
+    token_html = []
+    
+    # Detect global mode
+    has_gpt2_tokens = any("\u0120" in tok for tok in tokens)
+
+    merged_tokens = []
+    current_token = None
+
+    for tok, label in zip(tokens, token_labels):
+        if tok in ("[CLS]", "[SEP]", "[PAD]", "<|endoftext|>"):
+            continue
+
+        is_gpt2_subword = ("\u0120" not in tok) and has_gpt2_tokens
+        is_bert_subword = tok.startswith("##")
+
+        clean_text = tok.replace("\u0120", "").replace("##", "")
+        if not clean_text:
+            continue
+
+        is_standalone_punct = not any(c.isalnum() for c in clean_text)
+        should_merge_this = is_gpt2_subword and not is_bert_subword and (current_token is not None) and not is_standalone_punct
+
+        if should_merge_this:
+            # Merge
+            current_token["text"] += clean_text
+            current_token["is_biased"] = current_token["is_biased"] or label["is_biased"]
+            current_token["bias_types"] = list(set(current_token["bias_types"] + label.get("bias_types", [])))
+            for cat, score in label.get("scores", {}).items():
+                current_token["scores"][cat] = max(current_token["scores"].get(cat, 0), score)
+        else:
+            current_token = {
+                "text": clean_text,
+                "is_biased": label.get("is_biased", False),
+                "bias_types": label.get("bias_types", []),
+                "scores": label.get("scores", {}).copy()
+            }
+            merged_tokens.append(current_token)
+
+    # 2. Generate HTML
+    for item in merged_tokens:
+        text = item["text"]
+        is_biased = item["is_biased"]
+        types = item["bias_types"]
+        scores = item["scores"]
+
+        if is_biased and types:
+            primary = types[0]
+            color_info = BIAS_COLORS.get(primary, BIAS_COLORS["GEN"])
+            max_score = max(scores.get(t, 0) for t in types)
+            types_str = ", ".join(types)
+            tooltip = f"{html_lib.escape(text)}&#10;{types_str} (score: {max_score:.2f})"
+
+            # Build a colour bar with one segment per detected category
+            bar_segments = "".join(
+                f'<span style="flex:1;background:'
+                f'{BIAS_COLORS.get(t, BIAS_COLORS["GEN"])["border"]};"></span>'
+                for t in types
+            )
+            bar_html = (
+                f'<span style="position:absolute;bottom:0;left:0;right:0;'
+                f'height:3px;display:flex;border-radius:0 0 4px 4px;">'
+                f'{bar_segments}</span>'
+            )
+
+            style = (
+                f"background:{color_info['bg']};"
+                f"position:relative;padding-bottom:5px;overflow:hidden;"
+            )
+            inner = f'{html_lib.escape(text)}{bar_html}'
+        else:
+            tooltip = f"{html_lib.escape(text)}&#10;No bias detected"
+            style = "background:rgba(241,245,249,0.6);"
+            inner = html_lib.escape(text)
+
+        token_html.append(
+            f'<span class="token-viz" style="{style}" '
+            f'title="{tooltip}">{inner}</span>'
+        )
+
+    if not token_html:
+        return '<div style="color:#9ca3af;font-size:12px;">No tokens to display.</div>'
+
+    legend = []
+    for cat, info in BIAS_COLORS.items():
+        legend.append(
+            f'<span style="display:inline-flex;align-items:center;gap:4px;">'
+            f'<span style="display:inline-block;width:10px;height:10px;border-radius:2px;'
+            f'background:{info["bg"]};border-bottom:2px solid {info["border"]};"></span>'
+            f'<span style="font-size:9px;color:#6b7280;">{info["label"]}</span></span>'
+        )
+
+    legend_html = (
+        f'<div style="display:flex;gap:12px;margin-top:8px;font-size:9px;'
+        f'color:#6b7280;align-items:center;">{"".join(legend)}</div>'
+    )
+
+    return (
+        f'<div class="token-viz-container">{"".join(token_html)}</div>'
+        f'{legend_html}'
     )
 
 
@@ -1061,78 +1213,7 @@ def create_bias_criteria_html(summary: Dict, weights: Optional[Dict] = None) -> 
     )
 
 
-def create_bias_sentence_preview(tokens: List[str], token_labels: List[Dict]) -> str:
-    """Create a token-viz style sentence preview with bias coloring.
 
-    Mirrors the attention tab's ``get_preview_text_view`` but colours each
-    token by its bias type.  Tokens with multiple categories show a
-    multi-segment colour bar at the bottom.
-    """
-    token_html = []
-    for tok, label in zip(tokens, token_labels):
-        if tok in ("[CLS]", "[SEP]", "[PAD]"):
-            continue
-
-        clean = tok.replace("##", "").replace("\u0120", "")
-        if not clean:
-            continue
-
-        if label["is_biased"] and label["bias_types"]:
-            types = label["bias_types"]
-            primary = types[0]
-            color_info = BIAS_COLORS.get(primary, BIAS_COLORS["GEN"])
-            max_score = max(label["scores"].get(t, 0) for t in types)
-            types_str = ", ".join(types)
-            tooltip = f"{html_lib.escape(clean)}&#10;{types_str} (score: {max_score:.2f})"
-
-            # Build a colour bar with one segment per detected category
-            bar_segments = "".join(
-                f'<span style="flex:1;background:'
-                f'{BIAS_COLORS.get(t, BIAS_COLORS["GEN"])["border"]};"></span>'
-                for t in types
-            )
-            bar_html = (
-                f'<span style="position:absolute;bottom:0;left:0;right:0;'
-                f'height:3px;display:flex;border-radius:0 0 4px 4px;">'
-                f'{bar_segments}</span>'
-            )
-
-            style = (
-                f"background:{color_info['bg']};"
-                f"position:relative;padding-bottom:5px;overflow:hidden;"
-            )
-            inner = f'{html_lib.escape(clean)}{bar_html}'
-        else:
-            tooltip = f"{html_lib.escape(clean)}&#10;No bias detected"
-            style = "background:rgba(241,245,249,0.6);"
-            inner = html_lib.escape(clean)
-
-        token_html.append(
-            f'<span class="token-viz" style="{style}" '
-            f'title="{tooltip}">{inner}</span>'
-        )
-
-    if not token_html:
-        return '<div style="color:#9ca3af;font-size:12px;">No tokens to display.</div>'
-
-    legend = []
-    for cat, info in BIAS_COLORS.items():
-        legend.append(
-            f'<span style="display:inline-flex;align-items:center;gap:4px;">'
-            f'<span style="display:inline-block;width:10px;height:10px;border-radius:2px;'
-            f'background:{info["bg"]};border-bottom:2px solid {info["border"]};"></span>'
-            f'<span style="font-size:9px;color:#6b7280;">{info["label"]}</span></span>'
-        )
-
-    legend_html = (
-        f'<div style="display:flex;gap:12px;margin-top:8px;font-size:9px;'
-        f'color:#6b7280;align-items:center;">{"".join(legend)}</div>'
-    )
-
-    return (
-        f'<div class="token-viz-container">{"".join(token_html)}</div>'
-        f'{legend_html}'
-    )
 
 
 def create_confidence_breakdown(token_labels: List[Dict]) -> str:

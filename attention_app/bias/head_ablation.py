@@ -62,7 +62,9 @@ def _get_head_dim(model, is_gpt2: bool) -> int:
 def _get_attention_module(model, layer_idx: int, is_gpt2: bool):
     """Return the self-attention module for the given layer."""
     if is_gpt2:
-        return model.transformer.h[layer_idx].attn
+        # GPT2Model has .h directly; GPT2LMHeadModel wraps it in .transformer
+        blocks = getattr(model, "h", None) or model.transformer.h
+        return blocks[layer_idx].attn
     return model.encoder.layer[layer_idx].attention.self
 
 

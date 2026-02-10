@@ -36,6 +36,18 @@ from ..bias.integrated_gradients import batch_compute_ig_correlation, IGCorrelat
 from ..ui.bias_ui import create_bias_accordion, create_floating_bias_toolbar
 from ..ui.components import viz_header
 
+# Map GUS-Net model key → matching encoder model for attention analysis.
+# Ensures the encoder tokenizer matches the GUS-Net architecture so that
+# BERT tokens show ## subwords and GPT-2 tokens merge correctly with Ġ.
+_GUSNET_TO_ENCODER = {
+    "gusnet-bert": "bert-base-uncased",
+    "gusnet-bert-custom": "bert-base-uncased",
+    "gusnet-bert-large": "bert-large-uncased",
+    "gusnet-gpt2": "gpt2",
+    "gusnet-gpt2-medium": "gpt2-medium",
+    "gusnet-ensemble": "bert-base-uncased",
+}
+
 def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header=None, style=None, controls=None):
     """Wrap content in a card with consistent header style."""
     base_style = "min-height: auto; display: flex; flex-direction: column;"
@@ -822,7 +834,7 @@ def bias_server_handlers(input, output, session):
                 gusnet_labels, tokens, gusnet_special_tokens=gus_special
             )
 
-            # Build unified token_labels aligned to BERT tokens
+            # Build unified token_labels aligned to encoder tokens
             token_labels = []
             for i, tok in enumerate(tokens):
                 matched = gus_aligned[i]
@@ -949,13 +961,6 @@ def bias_server_handlers(input, output, session):
             bias_cached_text_A.set(text)
 
             try:
-                model_name = input.model_name()
-                log_debug(f"Retrieved model_name: {model_name}")
-            except Exception as e:
-                log_debug(f"Failed to get model_name, using default. Error: {e}")
-                model_name = "bert-base-uncased"
-
-            try:
                 threshold = float(input.bias_threshold())
                 log_debug(f"Threshold: {threshold}")
             except Exception as e:
@@ -969,6 +974,10 @@ def bias_server_handlers(input, output, session):
             except Exception as e:
                 log_debug(f"Warning: bias_model_key missing ({e}). Using default gusnet-bert")
                 bias_model_key = "gusnet-bert"
+
+            # Derive encoder model from bias_model_key so tokenization matches
+            model_name = _GUSNET_TO_ENCODER.get(bias_model_key, "bert-base-uncased")
+            log_debug(f"Encoder model (derived from {bias_model_key}): {model_name}")
 
             try:
                 loop = asyncio.get_running_loop()
@@ -995,10 +1004,11 @@ def bias_server_handlers(input, output, session):
                         except Exception:
                             bias_model_key_B = "gusnet-gpt2"
 
-                        log_debug(f"Starting heavy_bias_compute B ({bias_model_key_B}) for Compare Models")
+                        model_name_B = _GUSNET_TO_ENCODER.get(bias_model_key_B, "gpt2")
+                        log_debug(f"Starting heavy_bias_compute B ({bias_model_key_B}, encoder={model_name_B}) for Compare Models")
                         result_B = await asyncio.wait_for(
                             loop.run_in_executor(
-                                pool, heavy_bias_compute, text, model_name, threshold, bias_model_key_B,
+                                pool, heavy_bias_compute, text, model_name_B, threshold, bias_model_key_B,
                             ),
                             timeout=180.0
                         )
@@ -1545,24 +1555,23 @@ def bias_server_handlers(input, output, session):
         if not res:
             return ui.HTML('<div style="color:#94a3b8;font-size:11px;padding:8px;">No analysis yet.</div>')
 
-        token_labels = res["token_labels"]
-        biased = [
-            lbl for lbl in token_labels
-            if lbl.get("is_biased") and lbl["token"] not in ("[CLS]", "[SEP]", "[PAD]")
-        ]
-        if not biased:
+        # Use pre-calculated spans (merged subwords) instead of raw tokens
+        bias_spans = res.get("bias_spans", [])
+        
+        if not bias_spans:
             return ui.HTML('<div style="color:#94a3b8;font-size:11px;padding:12px;">No bias detected.</div>')
 
         cat_colors = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
-        badge_script = f"<script>$('#bias-span-count-badge').text('{len(biased)}');</script>"
+        # Update badge count
+        badge_script = f"<script>$('#bias-span-count-badge').text('{len(bias_spans)}');</script>"
 
         items = [badge_script]
-        for lbl in biased:
-            clean = lbl["token"].replace("##", "").replace("\u0120", "")
-            types = lbl.get("bias_types", [])
-            scores = lbl.get("scores", {})
-            max_score = max((scores.get(t, 0) for t in types), default=0)
-            score_color = "#ef4444" if max_score > 0.8 else "#f59e0b" if max_score > 0.5 else "#94a3b8"
+        for span in bias_spans:
+            text = span.get("text", " ".join(span["tokens"])) # Fallback if text not present
+            score = span.get("avg_score", 0.0)
+            types = span.get("bias_types", [])
+            
+            score_color = "#ef4444" if score > 0.8 else "#f59e0b" if score > 0.5 else "#94a3b8"
 
             cats_html = ""
             for cat in types:
@@ -1576,9 +1585,9 @@ def bias_server_handlers(input, output, session):
                 f'<div class="bias-span-item">'
                 f'<div style="display:flex;justify-content:space-between;align-items:center;">'
                 f'<span style="font-family:JetBrains Mono,monospace;font-size:12px;'
-                f'color:#e2e8f0;font-weight:600;">{clean}</span>'
+                f'color:#e2e8f0;font-weight:600;">{text}</span>'
                 f'<span style="color:{score_color};font-weight:600;font-size:11px;'
-                f'font-family:JetBrains Mono,monospace;">{max_score:.2f}</span></div>'
+                f'font-family:JetBrains Mono,monospace;">{score:.2f}</span></div>'
                 f'<div style="margin-top:3px;">{cats_html}</div>'
                 f'</div>'
             )
@@ -2166,26 +2175,8 @@ def bias_server_handlers(input, output, session):
         running = ablation_running.get()
         results = ablation_results.get()
 
-        if running:
-            return ui.div(
-                {"style": "text-align:center;padding:40px;"},
-                ui.HTML(
-                    '<div style="color:#f59e0b;font-size:13px;">'
-                    '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;"></i>'
-                    'Running ablation (one forward pass per head)...</div>'
-                ),
-            )
-
-        if not results:
-            # Show loading state while waiting for auto-computation
-            return ui.div(
-                {"style": "text-align:center;padding:40px;"},
-                ui.HTML(
-                    '<div style="color:#f59e0b;font-size:13px;">'
-                    '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;"></i>'
-                    'Computing ablation analysis...</div>'
-                ),
-            )
+        if running or not results:
+            return None
 
         try: bar_threshold = float(input.bias_bar_threshold())
         except Exception: bar_threshold = 1.5
@@ -2303,25 +2294,8 @@ def bias_server_handlers(input, output, session):
         running = ig_running.get()
         bundle = ig_results.get()
 
-        if running:
-            return ui.div(
-                {"style": "text-align:center;padding:40px;"},
-                ui.HTML(
-                    '<div style="color:#f59e0b;font-size:13px;">'
-                    '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;"></i>'
-                    'Computing Integrated Gradients (Captum LayerIG, ~30 steps)...</div>'
-                ),
-            )
-
-        if not bundle:
-            return ui.div(
-                {"style": "text-align:center;padding:40px;"},
-                ui.HTML(
-                    '<div style="color:#f59e0b;font-size:13px;">'
-                    '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;"></i>'
-                    'Computing Integrated Gradients correlation...</div>'
-                ),
-            )
+        if running or not bundle:
+            return None
 
         # Unpack bundle (IGAnalysisBundle or legacy list)
         if isinstance(bundle, IGAnalysisBundle):
