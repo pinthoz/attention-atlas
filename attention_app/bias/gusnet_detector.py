@@ -42,11 +42,24 @@ def _make_gpt2_bidirectional(model):
     is NOT included in ``save_pretrained`` / ``state_dict``.  After loading
     a bidirectionally-trained GPT-2 model, this function must be called to
     restore full self-attention (replace lower-triangular with all-ones).
+
+    Supports both legacy attention and newer SDPA-based implementations.
     """
+    fixed = 0
     for block in model.transformer.h:
         attn = block.attn
         if hasattr(attn, "bias") and attn.bias is not None:
-            attn.bias = torch.ones_like(attn.bias)
+            attn.bias.fill_(1)
+            fixed += 1
+    if fixed:
+        print(f"[GUS-Net] Bidirectional fix applied to {fixed} attention blocks (attn.bias)")
+    else:
+        # Newer transformers: disable causal masking via config
+        print("[GUS-Net] No attn.bias found — setting is_cross_attention=True as fallback")
+        model.config.is_decoder = False
+        for block in model.transformer.h:
+            attn = block.attn
+            attn.is_cross_attention = True
 
 
 # ── Shared label scheme (7 labels — identical for BERT and GPT-2) ────────────
@@ -169,8 +182,6 @@ class GusNetDetector:
                 if tokenizer.pad_token is None:
                     tokenizer.pad_token = tokenizer.eos_token
                 model = GPT2ForTokenClassification.from_pretrained(model_path)
-                # Restore bidirectional attention (buffer is not persisted)
-                _make_gpt2_bidirectional(model)
             else:
                 # BERT: use tokenizer from registry (model repo may lack one)
                 tok_name = cfg.get("tokenizer", "bert-base-uncased")
