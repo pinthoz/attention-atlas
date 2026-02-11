@@ -607,10 +607,9 @@ def _align_tokens_to_text(text: str, tokens: List[str]) -> List[tuple]:
 
 def create_method_info_html(model_key: str = "gusnet-bert") -> str:
     """Render a compact, visually rich info panel for GUS-Net.
-    
-    Shows different information depending on the selected model:
-    - gusnet-bert: Original ethical-spectacle/social-bias-ner
-    - gusnet-bert-large, gusnet-gpt2, gusnet-gpt2-medium: Custom-trained
+
+    Shows model-specific information depending on the selected model key.
+    All models are hosted under the pinthoz HuggingFace organization.
     """
     # Category badges
     cat_badges = []
@@ -637,101 +636,60 @@ def create_method_info_html(model_key: str = "gusnet-bert") -> str:
     MODEL_INFO = {
         "gusnet-bert": {
             "display_name": "GUS-Net (BERT)",
-            "model_path": "ethical-spectacle/social-bias-ner",
+            "huggingface": "pinthoz/gus-net-bert",
             "base_model": "bert-base-uncased",
-            "is_original": True,
-            "paper": "arxiv.org/pdf/2410.08388",
-            "huggingface": "ethical-spectacle/gus-net",
         },
         "gusnet-bert-large": {
             "display_name": "GUS-Net (BERT Large)",
-            "model_path": "models/gusnet-bert-large",
+            "huggingface": "pinthoz/gus-net-bert-large",
             "base_model": "bert-large-uncased",
-            "is_original": False,
-            "training_script": "gus_net_training.py",
+        },
+        "gusnet-bert-custom": {
+            "display_name": "GUS-Net (BERT Custom)",
+            "huggingface": "pinthoz/gus-net-bert-custom",
+            "base_model": "bert-base-uncased",
         },
         "gusnet-gpt2": {
             "display_name": "GUS-Net (GPT-2)",
-            "model_path": "models/gusnet-gpt2",
+            "huggingface": "pinthoz/gus-net-gpt2",
             "base_model": "gpt2",
-            "is_original": False,
-            "training_script": "gus_net_training.py",
         },
         "gusnet-gpt2-medium": {
             "display_name": "GUS-Net (GPT-2 Medium)",
-            "model_path": "models/gusnet-gpt2-medium",
+            "huggingface": "pinthoz/gus-net-gpt2-medium",
             "base_model": "gpt2-medium",
-            "is_original": False,
-            "training_script": "gus_net_training.py",
         },
     }
 
     info = MODEL_INFO.get(model_key, MODEL_INFO["gusnet-bert"])
-    
-    # Build different specs based on whether it's the original model or custom-trained
-    if info["is_original"]:
-        specs_html = (
-            '<span style="color:#94a3b8;font-weight:600;">Model</span>'
-            '<code style="font-size:10px;padding:1px 6px;background:rgba(148,163,184,0.1);'
-            'border-radius:3px;color:#475569;font-family:JetBrains Mono,monospace;">'
-            f'{info["model_path"]}</code>'
+    hf_url = f'https://huggingface.co/{info["huggingface"]}'
+    tokenization_type = "BERT" if "bert" in info["base_model"] else "GPT-2"
 
-            '<span style="color:#94a3b8;font-weight:600;">Paper</span>'
-            f'<a href="https://arxiv.org/pdf/2410.08388" target="_blank" '
-            'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
-            f'{info["paper"]}</a>'
+    specs_html = (
+        '<span style="color:#94a3b8;font-weight:600;">Model</span>'
+        f'<a href="{hf_url}" target="_blank" '
+        'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
+        f'{info["huggingface"]}</a>'
 
-            '<span style="color:#94a3b8;font-weight:600;">HuggingFace</span>'
-            f'<a href="https://huggingface.co/collections/ethical-spectacle/gus-net" target="_blank" '
-            'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
-            f'{info["huggingface"]}</a>'
+        '<span style="color:#94a3b8;font-weight:600;">Paper</span>'
+        '<a href="https://arxiv.org/pdf/2410.08388" target="_blank" '
+        'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
+        'arxiv.org/pdf/2410.08388</a>'
 
-            '<span style="color:#94a3b8;font-weight:600;">Technique</span>'
-            '<span style="color:#475569;">Multi-label token classification (sigmoid)</span>'
+        '<span style="color:#94a3b8;font-weight:600;">Technique</span>'
+        '<span style="color:#475569;">Multi-label token classification (sigmoid)</span>'
 
-            '<span style="color:#94a3b8;font-weight:600;">Categories</span>'
-            f'<div style="display:flex;flex-wrap:wrap;gap:4px;">{badges_html}</div>'
-        )
-        limitations_html = (
-            bullet('Sub-word split',
-                   'BERT tokenization may fragment entities, lowering scores on pieces')
-            + bullet('Ambiguity',
-                     'Some adjectives (e.g. <em>emotional</em>) score high regardless of context')
-            + bullet('Fixed scope',
-                     'Trained on specific datasets &mdash; may miss niche or subtle bias')
-        )
-    else:
-        # Custom-trained models
-        base_model = info["base_model"]
-        tokenization_type = "BERT" if "bert" in base_model else "GPT-2"
-        specs_html = (
-            '<span style="color:#94a3b8;font-weight:600;">Base Model</span>'
-            '<code style="font-size:10px;padding:1px 6px;background:rgba(148,163,184,0.1);'
-            f'border-radius:3px;color:#475569;font-family:JetBrains Mono,monospace;">'
-            f'{base_model}</code>'
-
-            '<span style="color:#94a3b8;font-weight:600;">Training</span>'
-            '<code style="font-size:10px;padding:1px 6px;background:rgba(148,163,184,0.1);'
-            f'border-radius:3px;color:#475569;font-family:JetBrains Mono,monospace;">'
-            f'{info["training_script"]}</code>'
-
-            '<span style="color:#94a3b8;font-weight:600;">Dataset</span>'
-            '<span style="color:#475569;">ethical-spectacle/gus-dataset-v1</span>'
-
-            '<span style="color:#94a3b8;font-weight:600;">Technique</span>'
-            '<span style="color:#475569;">Multi-label token classification (sigmoid)</span>'
-
-            '<span style="color:#94a3b8;font-weight:600;">Categories</span>'
-            f'<div style="display:flex;flex-wrap:wrap;gap:4px;">{badges_html}</div>'
-        )
-        limitations_html = (
-            bullet('Sub-word split',
-                   f'{tokenization_type} tokenization may fragment entities, lowering scores on pieces')
-            + bullet('Ambiguity',
-                     'Some adjectives (e.g. <em>emotional</em>) score high regardless of context')
-            + bullet('Custom training',
-                     'Fine-tuned on specific dataset &mdash; may differ from original GUS-Net')
-        )
+        '<span style="color:#94a3b8;font-weight:600;">Categories</span>'
+        f'<div style="display:flex;flex-wrap:wrap;gap:4px;">{badges_html}</div>'
+    )
+    limitations_html = (
+        bullet('Sub-word split',
+               f'{tokenization_type} tokenization may fragment entities, lowering scores on pieces')
+        + bullet('Ambiguity',
+                 'Some adjectives (e.g. <em>emotional</em>) score high regardless of context')
+        + bullet('Fixed scope',
+                 'Trained on specific datasets &mdash; may miss niche or subtle bias')
+    )
 
     return (
         '<div style="margin-top:20px;padding:16px 20px;'
@@ -1970,6 +1928,433 @@ def create_ig_layer_summary_chart(
     return fig
 
 
+# ── StereoSet Evaluation Visualizations ──────────────────────────────────
+
+STEREOSET_CATEGORY_COLORS = {
+    "gender": "#e74c3c",
+    "race": "#3498db",
+    "religion": "#2ecc71",
+    "profession": "#f39c12",
+}
+
+
+def create_stereoset_overview_html(scores: Dict, metadata: Dict) -> str:
+    """Render an HTML score card with SS/LMS/ICAT gauges and metadata.
+
+    Follows the ``create_bias_criteria_html()`` pattern.
+    """
+    overall = scores.get("overall", {})
+    ss = overall.get("ss", 50)
+    lms = overall.get("lms", 100)
+    icat = overall.get("icat", 0)
+    n = overall.get("n", 0)
+    sig_features = metadata.get("significant_features", 0)
+    total_features = metadata.get("total_features_tested", 0)
+
+    def gauge(label, value, ideal, unit="%", description="", color=None):
+        """Inline CSS gauge. Green when close to ideal, red when far, unless overridden."""
+        if not color:
+            distance = abs(value - ideal)
+            if distance < 5:
+                color = "#10b981"
+            elif distance < 15:
+                color = "#f59e0b"
+            else:
+                color = "#ef4444"
+                
+        # Convert hex to rgb for background opacity
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+        
+        return (
+            f'<div style="flex:1;min-width:140px;text-align:center;padding:16px 12px;'
+            f'background:rgba({r},{g},{b},0.1);border-radius:10px;border:1px solid rgba({r},{g},{b},0.3);">'
+            f'<div style="font-size:10px;font-weight:600;color:{color};text-transform:uppercase;'
+            f'letter-spacing:0.5px;margin-bottom:8px;opacity:0.9;">{label}</div>'
+            f'<div style="font-size:28px;font-weight:800;color:{color};'
+            f'font-family:Space Grotesk,JetBrains Mono,monospace;line-height:1;">'
+            f'{value:.1f}<span style="font-size:14px;opacity:0.8;">{unit}</span></div>'
+            f'<div style="font-size:9px;color:{color};margin-top:6px;opacity:0.7;">'
+            f'Ideal: {ideal}{unit}</div>'
+            f'<div style="font-size:9px;color:{color};margin-top:2px;font-style:italic;opacity:0.6;">'
+            f'{description}</div>'
+            f'</div>'
+        )
+
+    gauges = (
+        gauge("Stereotype Score", ss, 50, "%", "% model prefers stereotype", color="#3b82f6")
+        + gauge("Language Model Score", lms, 100, "%", "% meaningful over unrelated", color="#22c55e")
+        + gauge("ICAT", icat, 100, "", "LMS × min(SS, 100−SS) / 50", color="#f59e0b")
+    )
+
+    return (
+        '<div style="margin-bottom:16px;">'
+        # Title
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">'
+        '</div>'
+        # Gauges row
+        f'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">{gauges}</div>'
+        # Summary stats
+        '<div style="display:flex;gap:24px;font-size:11px;color:#94a3b8;'
+        'padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">'
+        f'<span><b style="color:#3b82f6;">{n:,}</b> examples evaluated</span>'
+        f'<span><b style="color:#22c55e;">{sig_features:,}</b>/{total_features:,} '
+        f'features significant (p&lt;0.001)</span>'
+        f'<span>Computed: {metadata.get("date", "N/A")[:10]}</span>'
+        '</div>'
+        '</div>'
+    )
+
+
+def create_stereoset_category_chart(scores_by_category: Dict) -> go.Figure:
+    """Grouped bar chart of Stereotype Score per category with 50% reference line."""
+    categories = list(scores_by_category.keys())
+    ss_values = [scores_by_category[c]["ss"] for c in categories]
+    n_values = [scores_by_category[c]["n"] for c in categories]
+    colors = [STEREOSET_CATEGORY_COLORS.get(c, "#94a3b8") for c in categories]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=[c.capitalize() for c in categories],
+        y=ss_values,
+        marker_color=colors,
+        text=[f"{v:.1f}%" for v in ss_values],
+        textposition="outside",
+        hovertemplate=(
+            "<b>%{x}</b><br>"
+            "Stereotype Score: %{y:.1f}%<br>"
+            "n = %{customdata}<extra></extra>"
+        ),
+        customdata=n_values,
+    ))
+
+    fig.add_hline(
+        y=50, line_dash="dash", line_color="#94a3b8", line_width=1.5,
+        annotation_text="Ideal (50%)", annotation_position="right",
+        annotation_font=dict(size=10, color="#94a3b8"),
+    )
+
+    fig.update_layout(
+        title=dict(
+            text="Stereotype Score by Category<br>"
+                 "<sub>% of examples where model prefers stereotypical sentence</sub>",
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        yaxis=dict(
+            title="Stereotype Score (%)", range=[0, 100],
+            tickfont=dict(size=10, color="#475569"),
+        ),
+        xaxis=dict(tickfont=dict(size=11, color="#475569")),
+        height=380,
+        autosize=True,
+        margin=dict(l=60, r=40, t=80, b=40),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        showlegend=False,
+    )
+    return fig
+
+
+def create_stereoset_head_sensitivity_heatmap(
+    matrix: List[List[float]],
+    top_heads: List[Dict],
+) -> go.Figure:
+    """12x12 heatmap of head sensitivity variance with star markers on top heads."""
+    import numpy as _np
+    z = _np.array(matrix)
+    num_layers, num_heads = z.shape
+
+    hover_text = [
+        [f"<b>Layer {l}, Head {h}</b><br>Variance: {z[l, h]:.2e}"
+         for h in range(num_heads)]
+        for l in range(num_layers)
+    ]
+
+    fig = go.Figure(data=go.Heatmap(
+        z=z.tolist(),
+        x=[f"H{h}" for h in range(num_heads)],
+        y=[f"L{l}" for l in range(num_layers)],
+        colorscale=[
+            [0.0, "#0f172a"],
+            [0.15, "#1e1b4b"],
+            [0.35, "#5b21b6"],
+            [0.55, "#a855f7"],
+            [0.75, "#f472b6"],
+            [1.0, "#fbbf24"],
+        ],
+        showscale=True,
+        colorbar=dict(
+            title=dict(text="Variance", font=dict(size=11, color="#64748b")),
+            tickfont=dict(size=10, color="#64748b"),
+        ),
+        hovertemplate="%{text}<extra></extra>",
+        text=hover_text,
+    ))
+
+    # Star markers on top sensitive heads
+    for head_info in top_heads[:5]:
+        fig.add_annotation(
+            x=f"H{head_info['head']}",
+            y=f"L{head_info['layer']}",
+            text="★",
+            showarrow=False,
+            font=dict(size=16, color="#f59e0b"),
+        )
+
+    fig.update_layout(
+        title=dict(
+            text="Head Sensitivity to Bias Categories<br>"
+                 "<sub>Variance of mean attention across gender/race/religion/profession (★ = top 5)</sub>",
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        xaxis=dict(title="Attention Head", tickfont=dict(size=10, color="#475569"), side="bottom"),
+        yaxis=dict(title="Layer", tickfont=dict(size=10, color="#475569"), autorange="reversed"),
+        height=max(300, num_layers * 40),
+        autosize=True,
+        margin=dict(l=60, r=120, t=100, b=60, autoexpand=True),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+    )
+    return fig
+
+
+def create_stereoset_bias_distribution(examples: List[Dict]) -> go.Figure:
+    """Violin/box plot of bias_score distribution by category."""
+    categories_present = sorted(set(e["category"] for e in examples))
+
+    fig = go.Figure()
+    for cat in categories_present:
+        scores = [e["bias_score"] for e in examples if e["category"] == cat]
+        color = STEREOSET_CATEGORY_COLORS.get(cat, "#94a3b8")
+        fig.add_trace(go.Violin(
+            y=scores,
+            name=cat.capitalize(),
+            box_visible=True,
+            meanline_visible=True,
+            fillcolor=f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.25)",
+            line_color=color,
+            marker_color=color,
+            points="outliers",
+            hovertemplate="bias_score = %{y:.4f}<extra>%{fullData.name}</extra>",
+        ))
+
+    fig.add_hline(
+        y=0, line_dash="dash", line_color="#94a3b8", line_width=1,
+        annotation_text="No preference", annotation_position="right",
+        annotation_font=dict(size=10, color="#94a3b8"),
+    )
+
+    fig.update_layout(
+        title=dict(
+            text="Bias Score Distribution by Category<br>"
+                 "<sub>PLL(stereo) − PLL(anti): positive = model prefers stereotype</sub>",
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        yaxis=dict(
+            title="Bias Score (PLL difference)",
+            tickfont=dict(size=10, color="#475569"),
+        ),
+        height=400,
+        autosize=True,
+        margin=dict(l=60, r=40, t=80, b=40),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        legend=dict(x=0.5, y=1.12, xanchor="center", orientation="h", font=dict(size=10)),
+        violinmode="group",
+    )
+    return fig
+
+
+def create_stereoset_demographic_chart(
+    examples: List[Dict],
+    category: str = "all",
+    min_n: int = 10,
+) -> go.Figure:
+    """Dot plot of Stereotype Score per demographic target within a category.
+
+    Each dot is one target (e.g. 'Hispanic', 'sister') sized by sample count.
+    Vertical reference line at SS=50% (ideal / no bias).
+    """
+    from collections import Counter
+
+    # Filter by category if requested
+    if category and category != "all":
+        examples = [e for e in examples if e.get("category") == category]
+
+    # Group by target
+    target_data = {}
+    for ex in examples:
+        t = ex.get("target", "unknown")
+        if t not in target_data:
+            target_data[t] = {"stereo_wins": 0, "n": 0, "bias_sum": 0.0, "category": ex.get("category", "")}
+        target_data[t]["n"] += 1
+        target_data[t]["bias_sum"] += ex.get("bias_score", 0)
+        if ex.get("stereo_pll", 0) > ex.get("anti_pll", 0):
+            target_data[t]["stereo_wins"] += 1
+
+    # Filter by minimum sample size and compute SS
+    targets = []
+    for t, d in target_data.items():
+        if d["n"] >= min_n:
+            ss = d["stereo_wins"] / d["n"] * 100
+            mean_bias = d["bias_sum"] / d["n"]
+            targets.append({
+                "target": t, "ss": ss, "n": d["n"],
+                "mean_bias": mean_bias, "category": d["category"],
+            })
+
+    targets.sort(key=lambda x: x["ss"], reverse=True)
+
+    if not targets:
+        fig = go.Figure()
+        fig.add_annotation(text="No targets with sufficient data", showarrow=False,
+                           font=dict(size=14, color="#94a3b8"), xref="paper", yref="paper", x=0.5, y=0.5)
+        fig.update_layout(height=200, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+        return fig
+
+    names = [t["target"] for t in targets]
+    ss_vals = [t["ss"] for t in targets]
+    n_vals = [t["n"] for t in targets]
+    colors = [STEREOSET_CATEGORY_COLORS.get(t["category"], "#94a3b8") for t in targets]
+    bias_vals = [t["mean_bias"] for t in targets]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        y=names,
+        x=ss_vals,
+        orientation="h",
+        marker_color=colors,
+        marker_line=dict(width=0),
+        text=[f"{v:.1f}%" for v in ss_vals],
+        textposition="outside",
+        textfont=dict(size=10),
+        hovertemplate=(
+            "<b>%{y}</b><br>"
+            "SS: %{x:.1f}%<br>"
+            "n = %{customdata[0]}<br>"
+            "Mean bias: %{customdata[1]:+.4f}"
+            "<extra></extra>"
+        ),
+        customdata=list(zip(n_vals, bias_vals)),
+    ))
+
+    fig.add_vline(
+        x=50, line_dash="dash", line_color="#94a3b8", line_width=1.5,
+        annotation_text="Ideal (50%)", annotation_position="top",
+        annotation_font=dict(size=9, color="#94a3b8"),
+    )
+
+    title_cat = category.capitalize() if category and category != "all" else "All Categories"
+    fig.update_layout(
+        title=dict(
+            text=f"Stereotype Score by Target — {title_cat}<br>"
+                 f"<sub>Targets with n ≥ {min_n} | sorted by SS descending</sub>",
+            font=dict(size=14, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        xaxis=dict(
+            title="Stereotype Score (%)", range=[0, 100],
+            tickfont=dict(size=10, color="#475569"),
+        ),
+        yaxis=dict(
+            tickfont=dict(size=10, color="#334155"),
+            autorange="reversed",
+        ),
+        height=max(300, len(targets) * 28 + 100),
+        autosize=True,
+        margin=dict(l=140, r=60, t=80, b=40),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        showlegend=False,
+    )
+    return fig
+
+
+def create_stereoset_example_html(example: Dict) -> str:
+    """Render a single StereoSet example with PLL scores and Analyze button."""
+    ctx = html_lib.escape(example.get("context", ""))
+    stereo = html_lib.escape(example.get("stereo_sentence", ""))
+    anti = html_lib.escape(example.get("anti_sentence", ""))
+    unrelated = html_lib.escape(example.get("unrelated_sentence", ""))
+    stereo_pll = example.get("stereo_pll", 0)
+    anti_pll = example.get("anti_pll", 0)
+    unrelated_pll = example.get("unrelated_pll", 0)
+    bias_score = example.get("bias_score", 0)
+    category = example.get("category", "")
+
+    cat_color = STEREOSET_CATEGORY_COLORS.get(category, "#94a3b8")
+
+    # Determine which sentence the model prefers
+    if stereo_pll > anti_pll:
+        stereo_indicator = " ← model prefers"
+        anti_indicator = ""
+    else:
+        stereo_indicator = ""
+        anti_indicator = " ← model prefers"
+
+    # Analyze text = context + stereo sentence
+    # Analyze text = context + stereo sentence
+    # We need to be careful with escaping for the JS onclick handler
+    raw_text = example.get("context", "") + " " + example.get("stereo_sentence", "")
+    # 1. Escape for JS string (single quotes)
+    js_safe_text = raw_text.replace("\\", "\\\\").replace("'", "\\'")
+    # 2. Escape for HTML attribute (double quotes)
+    analyze_text = html_lib.escape(js_safe_text, quote=True)
+
+    def sentence_row(label, text, pll, color, indicator=""):
+        return (
+            f'<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;'
+            f'border-radius:6px;background:rgba(255,255,255,0.05);'
+            f'border-left:3px solid {color};margin-bottom:6px;">'
+            f'<span style="font-size:9px;font-weight:700;color:{color};text-transform:uppercase;'
+            f'min-width:80px;padding-top:2px;">{label}</span>'
+            f'<span style="font-size:12px;color:#e2e8f0;flex:1;font-weight:400;">{text}</span>'
+            f'<span style="font-size:11px;font-weight:700;color:{color};'
+            f'font-family:JetBrains Mono,monospace;white-space:nowrap;">'
+            f'{pll:.4f}{indicator}</span>'
+            f'</div>'
+        )
+
+    # Use primary pink
+    pink_color = "#ff5ca9"
+
+    return (
+        '<div style="padding:12px;background:#0f172a;border-radius:10px;'
+        'border:1px solid rgba(255,255,255,0.1);box-shadow:0 4px 6px -1px rgba(0,0,0,0.2);">'
+        # Header
+        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+        f'<span style="font-size:10px;padding:2px 8px;border-radius:4px;'
+        f'background:rgba({int(cat_color[1:3],16)},{int(cat_color[3:5],16)},{int(cat_color[5:7],16)},0.15);'
+        f'color:{cat_color};font-weight:600;text-transform:uppercase;border:1px solid rgba({int(cat_color[1:3],16)},{int(cat_color[3:5],16)},{int(cat_color[5:7],16)},0.3);">{category}</span>'
+        f'<span style="font-size:12px;color:#94a3b8;font-style:italic;">"{ctx}"</span>'
+        f'</div>'
+        # Sentences
+        + sentence_row("Stereotype", stereo, stereo_pll, "#f87171", stereo_indicator)
+        + sentence_row("Anti-stereo", anti, anti_pll, "#4ade80", anti_indicator)
+        + sentence_row("Unrelated", unrelated, unrelated_pll, "#94a3b8")
+        +
+        # Footer: bias score + analyze button
+        f'<div style="display:flex;align-items:center;justify-content:space-between;'
+        f'margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1);">'
+        f'<span style="font-size:11px;color:#94a3b8;">Bias score: '
+        f'<b style="color:{"#f87171" if bias_score > 0 else "#4ade80"};'
+        f'font-family:JetBrains Mono,monospace;">{bias_score:+.4f}</b></span>'
+        f'<button onclick="window.analyzeStereoSetExample(\'{analyze_text}\')" '
+        f'style="font-size:10px;padding:4px 12px;border-radius:6px;border:1px solid rgba(255,92,169,0.5);'
+        f'background:rgba(255,92,169,0.1);color:#ff5ca9;cursor:pointer;font-weight:600;'
+        f'transition:all 0.2s;" '
+        f'onmouseover="this.style.background=\'rgba(255,92,169,0.25)\'" '
+        f'onmouseout="this.style.background=\'rgba(255,92,169,0.1)\'">'
+        f'Analyze in Pipeline →</button>'
+        f'</div>'
+        '</div>'
+    )
+
+
 __all__ = [
     "create_attention_bias_matrix",
     "create_bias_propagation_plot",
@@ -1986,4 +2371,10 @@ __all__ = [
     "create_ig_token_comparison_chart",
     "create_ig_distribution_chart",
     "create_ig_layer_summary_chart",
+    "create_stereoset_overview_html",
+    "create_stereoset_category_chart",
+    "create_stereoset_head_sensitivity_heatmap",
+    "create_stereoset_bias_distribution",
+    "create_stereoset_demographic_chart",
+    "create_stereoset_example_html",
 ]

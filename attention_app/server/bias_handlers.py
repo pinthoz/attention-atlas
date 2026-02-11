@@ -33,6 +33,22 @@ from ..bias import (
 )
 from ..bias.head_ablation import batch_ablate_top_heads, HeadAblationResult
 from ..bias.integrated_gradients import batch_compute_ig_correlation, IGCorrelationResult, IGAnalysisBundle
+from ..bias.stereoset import (
+    load_stereoset_data,
+    get_stereoset_scores,
+    get_stereoset_examples,
+    get_head_sensitivity_matrix,
+    get_sensitive_heads,
+    get_top_features,
+    get_metadata,
+)
+from ..bias.visualizations import (
+    create_stereoset_overview_html,
+    create_stereoset_category_chart,
+    create_stereoset_head_sensitivity_heatmap,
+    create_stereoset_bias_distribution,
+    create_stereoset_example_html,
+)
 from ..ui.bias_ui import create_bias_accordion, create_floating_bias_toolbar
 from ..ui.components import viz_header
 
@@ -193,18 +209,121 @@ def _align_gusnet_to_attention_tokens(gusnet_labels, attention_tokens, gusnet_sp
 
 def _get_bias_model_label(res):
     """Return a human-readable label for the bias model used in the result."""
-    from ..bias.gusnet_detector import MODEL_REGISTRY
+    from attention_app.bias.gusnet_detector import MODEL_REGISTRY
     key = res.get("bias_model_key", "gusnet-bert")
     cfg = MODEL_REGISTRY.get(key, {})
     return cfg.get("display_name", key)
+
+def _process_raw_bias_result(raw_res, thresholds, use_optimized=False):
+    """Apply thresholds to raw results and regeneration attention metrics."""
+    if not raw_res:
+        return None
+    
+    try:
+        bias_model_key = raw_res["bias_model_key"]
+        
+        # 1. Re-instantiate detector (lightweight) to apply thresholds
+        from attention_app.bias.gusnet_detector import GusNetDetector, EnsembleGusNetDetector
+        
+        if bias_model_key == "gusnet-ensemble":
+            det = EnsembleGusNetDetector(model_key_a="gusnet-bert", model_key_b="gusnet-bert-custom")
+        else:
+            det = GusNetDetector(model_key=bias_model_key, use_optimized=use_optimized)
+            
+        # 2. Apply thresholds
+        gusnet_labels = det.apply_thresholds(
+            raw_res["gus_tokens"], 
+            raw_res["gus_probs"], 
+            thresholds=thresholds
+        )
+        
+        # 3. Re-align (alignment needed because encoder tokens != gus tokens)
+        tokens = raw_res["tokens"]
+        gus_special = raw_res["gus_special"]
+        
+        # We need _align_gusnet function available here
+        gus_aligned = _align_gusnet_to_attention_tokens(
+            gusnet_labels, tokens, gusnet_special_tokens=gus_special
+        )
+        
+        token_labels = []
+        for i, tok in enumerate(tokens):
+            matched = gus_aligned[i]
+            if matched is not None:
+                token_labels.append({
+                    **matched,
+                    "token": tok,
+                    "index": i,
+                })
+            else:
+                token_labels.append({
+                    "token": tok,
+                    "index": i,
+                    "bias_types": [],
+                    "is_biased": False,
+                    "scores": {"O": 0.0, "GEN": 0.0, "UNFAIR": 0.0, "STEREO": 0.0},
+                    "method": "gusnet",
+                    "explanation": "",
+                    "threshold": thresholds.get("GEN", 0.5) if thresholds else 0.5,
+                })
+        
+        # 4. Re-calculate Summary & Spans
+        bias_summary = det.get_bias_summary(token_labels)
+        bias_spans = det.get_biased_spans(token_labels)
+        
+        # 5. Re-calculate Attention Metrics (Attention Analyzer)
+        # Only if we have attention data
+        attentions = raw_res["attentions"]
+        biased_indices = [i for i, l in enumerate(token_labels) if l["is_biased"]]
+        
+        attention_metrics = []
+        propagation_analysis = {
+            "layer_propagation": [], "peak_layer": None,
+            "propagation_pattern": "none",
+        }
+        bias_matrix = np.array([])
+        
+        if biased_indices and attentions:
+            attention_analyzer = AttentionBiasAnalyzer()
+            attention_metrics = attention_analyzer.analyze_attention_to_bias(
+                list(attentions), biased_indices, tokens
+            )
+            propagation_analysis = attention_analyzer.analyze_bias_propagation(
+                list(attentions), biased_indices, tokens
+            )
+            bias_doc_matrix = attention_analyzer.create_attention_bias_matrix(
+                list(attentions), biased_indices
+            )
+            # bias_doc_matrix is a numpy array? Helper usually returns something else?
+            # Warning: Existing code was: bias_matrix = attention_analyzer.create_attention_bias_matrix(...)
+            bias_matrix = bias_doc_matrix
+
+        # Return full result structure
+        return {
+            **raw_res,
+            "token_labels": token_labels,
+            "bias_summary": bias_summary,
+            "bias_spans": bias_spans,
+            "biased_indices": biased_indices,
+            "attention_metrics": attention_metrics,
+            "propagation_analysis": propagation_analysis,
+            "bias_matrix": bias_matrix,
+        }
+        
+    except Exception as e:
+        print(f"Error processing raw bias result: {e}")
+        traceback.print_exc()
+        return None
 
 
 def bias_server_handlers(input, output, session):
     """Create server handlers for bias analysis tab."""
 
     bias_running = reactive.value(False)
-    bias_results = reactive.value(None)
-    bias_results_B = reactive.value(None)  # For comparison
+    bias_raw_results = reactive.value(None)  # Raw probs (no threshold)
+    bias_raw_results_B = reactive.value(None)
+    bias_results = reactive.value(None)      # Final labels (after threshold)
+    bias_results_B = reactive.value(None)    # For comparison
     bias_history = reactive.Value([])
     ablation_results = reactive.value(None)
     ablation_running = reactive.value(False)
@@ -225,6 +344,33 @@ def bias_server_handlers(input, output, session):
     # ── Constants for UI Consistency ──
     _BTN_STYLE_CSV = "padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: #334155; text-decoration: none;"
     _BTN_STYLE_PNG = "padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: #334155;"
+
+    # ── Defaults Logic ──
+    @reactive.Effect
+    def update_threshold_defaults():
+        """Update UI sliders with model-specific optimized thresholds."""
+        vk = input.bias_model_key()
+        if not vk: return
+        
+        from attention_app.bias.gusnet_detector import MODEL_REGISTRY
+        cfg = MODEL_REGISTRY.get(vk)
+        if not cfg: return
+        
+        opt = cfg.get("optimized_thresholds")
+        defaults = {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
+        
+        if opt:
+            # Calculate mean threshold per category
+            cat_indices = cfg.get("category_indices", {})
+            for cat, indices in cat_indices.items():
+                if cat in defaults:
+                    # Get values from opt list
+                    vals = [opt[i] for i in indices if i < len(opt)]
+                    if vals:
+                        defaults[cat] = sum(vals) / len(vals)
+        
+        # Send to UI
+        asyncio.create_task(session.send_custom_message("set_bias_thresholds", defaults))
 
     # ── History Logic ──
     
@@ -261,6 +407,58 @@ def bias_server_handlers(input, output, session):
                 )
             )
         return ui.div(*items)
+
+    @reactive.Effect
+    def update_bias_results_live():
+        """Update bias results when sliders change (without re-running inference)."""
+        raw_A = bias_raw_results.get()
+        raw_B = bias_raw_results_B.get()
+        
+        if not raw_A and not raw_B:
+            return
+
+        # Check optimization flag
+        try:
+            use_opt = input.bias_use_optimized()
+        except: use_opt = False
+
+        # Read manual sliders regardless (fail-safe)
+        try: t_unfair = float(input.bias_thresh_unfair())
+        except: t_unfair = 0.5
+        try: t_gen = float(input.bias_thresh_gen())
+        except: t_gen = 0.5
+        try: t_stereo = float(input.bias_thresh_stereo())
+        except: t_stereo = 0.5
+        
+        manual_thresholds = {
+            "UNFAIR": t_unfair,
+            "GEN": t_gen,
+            "STEREO": t_stereo
+        }
+        
+        # Determine thresholds for A and B
+        # If Optimized is TRUE, use the model-specific effective thresholds from the raw result.
+        # This allows Model A and Model B to each use their own optimal settings.
+        # If FALSE (user manual override), use the sliders for both.
+        
+        thresholds_A = manual_thresholds
+        thresholds_B = manual_thresholds
+        
+        if use_opt:
+            if raw_A and raw_A.get("effective_thresholds"):
+                thresholds_A = raw_A["effective_thresholds"]
+            if raw_B and raw_B.get("effective_thresholds"):
+                thresholds_B = raw_B["effective_thresholds"]
+        
+        # Process A
+        if raw_A:
+            res_A = _process_raw_bias_result(raw_A, thresholds_A)
+            bias_results.set(res_A)
+            
+        # Process B
+        if raw_B:
+            res_B = _process_raw_bias_result(raw_B, thresholds_B)
+            bias_results_B.set(res_B)
 
     @reactive.Effect
     @reactive.event(bias_history)
@@ -381,6 +579,13 @@ def bias_server_handlers(input, output, session):
             return wrapper
         return decorator
 
+    def _safe_threshold():
+        """Read bias_threshold input, falling back to 0.5 if unavailable."""
+        try:
+            return float(input.bias_threshold())
+        except Exception:
+            return 0.5
+
     # ── Session Logic ──
 
     @render.download(filename=lambda: f"bias_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
@@ -389,7 +594,7 @@ def bias_server_handlers(input, output, session):
             "type": "bias_analysis",
             "timestamp": datetime.now().isoformat(),
             "text": input.bias_input_text(),
-            "threshold": float(input.bias_threshold()) if input.bias_threshold() else 0.5,
+            "threshold": _safe_threshold(),
         }
 
         # Bias model key
@@ -766,7 +971,7 @@ def bias_server_handlers(input, output, session):
         with open("bias_debug.log", "a") as f:
             f.write(f"[{datetime.now().isoformat()}] {msg}\n")
             
-    def heavy_bias_compute(text, model_name, threshold, bias_model_key):
+    def heavy_bias_compute(text, model_name, threshold, bias_model_key, use_optimized=True):
         """Perform bias analysis computation (runs in thread pool).
 
         Parameters
@@ -780,15 +985,21 @@ def bias_server_handlers(input, output, session):
         bias_model_key : str
             Key into ``MODEL_REGISTRY`` selecting the GUS-Net backbone
             ("gusnet-bert" or "gusnet-gpt2").
+        use_optimized : bool
+            Whether to use per-label optimized thresholds (if available).
         """
-        log_debug(f"Starting heavy_bias_compute (threshold={threshold}, bias_model={bias_model_key})")
-        print(f"DEBUG: Starting heavy_bias_compute (threshold={threshold}, bias_model={bias_model_key})")
+        log_debug(f"Starting heavy_bias_compute (threshold={threshold}, bias_model={bias_model_key}, use_optimized={use_optimized})")
+        print(f"DEBUG: Starting heavy_bias_compute (threshold={threshold}, bias_model={bias_model_key}, use_optimized={use_optimized})")
         if not text:
             log_debug("No text provided")
             print("DEBUG: No text provided")
             return None
 
         try:
+            # Clear cache before starting heavy operation
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
             # Load attention model
             log_debug(f"Loading attention model {model_name}...")
             print(f"DEBUG: Loading attention model {model_name}...")
@@ -805,7 +1016,25 @@ def bias_server_handlers(input, output, session):
             log_debug("Running encoder inference...")
             print("DEBUG: Running encoder inference...")
             with torch.no_grad():
-                outputs = encoder_model(**inputs)
+                try:
+                    outputs = encoder_model(**inputs)
+                except torch.cuda.OutOfMemoryError:
+                    # Clear cache and try again? No, just fail gracefully
+                    torch.cuda.empty_cache()
+                    raise RuntimeError(
+                        "GPU Out of Memory. usage is high. "
+                        "Please stop the background 'generate_stereoset_json' script "
+                        "or other heavy processes."
+                    )
+                except RuntimeError as e:
+                    if "out of memory" in str(e).lower():
+                         torch.cuda.empty_cache()
+                         raise RuntimeError(
+                            "GPU Out of Memory. usage is high. "
+                            "Please stop the background 'generate_stereoset_json' script "
+                            "or other heavy processes."
+                        )
+                    raise e
             tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
             attentions = outputs.attentions
             log_debug(f"Got {len(tokens)} tokens, {len(attentions)} layers")
@@ -818,85 +1047,51 @@ def bias_server_handlers(input, output, session):
                 gus_detector = EnsembleGusNetDetector(
                     model_key_a="gusnet-bert",
                     model_key_b="gusnet-bert-custom",
-                    threshold=threshold,
+                    threshold=0.5, # Placeholder
                 )
             else:
-                gus_detector = GusNetDetector(model_key=bias_model_key, threshold=threshold)
-            log_debug("Running detect_bias...")
-            print("DEBUG: Running detect_bias...")
-            gusnet_labels = gus_detector.detect_bias(text)
-            log_debug(f"GUS-Net returned {len(gusnet_labels)} labels")
-            print(f"DEBUG: GUS-Net returned {len(gusnet_labels)} labels")
-
-            # Align GUS-Net labels to the attention model's tokens
-            gus_special = gus_detector.config["special_tokens"]
-            gus_aligned = _align_gusnet_to_attention_tokens(
-                gusnet_labels, tokens, gusnet_special_tokens=gus_special
-            )
-
-            # Build unified token_labels aligned to encoder tokens
-            token_labels = []
-            for i, tok in enumerate(tokens):
-                matched = gus_aligned[i]
-                if matched is not None:
-                    token_labels.append({
-                        **matched,
-                        "token": tok,
-                        "index": i,
-                    })
-                else:
-                    token_labels.append({
-                        "token": tok,
-                        "index": i,
-                        "bias_types": [],
-                        "is_biased": False,
-                        "scores": {"O": 0.0, "GEN": 0.0, "UNFAIR": 0.0, "STEREO": 0.0},
-                        "method": "gusnet",
-                        "explanation": "",
-                        "threshold": threshold,
-                    })
-
-            bias_summary = gus_detector.get_bias_summary(token_labels)
-            bias_spans = gus_detector.get_biased_spans(token_labels)
-            log_debug(f"{len(bias_spans)} spans detected")
-            print(f"DEBUG: {len(bias_spans)} spans detected")
-
-            # ── Attention x Bias ──
-            attention_analyzer = AttentionBiasAnalyzer()
-            biased_indices = [i for i, l in enumerate(token_labels) if l["is_biased"]]
-
-            if biased_indices and attentions:
-                attention_metrics = attention_analyzer.analyze_attention_to_bias(
-                    list(attentions), biased_indices, tokens
+                gus_detector = GusNetDetector(
+                    model_key=bias_model_key, threshold=0.5,
+                    use_optimized=False,
                 )
-                propagation_analysis = attention_analyzer.analyze_bias_propagation(
-                    list(attentions), biased_indices, tokens
-                )
-                bias_matrix = attention_analyzer.create_attention_bias_matrix(
-                    list(attentions), biased_indices
-                )
-            else:
-                attention_metrics = []
-                propagation_analysis = {
-                    "layer_propagation": [], "peak_layer": None,
-                    "propagation_pattern": "none",
-                }
-                bias_matrix = np.array([])
+            log_debug("Running predict_proba...")
+            print("DEBUG: Running predict_proba...")
             
-            log_debug("Finished heavy_bias_compute successfully")
+            # Helper to get raw probs.
+            gus_tokens, gus_probs = gus_detector.predict_proba(text)
+            
+            log_debug(f"GUS-Net returned {len(gus_tokens)} tokens and {gus_probs.shape} probs")
+
+            # Calculate effective thresholds for UI feedback
+            effective_thresholds = {}
+            if use_optimized and gus_detector.config.get("optimized_thresholds"):
+                opt = gus_detector.config["optimized_thresholds"]
+                cat_indices = gus_detector.config.get("category_indices", {})
+                for cat in ["GEN", "UNFAIR", "STEREO"]:
+                    if cat in cat_indices:
+                        indices = cat_indices[cat]
+                        # Average the per-label thresholds for the category to give a representative slider value
+                        vals = [opt[i] for i in indices if i < len(opt)]
+                        if vals:
+                            effective_thresholds[cat] = sum(vals) / len(vals)
+            else:
+                effective_thresholds = {
+                    "GEN": threshold, 
+                    "UNFAIR": threshold, 
+                    "STEREO": threshold
+                }
+
+            # Return RAW data
             return {
-                "tokens": tokens,
+                "tokens": tokens, # Encoder tokens
                 "text": text,
                 "attentions": attentions,
-                "token_labels": token_labels,
-                "bias_summary": bias_summary,
-                "bias_spans": bias_spans,
-                "biased_indices": biased_indices,
-                "attention_metrics": attention_metrics,
-                "propagation_analysis": propagation_analysis,
-                "bias_matrix": bias_matrix,
+                "gus_tokens": gus_tokens, 
+                "gus_probs": gus_probs,
                 "bias_model_key": bias_model_key,
                 "model_name": model_name,
+                "gus_special": gus_detector.config["special_tokens"],
+                "effective_thresholds": effective_thresholds
             }
         except Exception as e:
             msg = f"ERROR in heavy_bias_compute: {e}"
@@ -961,11 +1156,17 @@ def bias_server_handlers(input, output, session):
             bias_cached_text_A.set(text)
 
             try:
+                use_optimized = bool(input.bias_use_optimized())
+            except Exception:
+                use_optimized = True
+
+            try:
                 threshold = float(input.bias_threshold())
                 log_debug(f"Threshold: {threshold}")
             except Exception as e:
                 log_debug(f"Warning: bias_threshold input missing or invalid ({e}). Using default 0.5")
                 threshold = 0.5
+            log_debug(f"use_optimized={use_optimized}, threshold={threshold}")
 
             # Bias detection model (BERT or GPT-2 backbone) - Model A
             try:
@@ -987,12 +1188,17 @@ def bias_server_handlers(input, output, session):
                     log_debug("Submitting heavy_bias_compute for Model A...")
                     result = await asyncio.wait_for(
                         loop.run_in_executor(
-                            pool, heavy_bias_compute, text, model_name, threshold, bias_model_key,
+                            pool, heavy_bias_compute, text, model_name, threshold, bias_model_key, use_optimized,
                         ),
                         timeout=180.0
                     )
                     log_debug("heavy_bias_compute A returned successfully")
-                    bias_results.set(result)
+                    bias_raw_results.set(result) # Store RAW result
+
+                    # Update UI sliders with the actual thresholds used
+                    if result and result.get("effective_thresholds"):
+                        log_debug(f"Sending effective thresholds to UI: {result['effective_thresholds']}")
+                        await session.send_custom_message("set_bias_thresholds", result["effective_thresholds"])
 
                     # Compute Result B if needed
                     if compare_models:
@@ -1008,11 +1214,11 @@ def bias_server_handlers(input, output, session):
                         log_debug(f"Starting heavy_bias_compute B ({bias_model_key_B}, encoder={model_name_B}) for Compare Models")
                         result_B = await asyncio.wait_for(
                             loop.run_in_executor(
-                                pool, heavy_bias_compute, text, model_name_B, threshold, bias_model_key_B,
+                                pool, heavy_bias_compute, text, model_name_B, threshold, bias_model_key_B, use_optimized,
                             ),
                             timeout=180.0
                         )
-                        bias_results_B.set(result_B)
+                        bias_raw_results_B.set(result_B) # Store RAW result B
                         bias_cached_text_B.set(text)  # Same text for compare models
 
                     elif compare_prompts:
@@ -1026,17 +1232,17 @@ def bias_server_handlers(input, output, session):
                             log_debug(f"Starting heavy_bias_compute B (Prompt B) for Compare Prompts")
                             result_B = await asyncio.wait_for(
                                 loop.run_in_executor(
-                                    pool, heavy_bias_compute, text_B, model_name, threshold, bias_model_key,
+                                    pool, heavy_bias_compute, text_B, model_name, threshold, bias_model_key, use_optimized,
                                 ),
                                 timeout=180.0
                             )
-                            bias_results_B.set(result_B)
+                            bias_raw_results_B.set(result_B)
                             bias_cached_text_B.set(text_B)
                         else:
-                            bias_results_B.set(None)
+                            bias_raw_results_B.set(None)
                             bias_cached_text_B.set("")
                     else:
-                        bias_results_B.set(None)
+                        bias_raw_results_B.set(None)
                         bias_cached_text_B.set("")
 
             except asyncio.TimeoutError:
@@ -1480,7 +1686,7 @@ def bias_server_handlers(input, output, session):
                 'No analysis results yet.</div>'
             )
         try:
-            threshold = input.bias_threshold()
+            threshold = _safe_threshold()
             html = create_inline_bias_html(
                 res["text"], res["token_labels"], res["bias_spans"],
                 show_neutral=False, threshold=threshold,
@@ -1687,8 +1893,7 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
         
-        try: threshold = float(input.bias_threshold())
-        except: threshold = 0.5
+        threshold = _safe_threshold()
 
         def get_content_html(items, t, c, s_idxs):
             import math
@@ -2489,6 +2694,386 @@ def bias_server_handlers(input, output, session):
         for i, r in enumerate(sorted_results, 1):
             lines.append(f"{i},{r.layer},{r.head},{r.spearman_rho:.6f},{r.spearman_pvalue:.6f},{r.bar_original:.4f}")
         yield "\n".join(lines)
+
+    # ── StereoSet Evaluation Handlers ─────────────────────────────────
+    # These load from pre-computed JSON and render independently of bias_results.
+    # They react to the selected GUS-Net model to show the matching base model's data.
+
+    def _stereoset_model_key():
+        """Derive the stereoset model key from the current GUS-Net selection."""
+        try:
+            return input.bias_model_key()
+        except Exception:
+            return "gusnet-bert"
+
+    @output
+    @render.ui
+    def stereoset_overview():
+        """Score card with SS/LMS/ICAT gauges."""
+        mk = _stereoset_model_key()
+        scores = get_stereoset_scores(mk)
+        metadata = get_metadata(mk)
+        if scores is None or metadata is None:
+            return ui.div(
+                ui.p(
+                    "StereoSet data not available. Run ",
+                    ui.code("python -m attention_app.bias.generate_stereoset_json"),
+                    " to generate.",
+                    style="color:#94a3b8;font-size:12px;",
+                ),
+            )
+        html = create_stereoset_overview_html(scores, metadata)
+        model_label = metadata.get("model", "unknown")
+        return _wrap_card(
+            ui.HTML(html),
+            manual_header=("Benchmark Scores", f"StereoSet intersentence evaluation on {model_label}"),
+        )
+
+    @output
+    @render.ui
+    def stereoset_category_breakdown():
+        """Category bar chart + bias distribution violin side-by-side."""
+        mk = _stereoset_model_key()
+        scores = get_stereoset_scores(mk)
+        examples = get_stereoset_examples(mk)
+        if scores is None or not examples:
+            return ui.div()
+
+        by_cat = scores.get("by_category", {})
+        if not by_cat:
+            return ui.div()
+
+        fig_cat = create_stereoset_category_chart(by_cat)
+        fig_dist = create_stereoset_bias_distribution(examples)
+
+        cat_html = fig_cat.to_html(include_plotlyjs="cdn", full_html=False, config={"responsive": True})
+        dist_html = fig_dist.to_html(include_plotlyjs=False, full_html=False, config={"responsive": True})
+
+        return ui.div(
+            {"style": "display:grid;grid-template-columns:1fr 1fr;gap:16px;"},
+            _wrap_card(ui.HTML(cat_html)),
+            _wrap_card(ui.HTML(dist_html)),
+        )
+
+    @output
+    @render.ui
+    def stereoset_demographic_slices():
+        """Demographic target analysis with category filter."""
+        from ..bias.visualizations import create_stereoset_demographic_chart
+
+        mk = _stereoset_model_key()
+        examples = get_stereoset_examples(mk)
+        if not examples:
+            return ui.div()
+
+        categories = sorted(set(e.get("category", "") for e in examples))
+
+        # Build per-category charts
+        charts = []
+        for cat in categories:
+            cat_examples = [e for e in examples if e.get("category") == cat]
+            fig = create_stereoset_demographic_chart(cat_examples, category=cat, min_n=10)
+            chart_html = fig.to_html(
+                include_plotlyjs="cdn" if not charts else False,
+                full_html=False, config={"responsive": True},
+            )
+            charts.append(chart_html)
+
+        # Summary stats table: most and least biased targets overall
+        from collections import Counter
+        target_data = {}
+        for ex in examples:
+            t = ex.get("target", "unknown")
+            if t not in target_data:
+                target_data[t] = {"stereo_wins": 0, "n": 0, "category": ex.get("category", "")}
+            target_data[t]["n"] += 1
+            if ex.get("stereo_pll", 0) > ex.get("anti_pll", 0):
+                target_data[t]["stereo_wins"] += 1
+
+        targets = []
+        for t, d in target_data.items():
+            if d["n"] >= 10:
+                ss = d["stereo_wins"] / d["n"] * 100
+                targets.append({"target": t, "ss": ss, "n": d["n"], "category": d["category"]})
+
+        targets.sort(key=lambda x: x["ss"], reverse=True)
+
+        # Top 5 most stereotyping + Top 5 least
+        most_biased = targets[:5]
+        least_biased = targets[-5:][::-1]  # reverse to show lowest first
+
+        STEREOSET_CAT_COLORS = {
+            "gender": "#e74c3c", "race": "#3498db",
+            "religion": "#2ecc71", "profession": "#f39c12",
+        }
+
+        def _build_target_rows(items, direction="high"):
+            rows = []
+            for rank, t in enumerate(items, 1):
+                cat_color = STEREOSET_CAT_COLORS.get(t["category"], "#94a3b8")
+                ss_color = "#ef4444" if t["ss"] > 60 else "#22c55e" if t["ss"] < 40 else "#eab308"
+                rows.append(
+                    f'<tr style="transition:all 0.2s ease;">'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;'
+                    f'font-weight:500;color:#64748b;font-size:11px;">#{rank}</td>'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);'
+                    f'font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">{t["target"]}</td>'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;">'
+                    f'<span style="padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;'
+                    f'background:rgba({int(cat_color[1:3],16)},{int(cat_color[3:5],16)},{int(cat_color[5:7],16)},0.2);'
+                    f'color:{cat_color};text-transform:uppercase;">{t["category"]}</span></td>'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;'
+                    f'font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{ss_color};">{t["ss"]:.1f}%</td>'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;'
+                    f'font-size:11px;color:#64748b;">{t["n"]}</td>'
+                    f'</tr>'
+                )
+            return "".join(rows)
+
+        th_style = 'padding:10px 12px;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;'
+
+        summary_html = (
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
+            # Most stereotyping
+            '<div>'
+            '<div style="font-size:10px;font-weight:700;color:#ef4444;text-transform:uppercase;'
+            'letter-spacing:0.5px;margin-bottom:8px;">Most Stereotyped Targets (highest SS)</div>'
+            '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+            '<thead>'
+            f'<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
+            f'<th style="{th_style}text-align:center;">Rank</th>'
+            f'<th style="{th_style}text-align:left;">Target</th>'
+            f'<th style="{th_style}text-align:center;">Category</th>'
+            f'<th style="{th_style}text-align:right;">SS</th>'
+            f'<th style="{th_style}text-align:center;">n</th>'
+            '</tr></thead>'
+            f'<tbody>{_build_target_rows(most_biased, "high")}</tbody>'
+            '</table></div>'
+            # Least stereotyping
+            '<div>'
+            '<div style="font-size:10px;font-weight:700;color:#22c55e;text-transform:uppercase;'
+            'letter-spacing:0.5px;margin-bottom:8px;">Least Stereotyped Targets (lowest SS)</div>'
+            '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+            '<thead>'
+            f'<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
+            f'<th style="{th_style}text-align:center;">Rank</th>'
+            f'<th style="{th_style}text-align:left;">Target</th>'
+            f'<th style="{th_style}text-align:center;">Category</th>'
+            f'<th style="{th_style}text-align:right;">SS</th>'
+            f'<th style="{th_style}text-align:center;">n</th>'
+            '</tr></thead>'
+            f'<tbody>{_build_target_rows(least_biased, "low")}</tbody>'
+            '</table></div>'
+            '</div>'
+        )
+
+        # Build grid of per-category charts
+        chart_grid = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
+        for html in charts:
+            chart_grid += f'<div>{html}</div>'
+        chart_grid += '</div>'
+
+        return _wrap_card(
+            ui.div(
+                ui.HTML(summary_html),
+                ui.HTML(chart_grid),
+            ),
+            manual_header=(
+                "Demographic Slice Analysis",
+                f"Stereotype Score breakdown by target group ({len(targets)} targets with n ≥ 10)",
+            ),
+        )
+
+    @output
+    @render.ui
+    def stereoset_head_sensitivity():
+        """12x12 head sensitivity heatmap."""
+        mk = _stereoset_model_key()
+        matrix = get_head_sensitivity_matrix(mk)
+        top_heads = get_sensitive_heads(mk)
+        if matrix is None:
+            return ui.div()
+
+        fig = create_stereoset_head_sensitivity_heatmap(matrix, top_heads)
+        chart_html = fig.to_html(include_plotlyjs="cdn", full_html=False, config={"responsive": True})
+
+        # Also show top features table
+        top_features = get_top_features(mk)
+        if top_features:
+            feat_rows = []
+            for rank, f in enumerate(top_features[:10], 1):
+                p = f["p_value"]
+                p_color = "#16a34a" if p < 1e-10 else "#eab308" if p < 0.001 else "#94a3b8"
+                feat_rows.append(
+                    f'<tr style="transition:all 0.2s ease;">'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-weight:500;color:#64748b;font-size:11px;">#{rank}</td>'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:left;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">{f["name"]}</td>'
+                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{p_color};">{p:.2e}</td>'
+                    f'</tr>'
+                )
+            features_html = (
+                '<div style="margin-top:16px;">'
+                '<div style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;'
+                'letter-spacing:0.5px;margin-bottom:8px;">Top Discriminative Features (Kruskal-Wallis)</div>'
+                '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+                '<thead>'
+                '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
+                '<th style="padding:10px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
+                '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Feature</th>'
+                '<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">p-value</th>'
+                '</tr>'
+                '</thead>'
+                f'<tbody>{"".join(feat_rows)}</tbody>'
+                '</table></div>'
+            )
+        else:
+            features_html = ""
+
+        return _wrap_card(
+            ui.div(
+                ui.HTML(chart_html),
+                ui.HTML(features_html),
+            ),
+            manual_header=(
+                "Head Sensitivity Analysis",
+                "Which attention heads respond differently across bias categories?"
+            ),
+        )
+
+    @output
+    @render.ui
+    def stereoset_example_explorer():
+        """Interactive example explorer with category filter and detail view."""
+        mk = _stereoset_model_key()
+        examples = get_stereoset_examples(mk)
+        if not examples:
+            return ui.div()
+
+        # Category filter (inline select)
+        categories = sorted(set(e["category"] for e in examples))
+        cat_options = "".join(
+            f'<option value="{c}">{c.capitalize()} ({sum(1 for e in examples if e["category"]==c)})</option>'
+            for c in categories
+        )
+
+        # Build scrollable example table (show first 50 by default)
+        STEREOSET_CAT_COLORS = {
+            "gender": "#e74c3c", "race": "#3498db",
+            "religion": "#2ecc71", "profession": "#f39c12",
+        }
+
+        table_rows = []
+        for i, ex in enumerate(examples[:100]):
+            ctx = ex.get("context", "")[:80]
+            cat = ex.get("category", "")
+            bs = ex.get("bias_score", 0)
+            cat_color = STEREOSET_CAT_COLORS.get(cat, "#94a3b8")
+            bs_color = "#ef4444" if bs > 0 else "#22c55e"
+
+            table_rows.append(
+                f'<tr class="stereoset-row" data-category="{cat}" data-idx="{i}" '
+                f'onclick="window._selectStereoSetRow(this, {i})" '
+                f'style="cursor:pointer;transition:all 0.2s ease;" '
+                f'onmouseover="if(!this.classList.contains(\'stereoset-selected\'))this.style.background=\'rgba(255,255,255,0.04)\'" '
+                f'onmouseout="if(!this.classList.contains(\'stereoset-selected\'))this.style.background=\'transparent\'">'
+                f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);font-size:11px;">'
+                f'<span style="padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;'
+                f'background:rgba({int(cat_color[1:3],16)},{int(cat_color[3:5],16)},{int(cat_color[5:7],16)},0.2);'
+                f'color:{cat_color};text-transform:uppercase;">{cat}</span></td>'
+                f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);font-size:11px;color:#334155;max-width:400px;'
+                f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{ctx}</td>'
+                f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);font-size:11px;color:{bs_color};'
+                f'font-family:JetBrains Mono,monospace;font-weight:600;text-align:right;">{bs:+.4f}</td>'
+                f'</tr>'
+            )
+
+        table_html = (
+            '<div style="max-height:300px;overflow-y:auto;border:1px solid rgba(255,255,255,0.06);'
+            'border-radius:8px;margin-top:8px;">'
+            '<table style="width:100%;border-collapse:collapse;">'
+            '<thead style="position:sticky;top:0;z-index:1;">'
+            '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
+            '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;width:100px;">Category</th>'
+            '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Context</th>'
+            '<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;width:90px;">Bias Score</th>'
+            '</tr></thead>'
+            f'<tbody>{"".join(table_rows)}</tbody>'
+            '</table></div>'
+        )
+
+        # Category filter + row selection JS
+        filter_js = (
+            '<script>'
+            'window.filterStereoSetCategory = function(cat) {'
+            '  var rows = document.querySelectorAll(".stereoset-row");'
+            '  rows.forEach(function(r) {'
+            '    if (cat === "all" || r.dataset.category === cat) {'
+            '      r.style.display = "";'
+            '    } else {'
+            '      r.style.display = "none";'
+            '    }'
+            '  });'
+            '};'
+            'window._selectStereoSetRow = function(el, idx) {'
+            '  document.querySelectorAll(".stereoset-row.stereoset-selected").forEach(function(r) {'
+            '    r.classList.remove("stereoset-selected");'
+            '    r.style.background = "transparent";'
+            '    r.querySelectorAll("td").forEach(function(td) {'
+            '      if (!td.querySelector("span")) td.style.color = "";'
+            '    });'
+            '  });'
+            '  el.classList.add("stereoset-selected");'
+            '  el.style.background = "#94a3b8";'
+            '  el.querySelectorAll("td").forEach(function(td) {'
+            '    if (!td.querySelector("span") && !td.style.fontFamily) td.style.color = "#0f172a";'
+            '  });'
+            '  Shiny.setInputValue("stereoset_selected_example", idx, {priority:"event"});'
+            '};'
+            '</script>'
+        )
+
+        filter_select = (
+            f'<select onchange="window.filterStereoSetCategory(this.value)" '
+            f'style="font-size:11px;padding:4px 8px;background:#1e293b;color:#e2e8f0;'
+            f'border:1px solid #334155;border-radius:6px;cursor:pointer;">'
+            f'<option value="all">All Categories ({len(examples)})</option>'
+            f'{cat_options}'
+            f'</select>'
+        )
+
+        # Detail view (initially empty, populated on click)
+        detail_html = ""
+        try:
+            selected_idx = input.stereoset_selected_example()
+            if selected_idx is not None and 0 <= selected_idx < len(examples):
+                detail_html = create_stereoset_example_html(examples[selected_idx])
+        except Exception:
+            pass
+
+        detail_section = (
+            f'<div style="margin-top:16px;">{detail_html}</div>'
+            if detail_html else
+            '<div style="margin-top:16px;color:#64748b;font-size:11px;font-style:italic;'
+            'text-align:center;padding:20px;">Click an example above to see details</div>'
+        )
+
+        return _wrap_card(
+            ui.div(
+                ui.HTML(filter_js),
+                ui.div(
+                    {"style": "display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;"},
+                    ui.HTML(f'<span style="font-size:11px;color:#94a3b8;">'
+                            f'Showing {min(100, len(examples))} of {len(examples)} examples</span>'),
+                    ui.HTML(filter_select),
+                ),
+                ui.HTML(table_html),
+                ui.HTML(detail_section),
+            ),
+            manual_header=(
+                "Example Explorer",
+                "Browse StereoSet examples — click to inspect, then analyze through the bias pipeline",
+            ),
+        )
 
     # ── Helpers ────────────────────────────────────────────────────────
 

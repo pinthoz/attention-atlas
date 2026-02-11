@@ -241,77 +241,114 @@ def create_bias_sidebar():
             }
         """),
 
-        # ── Configuration Sections ──
-        ui.div(style="flex-grow: 1; min-height: 24px;"),
-        ui.div(
-            {"class": "sidebar-section"},
-
-            ui.tags.span("Sensitivity Threshold", class_="sidebar-label"),
-            ui.div(
-                {"style": "padding: 0 4px; margin-top: 8px;"},
-                ui.div(
-                    {"class": "custom-sidebar-slider"},
-                    ui.div(
-                        {"class": "slider-container"},
-                        ui.tags.span("0.5", id="bias-threshold-val-sidebar", class_="slider-value"),
-                        ui.tags.input(
-                            type="range",
-                            id="bias-threshold-sidebar",
-                            min="0.1", max="0.9", value="0.5", step="0.05",
-                            oninput="document.getElementById('bias-threshold-val-sidebar').textContent = this.value; Shiny.setInputValue('bias_threshold', parseFloat(this.value), {priority:'event'});"
-                        ),
-                    )
-                ),
-            ),
-
-            ui.tags.style("""
-                .custom-sidebar-slider .slider-container {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                }
-                .custom-sidebar-slider .slider-value {
-                    min-width: 42px;
-                    height: 20px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 11px;
-                    font-weight: 700;
-                    color: #fff;
-                    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-                    border-radius: 5px;
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    font-family: 'JetBrains Mono', monospace;
-                }
-                .custom-sidebar-slider input[type="range"] {
-                    -webkit-appearance: none;
-                    width: 100%;
-                    height: 4px;
-                    background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
-                    border-radius: 2px;
-                    outline: none;
-                }
-                .custom-sidebar-slider input[type="range"]::-webkit-slider-thumb {
-                    -webkit-appearance: none;
-                    width: 14px;
-                    height: 14px;
-                    border-radius: 50%;
-                    background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
-                    border: 2px solid rgba(255, 255, 255, 0.2);
-                    cursor: pointer;
-                    box-shadow: 0 2px 6px rgba(255, 92, 169, 0.4);
-                    transition: all 0.15s ease;
-                }
-                .custom-sidebar-slider input[type="range"]::-webkit-slider-thumb:hover {
-                    transform: scale(1.15);
-                    box-shadow: 0 2px 10px rgba(255, 92, 169, 0.6);
-                }
-            """)
-        ),
-
         # ── Spacer ──
         ui.div(style="flex-grow: 1; min-height: 24px;"),
+
+        # ── Sensitivity Thresholds (styled like the floating toolbar sliders) ──
+        ui.tags.style("""
+            .sidebar-thresh-group {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 4px;
+                padding: 2px 0;
+                min-width: 0;
+                overflow: hidden;
+            }
+            .sidebar-thresh-group .thresh-label {
+                font-size: 9px;
+                font-weight: 600;
+                color: #ffffff;
+                text-transform: uppercase;
+                letter-spacing: 0.3px;
+                white-space: nowrap;
+                width: auto;
+                flex-shrink: 0;
+            }
+            .sidebar-thresh-group .thresh-val {
+                min-width: 24px;
+                height: 18px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 9px;
+                font-weight: 700;
+                color: #fff;
+                background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                border-radius: 4px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+                font-family: 'JetBrains Mono', monospace;
+                flex-shrink: 0;
+            }
+            .sidebar-thresh-group input[type="range"] {
+                -webkit-appearance: none;
+                flex: 1 1 0;
+                min-width: 0;
+                max-width: 70px;
+                height: 3px;
+                background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
+                border-radius: 2px;
+                outline: none;
+                box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+            }
+            .sidebar-thresh-group input[type="range"]::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
+                border: 1.5px solid rgba(255, 255, 255, 0.2);
+                cursor: pointer;
+                box-shadow: 0 1px 4px rgba(255, 92, 169, 0.4);
+                transition: all 0.15s ease;
+            }
+            .sidebar-thresh-group input[type="range"]::-webkit-slider-thumb:hover {
+                transform: scale(1.2);
+                box-shadow: 0 2px 8px rgba(255, 92, 169, 0.6);
+            }
+            .sidebar-thresh-group input[type="range"]::-moz-range-thumb {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
+                border: 1.5px solid rgba(255, 255, 255, 0.2);
+                cursor: pointer;
+                box-shadow: 0 1px 4px rgba(255, 92, 169, 0.4);
+            }
+            .sidebar-thresh-group input[type="range"]::-moz-range-track {
+                background: transparent;
+                border: 0;
+            }
+        """),
+        ui.div(
+            {"class": "sidebar-section", "style": "margin-top: 0; padding-bottom: 10px;"},
+            ui.tags.span("Sensitivity Threshold", class_="sidebar-label"),
+            ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 6px;"},
+                # UNFAIR
+                ui.div(
+                    {"class": "sidebar-thresh-group"},
+                    ui.span("UNFAIR", class_="thresh-label"),
+                    ui.tags.input(type="range", id="bias-thresh-unfair", min="0.01", max="0.99", value="0.5", step="0.01"),
+                    ui.tags.span("0.50", id="bias-thresh-unfair-val", class_="thresh-val"),
+                ),
+                # GEN
+                ui.div(
+                    {"class": "sidebar-thresh-group"},
+                    ui.span("GEN", class_="thresh-label"),
+                    ui.tags.input(type="range", id="bias-thresh-gen", min="0.01", max="0.99", value="0.5", step="0.01"),
+                    ui.tags.span("0.50", id="bias-thresh-gen-val", class_="thresh-val"),
+                ),
+                # STEREO
+                ui.div(
+                    {"class": "sidebar-thresh-group"},
+                    ui.span("STEREO", class_="thresh-label"),
+                    ui.tags.input(type="range", id="bias-thresh-stereo", min="0.01", max="0.99", value="0.5", step="0.01"),
+                    ui.tags.span("0.50", id="bias-thresh-stereo-val", class_="thresh-val"),
+                ),
+            ),
+        ),
 
         # ── Input Text Area ──
         ui.div(
@@ -412,6 +449,7 @@ def create_bias_sidebar():
                 }
             """),
 
+
             ui.div(
                 {"style": "margin-top: 12px;"},
                 ui.input_action_button("analyze_bias_btn", "Analyze Bias", class_="btn-primary", style="padding-top: 6px; padding-bottom: 6px; min-height: 0; height: auto;"),
@@ -429,6 +467,16 @@ def create_bias_sidebar():
                     Shiny.setInputValue('bias_input_text', text, {priority: 'event'});
                     document.getElementById('bias-history-dropdown').classList.remove('show');
                 }
+
+                // StereoSet: inject text into the bias input
+                window.analyzeStereoSetExample = function(text) {
+                    var ta = document.getElementById('bias_input_text');
+                    if (ta) {
+                        ta.value = text;
+                        Shiny.setInputValue('bias_input_text', text, {priority: 'event'});
+                    }
+                    window.scrollTo({top: 0, behavior: 'smooth'});
+                };
                 document.addEventListener('click', function(event) {
                     const container = document.getElementById('bias-input-container');
                     const dropdown = document.getElementById('bias-history-dropdown');
@@ -548,6 +596,110 @@ def create_bias_sidebar():
                     eval(code);
                 });
 
+                // Handler for setting bias thresholds from server (e.g. optimized values)
+                Shiny.addCustomMessageHandler('set_bias_thresholds', function(message) {
+                    console.log("[BiasUI] Received thresholds:", message);
+                    // Helper to update slider without triggering input (which would uncheck optimized box)
+                    function updateSlider(id, valId, val) {
+                        var el = document.getElementById(id);
+                        var valDisplay = document.getElementById(valId);
+                        if (el) {
+                            el.value = val;
+                            if (valDisplay) valDisplay.textContent = parseFloat(val).toFixed(2);
+                            // We do NOT trigger 'input' or 'change' here to avoid side effects
+                        }
+                    }
+                    if (message.UNFAIR !== undefined) {
+                        updateSlider('bias-thresh-unfair', 'bias-thresh-unfair-val', message.UNFAIR);
+                    }
+                    if (message.GEN !== undefined) {
+                        updateSlider('bias-thresh-gen', 'bias-thresh-gen-val', message.GEN);
+                    }
+                    if (message.STEREO !== undefined) {
+                        updateSlider('bias-thresh-stereo', 'bias-thresh-stereo-val', message.STEREO);
+                    }
+                });
+
+                function setupBiasToolbar() {
+                    console.log("[BiasUI] Initializing controls...");
+                    
+                    function debounce(func, wait) {
+                        let timeout;
+                        return function(...args) {
+                            const context = this;
+                            clearTimeout(timeout);
+                            timeout = setTimeout(() => func.apply(context, args), wait);
+                        };
+                    }
+
+                    const inputs = [
+                        {id: 'bias-layer-slider', valId: 'bias-layer-value', msg: 'bias_attn_layer'},
+                        {id: 'bias-head-slider', valId: 'bias-head-value', msg: 'bias_attn_head'},
+                        {id: 'bias-bar-threshold-slider', valId: 'bias-bar-threshold-value', msg: 'bias_bar_threshold'},
+                        {id: 'bias-topk-slider', valId: 'bias-topk-value', msg: 'bias_top_k'},
+                        
+                        // Sidebar Thresholds
+                        {id: 'bias-thresh-unfair', valId: 'bias-thresh-unfair-val', msg: 'bias_thresh_unfair', isThresh: true},
+                        {id: 'bias-thresh-gen', valId: 'bias-thresh-gen-val', msg: 'bias_thresh_gen', isThresh: true},
+                        {id: 'bias-thresh-stereo', valId: 'bias-thresh-stereo-val', msg: 'bias_thresh_stereo', isThresh: true}
+                    ];
+
+                    inputs.forEach(item => {
+                        const el = document.getElementById(item.id);
+                        const valDisplay = document.getElementById(item.valId);
+                        
+                        if (el) {
+                            // Create debounced sender (500ms delay)
+                            const sendValue = debounce(function(val) {
+                                Shiny.setInputValue(item.msg, val, {priority: 'event'});
+                            }, 500);
+
+                            // Update display on drag AND trigger debounced send
+                            el.addEventListener('input', function() {
+                                var val = parseFloat(this.value);
+                                if(valDisplay) valDisplay.textContent = val.toFixed(2);
+                                
+                                // Sync with counterpart if exists
+                                if (item.syncId) {
+                                    var syncEl = document.getElementById(item.syncId);
+                                    var syncVal = document.getElementById(item.syncId + '-val');
+                                    if (syncEl) syncEl.value = val;
+                                    if (syncVal) syncVal.textContent = val.toFixed(2);
+                                }
+
+                                // If this is a threshold slider, manual adjustment should disable "Use Optimized" IMMEDIATELY
+                                if (item.isThresh) {
+                                    var optCheckbox = $('#bias_use_optimized'); 
+                                    if (optCheckbox.length === 0) optCheckbox = $(document.getElementById('bias_use_optimized'));
+                                    
+                                    if (optCheckbox.length && optCheckbox.prop('checked')) {
+                                        optCheckbox.prop('checked', false);
+                                        Shiny.setInputValue('bias_use_optimized', false, {priority: 'event'});
+                                    }
+                                }
+                                
+                                // Send value to server (debounced)
+                                sendValue(val);
+                            });
+                            
+                            // Remove change listener (we rely on debounced input now)
+                            // el.addEventListener('change', ...); // REMOVED
+                        }
+                    });
+                }
+
+                // Run once on load, and potentially re-run if re-rendered
+                $(document).ready(function() {
+                     setupBiasToolbar();
+                });
+                
+                // Also trigger when inserted/visible
+                $(document).on('shiny:value', function(event) {
+                    if (event.name === 'bias_dashboard_content') {
+                        setTimeout(setupBiasToolbar, 100);
+                    }
+                });
+
                 // Restore bias session controls (model selects, threshold slider)
                 Shiny.addCustomMessageHandler('restore_bias_session_controls', function(data) {
                     if (data.bias_model_key) {
@@ -564,15 +716,7 @@ def create_bias_sidebar():
                             Shiny.setInputValue('bias_model_key_B', data.bias_model_key_B, {priority: 'event'});
                         }
                     }
-                    if (data.threshold !== undefined) {
-                        var slider = document.getElementById('bias-threshold-sidebar');
-                        var valSpan = document.getElementById('bias-threshold-val-sidebar');
-                        if (slider) {
-                            slider.value = data.threshold;
-                            if (valSpan) valSpan.textContent = data.threshold;
-                            Shiny.setInputValue('bias_threshold', parseFloat(data.threshold), {priority: 'event'});
-                        }
-                    }
+                    // Old custom threshold logic removed. New thresholds handled by setupBiasToolbar and individual inputs.
                 });
             """)
         ),
@@ -623,6 +767,11 @@ def create_bias_content():
                 background: rgba(245, 158, 11, 0.15) !important;
                 color: #f59e0b !important;
                 border: 1px solid rgba(245, 158, 11, 0.3) !important;
+            }
+            .accordion-panel-badge.benchmark {
+                background: rgba(6, 182, 212, 0.15) !important;
+                color: #06b6d4 !important;
+                border: 1px solid rgba(6, 182, 212, 0.3) !important;
             }
             .accordion-button:not(.collapsed) .accordion-panel-badge {
                 background: rgba(255, 255, 255, 0.2) !important;
@@ -704,6 +853,20 @@ def create_bias_accordion():
             ),
             value="ablation",
         ),
+
+        # Panel 5: StereoSet Evaluation
+        ui.accordion_panel(
+            ui.span(
+                "StereoSet Evaluation",
+                ui.span({"class": "accordion-panel-badge benchmark"}, "Benchmark"),
+            ),
+            ui.output_ui("stereoset_overview"),
+            ui.output_ui("stereoset_category_breakdown"),
+            ui.output_ui("stereoset_demographic_slices"),
+            ui.output_ui("stereoset_head_sensitivity"),
+            ui.output_ui("stereoset_example_explorer"),
+            value="stereoset",
+        ),
         id="bias_accordion",
         open="overview",
         multiple=True,
@@ -764,11 +927,13 @@ def create_floating_bias_toolbar():
                     ),
                 ),
 
-                # ── RIGHT COL: Top-K ──
+                # ── RIGHT COL: Custom Threshold toggle + BAR + Top-K ──
                 ui.div(
                     {"style": "display: flex; align-items: center; justify-content: flex-start; gap: 16px; padding-left: 12px;"},
 
                     # Divider Right
+                    ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
+
                     ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
 
                     # BAR Threshold slider
@@ -798,6 +963,10 @@ def create_floating_bias_toolbar():
                             ui.tags.input(type="range", id="bias-topk-slider", min="1", max="10", value="5", step="1"),
                         ),
                     ),
+
+                    ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
+
+
                 ),
             ),
         ),
@@ -928,6 +1097,28 @@ def create_floating_bias_toolbar():
             bindSlider('bias-head-slider', 'bias-head-value', setHead);
             bindSlider('bias-bar-threshold-slider', 'bias-bar-threshold-value', setBarThreshold);
             bindSlider('bias-topk-slider', 'bias-topk-value', setTopK);
+
+            // Custom Threshold toggle + slider
+            var setCustomThreshold = debounce(function(v){
+                Shiny.setInputValue('bias_threshold', parseFloat(v), {priority:'event'});
+            }, 200);
+            bindSlider('bias-custom-threshold-slider', 'bias-custom-threshold-value', setCustomThreshold);
+
+            var toggle = document.getElementById('bias-custom-threshold-toggle');
+            var sliderWrap = document.getElementById('bias-custom-threshold-slider-wrap');
+            if (toggle) {
+                // Default: optimized thresholds ON (toggle unchecked)
+                Shiny.setInputValue('bias_use_optimized', true, {priority:'event'});
+                toggle.addEventListener('change', function() {
+                    var customOn = this.checked;
+                    sliderWrap.style.display = customOn ? 'block' : 'none';
+                    Shiny.setInputValue('bias_use_optimized', !customOn, {priority:'event'});
+                    if (customOn) {
+                        var slider = document.getElementById('bias-custom-threshold-slider');
+                        if (slider) Shiny.setInputValue('bias_threshold', parseFloat(slider.value), {priority:'event'});
+                    }
+                });
+            }
 
             setTimeout(function() {
                 var lEl = document.getElementById('bias_attn_layer');

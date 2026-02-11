@@ -469,6 +469,96 @@ def train_bert(config=None, dataset_source="hf"):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     best_model.to(device)
 
+    # Threshold optimization
+    def optimize_thresholds(model, val_loader):
+        print("\nOptimizing thresholds on validation set...")
+        model.eval()
+        device = model.device
+        
+        all_probs = []
+        all_labels = []
+        
+        with torch.no_grad():
+            for batch in val_loader:
+                input_ids = batch[0].to(device)
+                mask = batch[1].to(device)
+                labels = batch[2].cpu().numpy()
+                
+                logits = model(input_ids, mask)
+                probs = torch.sigmoid(logits).cpu().numpy()
+                
+                all_probs.append(probs)
+                all_labels.append(labels)
+                
+        probs = np.concatenate(all_probs)
+        labels = np.concatenate(all_labels)
+        
+        # Flatten valid tokens
+        valid = labels[:, :, 0] != -100.0
+        # Check if any valid tokens
+        if not valid.any():
+            print("Warning: No valid tokens found for optimization. Defaulting to 0.5")
+            return np.full(num_labels, 0.5), 0.0
+
+        pf = probs[valid]
+        lf = labels[valid].astype(int)
+        
+        best_thr = np.zeros(num_labels, dtype=np.float32)
+        
+        print("Pass 1 - grid search:")
+        grid = np.arange(0.05, 0.96, 0.025)
+        
+        for c in range(num_labels):
+            best_f1, best_t = 0, 0.5
+            # Vectorized grid search for speed if possible, but loop is fine for 7 labels
+            for t in grid:
+                f1 = f1_score(lf[:, c], (pf[:, c] >= t).astype(int), average="binary", zero_division=0)
+                if f1 > best_f1:
+                    best_f1, best_t = f1, t
+            best_thr[c] = best_t
+            print(f"  {config['id2label'][c]:10s}: thr={best_t:.3f}, F1={best_f1:.4f}")
+            
+        print("\nPass 2 - refinement:")
+        for c in range(num_labels):
+            lo = max(0.01, best_thr[c] - 0.05)
+            hi = min(0.99, best_thr[c] + 0.05)
+            
+            def neg_f1(t):
+                pred = (pf[:, c] >= t).astype(int)
+                return -f1_score(lf[:, c], pred, average="binary", zero_division=0)
+                
+            res = minimize_scalar(neg_f1, bounds=(lo, hi), method="bounded")
+            if -res.fun >= f1_score(lf[:, c], (pf[:, c] >= best_thr[c]).astype(int), average="binary", zero_division=0):
+                best_thr[c] = res.x
+            print(f"  {config['id2label'][c]:10s}: thr={best_thr[c]:.4f}, F1={-res.fun:.4f}")
+            
+        # Calc macro F1
+        preds = (pf >= best_thr.reshape(1, -1)).astype(int)
+        macro = f1_score(lf, preds, average="macro", zero_division=0)
+        return best_thr, macro
+
+    print("\n" + "=" * 60)
+    print("THRESHOLD OPTIMIZATION")
+    print("=" * 60)
+    # Use validation dataloader from data_module
+    val_loader = data_module.val_dataloader()
+    best_thr, best_f1_val = optimize_thresholds(best_model, val_loader)
+    print(f"\nOptimized thresholds: {best_thr}")
+    print(f"Val macro-F1: {best_f1_val:.4f}")
+    
+    # Use optimized thresholds for testing
+    thresholds = best_thr
+
+    # Evaluate
+    print("\n" + "=" * 60)
+    print("TEST SET EVALUATION")
+    print("=" * 60)
+    
+    # ... (rest of evaluation using 'thresholds') ...
+    best_model.eval()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    best_model.to(device)
+
     test_df = pd.DataFrame(test_data)
     test_tok, test_lbl = preprocess_data(test_df)
     test_ds = NERDataset(test_tok, test_lbl)
@@ -482,7 +572,8 @@ def train_bert(config=None, dataset_source="hf"):
             labels_np = batch[2].cpu().numpy()
             logits = best_model(input_ids, mask)
             probs = torch.sigmoid(logits).cpu().numpy()
-            preds = (probs > THRESHOLD).astype(int)
+            # Use optimized thresholds
+            preds = (probs >= thresholds.reshape(1, 1, num_labels)).astype(int)
             for i in range(len(labels_np)):
                 valid = np.where((labels_np[i] >= 0).all(axis=1))[0]
                 if len(valid) > 0:
@@ -522,6 +613,11 @@ def train_bert(config=None, dataset_source="hf"):
     best_model.bert.config.label2id = config["label2id"]
     best_model.bert.save_pretrained(str(save_dir))
     tokenizer.save_pretrained(str(save_dir))
+    
+    # Save optimized thresholds
+    np.save(f"{save_dir}/optimized_thresholds.npy", thresholds)
+    print(f"Saved optimized thresholds to {save_dir}/optimized_thresholds.npy")
+    
     print(f"Model saved to {save_dir}")
     print("Done.")
 

@@ -1,6 +1,6 @@
 """Bias Detection Module for Attention Atlas.
 
-Neural bias detection via GUS-Net (ethical-spectacle/social-bias-ner)
+Neural bias detection via GUS-Net (pinthoz/gus-net-*)
 with attention x bias interaction analysis.
 """
 
@@ -24,6 +24,21 @@ from .visualizations import (
     create_ig_token_comparison_chart,
     create_ig_distribution_chart,
     create_ig_layer_summary_chart,
+    create_stereoset_overview_html,
+    create_stereoset_category_chart,
+    create_stereoset_head_sensitivity_heatmap,
+    create_stereoset_bias_distribution,
+    create_stereoset_demographic_chart,
+    create_stereoset_example_html,
+)
+from .stereoset import (
+    load_stereoset_data,
+    get_stereoset_scores,
+    get_stereoset_examples,
+    get_head_sensitivity_matrix,
+    get_sensitive_heads,
+    get_top_features,
+    get_metadata,
 )
 
 __all__ = [
@@ -57,4 +72,18 @@ __all__ = [
     "create_ig_token_comparison_chart",
     "create_ig_distribution_chart",
     "create_ig_layer_summary_chart",
+    "create_stereoset_overview_html",
+    "create_stereoset_category_chart",
+    "create_stereoset_head_sensitivity_heatmap",
+    "create_stereoset_bias_distribution",
+    "create_stereoset_demographic_chart",
+    "create_stereoset_example_html",
+    # StereoSet data access
+    "load_stereoset_data",
+    "get_stereoset_scores",
+    "get_stereoset_examples",
+    "get_head_sensitivity_matrix",
+    "get_sensitive_heads",
+    "get_top_features",
+    "get_metadata",
 ]

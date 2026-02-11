@@ -2,8 +2,8 @@
 
 Supports two backbone architectures for token-level social bias detection:
 
-  1. BERT  (ethical-spectacle/social-bias-ner)  — 7-label BIO scheme
-  2. GPT-2 (locally fine-tuned)                — 7-label BIO scheme
+  1. BERT  (pinthoz/gus-net-bert)   — 7-label BIO scheme
+  2. GPT-2 (pinthoz/gus-net-gpt2)  — 7-label BIO scheme
 
 Both models share the same label layout:
 
@@ -80,7 +80,7 @@ _BIAS_DIR = Path(__file__).parent
 
 MODEL_REGISTRY = {
     "gusnet-bert": {
-        "path": "ethical-spectacle/social-bias-ner",
+        "path": "pinthoz/gus-net-bert",
         "architecture": "bert",
         "tokenizer": "bert-base-uncased",
         "num_labels": NUM_LABELS,
@@ -89,6 +89,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT)",
+        "optimized_thresholds": [0.4529, 0.4861, 0.4980, 0.4329, 0.4251, 0.4131, 0.4153],
     },
     "gusnet-bert-large": {
         "path": "pinthoz/gus-net-bert-large",
@@ -100,6 +101,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT Large)",
+        "optimized_thresholds": None,
     },
     "gusnet-bert-custom": {
         "path": "pinthoz/gus-net-bert-custom",
@@ -111,6 +113,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT Custom)",
+        "optimized_thresholds": None,
     },
     "gusnet-gpt2": {
         "path": "pinthoz/gus-net-gpt2",
@@ -121,6 +124,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (GPT-2)",
+        "optimized_thresholds": [0.4655, 0.4000, 0.4073, 0.4500, 0.4500, 0.3658, 0.3893],
     },
     "gusnet-gpt2-medium": {
         "path": "pinthoz/gus-net-gpt2-medium",
@@ -131,6 +135,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (GPT-2 Medium)",
+        "optimized_thresholds": [0.4912, 0.5042, 0.4213, 0.4204, 0.4000, 0.4618, 0.3848],
     },
 }
 
@@ -149,6 +154,7 @@ class GusNetDetector:
         self,
         model_key: str = "gusnet-bert",
         threshold: float = 0.5,
+        use_optimized: bool = True,
     ):
         if model_key not in MODEL_REGISTRY:
             raise ValueError(
@@ -158,6 +164,7 @@ class GusNetDetector:
         self.model_key = model_key
         self.config = MODEL_REGISTRY[model_key]
         self.threshold = threshold
+        self.use_optimized = use_optimized
         # Always use CPU for bias inference to guarantee reproducible
         # sigmoid probabilities across environments.  CUDA kernels for
         # GPT-2 base introduce enough numerical drift over 12 layers to
@@ -216,16 +223,17 @@ class GusNetDetector:
 
     # ── Inference ────────────────────────────────────────────────────────
 
-    def detect_bias(self, text: str) -> List[Dict]:
-        """Run GUS-Net inference on *text*.
+    # ── Inference ────────────────────────────────────────────────────────
 
-        Returns a list of per-token dicts with keys:
-            token, index, bias_types, is_biased, scores, method,
-            explanation, threshold
+    def predict_proba(self, text: str):
+        """Run model inference and return raw probabilities.
+
+        Returns:
+            tokens: List[str]
+            probabilities: torch.Tensor [seq_len, num_labels]
         """
         tokenizer, model = self._load_model(self.model_key, self._device)
-        cfg = self.config
-
+        
         inputs = tokenizer(
             text, return_tensors="pt", truncation=True, max_length=512
         )
@@ -236,8 +244,39 @@ class GusNetDetector:
 
         probabilities = torch.sigmoid(logits)[0].cpu()  # [seq_len, num_labels]
         tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].cpu())
+        
+        return tokens, probabilities
 
+    def apply_thresholds(
+        self, 
+        tokens: List[str], 
+        probabilities: torch.Tensor, 
+        thresholds: Dict[str, float] = None
+    ) -> List[Dict]:
+        """Apply thresholds to raw probabilities to generate labels.
+        
+        Args:
+            tokens: List of tokens from predict_proba
+            probabilities: Tensor of shape [seq_len, num_labels]
+            thresholds: Dict mapping 'GEN', 'UNFAIR', 'STEREO' to float values.
+                       If None, uses self.threshold or self.use_optimized defaults.
+        """
+        cfg = self.config
         results: List[Dict] = []
+        
+        # Resolve thresholds
+        if thresholds is None:
+            # Fallback to single scalar or optimized
+            active_thresholds = {
+                "GEN": self.threshold, 
+                "UNFAIR": self.threshold, 
+                "STEREO": self.threshold
+            }
+            use_opt = self.use_optimized
+        else:
+            active_thresholds = thresholds
+            use_opt = False # If explicit thresholds provided, override optimized
+            
         for idx, (token, probs) in enumerate(zip(tokens, probabilities)):
             # Skip special tokens
             if token in cfg["special_tokens"]:
@@ -249,14 +288,26 @@ class GusNetDetector:
             for cat, indices in cfg["category_indices"].items():
                 scores[cat] = float(max(probs[i].item() for i in indices))
 
-            # O score: direct from model output (both BERT and GPT-2 have O at index 0)
+            # O score: direct from model output
             scores["O"] = float(probs[cfg["o_index"]].item())
 
             # Threshold to determine active bias types
-            bias_types = [
-                cat for cat in ("GEN", "UNFAIR", "STEREO")
-                if scores.get(cat, 0.0) >= self.threshold
-            ]
+            bias_types = []
+            
+            opt = cfg.get("optimized_thresholds")
+            
+            if use_opt and opt is not None:
+                # Optimized per-label thresholds logic
+                for cat in ("GEN", "UNFAIR", "STEREO"):
+                    indices = cfg["category_indices"][cat]
+                    if any(probs[i].item() >= opt[i] for i in indices):
+                        bias_types.append(cat)
+            else:
+                # Dynamic / Manual thresholds
+                for cat in ("GEN", "UNFAIR", "STEREO"):
+                    thresh = active_thresholds.get(cat, 0.5)
+                    if scores.get(cat, 0.0) >= thresh:
+                        bias_types.append(cat)
 
             # Human-readable explanation
             _CAT_LABEL = {
@@ -277,10 +328,20 @@ class GusNetDetector:
                 "scores": scores,
                 "method": "gusnet",
                 "explanation": "; ".join(explanations),
-                "threshold": self.threshold,
+                "threshold": active_thresholds.get("GEN", 0.5), # Just rep one
             })
 
         return results
+
+    def detect_bias(self, text: str) -> List[Dict]:
+        """Run GUS-Net inference on *text*.
+
+        Returns a list of per-token dicts with keys:
+            token, index, bias_types, is_biased, scores, method,
+            explanation, threshold
+        """
+        tokens, probs = self.predict_proba(text)
+        return self.apply_thresholds(tokens, probs)
 
     # ── Post-processing ──────────────────────────────────────────────────
 
@@ -505,7 +566,7 @@ class EnsembleGusNetDetector:
     """
 
     # Default per-category weights: (model_a_weight, model_b_weight)
-    # Model A = HF ethical-spectacle/social-bias-ner  (better STEREO/UNFAIR)
+    # Model A = pinthoz/gus-net-bert  (better STEREO/UNFAIR)
     # Model B = custom gus-net-bert-final-my          (better GEN)
     DEFAULT_WEIGHTS = {
         "GEN":    (0.3, 0.7),   # favor custom model
@@ -552,8 +613,8 @@ class EnsembleGusNetDetector:
             logits = model(**inputs).logits
         return torch.sigmoid(logits)[0].cpu()
 
-    def detect_bias(self, text: str) -> List[Dict]:
-        """Run ensemble inference combining both models."""
+    def predict_proba(self, text: str):
+        """Run ensemble inference and return combined probabilities."""
         probs_a = self._get_raw_probs(self.model_key_a, text)
         probs_b = self._get_raw_probs(self.model_key_b, text)
 
@@ -563,62 +624,44 @@ class EnsembleGusNetDetector:
             text, return_tensors="pt", truncation=True, max_length=512
         )
         tokens = tokenizer_a.convert_ids_to_tokens(inputs["input_ids"][0].cpu())
-
+        
+        # Combine probabilities based on weights
+        # We need to return a "fused" probability tensor that apply_thresholds can use.
+        # But apply_thresholds expects a single tensor where indices match CATEGORY_INDICES.
+        # Since both models share the same 7-label scheme, we can just fuse the tensors.
+        
         cfg = self.config
-        results: List[Dict] = []
+        # Weighted average of the probabilities tensor
+        # But wait, weights are per-category.
+        # We need to construct a new fused probability tensor.
+        
+        fused_probs = torch.zeros_like(probs_a)
+        
+        # O label
+        w_o_a, w_o_b = self.weights.get("O", (0.5, 0.5))
+        o_idx = cfg["o_index"]
+        fused_probs[:, o_idx] = w_o_a * probs_a[:, o_idx] + w_o_b * probs_b[:, o_idx]
+        
+        # Categories
+        for cat, cat_indices in cfg["category_indices"].items():
+            w_a, w_b = self.weights.get(cat, (0.5, 0.5))
+            for idx in cat_indices:
+                fused_probs[:, idx] = w_a * probs_a[:, idx] + w_b * probs_b[:, idx]
+                
+        return tokens, fused_probs
 
-        for idx, token in enumerate(tokens):
-            if token in cfg["special_tokens"]:
-                results.append({
-                    "token": token, "index": idx, "bias_types": [],
-                    "is_biased": False,
-                    "scores": {"O": 0.0, "GEN": 0.0, "UNFAIR": 0.0, "STEREO": 0.0},
-                    "method": "gusnet-ensemble",
-                    "explanation": "", "threshold": self.threshold,
-                })
-                continue
+    def apply_thresholds(self, tokens, probabilities, thresholds=None):
+        """Reuse GusNetDetector's threshold logic on the fused probabilities."""
+        det = GusNetDetector.__new__(GusNetDetector)
+        det.config = self.config
+        det.threshold = self.threshold
+        det.use_optimized = False # Ensemble doesn't support optimized thresholds yet
+        return det.apply_thresholds(tokens, probabilities, thresholds)
 
-            pa = probs_a[idx]
-            pb = probs_b[idx]
-
-            # Weighted combination per category
-            scores: Dict[str, float] = {}
-            for cat, cat_indices in cfg["category_indices"].items():
-                w_a, w_b = self.weights.get(cat, (0.5, 0.5))
-                score_a = float(max(pa[i].item() for i in cat_indices))
-                score_b = float(max(pb[i].item() for i in cat_indices))
-                scores[cat] = w_a * score_a + w_b * score_b
-
-            w_o_a, w_o_b = self.weights.get("O", (0.5, 0.5))
-            scores["O"] = w_o_a * pa[cfg["o_index"]].item() + w_o_b * pb[cfg["o_index"]].item()
-
-            bias_types = [
-                cat for cat in ("GEN", "UNFAIR", "STEREO")
-                if scores.get(cat, 0.0) >= self.threshold
-            ]
-
-            _CAT_LABEL = {
-                "GEN": "Generalization",
-                "UNFAIR": "Unfair language",
-                "STEREO": "Stereotype",
-            }
-            explanations = [
-                f"{_CAT_LABEL[cat]} (score: {scores[cat]:.2f})"
-                for cat in bias_types
-            ]
-
-            results.append({
-                "token": token,
-                "index": idx,
-                "bias_types": bias_types,
-                "is_biased": len(bias_types) > 0,
-                "scores": scores,
-                "method": "gusnet-ensemble",
-                "explanation": "; ".join(explanations),
-                "threshold": self.threshold,
-            })
-
-        return results
+    def detect_bias(self, text: str) -> List[Dict]:
+        """Run ensemble inference combining both models."""
+        tokens, fused_probs = self.predict_proba(text)
+        return self.apply_thresholds(tokens, fused_probs)
 
     def get_bias_summary(self, token_labels: List[Dict]) -> Dict:
         """Reuse GusNetDetector's summary logic."""
