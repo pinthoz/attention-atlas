@@ -9,6 +9,11 @@ def create_bias_sidebar():
 
     return ui.div(
         {"class": "sidebar"},
+        
+        # Collaborative Logic: Inject CSS when Compare Mode is active - REMOVED because style tags are global
+        # We now handle this via JS class toggling on the container.
+        
+        # ── Header ──
         ui.div(
             {"class": "app-title", "style": "display: flex; align-items: center; gap: 8px;"},
             ui.tags.img(src=ICON_DATA_URL or "/favicon.ico", alt="Logo"),
@@ -198,6 +203,26 @@ def create_bias_sidebar():
                 box-shadow: 0 0 0 2px rgba(255, 92, 169, 0.2) !important;
             }
 
+            /* Model A Sensitivity Labels - Blue when Compare Mode Active */
+            #bias-thresh-col-a.compare-active .thresh-label-a {
+                color: #3b82f6 !important;
+            }
+
+            /* Conditional Grid Layout for Sensitivity Thresholds */
+            #bias-thresh-col-a {
+                display: grid !important;
+                grid-template-columns: 1fr 1fr;
+                gap: 4px 8px;
+            }
+            #bias-thresh-col-a.compare-active {
+                grid-template-columns: 1fr !important;
+            }
+            .bias-thresh-col-b {
+                display: grid !important;
+                grid-template-columns: 1fr !important;
+                gap: 4px;
+            }
+
             /* Toggle Switch Styling */
             .toggle-switch {
                 position: relative;
@@ -248,25 +273,25 @@ def create_bias_sidebar():
         ui.tags.style("""
             .sidebar-thresh-group {
                 display: flex;
+                flex-direction: row;
                 align-items: center;
-                justify-content: center;
-                gap: 4px;
+                gap: 6px;
                 padding: 2px 0;
                 min-width: 0;
                 overflow: hidden;
             }
             .sidebar-thresh-group .thresh-label {
                 font-size: 9px;
-                font-weight: 600;
+                font-weight: 700;
                 color: #ffffff;
                 text-transform: uppercase;
-                letter-spacing: 0.3px;
+                letter-spacing: 0.5px;
                 white-space: nowrap;
-                width: auto;
+                width: 48px;
                 flex-shrink: 0;
             }
             .sidebar-thresh-group .thresh-val {
-                min-width: 24px;
+                min-width: 25px;
                 height: 18px;
                 display: flex;
                 align-items: center;
@@ -274,18 +299,16 @@ def create_bias_sidebar():
                 font-size: 9px;
                 font-weight: 700;
                 color: #fff;
-                background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                background: rgba(0,0,0,0.3);
                 border-radius: 4px;
                 border: 1px solid rgba(255, 255, 255, 0.1);
-                box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
                 font-family: 'JetBrains Mono', monospace;
                 flex-shrink: 0;
             }
             .sidebar-thresh-group input[type="range"] {
                 -webkit-appearance: none;
-                flex: 1 1 0;
+                flex: 1;
                 min-width: 0;
-                max-width: 70px;
                 height: 3px;
                 background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
                 border-radius: 2px;
@@ -321,32 +344,69 @@ def create_bias_sidebar():
                 border: 0;
             }
         """),
+        # ── Sensitivity Thresholds ──
         ui.div(
             {"class": "sidebar-section", "style": "margin-top: 0; padding-bottom: 10px;"},
             ui.tags.span("Sensitivity Threshold", class_="sidebar-label"),
+            
+            # Container for A/B columns
             ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 6px;"},
-                # UNFAIR
+                {"style": "display: flex; gap: 8px; margin-top: 6px;"},
+                
+                # Column A (Always visible, takes full width if single, or half if compare)
                 ui.div(
-                    {"class": "sidebar-thresh-group"},
-                    ui.span("UNFAIR", class_="thresh-label"),
-                    ui.tags.input(type="range", id="bias-thresh-unfair", min="0.01", max="0.99", value="0.5", step="0.01"),
-                    ui.tags.span("0.50", id="bias-thresh-unfair-val", class_="thresh-val"),
+                    {"style": "flex: 1;", "id": "bias-thresh-col-a"},
+                    # UNFAIR A
+                    ui.div(
+                        {"class": "sidebar-thresh-group"},
+                        ui.span("UNFAIR", class_="thresh-label thresh-label-a"),
+                        ui.tags.input(type="range", id="bias-thresh-unfair", min="0.01", max="0.99", value="0.5", step="0.01"),
+                        ui.tags.span("0.50", id="bias-thresh-unfair-val", class_="thresh-val"),
+                    ),
+                    # GEN A
+                    ui.div(
+                        {"class": "sidebar-thresh-group"},
+                        ui.span("GEN", class_="thresh-label thresh-label-a"),
+                        ui.tags.input(type="range", id="bias-thresh-gen", min="0.01", max="0.99", value="0.5", step="0.01"),
+                        ui.tags.span("0.50", id="bias-thresh-gen-val", class_="thresh-val"),
+                    ),
+                    # STEREO A
+                    ui.div(
+                        {"class": "sidebar-thresh-group"},
+                        ui.span("STEREO", class_="thresh-label thresh-label-a"),
+                        ui.tags.input(type="range", id="bias-thresh-stereo", min="0.01", max="0.99", value="0.5", step="0.01"),
+                        ui.tags.span("0.50", id="bias-thresh-stereo-val", class_="thresh-val"),
+                    ),
                 ),
-                # GEN
-                ui.div(
-                    {"class": "sidebar-thresh-group"},
-                    ui.span("GEN", class_="thresh-label"),
-                    ui.tags.input(type="range", id="bias-thresh-gen", min="0.01", max="0.99", value="0.5", step="0.01"),
-                    ui.tags.span("0.50", id="bias-thresh-gen-val", class_="thresh-val"),
-                ),
-                # STEREO
-                ui.div(
-                    {"class": "sidebar-thresh-group"},
-                    ui.span("STEREO", class_="thresh-label"),
-                    ui.tags.input(type="range", id="bias-thresh-stereo", min="0.01", max="0.99", value="0.5", step="0.01"),
-                    ui.tags.span("0.50", id="bias-thresh-stereo-val", class_="thresh-val"),
-                ),
+
+                # Column B (Conditional on Compare Models OR Compare Prompts)
+                ui.panel_conditional(
+                    "input.bias_compare_mode || input.bias_compare_prompts_mode",
+                    ui.div(
+                        {"class": "bias-thresh-col-b", "style": "flex: 1; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1);"},
+                        # UNFAIR B
+                        ui.div(
+                            {"class": "sidebar-thresh-group"},
+                            ui.span("UNFAIR", class_="thresh-label", style="color: #ff5ca9;"), # Pink label for B
+                            ui.tags.input(type="range", id="bias-thresh-unfair-b", min="0.01", max="0.99", value="0.5", step="0.01"),
+                            ui.tags.span("0.50", id="bias-thresh-unfair-b-val", class_="thresh-val"),
+                        ),
+                        # GEN B
+                        ui.div(
+                            {"class": "sidebar-thresh-group"},
+                            ui.span("GEN", class_="thresh-label", style="color: #ff5ca9;"),
+                            ui.tags.input(type="range", id="bias-thresh-gen-b", min="0.01", max="0.99", value="0.5", step="0.01"),
+                            ui.tags.span("0.50", id="bias-thresh-gen-b-val", class_="thresh-val"),
+                        ),
+                        # STEREO B
+                        ui.div(
+                            {"class": "sidebar-thresh-group"},
+                            ui.span("STEREO", class_="thresh-label", style="color: #ff5ca9;"),
+                            ui.tags.input(type="range", id="bias-thresh-stereo-b", min="0.01", max="0.99", value="0.5", step="0.01"),
+                            ui.tags.span("0.50", id="bias-thresh-stereo-b-val", class_="thresh-val"),
+                        ),
+                    )
+                )
             ),
         ),
 
@@ -487,34 +547,33 @@ def create_bias_sidebar():
 
                 // Compare Mode Logic (Models & Prompts) - Handling shiny:inputchanged for standard switches
                 $(document).on('shiny:inputchanged', function(event) {
+                    const threshColA = document.getElementById('bias-thresh-col-a');
+                    const modelALabel = document.getElementById('bias-model-a-label');
+
                     // Compare Models Logic
                     if (event.name === 'bias_compare_mode') {
                         const enabled = event.value;
                         const modelBPanel = document.getElementById('bias-model-b-panel');
-                        const modelALabel = document.getElementById('bias-model-a-label');
 
                         if (enabled) {
                             modelBPanel.style.display = 'block';
                             modelALabel.classList.add('compare-active');
                             modelALabel.innerText = "Detect Model - A";
+                            if (threshColA) threshColA.classList.add('compare-active');
                             
-                            // Mutex: Turn off Compare Prompts if on
-                            // using jQuery to trigger change so shiny sees it (and executes that handler to update UI)
                             const promptSwitch = $('#bias_compare_prompts_mode');
-                            // Only if it is currently visually checked (Shiny input might be true)
-                            // We can check .prop('checked')
                             if (promptSwitch.length && promptSwitch.prop('checked')) {
-                                // We need to update the checkbox and trigger change
-                                // But prevent infinite loops? The prompt handler logic won't turn off models if prompts is becoming false.
-                                // So it's safe.
                                 promptSwitch.prop('checked', false).trigger('change');
-                                // Note: trigger('change') might not be enough for shiny binding to pick up in all cases
-                                // but standard behavior for shiny wrapper usually works with change. 
                             }
                         } else {
                             modelBPanel.style.display = 'none';
-                            modelALabel.classList.remove('compare-active');
-                            modelALabel.innerText = "Bias Detection Model";
+                            // Only remove comparison styling if NEITHER mode is active
+                            const promptsActive = $('#bias_compare_prompts_mode').prop('checked');
+                            if (!promptsActive) {
+                                modelALabel.classList.remove('compare-active');
+                                modelALabel.innerText = "Bias Detection Model";
+                                if (threshColA) threshColA.classList.remove('compare-active');
+                            }
                         }
                     }
 
@@ -523,16 +582,13 @@ def create_bias_sidebar():
                         const enabled = event.value;
                         const promptTabs = document.getElementById('bias-prompt-tabs');
                         const inputContainer = document.getElementById('bias-input-container');
-                        const textInputA = document.getElementById('bias_input_text');
-                        const textInputB = document.getElementById('bias_input_text_B');
                         
                         if (enabled) {
                             promptTabs.style.display = 'flex';
                             inputContainer.classList.add('compare-prompts-active');
-                            textInputA.style.display = 'block';
-                            textInputB.style.display = 'none';
+                            modelALabel.classList.add('compare-active');
+                            if (threshColA) threshColA.classList.add('compare-active');
                             
-                            // Mutex: Turn off Compare Models if on
                             const modelSwitch = $('#bias_compare_mode');
                             if (modelSwitch.length && modelSwitch.prop('checked')) {
                                 modelSwitch.prop('checked', false).trigger('change');
@@ -540,8 +596,12 @@ def create_bias_sidebar():
                         } else {
                             promptTabs.style.display = 'none';
                             inputContainer.classList.remove('compare-prompts-active');
-                            textInputA.style.display = 'block';
-                            textInputB.style.display = 'none';
+                            
+                            const modelsActive = $('#bias_compare_mode').prop('checked');
+                            if (!modelsActive) {
+                                modelALabel.classList.remove('compare-active');
+                                if (threshColA) threshColA.classList.remove('compare-active');
+                            }
                         }
                     }
                 });
@@ -609,7 +669,7 @@ def create_bias_sidebar():
                             // We do NOT trigger 'input' or 'change' here to avoid side effects
                         }
                     }
-                    if (message.UNFAIR !== undefined) {
+                if (message.UNFAIR !== undefined) {
                         updateSlider('bias-thresh-unfair', 'bias-thresh-unfair-val', message.UNFAIR);
                     }
                     if (message.GEN !== undefined) {
@@ -617,6 +677,16 @@ def create_bias_sidebar():
                     }
                     if (message.STEREO !== undefined) {
                         updateSlider('bias-thresh-stereo', 'bias-thresh-stereo-val', message.STEREO);
+                    }
+                    // Model B support
+                    if (message.UNFAIR_B !== undefined) {
+                        updateSlider('bias-thresh-unfair-b', 'bias-thresh-unfair-b-val', message.UNFAIR_B);
+                    }
+                    if (message.GEN_B !== undefined) {
+                        updateSlider('bias-thresh-gen-b', 'bias-thresh-gen-b-val', message.GEN_B);
+                    }
+                    if (message.STEREO_B !== undefined) {
+                        updateSlider('bias-thresh-stereo-b', 'bias-thresh-stereo-b-val', message.STEREO_B);
                     }
                 });
 
@@ -1033,12 +1103,20 @@ def create_floating_bias_toolbar():
                 filter: brightness(1.3) !important;
                 transform: translateY(-1px);
             }
+            .bias-compare-mode .thresh-label-a {
+                color: #3b82f6 !important;
+            }
         """),
 
         # ── Script ──
         ui.tags.script("""
         // ── Token selection for Combined View ──
         window.selectedBiasTokens = new Set();
+
+        # Toggle Compare Mode class for Sensitivity Thresholds - REMOVED (Replaced by server-side panel_conditional)
+        # We now use a conditional style injection in the layout itself.
+
+        # Initial check on connection - REMOVED
 
         window.selectBiasToken = function(idx) {
             var chips = document.querySelectorAll('.bias-token-chip[data-token-idx="' + idx + '"]');
@@ -1103,6 +1181,21 @@ def create_floating_bias_toolbar():
                 Shiny.setInputValue('bias_threshold', parseFloat(v), {priority:'event'});
             }, 200);
             bindSlider('bias-custom-threshold-slider', 'bias-custom-threshold-value', setCustomThreshold);
+
+            // Sensitivity Thresholds (A & B)
+            var setUnfair = debounce(function(v){ Shiny.setInputValue('bias_thresh_unfair', parseFloat(v), {priority:'event'}); }, 200);
+            var setGen = debounce(function(v){ Shiny.setInputValue('bias_thresh_gen', parseFloat(v), {priority:'event'}); }, 200);
+            var setStereo = debounce(function(v){ Shiny.setInputValue('bias_thresh_stereo', parseFloat(v), {priority:'event'}); }, 200);
+            var setUnfairB = debounce(function(v){ Shiny.setInputValue('bias_thresh_unfair_b', parseFloat(v), {priority:'event'}); }, 200);
+            var setGenB = debounce(function(v){ Shiny.setInputValue('bias_thresh_gen_b', parseFloat(v), {priority:'event'}); }, 200);
+            var setStereoB = debounce(function(v){ Shiny.setInputValue('bias_thresh_stereo_b', parseFloat(v), {priority:'event'}); }, 200);
+
+            bindSlider('bias-thresh-unfair', 'bias-thresh-unfair-val', setUnfair);
+            bindSlider('bias-thresh-gen', 'bias-thresh-gen-val', setGen);
+            bindSlider('bias-thresh-stereo', 'bias-thresh-stereo-val', setStereo);
+            bindSlider('bias-thresh-unfair-b', 'bias-thresh-unfair-b-val', setUnfairB);
+            bindSlider('bias-thresh-gen-b', 'bias-thresh-gen-b-val', setGenB);
+            bindSlider('bias-thresh-stereo-b', 'bias-thresh-stereo-b-val', setStereoB);
 
             var toggle = document.getElementById('bias-custom-threshold-toggle');
             var sliderWrap = document.getElementById('bias-custom-threshold-slider-wrap');

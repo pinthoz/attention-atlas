@@ -2274,75 +2274,161 @@ def create_stereoset_demographic_chart(
     return fig
 
 
-def create_stereoset_example_html(example: Dict) -> str:
-    """Render a single StereoSet example with PLL scores and Analyze button."""
+def create_stereoset_example_html(
+    example: Dict,
+    example_B: Optional[Dict] = None,
+    model_A_name: str = "Model A",
+    model_B_name: str = "Model B"
+) -> str:
+    """Render a single StereoSet example with PLL scores and Analyze button.
+
+    If example_B is provided, renders a comparison view showing scores for both models.
+    """
     ctx = html_lib.escape(example.get("context", ""))
     stereo = html_lib.escape(example.get("stereo_sentence", ""))
     anti = html_lib.escape(example.get("anti_sentence", ""))
     unrelated = html_lib.escape(example.get("unrelated_sentence", ""))
-    stereo_pll = example.get("stereo_pll", 0)
-    anti_pll = example.get("anti_pll", 0)
-    unrelated_pll = example.get("unrelated_pll", 0)
-    bias_score = example.get("bias_score", 0)
     category = example.get("category", "")
-
     cat_color = STEREOSET_CATEGORY_COLORS.get(category, "#94a3b8")
 
-    # Determine which sentence the model prefers
-    if stereo_pll > anti_pll:
-        stereo_indicator = " ← model prefers"
-        anti_indicator = ""
-    else:
-        stereo_indicator = ""
-        anti_indicator = " ← model prefers"
-
-    # Analyze text = context + stereo sentence
-    # Analyze text = context + stereo sentence
-    # We need to be careful with escaping for the JS onclick handler
+    # Analyze text logic
     raw_text = example.get("context", "") + " " + example.get("stereo_sentence", "")
-    # 1. Escape for JS string (single quotes)
     js_safe_text = raw_text.replace("\\", "\\\\").replace("'", "\\'")
-    # 2. Escape for HTML attribute (double quotes)
     analyze_text = html_lib.escape(js_safe_text, quote=True)
 
-    def sentence_row(label, text, pll, color, indicator=""):
-        return (
-            f'<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;'
-            f'border-radius:6px;background:rgba(255,255,255,0.05);'
-            f'border-left:3px solid {color};margin-bottom:6px;">'
-            f'<span style="font-size:9px;font-weight:700;color:{color};text-transform:uppercase;'
-            f'min-width:80px;padding-top:2px;">{label}</span>'
-            f'<span style="font-size:12px;color:#e2e8f0;flex:1;font-weight:400;">{text}</span>'
-            f'<span style="font-size:11px;font-weight:700;color:{color};'
-            f'font-family:JetBrains Mono,monospace;white-space:nowrap;">'
-            f'{pll:.4f}{indicator}</span>'
+    # Helper to get model data
+    def get_model_data(ex):
+        s_pll = ex.get("stereo_pll", 0)
+        a_pll = ex.get("anti_pll", 0)
+        u_pll = ex.get("unrelated_pll", 0)
+        bs = ex.get("bias_score", 0)
+        if s_pll > a_pll:
+            pref = "stereo"
+        else:
+            pref = "anti"
+        return s_pll, a_pll, u_pll, bs, pref
+
+    # Model A Data
+    s_pll_A, a_pll_A, u_pll_A, bs_A, pref_A = get_model_data(example)
+
+    # Model B Data (if present)
+    has_B = example_B is not None
+    if has_B:
+        s_pll_B, a_pll_B, u_pll_B, bs_B, pref_B = get_model_data(example_B)
+    else:
+        s_pll_B, a_pll_B, u_pll_B, bs_B, pref_B = 0, 0, 0, 0, None
+
+    # Store model data in dicts for easy access in nested function
+    data_A = {
+        "stereo": s_pll_A, "anti": a_pll_A, "unrelated": u_pll_A, 
+        "pref": pref_A
+    }
+    
+    data_B = None
+    if has_B:
+        data_B = {
+            "stereo": s_pll_B, "anti": a_pll_B, "unrelated": u_pll_B, 
+             "pref": pref_B
+        }
+
+    # Helper for rendering a sentence row
+    def sentence_row(label, text, color, type_key):
+        # type_key: 'stereo', 'anti', 'unrelated'
+        
+        # Build score block for A
+        pll_A = data_A[type_key]
+        pref_A = data_A["pref"]
+        is_pref_A = (type_key == pref_A)
+        indicator_A = " ← prefer" if is_pref_A and type_key != "unrelated" else ""
+        
+        score_html = (
+            f'<div style="display:flex;flex-direction:column;align-items:flex-end;min-width:60px;">'
+            f'<span style="font-size:11px;font-weight:700;color:{color};font-family:JetBrains Mono,monospace;">{pll_A:.3f}</span>'
+            f'<span style="font-size:9px;color:{color};opacity:0.8;">{indicator_A}</span>'
             f'</div>'
         )
 
-    # Use primary pink
-    pink_color = "#ff5ca9"
+        # Build score block for B if Compare
+        if has_B and data_B:
+            pll_B = data_B[type_key]
+            pref_B = data_B["pref"]
+            is_pref_B = (type_key == pref_B)
+            indicator_B = " ← prefer" if is_pref_B and type_key != "unrelated" else ""
+            
+            score_html = (
+                f'<div style="display:flex;gap:12px;align-items:center;">'
+                # A
+                f'<div style="display:flex;flex-direction:column;align-items:flex-end;min-width:60px;border-right:1px solid rgba(255,255,255,0.1);padding-right:8px;">'
+                f'<span style="font-size:11px;font-weight:700;color:{color};font-family:JetBrains Mono,monospace;">{pll_A:.3f}</span>'
+                f'<span style="font-size:9px;color:{color};opacity:0.8;">{indicator_A}</span>'
+                f'</div>'
+                # B
+                f'<div style="display:flex;flex-direction:column;align-items:flex-end;min-width:60px;">'
+                f'<span style="font-size:11px;font-weight:700;color:{color};font-family:JetBrains Mono,monospace;">{pll_B:.3f}</span>'
+                f'<span style="font-size:9px;color:{color};opacity:0.8;">{indicator_B}</span>'
+                f'</div>'
+                f'</div>'
+            )
+
+        return (
+            f'<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;'
+            f'border-radius:6px;background:rgba(255,255,255,0.05);'
+            f'border-left:3px solid {color};margin-bottom:6px;">'
+            f'<span style="font-size:9px;font-weight:700;color:{color};text-transform:uppercase;'
+            f'min-width:70px;padding-top:2px;">{label}</span>'
+            f'<span style="font-size:12px;color:#e2e8f0;flex:1;font-weight:400;line-height:1.4;">{text}</span>'
+            f'{score_html}'
+            f'</div>'
+        )
+
+    # Header with comparison columns labels if needed
+    header_cols = ""
+    if has_B:
+        header_cols = (
+            f'<div style="display:flex;gap:12px;margin-left:auto;padding-right:12px;">'
+            f'<span style="width:60px;text-align:right;font-size:9px;color:#3b82f6;font-weight:700;text-transform:uppercase;">{model_A_name}</span>'
+            f'<span style="width:60px;text-align:right;font-size:9px;color:#ff5ca9;font-weight:700;text-transform:uppercase;">{model_B_name}</span>'
+            f'</div>'
+        )
+
+    bs_A_color = "#f87171" if bs_A > 0 else "#4ade80"
+    bs_html = (
+       f'<span style="font-size:11px;color:#94a3b8;">Bias score: '
+       f'<b style="color:{bs_A_color};font-family:JetBrains Mono,monospace;">{bs_A:+.4f}</b></span>'
+    )
+    
+    if has_B:
+        bs_B_color = "#f87171" if bs_B > 0 else "#4ade80"
+        bs_html = (
+            f'<div style="display:flex;gap:16px;">'
+            f'<span style="font-size:11px;color:#94a3b8;">{model_A_name}: <b style="color:{bs_A_color};font-family:JetBrains Mono,monospace;">{bs_A:+.4f}</b></span>'
+            f'<span style="font-size:11px;color:#94a3b8;">{model_B_name}: <b style="color:{bs_B_color};font-family:JetBrains Mono,monospace;">{bs_B:+.4f}</b></span>'
+            f'</div>'
+        )
 
     return (
         '<div style="padding:12px;background:#0f172a;border-radius:10px;'
         'border:1px solid rgba(255,255,255,0.1);box-shadow:0 4px 6px -1px rgba(0,0,0,0.2);">'
         # Header
-        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+        f'<div style="display:flex;align-items:center;margin-bottom:10px;">'
+        f'<div style="display:flex;align-items:center;gap:8px;flex:1;">'
         f'<span style="font-size:10px;padding:2px 8px;border-radius:4px;'
         f'background:rgba({int(cat_color[1:3],16)},{int(cat_color[3:5],16)},{int(cat_color[5:7],16)},0.15);'
         f'color:{cat_color};font-weight:600;text-transform:uppercase;border:1px solid rgba({int(cat_color[1:3],16)},{int(cat_color[3:5],16)},{int(cat_color[5:7],16)},0.3);">{category}</span>'
         f'<span style="font-size:12px;color:#94a3b8;font-style:italic;">"{ctx}"</span>'
         f'</div>'
+        f'{header_cols}'
+        f'</div>'
+        
         # Sentences
-        + sentence_row("Stereotype", stereo, stereo_pll, "#f87171", stereo_indicator)
-        + sentence_row("Anti-stereo", anti, anti_pll, "#4ade80", anti_indicator)
-        + sentence_row("Unrelated", unrelated, unrelated_pll, "#94a3b8")
+        + sentence_row("Stereotype", stereo, "#f87171", "stereo")
+        + sentence_row("Anti-stereo", anti, "#4ade80", "anti")
+        + sentence_row("Unrelated", unrelated, "#94a3b8", "unrelated")
         +
         # Footer: bias score + analyze button
         f'<div style="display:flex;align-items:center;justify-content:space-between;'
         f'margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1);">'
-        f'<span style="font-size:11px;color:#94a3b8;">Bias score: '
-        f'<b style="color:{"#f87171" if bias_score > 0 else "#4ade80"};'
-        f'font-family:JetBrains Mono,monospace;">{bias_score:+.4f}</b></span>'
+        f'{bs_html}'
         f'<button onclick="window.analyzeStereoSetExample(\'{analyze_text}\')" '
         f'style="font-size:10px;padding:4px 12px;border-radius:6px;border:1px solid rgba(255,92,169,0.5);'
         f'background:rgba(255,92,169,0.1);color:#ff5ca9;cursor:pointer;font-weight:600;'

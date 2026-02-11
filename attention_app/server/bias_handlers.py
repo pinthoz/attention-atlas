@@ -326,8 +326,10 @@ def bias_server_handlers(input, output, session):
     bias_results_B = reactive.value(None)    # For comparison
     bias_history = reactive.Value([])
     ablation_results = reactive.value(None)
+    ablation_results_B = reactive.value(None)
     ablation_running = reactive.value(False)
     ig_results = reactive.value(None)
+    ig_results_B = reactive.value(None)
     ig_running = reactive.value(False)
 
     # Snapshots of compare mode state - Updated ONLY on 'Analyze Bias'
@@ -348,29 +350,57 @@ def bias_server_handlers(input, output, session):
     # ── Defaults Logic ──
     @reactive.Effect
     def update_threshold_defaults():
-        """Update UI sliders with model-specific optimized thresholds."""
-        vk = input.bias_model_key()
-        if not vk: return
+        """Update UI sliders with model-specific optimized thresholds for Model A and B."""
+        vk_A = input.bias_model_key()
         
+        # Determine if we need thresholds for B (Models or Prompts comparison)
+        compare_active = False
+        vk_B = None
+        try:
+            if input.bias_compare_mode():
+                compare_active = True
+                vk_B = input.bias_model_key_B()
+            elif input.bias_compare_prompts_mode():
+                compare_active = True
+                vk_B = vk_A # Same model for both prompts
+        except Exception:
+            pass
+
         from attention_app.bias.gusnet_detector import MODEL_REGISTRY
-        cfg = MODEL_REGISTRY.get(vk)
-        if not cfg: return
         
-        opt = cfg.get("optimized_thresholds")
-        defaults = {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
+        def _get_model_defaults(vk):
+            if not vk:
+                return {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
+                
+            cfg = MODEL_REGISTRY.get(vk)
+            if not cfg:
+                return {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
+            
+            opt = cfg.get("optimized_thresholds")
+            defaults = {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
+            
+            if opt:
+                cat_indices = cfg.get("category_indices", {})
+                for cat, indices in cat_indices.items():
+                    if cat in defaults:
+                        vals = [opt[i] for i in indices if i < len(opt)]
+                        if vals:
+                            defaults[cat] = sum(vals) / len(vals)
+            return defaults
+
+        # Get thresholds for A
+        defaults = _get_model_defaults(vk_A)
         
-        if opt:
-            # Calculate mean threshold per category
-            cat_indices = cfg.get("category_indices", {})
-            for cat, indices in cat_indices.items():
-                if cat in defaults:
-                    # Get values from opt list
-                    vals = [opt[i] for i in indices if i < len(opt)]
-                    if vals:
-                        defaults[cat] = sum(vals) / len(vals)
+        # Get thresholds for B if any comparison mode is active
+        if compare_active:
+            defaults_B = _get_model_defaults(vk_B)
+            # Prefix with _B for the UI handler
+            for cat, val in defaults_B.items():
+                defaults[f"{cat}_B"] = val
         
         # Send to UI
-        asyncio.create_task(session.send_custom_message("set_bias_thresholds", defaults))
+        if defaults:
+            asyncio.create_task(session.send_custom_message("set_bias_thresholds", defaults))
 
     # ── History Logic ──
     
@@ -430,10 +460,24 @@ def bias_server_handlers(input, output, session):
         try: t_stereo = float(input.bias_thresh_stereo())
         except: t_stereo = 0.5
         
-        manual_thresholds = {
+        manual_thresholds_A = {
             "UNFAIR": t_unfair,
             "GEN": t_gen,
             "STEREO": t_stereo
+        }
+        
+        # Read B sliders
+        try: t_unfair_b = float(input.bias_thresh_unfair_b())
+        except: t_unfair_b = 0.5
+        try: t_gen_b = float(input.bias_thresh_gen_b())
+        except: t_gen_b = 0.5
+        try: t_stereo_b = float(input.bias_thresh_stereo_b())
+        except: t_stereo_b = 0.5
+
+        manual_thresholds_B = {
+            "UNFAIR": t_unfair_b,
+            "GEN": t_gen_b,
+            "STEREO": t_stereo_b
         }
         
         # Determine thresholds for A and B
@@ -441,8 +485,8 @@ def bias_server_handlers(input, output, session):
         # This allows Model A and Model B to each use their own optimal settings.
         # If FALSE (user manual override), use the sliders for both.
         
-        thresholds_A = manual_thresholds
-        thresholds_B = manual_thresholds
+        thresholds_A = manual_thresholds_A
+        thresholds_B = manual_thresholds_B
         
         if use_opt:
             if raw_A and raw_A.get("effective_thresholds"):
@@ -1220,6 +1264,17 @@ def bias_server_handlers(input, output, session):
                         )
                         bias_raw_results_B.set(result_B) # Store RAW result B
                         bias_cached_text_B.set(text)  # Same text for compare models
+                        
+                        # Send effective thresholds for B
+                        if result_B and result_B.get("effective_thresholds"):
+                            eff_B = result_B["effective_thresholds"]
+                            msg_B = {
+                                "UNFAIR_B": eff_B.get("UNFAIR"),
+                                "GEN_B": eff_B.get("GEN"),
+                                "STEREO_B": eff_B.get("STEREO")
+                            }
+                            log_debug(f"Sending effective thresholds B to UI: {msg_B}")
+                            await session.send_custom_message("set_bias_thresholds", msg_B)
 
                     elif compare_prompts:
                         # Case 2: Different Prompt (B), Same Model (A)
@@ -1238,6 +1293,17 @@ def bias_server_handlers(input, output, session):
                             )
                             bias_raw_results_B.set(result_B)
                             bias_cached_text_B.set(text_B)
+                            
+                            # Send effective thresholds for B
+                            if result_B and result_B.get("effective_thresholds"):
+                                eff_B = result_B["effective_thresholds"]
+                                msg_B = {
+                                    "UNFAIR_B": eff_B.get("UNFAIR"),
+                                    "GEN_B": eff_B.get("GEN"),
+                                    "STEREO_B": eff_B.get("STEREO")
+                                }
+                                log_debug(f"Sending effective thresholds B to UI: {msg_B}")
+                                await session.send_custom_message("set_bias_thresholds", msg_B)
                         else:
                             bias_raw_results_B.set(None)
                             bias_cached_text_B.set("")
@@ -2349,44 +2415,80 @@ def bias_server_handlers(input, output, session):
     @reactive.effect
     async def compute_ablation():
         """Automatically run ablation when bias analysis is complete."""
-        res = bias_results.get()
-        if not res:
+        res_A = bias_results.get()
+        if not res_A:
             return
 
         ablation_running.set(True)
         ablation_results.set(None)
+        ablation_results_B.set(None)
 
         try:
             try: k = int(input.bias_top_k())
             except Exception: k = 5
 
-            text = res["text"]
-            metrics = res.get("attention_metrics", [])
-            if not metrics:
-                ablation_running.set(False)
-                return
+            # Define helper for single computation
+            def _compute_single(r):
+                text = r["text"]
+                metrics = r.get("attention_metrics", [])
+                if not metrics: return None
 
-            top_heads = sorted(
-                metrics, key=lambda m: m.bias_attention_ratio, reverse=True
-            )[:k]
+                # Use top heads from THIS result
+                top_heads_local = sorted(
+                    metrics, key=lambda m: m.bias_attention_ratio, reverse=True
+                )[:k]
 
-            model_name = res.get("model_name", "bert-base-uncased")
-            is_gpt2 = "gpt2" in model_name
+                model_name = r.get("model_name", "bert-base-uncased")
+                is_g = "gpt2" in model_name
 
-            tokenizer, encoder_model, lm_head_model = ModelManager.get_model(model_name)
+                tokenizer, encoder_model, lm_head_model = ModelManager.get_model(model_name)
+                
+                # We need to run sync code in executor
+                return (encoder_model, lm_head_model, tokenizer, text, top_heads_local, is_g)
 
+            # Prepare args for A
+            args_A = _compute_single(res_A)
+            
+            # Prepare args for B if needed
+            args_B = None
+            compare = (active_bias_compare_models.get() or active_bias_compare_prompts.get())
+            if compare:
+                res_B = bias_results_B.get()
+                if res_B:
+                    args_B = _compute_single(res_B)
+
+            # Execute
             loop = asyncio.get_running_loop()
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                results = await loop.run_in_executor(
-                    pool,
-                    batch_ablate_top_heads,
-                    encoder_model, lm_head_model, tokenizer,
-                    text, top_heads, is_gpt2,
-                )
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                # Launch A
+                fut_A = None
+                if args_A:
+                    fut_A = loop.run_in_executor(
+                        pool,
+                        batch_ablate_top_heads,
+                        *args_A
+                    )
+                
+                # Launch B
+                fut_B = None
+                if args_B:
+                    fut_B = loop.run_in_executor(
+                        pool,
+                        batch_ablate_top_heads,
+                        *args_B
+                    )
 
-            ablation_results.set(results)
+                # Wait results
+                if fut_A:
+                    res_A_calc = await fut_A
+                    ablation_results.set(res_A_calc)
+                
+                if fut_B:
+                    res_B_calc = await fut_B
+                    ablation_results_B.set(res_B_calc)
+
         except Exception as e:
-            log_debug(f"Ablation error: {e}")
+            print(f"Ablation error: {e}")
             traceback.print_exc()
         finally:
             ablation_running.set(False)
@@ -2395,10 +2497,15 @@ def bias_server_handlers(input, output, session):
     @render.ui
     def ablation_results_display():
         running = ablation_running.get()
-        results = ablation_results.get()
+        results_A = ablation_results.get()
 
-        if running or not results:
+        if running or not results_A:
             return None
+        
+        results_B = ablation_results_B.get()
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+        show_comparison = (compare_models or compare_prompts) and results_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
         except Exception: bar_threshold = 1.5
@@ -2412,55 +2519,76 @@ def bias_server_handlers(input, output, session):
         except Exception:
             pass
 
-        fig = create_ablation_impact_chart(results, bar_threshold=bar_threshold, selected_head=selected_head)
-        chart_html = fig.to_html(
-            include_plotlyjs="cdn", full_html=False,
-            config={"displayModeBar": False, "responsive": True},
-        )
-
-        table_rows = []
-        for rank, r in enumerate(results, 1):
-            impact_color = "#ff5ca9" if r.representation_impact > 0.05 else "#64748b"
-            kl_cell = f"{r.kl_divergence:.4f}" if r.kl_divergence is not None else "N/A"
-            specialized = "Yes" if r.bar_original > bar_threshold else "No"
-            row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
-            table_rows.append(
-                f'<tr style="{row_bg}">'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{impact_color};">{r.representation_impact:.4f}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{kl_cell}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
-                f'</tr>'
+        def _render_ablation_single(results_data, container_suffix=""):
+            if not results_data: return "No data"
+            
+            fig = create_ablation_impact_chart(results_data, bar_threshold=bar_threshold, selected_head=selected_head)
+            c_id = f"ablation-chart-container{container_suffix}"
+            chart_html = fig.to_html(
+                include_plotlyjs="cdn", full_html=False,
+                config={"displayModeBar": False, "responsive": True},
             )
 
-        table_html = (
-            '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;">'
-            '<thead>'
-            '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
-            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
-            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Layer</th>'
-            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
-            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Impact</th>'
-            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">KL Div</th>'
-            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">BAR</th>'
-            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Specialized</th>'
-            '</tr>'
-            '</thead>'
-            f'<tbody>{"".join(table_rows)}</tbody>'
-            '</table>'
-        )
+            table_rows = []
+            for rank, r in enumerate(results_data, 1):
+                impact_color = "#ff5ca9" if r.representation_impact > 0.05 else "#64748b"
+                kl_cell = f"{r.kl_divergence:.4f}" if r.kl_divergence is not None else "N/A"
+                specialized = "Yes" if r.bar_original > bar_threshold else "No"
+                row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
+                table_rows.append(
+                    f'<tr style="{row_bg}">'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{impact_color};">{r.representation_impact:.4f}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{kl_cell}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
+                    f'</tr>'
+                )
 
-        return _wrap_card(
-            ui.div(
-                ui.HTML(f'<div id="ablation-chart-container" style="width:100%;">{chart_html}</div>'),
+            table_html = (
+                '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;">'
+                '<thead>'
+                '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
+                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
+                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Layer</th>'
+                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
+                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Impact</th>'
+                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">KL Div</th>'
+                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">BAR</th>'
+                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Specialized</th>'
+                '</tr>'
+                '</thead>'
+                f'<tbody>{"".join(table_rows)}</tbody>'
+                '</table>'
+            )
+            
+            return ui.div(
+                ui.HTML(f'<div id="{c_id}" style="width:100%;">{chart_html}</div>'),
                 ui.HTML(table_html),
-            ),
+            )
+
+        header_args = (
             "Head Ablation Results",
             "Measures the causal impact of each attention head by zeroing its output and measuring the change in the model's internal representation.",
-            "Higher impact means removing this head significantly alters the output. Compare with BAR to assess faithfulness.",
+            "Higher impact means removing this head significantly alters the output. Compare with BAR to assess faithfulness."
+        )
+
+        if show_comparison:
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(_render_ablation_single(results_A, "_A"), *header_args, 
+                           style="border: 2px solid #3b82f6; height: 100%;",
+                           controls=[ui.download_button("export_ablation_csv", "CSV", style=_BTN_STYLE_CSV)]),
+                _wrap_card(_render_ablation_single(results_B, "_B"), *header_args, 
+                           style="border: 2px solid #ff5ca9; height: 100%;",
+                           controls=[ui.download_button("export_ablation_csv_B", "CSV", style=_BTN_STYLE_CSV)])
+            )
+
+        return _wrap_card(
+            _render_ablation_single(results_A),
+            *header_args,
             controls=[
                 ui.download_button("export_ablation_csv", "CSV", style=_BTN_STYLE_CSV),
                 ui.tags.button("PNG", onclick="downloadPlotlyPNG('ablation-chart-container', 'ablation_impact')", style=_BTN_STYLE_PNG),
@@ -2479,43 +2607,82 @@ def bias_server_handlers(input, output, session):
             lines.append(f"{i},{r.layer},{r.head},{r.representation_impact:.6f},{kl},{r.bar_original:.4f}")
         yield "\n".join(lines)
 
+    @render.download(filename="ablation_results_B.csv")
+    def export_ablation_csv_B():
+        results = ablation_results_B.get()
+        if not results:
+            yield "No ablation data"
+            return
+        lines = ["rank,layer,head,representation_impact,kl_divergence,bar_original"]
+        for i, r in enumerate(results, 1):
+            kl = f"{r.kl_divergence:.6f}" if r.kl_divergence is not None else ""
+            lines.append(f"{i},{r.layer},{r.head},{r.representation_impact:.6f},{kl},{r.bar_original:.4f}")
+        yield "\n".join(lines)
+
     # ── Integrated Gradients handlers ─────────────────────────────────
 
     @reactive.effect
     async def compute_ig():
         """Automatically run IG correlation when bias analysis is complete."""
-        res = bias_results.get()
-        if not res:
+        res_A = bias_results.get()
+        if not res_A:
             return
 
         ig_running.set(True)
         ig_results.set(None)
+        ig_results_B.set(None)
 
         try:
-            text = res["text"]
-            attentions = res.get("attentions")
-            metrics = res.get("attention_metrics", [])
-            if not attentions or not metrics:
-                ig_running.set(False)
-                return
+            # Helper for single computation config
+            def _prepare_ig_args(r):
+                text = r["text"]
+                attentions = r.get("attentions")
+                metrics = r.get("attention_metrics", [])
+                if not attentions or not metrics: return None
+                
+                model_name = r.get("model_name", "bert-base-uncased")
+                is_g = "gpt2" in model_name
+                tokenizer, encoder_model, _ = ModelManager.get_model(model_name)
+                
+                return (encoder_model, tokenizer, text, list(attentions), metrics, is_g)
 
-            model_name = res.get("model_name", "bert-base-uncased")
-            is_gpt2 = "gpt2" in model_name
-
-            tokenizer, encoder_model, _ = ModelManager.get_model(model_name)
-
+            args_A = _prepare_ig_args(res_A)
+            
+            args_B = None
+            compare = (active_bias_compare_models.get() or active_bias_compare_prompts.get())
+            if compare:
+                res_B = bias_results_B.get()
+                if res_B:
+                    args_B = _prepare_ig_args(res_B)
+            
             loop = asyncio.get_running_loop()
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                results = await loop.run_in_executor(
-                    pool,
-                    batch_compute_ig_correlation,
-                    encoder_model, tokenizer, text,
-                    list(attentions), metrics, is_gpt2,
-                )
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                fut_A = None
+                if args_A:
+                    fut_A = loop.run_in_executor(
+                        pool,
+                        batch_compute_ig_correlation,
+                        *args_A
+                    )
+                
+                fut_B = None
+                if args_B:
+                    fut_B = loop.run_in_executor(
+                        pool,
+                        batch_compute_ig_correlation,
+                        *args_B
+                    )
+                
+                if fut_A:
+                    res_val_A = await fut_A
+                    ig_results.set(res_val_A)
+                
+                if fut_B:
+                    res_val_B = await fut_B
+                    ig_results_B.set(res_val_B)
 
-            ig_results.set(results)
         except Exception as e:
-            log_debug(f"IG error: {e}")
+            print(f"IG error: {e}")
             traceback.print_exc()
         finally:
             ig_running.set(False)
@@ -2524,20 +2691,15 @@ def bias_server_handlers(input, output, session):
     @render.ui
     def ig_results_display():
         running = ig_running.get()
-        bundle = ig_results.get()
+        bundle_A = ig_results.get()
 
-        if running or not bundle:
+        if running or not bundle_A:
             return None
-
-        # Unpack bundle (IGAnalysisBundle or legacy list)
-        if isinstance(bundle, IGAnalysisBundle):
-            results = bundle.correlations
-            token_attrs = bundle.token_attributions
-            tokens = bundle.tokens
-        else:
-            results = bundle
-            token_attrs = None
-            tokens = None
+            
+        bundle_B = ig_results_B.get()
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+        show_comparison = (compare_models or compare_prompts) and bundle_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
         except Exception: bar_threshold = 1.5
@@ -2552,130 +2714,172 @@ def bias_server_handlers(input, output, session):
             selected_layer = sel_l
         except Exception:
             pass
-
-        # ── Chart 1: Correlation heatmap + BAR scatter (existing) ──
-        fig1 = create_ig_correlation_chart(results, bar_threshold=bar_threshold, selected_head=selected_head)
-        chart1_html = fig1.to_html(
-            include_plotlyjs="cdn", full_html=False,
-            config={"displayModeBar": False, "responsive": True},
-        )
-
-        # ── Chart 2: Token-level IG vs Attention comparison ──
-        chart2_html = ""
-        res = bias_results.get()
-        attentions = res.get("attentions") if res else None
-        if token_attrs is not None and tokens and attentions:
-            # Pick top-3 heads by BAR for comparison
-            top_bar_heads = sorted(results, key=lambda r: r.bar_original, reverse=True)[:3]
-            fig2 = create_ig_token_comparison_chart(
-                tokens, token_attrs, list(attentions), top_bar_heads,
-            )
-            chart2_html = fig2.to_html(
+            
+        def _render_ig_single(bundle, container_suffix="", context_results=None):
+            if not bundle: return "No data"
+            
+            # Unpack bundle
+            if isinstance(bundle, IGAnalysisBundle):
+                results = bundle.correlations
+                token_attrs = bundle.token_attributions
+                tokens = bundle.tokens
+            else:
+                results = bundle
+                token_attrs = None
+                tokens = None
+            
+            # ── Chart 1: Correlation heatmap + BAR scatter ──
+            fig1 = create_ig_correlation_chart(results, bar_threshold=bar_threshold, selected_head=selected_head)
+            chart1_html = fig1.to_html(
                 include_plotlyjs="cdn", full_html=False,
                 config={"displayModeBar": False, "responsive": True},
             )
 
-        # ── Chart 3: Distribution violin (specialized vs non-specialized) ──
-        fig3 = create_ig_distribution_chart(results, bar_threshold=bar_threshold, selected_head=selected_head)
-        chart3_html = fig3.to_html(
-            include_plotlyjs="cdn", full_html=False,
-            config={"displayModeBar": False, "responsive": True},
-        )
+            # ── Chart 2: Token-level IG vs Attention comparison ──
+            chart2_html = ""
+            # Fix: use passed-in context_results or try to infer from single mode
+            attentions = None
+            if context_results and context_results.get("attentions"):
+                attentions = context_results["attentions"]
+            elif not show_comparison: # Fallback for single mode only
+                 res = bias_results.get()
+                 attentions = res.get("attentions") if res else None
+            
+            if token_attrs is not None and tokens and attentions:
+                top_bar_heads = sorted(results, key=lambda r: r.bar_original, reverse=True)[:3]
+                try:
+                    fig2 = create_ig_token_comparison_chart(
+                        tokens, token_attrs, list(attentions), top_bar_heads,
+                    )
+                    chart2_html = fig2.to_html(
+                        include_plotlyjs="cdn", full_html=False,
+                        config={"displayModeBar": False, "responsive": True},
+                    )
+                except Exception as e:
+                     chart2_html = f"<div>Error generating token chart: {e}</div>"
 
-        # ── Chart 4: Layer-wise mean faithfulness ──
-        fig4 = create_ig_layer_summary_chart(results, selected_layer=selected_layer)
-        chart4_html = fig4.to_html(
-            include_plotlyjs="cdn", full_html=False,
-            config={"displayModeBar": False, "responsive": True},
-        )
-
-        # ── Summary stats ──
-        sig_results = [r for r in results if r.spearman_pvalue < 0.05]
-        mean_rho = np.mean([r.spearman_rho for r in results])
-        n_positive = sum(1 for r in sig_results if r.spearman_rho > 0)
-        n_negative = sum(1 for r in sig_results if r.spearman_rho < 0)
-
-        summary_html = (
-            f'<div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;">'
-            f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(37,99,235,0.06);border:1px solid rgba(37,99,235,0.15);border-radius:8px;text-align:center;">'
-            f'<div style="font-size:20px;font-weight:700;color:#2563eb;font-family:JetBrains Mono,monospace;">{mean_rho:.3f}</div>'
-            f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Mean Spearman ρ</div></div>'
-            f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.15);border-radius:8px;text-align:center;">'
-            f'<div style="font-size:20px;font-weight:700;color:#22c55e;font-family:JetBrains Mono,monospace;">{len(sig_results)}/{len(results)}</div>'
-            f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Significant (p&lt;0.05)</div></div>'
-            f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.15);border-radius:8px;text-align:center;">'
-            f'<div style="font-size:20px;font-weight:700;color:#f59e0b;font-family:JetBrains Mono,monospace;">{n_positive}+ / {n_negative}−</div>'
-            f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Positive / Negative</div></div>'
-            f'</div>'
-        )
-
-        # ── Top-10 table ──
-        top10 = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)[:10]
-        table_rows = []
-        for rank, r in enumerate(top10, 1):
-            rho_color = "#2563eb" if r.spearman_rho > 0 else "#dc2626"
-            sig_badge = '<span style="color:#22c55e;font-weight:600;">*</span>' if r.spearman_pvalue < 0.05 else ""
-            specialized = "Yes" if r.bar_original > bar_threshold else "No"
-            row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
-            table_rows.append(
-                f'<tr style="{row_bg}">'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{rho_color};">{r.spearman_rho:.3f}{sig_badge}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.spearman_pvalue:.4f}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
-                f'</tr>'
+            # ── Chart 3: Distribution violin ──
+            fig3 = create_ig_distribution_chart(results, bar_threshold=bar_threshold, selected_head=selected_head)
+            chart3_html = fig3.to_html(
+                include_plotlyjs="cdn", full_html=False,
+                config={"displayModeBar": False, "responsive": True},
             )
 
-        table_html = (
-            '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;">'
-            '<thead>'
-            '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
-            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
-            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Layer</th>'
-            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
-            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Spearman ρ</th>'
-            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">p-value</th>'
-            '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">BAR</th>'
-            '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Specialized</th>'
-            '</tr>'
-            '</thead>'
-            f'<tbody>{"".join(table_rows)}</tbody>'
-            '</table>'
-        )
+            # ── Chart 4: Layer-wise mean faithfulness ──
+            fig4 = create_ig_layer_summary_chart(results, selected_layer=selected_layer)
+            chart4_html = fig4.to_html(
+                include_plotlyjs="cdn", full_html=False,
+                config={"displayModeBar": False, "responsive": True},
+            )
 
-        # ── Assemble all sections ──
-        sections = [
-            ui.HTML(f'<div id="ig-chart-container" style="width:100%;">{chart1_html}</div>'),
-            ui.HTML(summary_html),
-            ui.HTML(table_html),
-        ]
+            # ── Summary stats ──
+            sig_results = [r for r in results if r.spearman_pvalue < 0.05]
+            mean_rho = np.mean([r.spearman_rho for r in results])
+            n_positive = sum(1 for r in sig_results if r.spearman_rho > 0)
+            n_negative = sum(1 for r in sig_results if r.spearman_rho < 0)
 
-        if chart2_html:
+            summary_html = (
+                f'<div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;">'
+                f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(37,99,235,0.06);border:1px solid rgba(37,99,235,0.15);border-radius:8px;text-align:center;">'
+                f'<div style="font-size:20px;font-weight:700;color:#2563eb;font-family:JetBrains Mono,monospace;">{mean_rho:.3f}</div>'
+                f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Mean Spearman ρ</div></div>'
+                f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.15);border-radius:8px;text-align:center;">'
+                f'<div style="font-size:20px;font-weight:700;color:#22c55e;font-family:JetBrains Mono,monospace;">{len(sig_results)}/{len(results)}</div>'
+                f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Significant (p&lt;0.05)</div></div>'
+                f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.15);border-radius:8px;text-align:center;">'
+                f'<div style="font-size:20px;font-weight:700;color:#f59e0b;font-family:JetBrains Mono,monospace;">{n_positive}+ / {n_negative}−</div>'
+                f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Positive / Negative</div></div>'
+                f'</div>'
+            )
+
+            # ── Top-10 table ──
+            top10 = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)[:10]
+            table_rows = []
+            for rank, r in enumerate(top10, 1):
+                rho_color = "#2563eb" if r.spearman_rho > 0 else "#dc2626"
+                sig_badge = '<span style="color:#22c55e;font-weight:600;">*</span>' if r.spearman_pvalue < 0.05 else ""
+                specialized = "Yes" if r.bar_original > bar_threshold else "No"
+                row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
+                table_rows.append(
+                    f'<tr style="{row_bg}">'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{rho_color};">{r.spearman_rho:.3f}{sig_badge}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.spearman_pvalue:.4f}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
+                    f'</tr>'
+                )
+
+            table_html = (
+                '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;">'
+                '<thead>'
+                '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
+                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
+                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Layer</th>'
+                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
+                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Spearman ρ</th>'
+                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">p-value</th>'
+                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">BAR</th>'
+                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Specialized</th>'
+                '</tr>'
+                '</thead>'
+                f'<tbody>{"".join(table_rows)}</tbody>'
+                '</table>'
+            )
+            
+            # Assemble with unique IDs for javascript resize
+            cid1 = f"ig-chart-container{container_suffix}"
+            cid2 = f"ig-token-chart-container{container_suffix}"
+            cid3 = f"ig-dist-chart-container{container_suffix}"
+            cid4 = f"ig-layer-chart-container{container_suffix}"
+
+            sections = [
+                ui.HTML(f'<div id="{cid1}" style="width:100%;">{chart1_html}</div>'),
+                ui.HTML(summary_html),
+                ui.HTML(table_html),
+            ]
+            
+            if chart2_html:
+                sections.append(ui.HTML('<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'))
+                sections.append(ui.HTML(f'<div id="{cid2}" style="width:100%;">{chart2_html}</div>'))
+
+            sections.append(ui.HTML('<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'))
             sections.append(ui.HTML(
-                '<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'
+                f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
+                f'<div id="{cid3}">{chart3_html}</div>'
+                f'<div id="{cid4}">{chart4_html}</div>'
+                f'</div>'
             ))
-            sections.append(ui.HTML(
-                f'<div id="ig-token-chart-container" style="width:100%;">{chart2_html}</div>'
-            ))
+            
+            return ui.div(*sections)
 
-        sections.append(ui.HTML(
-            '<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'
-        ))
-        sections.append(ui.HTML(
-            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
-            f'<div id="ig-dist-chart-container">{chart3_html}</div>'
-            f'<div id="ig-layer-chart-container">{chart4_html}</div>'
-            f'</div>'
-        ))
-
-        return _wrap_card(
-            ui.div(*sections),
+        header_args = (
             "Attention vs Integrated Gradients",
             "Captum LayerIntegratedGradients — faithfulness analysis comparing attention patterns with gradient-based token attribution.",
-            "Positive ρ = attention aligns with what gradients say matters. * = statistically significant (p<0.05).",
+            "Positive ρ = attention aligns with what gradients say matters. * = statistically significant (p<0.05)."
+        )
+
+        if show_comparison:
+             # We need context results (attentions etc) for Chart 2.
+             # bias_results.get() is A, bias_results_B.get() is B
+             res_A = bias_results.get()
+             res_B = bias_results_B.get()
+             
+             return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(_render_ig_single(bundle_A, "_A", res_A), *header_args, 
+                           style="border: 2px solid #3b82f6; height: 100%;",
+                           controls=[ui.download_button("export_ig_csv", "CSV", style=_BTN_STYLE_CSV)]),
+                _wrap_card(_render_ig_single(bundle_B, "_B", res_B), *header_args, 
+                           style="border: 2px solid #ff5ca9; height: 100%;",
+                           controls=[ui.download_button("export_ig_csv_B", "CSV", style=_BTN_STYLE_CSV)])
+            )
+
+        return _wrap_card(
+            _render_ig_single(bundle_A),
+            *header_args,
             controls=[
                 ui.download_button("export_ig_csv", "CSV", style=_BTN_STYLE_CSV),
                 ui.tags.button("PNG", onclick="downloadPlotlyPNG('ig-chart-container', 'ig_correlation')", style=_BTN_STYLE_PNG),
@@ -2695,6 +2899,19 @@ def bias_server_handlers(input, output, session):
             lines.append(f"{i},{r.layer},{r.head},{r.spearman_rho:.6f},{r.spearman_pvalue:.6f},{r.bar_original:.4f}")
         yield "\n".join(lines)
 
+    @render.download(filename="ig_correlation_results_B.csv")
+    def export_ig_csv_B():
+        bundle = ig_results_B.get()
+        if not bundle:
+            yield "No IG data"
+            return
+        results = bundle.correlations if isinstance(bundle, IGAnalysisBundle) else bundle
+        lines = ["rank,layer,head,spearman_rho,spearman_pvalue,bar_original"]
+        sorted_results = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)
+        for i, r in enumerate(sorted_results, 1):
+            lines.append(f"{i},{r.layer},{r.head},{r.spearman_rho:.6f},{r.spearman_pvalue:.6f},{r.bar_original:.4f}")
+        yield "\n".join(lines)
+
     # ── StereoSet Evaluation Handlers ─────────────────────────────────
     # These load from pre-computed JSON and render independently of bias_results.
     # They react to the selected GUS-Net model to show the matching base model's data.
@@ -2704,15 +2921,94 @@ def bias_server_handlers(input, output, session):
         try:
             return input.bias_model_key()
         except Exception:
+            # Fallback default if not yet available
             return "gusnet-bert"
+
+    def _stereoset_model_key_B():
+        """Derive the stereoset model key for Model B."""
+        try:
+             # If comparing models, use the B selector
+             if active_bias_compare_models.get():
+                return input.bias_model_key_B()
+             return None
+        except Exception:
+            return None
 
     @output
     @render.ui
     def stereoset_overview():
         """Score card with SS/LMS/ICAT gauges."""
-        mk = _stereoset_model_key()
-        scores = get_stereoset_scores(mk)
-        metadata = get_metadata(mk)
+        mk_A = _stereoset_model_key()
+        
+        def _render_single(mk, manual_header_override=None):
+            scores = get_stereoset_scores(mk)
+            metadata = get_metadata(mk)
+            if scores is None or metadata is None:
+                return ui.div(
+                    ui.p(
+                        "StereoSet data not available. Run ",
+                        ui.code("python -m attention_app.bias.generate_stereoset_json"),
+                        " to generate.",
+                        style="color:#94a3b8;font-size:12px;",
+                    ),
+                )
+            html = create_stereoset_overview_html(scores, metadata)
+            if manual_header_override:
+                header = manual_header_override
+            else:
+                model_label = metadata.get("model", "unknown")
+                header = ("Benchmark Scores", f"StereoSet intersentence evaluation on {model_label}")
+                
+            return (html, header)
+            
+        # Check comparison
+        compare_models = active_bias_compare_models.get()
+        mk_B = _stereoset_model_key_B() if compare_models else None
+        
+        if compare_models and mk_B:
+            res_A, header_A = _render_single(mk_A)
+            res_B, header_B = _render_single(mk_B)
+            
+            # If render single returned a div (error/missing), handle it
+            content_A = res_A if isinstance(res_A, str) else res_A
+            content_B = res_B if isinstance(res_B, str) else res_B
+            
+            # If one is missing data, it might return a div directly, not tuple
+            # _render_single returns tuple (html, header) on success, or UI object on failure
+            # Let's standardize helper to always return tuple or (UI, None)
+            
+            # Adjusted helper strategy:
+            def _render_safe(mk):
+                s = get_stereoset_scores(mk)
+                m = get_metadata(mk)
+                if s is None or m is None:
+                    return (None, None)
+                return (create_stereoset_overview_html(s, m), m.get("model", "unknown"))
+
+            html_A, model_A = _render_safe(mk_A)
+            html_B, model_B = _render_safe(mk_B)
+            
+            if not html_A and not html_B:
+                 return _wrap_card(ui.div("No StereoSet data available."), "Benchmark Scores")
+
+            card_A = ui.div("No data for Model A")
+            if html_A:
+                card_A = _wrap_card(ui.HTML(html_A), manual_header=("Benchmark Scores", f"Model A: {model_A}"),
+                                    style="border: 2px solid #3b82f6; height: 100%;")
+            
+            card_B = ui.div("No data for Model B")
+            if html_B:
+                card_B = _wrap_card(ui.HTML(html_B), manual_header=("Benchmark Scores", f"Model B: {model_B}"),
+                                    style="border: 2px solid #ff5ca9; height: 100%;")
+
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                card_A, card_B
+            )
+
+        # Single mode legacy path
+        scores = get_stereoset_scores(mk_A)
+        metadata = get_metadata(mk_A)
         if scores is None or metadata is None:
             return ui.div(
                 ui.p(
@@ -2733,212 +3029,198 @@ def bias_server_handlers(input, output, session):
     @render.ui
     def stereoset_category_breakdown():
         """Category bar chart + bias distribution violin side-by-side."""
-        mk = _stereoset_model_key()
-        scores = get_stereoset_scores(mk)
-        examples = get_stereoset_examples(mk)
-        if scores is None or not examples:
-            return ui.div()
+        mk_A = _stereoset_model_key()
+        
+        def _render_single(mk):
+            scores = get_stereoset_scores(mk)
+            examples = get_stereoset_examples(mk)
+            if scores is None or not examples:
+                return None
+            by_cat = scores.get("by_category", {})
+            if not by_cat: return None
+            
+            fig_cat = create_stereoset_category_chart(by_cat)
+            fig_dist = create_stereoset_bias_distribution(examples)
+            
+            cat_html = fig_cat.to_html(include_plotlyjs="cdn", full_html=False, config={"responsive": True})
+            dist_html = fig_dist.to_html(include_plotlyjs=False, full_html=False, config={"responsive": True})
+            
+            return ui.div(
+                {"style": "display:grid;grid-template-columns:1fr 1fr;gap:16px;"},
+                _wrap_card(ui.HTML(cat_html)),
+                _wrap_card(ui.HTML(dist_html)),
+            )
 
-        by_cat = scores.get("by_category", {})
-        if not by_cat:
-            return ui.div()
+        compare_models = active_bias_compare_models.get()
+        mk_B = _stereoset_model_key_B() if compare_models else None
 
-        fig_cat = create_stereoset_category_chart(by_cat)
-        fig_dist = create_stereoset_bias_distribution(examples)
+        if compare_models and mk_B:
+            content_A = _render_single(mk_A) or ui.div("No data for Model A")
+            content_B = _render_single(mk_B) or ui.div("No data for Model B")
+            
+            # For this section, since it already contains a generic header in the visualizer?
+            # Actually _render_single returns a div with TWO cards inside it (cat + dist).
+            # We want to wrap the whole thing to show separation?
+            # The original didn't wrap the whole thing in a card, it returned a div of 2 cards.
+            # If we do side-by-side comparison, we have 4 cards total.
+            # A (Cat+Dist) | B (Cat+Dist)
+            
+            # To make it clear which is which, we should probably wrap A's group and B's group.
+            
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                ui.div(
+                    {"style": "border: 2px solid #3b82f6; padding: 12px; border-radius: 8px;"},
+                    ui.h5("Model A", style="margin-bottom: 12px; color: #3b82f6; font-weight: bold;"),
+                    content_A
+                ),
+                ui.div(
+                    {"style": "border: 2px solid #ff5ca9; padding: 12px; border-radius: 8px;"},
+                    ui.h5("Model B", style="margin-bottom: 12px; color: #ff5ca9; font-weight: bold;"),
+                    content_B
+                )
+            )
 
-        cat_html = fig_cat.to_html(include_plotlyjs="cdn", full_html=False, config={"responsive": True})
-        dist_html = fig_dist.to_html(include_plotlyjs=False, full_html=False, config={"responsive": True})
-
-        return ui.div(
-            {"style": "display:grid;grid-template-columns:1fr 1fr;gap:16px;"},
-            _wrap_card(ui.HTML(cat_html)),
-            _wrap_card(ui.HTML(dist_html)),
-        )
+        return _render_single(mk_A) or ui.div()
 
     @output
     @render.ui
     def stereoset_demographic_slices():
         """Demographic target analysis with category filter."""
         from ..bias.visualizations import create_stereoset_demographic_chart
-
-        mk = _stereoset_model_key()
-        examples = get_stereoset_examples(mk)
-        if not examples:
-            return ui.div()
-
-        categories = sorted(set(e.get("category", "") for e in examples))
-
-        # Build per-category charts
-        charts = []
-        for cat in categories:
-            cat_examples = [e for e in examples if e.get("category") == cat]
-            fig = create_stereoset_demographic_chart(cat_examples, category=cat, min_n=10)
-            chart_html = fig.to_html(
-                include_plotlyjs="cdn" if not charts else False,
-                full_html=False, config={"responsive": True},
+        
+        mk_A = _stereoset_model_key()
+        
+        def _render_single(mk, container_suffix=""):
+            examples = get_stereoset_examples(mk)
+            if not examples: return None
+            
+            categories = sorted(set(e.get("category", "") for e in examples))
+            charts = []
+            for cat in categories:
+                cat_examples = [e for e in examples if e.get("category") == cat]
+                fig = create_stereoset_demographic_chart(cat_examples, category=cat, min_n=10)
+                chart_html = fig.to_html(include_plotlyjs="cdn" if not charts else False, full_html=False, config={"responsive": True})
+                charts.append(chart_html)
+            
+            from collections import Counter
+            target_data = {}
+            for ex in examples:
+                t = ex.get("target", "unknown")
+                if t not in target_data:
+                    target_data[t] = {"stereo_wins": 0, "n": 0, "category": ex.get("category", "")}
+                target_data[t]["n"] += 1
+                if ex.get("stereo_pll", 0) > ex.get("anti_pll", 0):
+                    target_data[t]["stereo_wins"] += 1
+            
+            targets = []
+            for t, d in target_data.items():
+                if d["n"] >= 10:
+                    ss = d["stereo_wins"] / d["n"] * 100
+                    targets.append({"target": t, "ss": ss, "n": d["n"], "category": d["category"]})
+            targets.sort(key=lambda x: x["ss"], reverse=True)
+            
+            most_biased = targets[:5]
+            least_biased = targets[-5:][::-1]
+            STEREOSET_CAT_COLORS = {"gender": "#e74c3c", "race": "#3498db", "religion": "#2ecc71", "profession": "#f39c12"}
+            
+            def _build_target_rows(items, direction="high"):
+                rows = []
+                for rank, t in enumerate(items, 1):
+                    cat_color = STEREOSET_CAT_COLORS.get(t["category"], "#94a3b8")
+                    ss_color = "#ef4444" if t["ss"] > 60 else "#22c55e" if t["ss"] < 40 else "#eab308"
+                    rows.append(f'<tr style="transition:all 0.2s ease;"><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-weight:500;color:#64748b;font-size:11px;">#{rank}</td><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">{t["target"]}</td><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;"><span style="padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;background:rgba({int(cat_color[1:3],16)},{int(cat_color[3:5],16)},{int(cat_color[5:7],16)},0.2);color:{cat_color};text-transform:uppercase;">{t["category"]}</span></td><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{ss_color};">{t["ss"]:.1f}%</td><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">{t["n"]}</td></tr>')
+                return "".join(rows)
+            
+            th_style = 'padding:10px 12px;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;'
+            
+            summary_html = (
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
+                '<div><div style="font-size:10px;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Most Stereotyped Targets (highest SS)</div>'
+                '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead>'
+                f'<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;"><th style="{th_style}text-align:center;">Rank</th><th style="{th_style}text-align:left;">Target</th><th style="{th_style}text-align:center;">Category</th><th style="{th_style}text-align:right;">SS</th><th style="{th_style}text-align:center;">n</th></tr></thead>'
+                f'<tbody>{_build_target_rows(most_biased, "high")}</tbody></table></div>'
+                '<div><div style="font-size:10px;font-weight:700;color:#22c55e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Least Stereotyped Targets (lowest SS)</div>'
+                '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead>'
+                f'<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;"><th style="{th_style}text-align:center;">Rank</th><th style="{th_style}text-align:left;">Target</th><th style="{th_style}text-align:center;">Category</th><th style="{th_style}text-align:right;">SS</th><th style="{th_style}text-align:center;">n</th></tr></thead>'
+                f'<tbody>{_build_target_rows(least_biased, "low")}</tbody></table></div></div>'
             )
-            charts.append(chart_html)
+            
+            chart_grid = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">' + "".join([f'<div>{html}</div>' for html in charts]) + '</div>'
+            
+            return ui.div(ui.HTML(summary_html), ui.HTML(chart_grid)), len(targets)
 
-        # Summary stats table: most and least biased targets overall
-        from collections import Counter
-        target_data = {}
-        for ex in examples:
-            t = ex.get("target", "unknown")
-            if t not in target_data:
-                target_data[t] = {"stereo_wins": 0, "n": 0, "category": ex.get("category", "")}
-            target_data[t]["n"] += 1
-            if ex.get("stereo_pll", 0) > ex.get("anti_pll", 0):
-                target_data[t]["stereo_wins"] += 1
-
-        targets = []
-        for t, d in target_data.items():
-            if d["n"] >= 10:
-                ss = d["stereo_wins"] / d["n"] * 100
-                targets.append({"target": t, "ss": ss, "n": d["n"], "category": d["category"]})
-
-        targets.sort(key=lambda x: x["ss"], reverse=True)
-
-        # Top 5 most stereotyping + Top 5 least
-        most_biased = targets[:5]
-        least_biased = targets[-5:][::-1]  # reverse to show lowest first
-
-        STEREOSET_CAT_COLORS = {
-            "gender": "#e74c3c", "race": "#3498db",
-            "religion": "#2ecc71", "profession": "#f39c12",
-        }
-
-        def _build_target_rows(items, direction="high"):
-            rows = []
-            for rank, t in enumerate(items, 1):
-                cat_color = STEREOSET_CAT_COLORS.get(t["category"], "#94a3b8")
-                ss_color = "#ef4444" if t["ss"] > 60 else "#22c55e" if t["ss"] < 40 else "#eab308"
-                rows.append(
-                    f'<tr style="transition:all 0.2s ease;">'
-                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;'
-                    f'font-weight:500;color:#64748b;font-size:11px;">#{rank}</td>'
-                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);'
-                    f'font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">{t["target"]}</td>'
-                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;">'
-                    f'<span style="padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;'
-                    f'background:rgba({int(cat_color[1:3],16)},{int(cat_color[3:5],16)},{int(cat_color[5:7],16)},0.2);'
-                    f'color:{cat_color};text-transform:uppercase;">{t["category"]}</span></td>'
-                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;'
-                    f'font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{ss_color};">{t["ss"]:.1f}%</td>'
-                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;'
-                    f'font-size:11px;color:#64748b;">{t["n"]}</td>'
-                    f'</tr>'
-                )
-            return "".join(rows)
-
-        th_style = 'padding:10px 12px;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;'
-
-        summary_html = (
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
-            # Most stereotyping
-            '<div>'
-            '<div style="font-size:10px;font-weight:700;color:#ef4444;text-transform:uppercase;'
-            'letter-spacing:0.5px;margin-bottom:8px;">Most Stereotyped Targets (highest SS)</div>'
-            '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
-            '<thead>'
-            f'<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
-            f'<th style="{th_style}text-align:center;">Rank</th>'
-            f'<th style="{th_style}text-align:left;">Target</th>'
-            f'<th style="{th_style}text-align:center;">Category</th>'
-            f'<th style="{th_style}text-align:right;">SS</th>'
-            f'<th style="{th_style}text-align:center;">n</th>'
-            '</tr></thead>'
-            f'<tbody>{_build_target_rows(most_biased, "high")}</tbody>'
-            '</table></div>'
-            # Least stereotyping
-            '<div>'
-            '<div style="font-size:10px;font-weight:700;color:#22c55e;text-transform:uppercase;'
-            'letter-spacing:0.5px;margin-bottom:8px;">Least Stereotyped Targets (lowest SS)</div>'
-            '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
-            '<thead>'
-            f'<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
-            f'<th style="{th_style}text-align:center;">Rank</th>'
-            f'<th style="{th_style}text-align:left;">Target</th>'
-            f'<th style="{th_style}text-align:center;">Category</th>'
-            f'<th style="{th_style}text-align:right;">SS</th>'
-            f'<th style="{th_style}text-align:center;">n</th>'
-            '</tr></thead>'
-            f'<tbody>{_build_target_rows(least_biased, "low")}</tbody>'
-            '</table></div>'
-            '</div>'
-        )
-
-        # Build grid of per-category charts
-        chart_grid = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
-        for html in charts:
-            chart_grid += f'<div>{html}</div>'
-        chart_grid += '</div>'
-
-        return _wrap_card(
-            ui.div(
-                ui.HTML(summary_html),
-                ui.HTML(chart_grid),
-            ),
-            manual_header=(
-                "Demographic Slice Analysis",
-                f"Stereotype Score breakdown by target group ({len(targets)} targets with n ≥ 10)",
-            ),
-        )
+        header_args = ("Demographic Slice Analysis", "Stereotype Score breakdown by target group.")
+        
+        compare_models = active_bias_compare_models.get()
+        mk_B = _stereoset_model_key_B() if compare_models else None
+        
+        if compare_models and mk_B:
+            res_A = _render_single(mk_A, "_A")
+            res_B = _render_single(mk_B, "_B")
+            
+            c_A = res_A[0] if res_A else ui.div("No data")
+            c_B = res_B[0] if res_B else ui.div("No data")
+            
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(c_A, *header_args, style="border: 2px solid #3b82f6; height: 100%;"),
+                _wrap_card(c_B, *header_args, style="border: 2px solid #ff5ca9; height: 100%;")
+            )
+        
+        res = _render_single(mk_A)
+        content = res[0] if res else ui.div()
+        n_targets = res[1] if res else 0
+        
+        return _wrap_card(content, *(header_args[0], f"Stereotype Score breakdown by target group ({n_targets} targets with n ≥ 10)"))
 
     @output
     @render.ui
     def stereoset_head_sensitivity():
         """12x12 head sensitivity heatmap."""
-        mk = _stereoset_model_key()
-        matrix = get_head_sensitivity_matrix(mk)
-        top_heads = get_sensitive_heads(mk)
-        if matrix is None:
-            return ui.div()
+        mk_A = _stereoset_model_key()
+        
+        def _render_single(mk):
+            matrix = get_head_sensitivity_matrix(mk)
+            top_heads = get_sensitive_heads(mk)
+            if matrix is None: return None
 
-        fig = create_stereoset_head_sensitivity_heatmap(matrix, top_heads)
-        chart_html = fig.to_html(include_plotlyjs="cdn", full_html=False, config={"responsive": True})
+            fig = create_stereoset_head_sensitivity_heatmap(matrix, top_heads)
+            chart_html = fig.to_html(include_plotlyjs="cdn", full_html=False, config={"responsive": True})
 
-        # Also show top features table
-        top_features = get_top_features(mk)
-        if top_features:
-            feat_rows = []
-            for rank, f in enumerate(top_features[:10], 1):
-                p = f["p_value"]
-                p_color = "#16a34a" if p < 1e-10 else "#eab308" if p < 0.001 else "#94a3b8"
-                feat_rows.append(
-                    f'<tr style="transition:all 0.2s ease;">'
-                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-weight:500;color:#64748b;font-size:11px;">#{rank}</td>'
-                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:left;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">{f["name"]}</td>'
-                    f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{p_color};">{p:.2e}</td>'
-                    f'</tr>'
+            top_features = get_top_features(mk)
+            if top_features:
+                feat_rows = []
+                for rank, f in enumerate(top_features[:10], 1):
+                    p = f["p_value"]
+                    p_color = "#16a34a" if p < 1e-10 else "#eab308" if p < 0.001 else "#94a3b8"
+                    feat_rows.append(f'<tr style="transition:all 0.2s ease;"><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-weight:500;color:#64748b;font-size:11px;">#{rank}</td><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:left;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">{f["name"]}</td><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{p_color};">{p:.2e}</td></tr>')
+                features_html = (
+                    '<div style="margin-top:16px;"><div style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Top Discriminative Features (Kruskal-Wallis)</div>'
+                    '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;"><th style="padding:10px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th><th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Feature</th><th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">p-value</th></tr></thead>'
+                    f'<tbody>{"".join(feat_rows)}</tbody></table></div>'
                 )
-            features_html = (
-                '<div style="margin-top:16px;">'
-                '<div style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;'
-                'letter-spacing:0.5px;margin-bottom:8px;">Top Discriminative Features (Kruskal-Wallis)</div>'
-                '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
-                '<thead>'
-                '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
-                '<th style="padding:10px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
-                '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Feature</th>'
-                '<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">p-value</th>'
-                '</tr>'
-                '</thead>'
-                f'<tbody>{"".join(feat_rows)}</tbody>'
-                '</table></div>'
-            )
-        else:
-            features_html = ""
+            else:
+                features_html = ""
+                
+            return ui.div(ui.HTML(chart_html), ui.HTML(features_html))
 
-        return _wrap_card(
-            ui.div(
-                ui.HTML(chart_html),
-                ui.HTML(features_html),
-            ),
-            manual_header=(
-                "Head Sensitivity Analysis",
-                "Which attention heads respond differently across bias categories?"
-            ),
-        )
+        header_args = ("Head Sensitivity Analysis", "Which attention heads respond differently across bias categories?")
+
+        compare_models = active_bias_compare_models.get()
+        mk_B = _stereoset_model_key_B() if compare_models else None
+        
+        if compare_models and mk_B:
+            c_A = _render_single(mk_A) or ui.div("No data")
+            c_B = _render_single(mk_B) or ui.div("No data")
+            
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(c_A, *header_args, style="border: 2px solid #3b82f6; height: 100%;"),
+                _wrap_card(c_B, *header_args, style="border: 2px solid #ff5ca9; height: 100%;")
+            )
+
+        return _wrap_card(_render_single(mk_A) or ui.div(), *header_args)
 
     @output
     @render.ui
@@ -2946,6 +3228,14 @@ def bias_server_handlers(input, output, session):
         """Interactive example explorer with category filter and detail view."""
         mk = _stereoset_model_key()
         examples = get_stereoset_examples(mk)
+        
+        # Comparison setup
+        mk_B = _stereoset_model_key_B()
+        has_B = mk_B is not None
+        examples_B = get_stereoset_examples(mk_B) if has_B else []
+        # Map context -> example for quick lookup
+        map_B = {e["context"]: e for e in examples_B}
+
         if not examples:
             return ui.div()
 
@@ -2969,13 +3259,28 @@ def bias_server_handlers(input, output, session):
             bs = ex.get("bias_score", 0)
             cat_color = STEREOSET_CAT_COLORS.get(cat, "#94a3b8")
             bs_color = "#ef4444" if bs > 0 else "#22c55e"
+            
+            # Model B data
+            bs_B_cell = ""
+            if has_B:
+                ex_B = map_B.get(ex.get("context"))
+                if ex_B:
+                    bs_B = ex_B.get("bias_score", 0)
+                    bs_B_color = "#ef4444" if bs_B > 0 else "#22c55e"
+                    bs_B_cell = (
+                        f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);'
+                        f'font-size:11px;color:{bs_B_color};font-family:JetBrains Mono,monospace;'
+                        f'font-weight:600;text-align:right;border-left:1px dashed #e2e8f0;">{bs_B:+.4f}</td>'
+                    )
+                else:
+                    bs_B_cell = '<td style="border-bottom:1px solid rgba(226,232,240,0.5);border-left:1px dashed #e2e8f0;"></td>'
 
             table_rows.append(
                 f'<tr class="stereoset-row" data-category="{cat}" data-idx="{i}" '
                 f'onclick="window._selectStereoSetRow(this, {i})" '
-                f'style="cursor:pointer;transition:all 0.2s ease;" '
-                f'onmouseover="if(!this.classList.contains(\'stereoset-selected\'))this.style.background=\'rgba(255,255,255,0.04)\'" '
-                f'onmouseout="if(!this.classList.contains(\'stereoset-selected\'))this.style.background=\'transparent\'">'
+                f'style="cursor:pointer;transition:all 0.2s cubic-bezier(0.4, 0, 0.2, 1);border-left:3px solid transparent;" '
+                f'onmouseover="if(!this.classList.contains(\'stereoset-selected\')){{this.style.background=\'rgba(255,255,255,0.08)\';this.style.transform=\'translateX(4px)\';this.style.borderLeftColor=\'{cat_color}\';}}" '
+                f'onmouseout="if(!this.classList.contains(\'stereoset-selected\')){{this.style.background=\'transparent\';this.style.transform=\'translateX(0)\';this.style.borderLeftColor=\'transparent\';}}">'
                 f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);font-size:11px;">'
                 f'<span style="padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;'
                 f'background:rgba({int(cat_color[1:3],16)},{int(cat_color[3:5],16)},{int(cat_color[5:7],16)},0.2);'
@@ -2984,7 +3289,16 @@ def bias_server_handlers(input, output, session):
                 f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{ctx}</td>'
                 f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);font-size:11px;color:{bs_color};'
                 f'font-family:JetBrains Mono,monospace;font-weight:600;text-align:right;">{bs:+.4f}</td>'
+                f'{bs_B_cell}'
                 f'</tr>'
+            )
+
+        # Header columns
+        header_B_col = ""
+        if has_B:
+            header_B_col = (
+                '<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;'
+                'color:#ff5ca9;text-transform:uppercase;letter-spacing:0.5px;width:90px;border-left:1px dashed #cbd5e1;">Bias B</th>'
             )
 
         table_html = (
@@ -2995,7 +3309,8 @@ def bias_server_handlers(input, output, session):
             '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
             '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;width:100px;">Category</th>'
             '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Context</th>'
-            '<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;width:90px;">Bias Score</th>'
+            '<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:0.5px;width:90px;">Bias A</th>'
+            f'{header_B_col}'
             '</tr></thead>'
             f'<tbody>{"".join(table_rows)}</tbody>'
             '</table></div>'
@@ -3046,7 +3361,24 @@ def bias_server_handlers(input, output, session):
         try:
             selected_idx = input.stereoset_selected_example()
             if selected_idx is not None and 0 <= selected_idx < len(examples):
-                detail_html = create_stereoset_example_html(examples[selected_idx])
+                ex_A = examples[selected_idx]
+                ex_B_detail = map_B.get(ex_A.get("context")) if has_B else None
+                # Fetch friendly model names
+                meta_A = get_metadata(mk)
+                name_A = meta_A.get("model", "Model A") if meta_A else "Model A"
+                
+                name_B = "Model B"
+                if has_B:
+                    meta_B = get_metadata(mk_B)
+                    if meta_B:
+                        name_B = meta_B.get("model", "Model B")
+
+                detail_html = create_stereoset_example_html(
+                    ex_A, 
+                    example_B=ex_B_detail,
+                    model_A_name=name_A,
+                    model_B_name=name_B
+                )
         except Exception:
             pass
 

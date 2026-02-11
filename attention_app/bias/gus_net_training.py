@@ -121,7 +121,7 @@ BERT_LARGE_CONFIG = {
     "backbone": "bert-large-uncased",
     "alpha": 0.75,
     "gamma": 3.0,
-    "save_dir": _SCRIPT_DIR / "gus-net-bert-large-final-my",
+    "save_dir": _SCRIPT_DIR / "gus-net-bert-large-final-2nd",
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,

@@ -21,23 +21,27 @@ _cache: Dict[str, dict] = {}
 _MODEL_KEY_MAP = {
     # Short keys
     "bert": "bert",
+    "bert_large": "bert_large",
     "gpt2": "gpt2",
+    "gpt2_medium": "gpt2_medium",
     # Full HuggingFace model names
     "bert-base-uncased": "bert",
-    "bert-large-uncased": "bert",
-    "gpt2-medium": "gpt2",
+    "bert-large-uncased": "bert_large",
+    "gpt2-medium": "gpt2_medium",
     # GUS-Net model keys
     "gusnet-bert": "bert",
-    "gusnet-bert-large": "bert",
+    "gusnet-bert-large": "bert_large",
     "gusnet-bert-custom": "bert",
     "gusnet-ensemble": "bert",
     "gusnet-gpt2": "gpt2",
-    "gusnet-gpt2-medium": "gpt2",
+    "gusnet-gpt2-medium": "gpt2_medium",
 }
 
 _FILE_MAP = {
     "bert": "stereoset_precomputed_bert.json",
+    "bert_large": "stereoset_precomputed_bert_large.json",
     "gpt2": "stereoset_precomputed_gpt2.json",
+    "gpt2_medium": "stereoset_precomputed_gpt2_medium.json",
 }
 
 
