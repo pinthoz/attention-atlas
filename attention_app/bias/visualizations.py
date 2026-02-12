@@ -1431,10 +1431,11 @@ def create_ablation_impact_chart(
     return fig
 
 
-def create_ig_correlation_chart(
+def create_ig_correlation_chart_v2(
     ig_results: list,
     bar_threshold: float = 1.5,
     selected_head: Optional[tuple] = None,
+    is_vertical: bool = False,
 ) -> go.Figure:
     """Create a combined heatmap + scatter showing IG vs attention correlation.
 
@@ -1444,12 +1445,15 @@ def create_ig_correlation_chart(
         Results from batch_compute_ig_correlation().
     bar_threshold : float
         BAR specialization threshold for annotations.
+    is_vertical : bool
+        If True, arrange subplots vertically (heatmap on top, scatter on bottom).
+        If False, arrange horizontally (heatmap on left, scatter on right).
 
     Returns
     -------
     Plotly Figure with two subplots:
-        Left: layer × head heatmap of Spearman ρ
-        Right: scatter of BAR vs Spearman ρ (one dot per head)
+        Left (or Top): layer × head heatmap of Spearman ρ
+        Right (or Bottom): scatter of BAR vs Spearman ρ (one dot per head)
     """
     if not ig_results:
         fig = go.Figure()
@@ -1493,17 +1497,46 @@ def create_ig_correlation_chart(
             row_text = row  # keep reference
         hover_text.append(row)
 
+    if is_vertical:
+        rows = 2
+        cols = 1
+        specs = [[{}], [{}]]
+        col_widths = None
+        row_heights = [0.55, 0.45]
+        h_spacing = None
+        v_spacing = 0.15
+        
+        # Colorbar position for vertical layout
+        cb_x = 1.02
+        cb_y = 0.75 # Middle of top plot
+        cb_len = 0.4
+    else:
+        rows = 1
+        cols = 2
+        specs = [[{}, {}]]
+        col_widths = [0.5, 0.5]
+        row_heights = None
+        h_spacing = 0.18
+        v_spacing = None
+        
+        # Colorbar position for horizontal layout
+        cb_x = 0.425
+        cb_y = 0.5
+        cb_len = 0.6
+
     fig = make_subplots(
-        rows=1, cols=2,
+        rows=rows, cols=cols,
         subplot_titles=(
             "Attention–IG Correlation per Head",
             "BAR vs Faithfulness (Spearman ρ)",
         ),
-        column_widths=[0.5, 0.5],
-        horizontal_spacing=0.18,
+        column_widths=col_widths,
+        row_heights=row_heights,
+        horizontal_spacing=h_spacing,
+        vertical_spacing=v_spacing,
     )
 
-    # ── Left: Correlation heatmap ──
+    # ── Correlation heatmap ──
     # Divergent colorscale centered at 0: red (negative) → white (0) → blue (positive)
     rho_abs_max = max(abs(rho_matrix.min()), abs(rho_matrix.max()), 0.3)
     colorscale = [
@@ -1525,9 +1558,9 @@ def create_ig_correlation_chart(
             colorbar=dict(
                 title=dict(text="Correlation (ρ)", font=dict(size=11)),
                 tickfont=dict(size=10),
-                x=0.425, # Closer to Heatmap
-                y=0.5,
-                len=0.6,
+                x=cb_x, 
+                y=cb_y,
+                len=cb_len,
                 thickness=10,
                 xanchor="left",
             ),
@@ -1550,7 +1583,11 @@ def create_ig_correlation_chart(
                 row=1, col=1,
             )
 
-    # ── Right: Scatter (BAR vs Spearman ρ) ──
+    # ── Scatter (BAR vs Spearman ρ) ──
+    # If vertical, scatter is row 2 col 1. Else row 1 col 2.
+    scat_row = 2 if is_vertical else 1
+    scat_col = 1 if is_vertical else 2
+
     bars = [r.bar_original for r in ig_results]
     rhos = [r.spearman_rho for r in ig_results]
     significant = [r.spearman_pvalue < 0.05 for r in ig_results]
@@ -1582,7 +1619,7 @@ def create_ig_correlation_chart(
             text=scatter_hover,
             showlegend=False,
         ),
-        row=1, col=2,
+        row=scat_row, col=scat_col,
     )
 
     # Highlight selected head point on scatter
@@ -1597,21 +1634,25 @@ def create_ig_correlation_chart(
                                     line=dict(width=3, color="#ff5ca9")),
                         hoverinfo="skip", showlegend=False,
                     ),
-                    row=1, col=2,
+                    row=scat_row, col=scat_col,
                 )
                 break
 
     # Reference lines on scatter
-    fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8", line_width=1, row=1, col=2)
+    fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8", line_width=1, row=scat_row, col=scat_col)
     fig.add_vline(x=bar_threshold, line_dash="dash", line_color="#ff5ca9",
-                  line_width=1, row=1, col=2,
+                  line_width=1, row=scat_row, col=scat_col,
                   annotation_text=f"BAR={bar_threshold}", annotation_position="top right",
                   annotation_font_size=9, annotation_font_color="#ff5ca9")
 
+    # Increase height if vertical
+    plot_height = 800 if is_vertical else 450
+    margin_t = 80 if is_vertical else 110
+
     fig.update_layout(
-        height=450,
+        height=plot_height,
         autosize=True,
-        margin=dict(l=100, r=40, t=110, b=60),
+        margin=dict(l=100, r=40, t=margin_t, b=60),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif"),
@@ -1619,7 +1660,7 @@ def create_ig_correlation_chart(
             text="Integrated Gradients Faithfulness Analysis<br>"
                  "<span style='font-size:13px;color:#64748b;'>Does attention correlate with gradient-based token importance?</span>",
             font=dict(size=16, color="#1e293b"),
-            y=0.92,
+            y=0.96 if is_vertical else 0.92,
             x=0.05
         ),
     )
@@ -1628,9 +1669,9 @@ def create_ig_correlation_chart(
     fig.update_xaxes(title_text="Head", row=1, col=1, tickfont=dict(size=10, color="#475569"))
     fig.update_yaxes(title_text="Layer", row=1, col=1, tickfont=dict(size=10, color="#475569"),
                      autorange="reversed")
-    fig.update_xaxes(title_text="BAR (bias attention ratio)", row=1, col=2,
+    fig.update_xaxes(title_text="BAR (bias attention ratio)", row=scat_row, col=scat_col,
                      tickfont=dict(size=10, color="#475569"))
-    fig.update_yaxes(title_text="Spearman ρ (attention vs IG)", row=1, col=2,
+    fig.update_yaxes(title_text="Spearman ρ (attention vs IG)", row=scat_row, col=scat_col,
                      tickfont=dict(size=10, color="#475569"))
 
     return fig
@@ -1670,6 +1711,8 @@ def create_ig_token_comparison_chart(
         return fig
 
     seq_len = len(tokens)
+    # Clean tokens for display (remove GPT-2 Ġ)
+    display_tokens = [t.replace('Ġ', '').replace('##', '') for t in tokens]
     heads_to_show = top_heads[:max_heads]
 
     # Normalize IG to [0, 1] for visual comparison
@@ -1690,7 +1733,7 @@ def create_ig_token_comparison_chart(
         marker_color="#dc2626",
         opacity=0.7,
         hovertemplate="<b>%{customdata}</b><br>IG (norm): %{y:.3f}<extra>IG</extra>",
-        customdata=tokens[:seq_len],
+        customdata=display_tokens[:seq_len],
         orientation="v",
     ))
 
@@ -1718,8 +1761,8 @@ def create_ig_token_comparison_chart(
                 f"Attn L{head.layer}H{head.head} (norm): %{{y:.3f}}"
                 f"<extra>L{head.layer}H{head.head}</extra>"
             ),
-            customdata=tokens[:seq_len],
-            orientation="v",
+            customdata=display_tokens[:seq_len],
+            orientation="v", 
         ))
 
     fig.update_layout(
@@ -1732,7 +1775,7 @@ def create_ig_token_comparison_chart(
         ),
         xaxis=dict(
             tickvals=list(range(seq_len)),
-            ticktext=tokens[:seq_len],
+            ticktext=display_tokens[:seq_len],
             tickangle=45,
             tickfont=dict(size=9, color="#475569", family="JetBrains Mono, monospace"),
             title="Token",
@@ -2450,7 +2493,7 @@ def create_stereoset_example_html(
 
     # Analyze text logic
     raw_text = example.get("context", "") + " " + example.get("stereo_sentence", "")
-    js_safe_text = raw_text.replace("\\", "\\\\").replace("'", "\\'")
+    js_safe_text = raw_text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
     analyze_text = html_lib.escape(js_safe_text, quote=True)
 
     # Helper to get model data

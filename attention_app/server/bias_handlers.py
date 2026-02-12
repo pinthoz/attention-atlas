@@ -26,7 +26,7 @@ from ..bias import (
     create_token_bias_strip,
     create_confidence_breakdown,
     create_ablation_impact_chart,
-    create_ig_correlation_chart,
+    create_ig_correlation_chart_v2,
     create_ig_token_comparison_chart,
     create_ig_distribution_chart,
     create_ig_layer_summary_chart,
@@ -450,6 +450,17 @@ def bias_server_handlers(input, output, session):
         if not raw_A and not raw_B:
             return
 
+        # GUARD: Only update if the LIVE model selection matches the ANALYZED model.
+        # This prevents the UI from updating "fake" results when the user changes the sidebar model 
+        # (which triggers default threshold updates) but hasn't clicked Analyze yet.
+        try:
+            live_key_A = input.bias_model_key()
+            if raw_A and raw_A.get("bias_model_key") != live_key_A:
+                # User switched Model A but didn't analyze. Do not re-threshold old results with new model's defaults.
+                return
+        except Exception:
+            pass
+
         # Check optimization flag
         try:
             use_opt = input.bias_use_optimized()
@@ -486,13 +497,29 @@ def bias_server_handlers(input, output, session):
         thresholds_A = manual_thresholds_A
         thresholds_B = manual_thresholds_B
         
+        # Guard for B key match
+        update_B = False
+        if raw_B:
+            try:
+                # If we are in compare mode, check B key.
+                # If compare mode is OFF (but we have raw_B), we assume B controls are hidden/irrelevant,
+                # so we should NOT update B (preserve current state until Analyze).
+                # Checking input.bias_model_key_B() might fail if hidden? 
+                # Actually, Shiny inputs usually persist even if hidden, but let's be safe.
+                live_key_B = input.bias_model_key_B()
+                if live_key_B and raw_B.get("bias_model_key") == live_key_B:
+                    update_B = True
+            except Exception:
+                # If we can't read the key, don't update B
+                update_B = False
+        
         # Process A
         if raw_A:
             res_A = _process_raw_bias_result(raw_A, thresholds_A, use_optimized=use_opt)
             bias_results.set(res_A)
             
         # Process B
-        if raw_B:
+        if raw_B and update_B:
             res_B = _process_raw_bias_result(raw_B, thresholds_B, use_optimized=use_opt)
             bias_results_B.set(res_B)
 
@@ -1580,10 +1607,13 @@ def bias_server_handlers(input, output, session):
 
         # Initial State: Show Architecture
         # Determine architecture display mode based on current compare mode
-        try:
-            selected_model = input.bias_model_key()
-        except Exception:
-            selected_model = "gusnet-bert"
+        if res:
+            selected_model = res.get("bias_model_key", "gusnet-bert")
+        else:
+            try:
+                selected_model = input.bias_model_key()
+            except Exception:
+                selected_model = "gusnet-bert"
 
         try:
             current_compare_models = input.bias_compare_mode()
@@ -1694,10 +1724,16 @@ def bias_server_handlers(input, output, session):
     @output
     @render.ui
     def bias_method_info():
-        try:
-            model_key = input.bias_model_key()
-        except Exception:
-            model_key = "gusnet-bert"
+        # Use analyzed model key if results exist, otherwise live input
+        res = bias_results.get()
+        if res:
+            model_key = res.get("bias_model_key", "gusnet-bert")
+        else:
+            try:
+                model_key = input.bias_model_key()
+            except Exception:
+                model_key = "gusnet-bert"
+                
         html = create_method_info_html(model_key)
         return ui.HTML(html)
 
@@ -2049,23 +2085,29 @@ def bias_server_handlers(input, output, session):
         # So we should append it to content.
         # But bias_method_info is a separate renderer. We can't easily call it here unless we duplicate it or it returns string.
         # `create_method_info_html` returns string. So we can just call that.
-        try:
-            model_key_A = input.bias_model_key()
-        except Exception:
-            model_key_A = "gusnet-bert"
+        if res and "bias_model_key" in res:
+            model_key_A = res["bias_model_key"]
+        else:
+            try:
+                model_key_A = input.bias_model_key()
+            except Exception:
+                model_key_A = "gusnet-bert"
         
         if (compare_models or compare_prompts) and res_B:
             # Get Model B key for compare models mode
-            if compare_models:
-                try:
-                    model_key_B = input.bias_model_key_B()
-                    if not model_key_B:
-                        model_key_B = "gusnet-gpt2"
-                except Exception:
-                    model_key_B = "gusnet-gpt2"
+            if res_B and "bias_model_key" in res_B:
+                model_key_B = res_B["bias_model_key"]
             else:
-                # Compare prompts uses the same model for both
-                model_key_B = model_key_A
+                if compare_models:
+                    try:
+                        model_key_B = input.bias_model_key_B()
+                        if not model_key_B:
+                            model_key_B = "gusnet-gpt2"
+                    except Exception:
+                        model_key_B = "gusnet-gpt2"
+                else:
+                    # Compare prompts uses the same model for both
+                    model_key_B = model_key_A
             
             method_html_A = create_method_info_html(model_key_A)
             method_html_B = create_method_info_html(model_key_B)
@@ -2523,9 +2565,9 @@ def bias_server_handlers(input, output, session):
         
         results_B = ablation_results_B.get()
         compare_models = active_bias_compare_models.get()
-        # Only show side-by-side comparison for compare_models, not compare_prompts
-        # (same model = unified view like single mode)
-        show_comparison = compare_models and results_B
+        compare_prompts = active_bias_compare_prompts.get()
+        # Show comparison if comparing models OR comparing prompts
+        show_comparison = (compare_models or compare_prompts) and results_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
         except Exception: bar_threshold = 1.5
@@ -2676,7 +2718,8 @@ def bias_server_handlers(input, output, session):
                     args_B = _prepare_ig_args(res_B)
             
             loop = asyncio.get_running_loop()
-            with ThreadPoolExecutor(max_workers=2) as pool:
+            # Use max_workers=1 to prevent OOM/concurrency issues with heavy IG computation
+            with ThreadPoolExecutor(max_workers=1) as pool:
                 fut_A = None
                 if args_A:
                     fut_A = loop.run_in_executor(
@@ -2710,6 +2753,13 @@ def bias_server_handlers(input, output, session):
     @output
     @render.ui
     def ig_results_display():
+        try:
+            return _ig_results_display_impl()
+        except Exception as e:
+            traceback.print_exc()
+            return ui.div(f"Error rendering IG results: {e}", style="color:red; padding:10px; border:1px solid red;")
+
+    def _ig_results_display_impl():
         running = ig_running.get()
         bundle_A = ig_results.get()
 
@@ -2718,9 +2768,9 @@ def bias_server_handlers(input, output, session):
             
         bundle_B = ig_results_B.get()
         compare_models = active_bias_compare_models.get()
-        # Only show side-by-side comparison for compare_models, not compare_prompts
-        # (same model = unified view like single mode)
-        show_comparison = compare_models and bundle_B
+        compare_prompts = active_bias_compare_prompts.get()
+        # Show comparison if comparing models OR comparing prompts
+        show_comparison = (compare_models or compare_prompts) and bundle_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
         except Exception: bar_threshold = 1.5
@@ -2753,7 +2803,15 @@ def bias_server_handlers(input, output, session):
                 tokens = None
             
             # ── Chart 1: Correlation heatmap + BAR scatter ──
-            fig1 = create_ig_correlation_chart(results, bar_threshold=bar_threshold, selected_head=selected_head)
+            # Vertical stack in compare mode to save horizontal space
+            fig1 = create_ig_correlation_chart_v2(
+                results, 
+                bar_threshold=bar_threshold, 
+                selected_head=selected_head,
+                is_vertical=show_comparison
+            )
+            # Adjust container height based on layout
+            chart1_height = "800px" if show_comparison else "450px"
             chart1_html = fig1.to_html(
                 include_plotlyjs="cdn", full_html=False,
                 config={"displayModeBar": False, "responsive": True},
@@ -2860,7 +2918,7 @@ def bias_server_handlers(input, output, session):
             cid4 = f"ig-layer-chart-container{container_suffix}"
 
             sections = [
-                ui.HTML(f'<div id="{cid1}" style="width:100%;height:450px;">{chart1_html}</div>'),
+                ui.HTML(f'<div id="{cid1}" style="width:100%;height:{chart1_height};">{chart1_html}</div>'),
                 ui.HTML(summary_html),
                 ui.HTML(table_html),
             ]
@@ -2942,6 +3000,11 @@ def bias_server_handlers(input, output, session):
 
     def _stereoset_model_key():
         """Derive the stereoset model key from the current GUS-Net selection."""
+        # Prefer analyzed model key if available (prevents reactive updates)
+        res = bias_results.get()
+        if res and "bias_model_key" in res:
+            return res["bias_model_key"]
+
         try:
             return input.bias_model_key()
         except Exception:
@@ -2950,10 +3013,22 @@ def bias_server_handlers(input, output, session):
 
     def _stereoset_model_key_B():
         """Derive the stereoset model key for Model B."""
+        # Prefer analyzed model key if available
+        res_B = bias_results_B.get()
+        if res_B and "bias_model_key" in res_B:
+            return res_B["bias_model_key"]
+
         try:
              # If comparing models, use the B selector
              if active_bias_compare_models.get():
                 return input.bias_model_key_B()
+             # If comparing prompts, we are usually on same model, so B = A
+             if active_bias_compare_prompts.get():
+                # Use analyzed A if available, else live input
+                res = bias_results.get()
+                if res and "bias_model_key" in res:
+                    return res["bias_model_key"]
+                return input.bias_model_key()
              return None
         except Exception:
             return None
@@ -3247,7 +3322,9 @@ def bias_server_handlers(input, output, session):
         examples = get_stereoset_examples(mk)
         
         # Comparison setup
-        mk_B = _stereoset_model_key_B()
+        # Comparison setup
+        compare_models = active_bias_compare_models.get()
+        mk_B = _stereoset_model_key_B() if compare_models else None
         has_B = mk_B is not None
         examples_B = get_stereoset_examples(mk_B) if has_B else []
         # Map context -> example for quick lookup
@@ -3392,6 +3469,14 @@ def bias_server_handlers(input, output, session):
                     if meta_B:
                         name_B = meta_B.get("model", "Model B")
 
+                # Safely get top_n (custom input might not be init)
+                top_n = 5
+                try:
+                    val = input.bias_top_k()
+                    if val is not None: top_n = int(val)
+                except:
+                    pass
+
                 detail_html = create_stereoset_example_html(
                     ex_A,
                     example_B=ex_B_detail,
@@ -3401,10 +3486,18 @@ def bias_server_handlers(input, output, session):
                     head_profile_stats=get_head_profile_stats(mk),
                     sensitive_heads_B=get_sensitive_heads(mk_B) if has_B else None,
                     head_profile_stats_B=get_head_profile_stats(mk_B) if has_B else None,
-                    top_n=int(input.bias_top_k() or 5),
+                    top_n=top_n,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            # Ignore SilentException (input not ready)
+            if "SilentException" in str(type(e)):
+                pass
+            else:
+                with open("debug_log.txt", "a") as f:
+                    f.write(f"Error in stereoset_example_explorer details: {e}\n")
+                    import traceback
+                    traceback.print_exc(file=f)
+                detail_html = f"<div style='color:red;padding:10px;border:1px solid red;'>Error loading example details: {e}</div>"
 
         detail_section = (
             f'<div style="margin-top:16px;">{detail_html}</div>'
