@@ -40,6 +40,7 @@ from ..bias.stereoset import (
     get_head_sensitivity_matrix,
     get_sensitive_heads,
     get_top_features,
+    get_head_profile_stats,
     get_metadata,
 )
 from ..bias.visualizations import (
@@ -308,6 +309,8 @@ def _process_raw_bias_result(raw_res, thresholds, use_optimized=False):
             "attention_metrics": attention_metrics,
             "propagation_analysis": propagation_analysis,
             "bias_matrix": bias_matrix,
+            "thresholds": thresholds,
+            "use_optimized": use_optimized
         }
         
     except Exception as e:
@@ -480,28 +483,17 @@ def bias_server_handlers(input, output, session):
             "STEREO": t_stereo_b
         }
         
-        # Determine thresholds for A and B
-        # If Optimized is TRUE, use the model-specific effective thresholds from the raw result.
-        # This allows Model A and Model B to each use their own optimal settings.
-        # If FALSE (user manual override), use the sliders for both.
-        
         thresholds_A = manual_thresholds_A
         thresholds_B = manual_thresholds_B
         
-        if use_opt:
-            if raw_A and raw_A.get("effective_thresholds"):
-                thresholds_A = raw_A["effective_thresholds"]
-            if raw_B and raw_B.get("effective_thresholds"):
-                thresholds_B = raw_B["effective_thresholds"]
-        
         # Process A
         if raw_A:
-            res_A = _process_raw_bias_result(raw_A, thresholds_A)
+            res_A = _process_raw_bias_result(raw_A, thresholds_A, use_optimized=use_opt)
             bias_results.set(res_A)
             
         # Process B
         if raw_B:
-            res_B = _process_raw_bias_result(raw_B, thresholds_B)
+            res_B = _process_raw_bias_result(raw_B, thresholds_B, use_optimized=use_opt)
             bias_results_B.set(res_B)
 
     @reactive.Effect
@@ -1119,11 +1111,14 @@ def bias_server_handlers(input, output, session):
                         if vals:
                             effective_thresholds[cat] = sum(vals) / len(vals)
             else:
-                effective_thresholds = {
-                    "GEN": threshold, 
-                    "UNFAIR": threshold, 
-                    "STEREO": threshold
-                }
+                if isinstance(threshold, dict):
+                    effective_thresholds = threshold
+                else:
+                    effective_thresholds = {
+                        "GEN": threshold, 
+                        "UNFAIR": threshold, 
+                        "STEREO": threshold
+                    }
 
             # Return RAW data
             return {
@@ -1205,11 +1200,32 @@ def bias_server_handlers(input, output, session):
                 use_optimized = True
 
             try:
-                threshold = float(input.bias_threshold())
-                log_debug(f"Threshold: {threshold}")
+                t_unfair = float(input.bias_thresh_unfair())
+                t_gen = float(input.bias_thresh_gen())
+                t_stereo = float(input.bias_thresh_stereo())
+                thresholds_A = {"UNFAIR": t_unfair, "GEN": t_gen, "STEREO": t_stereo}
+                
+                # Fetch B thresholds if needed
+                thresholds_B = {"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5}
+                if compare_models:
+                    try:
+                        thresholds_B = {
+                            "UNFAIR": float(input.bias_thresh_unfair_b()),
+                            "GEN": float(input.bias_thresh_gen_b()),
+                            "STEREO": float(input.bias_thresh_stereo_b())
+                        }
+                    except: pass
+                elif compare_prompts:
+                    thresholds_B = thresholds_A
+
+                # Mean placeholder for legacy compatibility
+                threshold = sum(thresholds_A.values()) / 3
+                log_debug(f"Thresholds A: {thresholds_A}, B: {thresholds_B}")
             except Exception as e:
-                log_debug(f"Warning: bias_threshold input missing or invalid ({e}). Using default 0.5")
+                log_debug(f"Warning: category thresholds missing ({e}). Using 0.5")
                 threshold = 0.5
+                thresholds_A = {"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5}
+                thresholds_B = {"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5}
             log_debug(f"use_optimized={use_optimized}, threshold={threshold}")
 
             # Bias detection model (BERT or GPT-2 backbone) - Model A
@@ -1232,12 +1248,17 @@ def bias_server_handlers(input, output, session):
                     log_debug("Submitting heavy_bias_compute for Model A...")
                     result = await asyncio.wait_for(
                         loop.run_in_executor(
-                            pool, heavy_bias_compute, text, model_name, threshold, bias_model_key, use_optimized,
+                            pool, heavy_bias_compute, text, model_name, thresholds_A, bias_model_key, use_optimized,
                         ),
                         timeout=180.0
                     )
                     log_debug("heavy_bias_compute A returned successfully")
-                    bias_raw_results.set(result) # Store RAW result
+                    # Store RAW result so sliders can re-threshold live
+                    bias_raw_results.set(result)
+                    # Initial processing for Model A (using thresholds we just grabbed)
+                    effective_A = result.get("effective_thresholds", thresholds_A)
+                    res_processed = _process_raw_bias_result(result, effective_A, use_optimized=use_optimized)
+                    bias_results.set(res_processed)
 
                     # Update UI sliders with the actual thresholds used
                     if result and result.get("effective_thresholds"):
@@ -1258,12 +1279,17 @@ def bias_server_handlers(input, output, session):
                         log_debug(f"Starting heavy_bias_compute B ({bias_model_key_B}, encoder={model_name_B}) for Compare Models")
                         result_B = await asyncio.wait_for(
                             loop.run_in_executor(
-                                pool, heavy_bias_compute, text, model_name_B, threshold, bias_model_key_B, use_optimized,
+                                pool, heavy_bias_compute, text, model_name_B, thresholds_B, bias_model_key_B, use_optimized,
                             ),
                             timeout=180.0
                         )
                         bias_raw_results_B.set(result_B) # Store RAW result B
                         bias_cached_text_B.set(text)  # Same text for compare models
+                        
+                        # Process B immediately for UI
+                        effective_B = result_B.get("effective_thresholds", thresholds_B)
+                        res_B_proc = _process_raw_bias_result(result_B, effective_B, use_optimized=use_optimized)
+                        bias_results_B.set(res_B_proc)
                         
                         # Send effective thresholds for B
                         if result_B and result_B.get("effective_thresholds"):
@@ -1287,12 +1313,17 @@ def bias_server_handlers(input, output, session):
                             log_debug(f"Starting heavy_bias_compute B (Prompt B) for Compare Prompts")
                             result_B = await asyncio.wait_for(
                                 loop.run_in_executor(
-                                    pool, heavy_bias_compute, text_B, model_name, threshold, bias_model_key, use_optimized,
+                                    pool, heavy_bias_compute, text_B, model_name, thresholds_B, bias_model_key, use_optimized,
                                 ),
                                 timeout=180.0
                             )
                             bias_raw_results_B.set(result_B)
                             bias_cached_text_B.set(text_B)
+                            
+                            # Process B immediately for UI
+                            effective_B = result_B.get("effective_thresholds", thresholds_B)
+                            res_B_proc = _process_raw_bias_result(result_B, effective_B, use_optimized=use_optimized)
+                            bias_results_B.set(res_B_proc)
                             
                             # Send effective thresholds for B
                             if result_B and result_B.get("effective_thresholds"):
@@ -1959,38 +1990,12 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
         
-        threshold = _safe_threshold()
-
-        def get_content_html(items, t, c, s_idxs):
-            import math
-            n_items = len(items)
-            mid_point = math.ceil(n_items / 2)
-            items_col1 = items[:mid_point]
-            items_col2 = items[mid_point:]
-            
-            lbl_info = f'Threshold: <code>{t:.2f}</code>'
-            
-            return (
-                f'<div style="display:flex;gap:16px;border:1px solid rgba(226,232,240,0.4);border-radius:8px;overflow:hidden;">'
-                f'<div style="flex:1;display:flex;flex-direction:column;">{"".join(items_col1)}</div>'
-                f'<div style="flex:1;display:flex;flex-direction:column;border-left:1px solid rgba(226,232,240,0.4);">{"".join(items_col2)}</div>'
-                f'</div>'
-                f'<div style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:center;">{lbl_info}</div>'
-            )
-            
-        # Helper to build content list
-        def build_items(data, s_idxs):
-             # Re-implement item building logic here, or just call logic
-             # For brevity in this replacement, assume get_view logic is split
-             # Actually I need to fully rewrite get_view to return the HTML string, then wrap in card.
-             pass
-
-        # Let's just inline the wrapping into the main logic
-        
         # ... logic to build HTML items ...
-        # Copied from previous implementation
         def produce_html(data, is_B):
-            token_labels = data["token_labels"]
+            if not data:
+                return f'<div style="color:#9ca3af;font-size:12px;padding:12px;">Run analysis to see {"Model B" if is_B else "Model A"} results.</div>'
+                
+            token_labels = data.get("token_labels", [])
             biased = [l for l in token_labels if l.get("is_biased") and l["token"] not in ("[CLS]","[SEP]","[PAD]")]
             if not biased: return '<div style="color:#9ca3af;font-size:12px;padding:12px;">No biased tokens detected.</div>'
             
@@ -2015,11 +2020,25 @@ def bias_server_handlers(input, output, session):
             import math
             mid = math.ceil(len(items)/2)
             c1, c2 = items[:mid], items[mid:]
-            lbl_info = f'Threshold: <code>{threshold:.2f}</code>'
+            
+            # Show per-category thresholds
+            t_info = "Thresholds: "
+            if data and data.get("thresholds"):
+                ts = data["thresholds"]
+                parts = []
+                for k in ["UNFAIR", "GEN", "STEREO"]:
+                    if k in ts:
+                        parts.append(f'{k}: <code>{float(ts[k]):.2f}</code>')
+                t_info += " &bull; ".join(parts)
+                if data.get("use_optimized"):
+                    t_info += " <span style='opacity:0.6;'>(Optimized)</span>"
+            else:
+                t_info += f"<code>{_safe_threshold():.2f}</code>"
+
             return (f'<div style="display:flex;gap:16px;border:1px solid rgba(226,232,240,0.4);border-radius:8px;overflow:hidden;">'
                     f'<div style="flex:1;display:flex;flex-direction:column;">{"".join(c1)}</div>'
                     f'<div style="flex:1;display:flex;flex-direction:column;border-left:1px solid rgba(226,232,240,0.4);">{"".join(c2)}</div>'
-                    f'</div><div style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:center;">{lbl_info}</div>')
+                    f'</div><div style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:center;">{t_info}</div>')
 
         # Use manual header for Detected Bias Tokens
         # old ui: h4("Detected Bias Tokens", ...), p(...)
@@ -2504,8 +2523,9 @@ def bias_server_handlers(input, output, session):
         
         results_B = ablation_results_B.get()
         compare_models = active_bias_compare_models.get()
-        compare_prompts = active_bias_compare_prompts.get()
-        show_comparison = (compare_models or compare_prompts) and results_B
+        # Only show side-by-side comparison for compare_models, not compare_prompts
+        # (same model = unified view like single mode)
+        show_comparison = compare_models and results_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
         except Exception: bar_threshold = 1.5
@@ -2698,8 +2718,9 @@ def bias_server_handlers(input, output, session):
             
         bundle_B = ig_results_B.get()
         compare_models = active_bias_compare_models.get()
-        compare_prompts = active_bias_compare_prompts.get()
-        show_comparison = (compare_models or compare_prompts) and bundle_B
+        # Only show side-by-side comparison for compare_models, not compare_prompts
+        # (same model = unified view like single mode)
+        show_comparison = compare_models and bundle_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
         except Exception: bar_threshold = 1.5
@@ -2714,6 +2735,9 @@ def bias_server_handlers(input, output, session):
             selected_layer = sel_l
         except Exception:
             pass
+
+        try: top_k = int(input.bias_top_k())
+        except Exception: top_k = 5
             
         def _render_ig_single(bundle, container_suffix="", context_results=None):
             if not bundle: return "No data"
@@ -2792,10 +2816,10 @@ def bias_server_handlers(input, output, session):
                 f'</div>'
             )
 
-            # ── Top-10 table ──
-            top10 = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)[:10]
+            # ── Top-K table ──
+            top_heads = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)[:top_k]
             table_rows = []
-            for rank, r in enumerate(top10, 1):
+            for rank, r in enumerate(top_heads, 1):
                 rho_color = "#2563eb" if r.spearman_rho > 0 else "#dc2626"
                 sig_badge = '<span style="color:#22c55e;font-weight:600;">*</span>' if r.spearman_pvalue < 0.05 else ""
                 specialized = "Yes" if r.bar_original > bar_threshold else "No"
@@ -2836,14 +2860,14 @@ def bias_server_handlers(input, output, session):
             cid4 = f"ig-layer-chart-container{container_suffix}"
 
             sections = [
-                ui.HTML(f'<div id="{cid1}" style="width:100%;">{chart1_html}</div>'),
+                ui.HTML(f'<div id="{cid1}" style="width:100%;height:450px;">{chart1_html}</div>'),
                 ui.HTML(summary_html),
                 ui.HTML(table_html),
             ]
             
             if chart2_html:
                 sections.append(ui.HTML('<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'))
-                sections.append(ui.HTML(f'<div id="{cid2}" style="width:100%;">{chart2_html}</div>'))
+                sections.append(ui.HTML(f'<div id="{cid2}" style="width:100%;height:400px;">{chart2_html}</div>'))
 
             sections.append(ui.HTML('<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'))
             sections.append(ui.HTML(
@@ -3031,7 +3055,7 @@ def bias_server_handlers(input, output, session):
         """Category bar chart + bias distribution violin side-by-side."""
         mk_A = _stereoset_model_key()
         
-        def _render_single(mk):
+        def _render_single(mk, style=None, layout="row"):
             scores = get_stereoset_scores(mk)
             examples = get_stereoset_examples(mk)
             if scores is None or not examples:
@@ -3045,40 +3069,27 @@ def bias_server_handlers(input, output, session):
             cat_html = fig_cat.to_html(include_plotlyjs="cdn", full_html=False, config={"responsive": True})
             dist_html = fig_dist.to_html(include_plotlyjs=False, full_html=False, config={"responsive": True})
             
+            card_style = style if style else ""
+            
+            container_style = "display:grid;grid-template-columns:1fr 1fr;gap:16px;" if layout == "row" else "display:flex;flex-direction:column;gap:16px;"
+
             return ui.div(
-                {"style": "display:grid;grid-template-columns:1fr 1fr;gap:16px;"},
-                _wrap_card(ui.HTML(cat_html)),
-                _wrap_card(ui.HTML(dist_html)),
+                {"style": container_style},
+                _wrap_card(ui.HTML(cat_html), style=card_style),
+                _wrap_card(ui.HTML(dist_html), style=card_style),
             )
 
         compare_models = active_bias_compare_models.get()
         mk_B = _stereoset_model_key_B() if compare_models else None
 
         if compare_models and mk_B:
-            content_A = _render_single(mk_A) or ui.div("No data for Model A")
-            content_B = _render_single(mk_B) or ui.div("No data for Model B")
-            
-            # For this section, since it already contains a generic header in the visualizer?
-            # Actually _render_single returns a div with TWO cards inside it (cat + dist).
-            # We want to wrap the whole thing to show separation?
-            # The original didn't wrap the whole thing in a card, it returned a div of 2 cards.
-            # If we do side-by-side comparison, we have 4 cards total.
-            # A (Cat+Dist) | B (Cat+Dist)
-            
-            # To make it clear which is which, we should probably wrap A's group and B's group.
+            content_A = _render_single(mk_A, style="border: 2px solid #3b82f6;", layout="column") or ui.div("No data for Model A")
+            content_B = _render_single(mk_B, style="border: 2px solid #ff5ca9;", layout="column") or ui.div("No data for Model B")
             
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                ui.div(
-                    {"style": "border: 2px solid #3b82f6; padding: 12px; border-radius: 8px;"},
-                    ui.h5("Model A", style="margin-bottom: 12px; color: #3b82f6; font-weight: bold;"),
-                    content_A
-                ),
-                ui.div(
-                    {"style": "border: 2px solid #ff5ca9; padding: 12px; border-radius: 8px;"},
-                    ui.h5("Model B", style="margin-bottom: 12px; color: #ff5ca9; font-weight: bold;"),
-                    content_B
-                )
+                content_A,
+                content_B
             )
 
         return _render_single(mk_A) or ui.div()
@@ -3120,8 +3131,11 @@ def bias_server_handlers(input, output, session):
                     targets.append({"target": t, "ss": ss, "n": d["n"], "category": d["category"]})
             targets.sort(key=lambda x: x["ss"], reverse=True)
             
-            most_biased = targets[:5]
-            least_biased = targets[-5:][::-1]
+            try: top_k = int(input.bias_top_k())
+            except Exception: top_k = 5
+            
+            most_biased = targets[:top_k]
+            least_biased = targets[-top_k:][::-1]
             STEREOSET_CAT_COLORS = {"gender": "#e74c3c", "race": "#3498db", "religion": "#2ecc71", "profession": "#f39c12"}
             
             def _build_target_rows(items, direction="high"):
@@ -3135,7 +3149,7 @@ def bias_server_handlers(input, output, session):
             th_style = 'padding:10px 12px;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;'
             
             summary_html = (
-                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
+                '<div style="display:flex;flex-direction:column;gap:16px;margin-bottom:16px;">'
                 '<div><div style="font-size:10px;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Most Stereotyped Targets (highest SS)</div>'
                 '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead>'
                 f'<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;"><th style="{th_style}text-align:center;">Rank</th><th style="{th_style}text-align:left;">Target</th><th style="{th_style}text-align:center;">Category</th><th style="{th_style}text-align:right;">SS</th><th style="{th_style}text-align:center;">n</th></tr></thead>'
@@ -3188,10 +3202,13 @@ def bias_server_handlers(input, output, session):
             fig = create_stereoset_head_sensitivity_heatmap(matrix, top_heads)
             chart_html = fig.to_html(include_plotlyjs="cdn", full_html=False, config={"responsive": True})
 
+            try: top_k = int(input.bias_top_k())
+            except Exception: top_k = 5
+
             top_features = get_top_features(mk)
             if top_features:
                 feat_rows = []
-                for rank, f in enumerate(top_features[:10], 1):
+                for rank, f in enumerate(top_features[:top_k], 1):
                     p = f["p_value"]
                     p_color = "#16a34a" if p < 1e-10 else "#eab308" if p < 0.001 else "#94a3b8"
                     feat_rows.append(f'<tr style="transition:all 0.2s ease;"><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-weight:500;color:#64748b;font-size:11px;">#{rank}</td><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:left;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">{f["name"]}</td><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{p_color};">{p:.2e}</td></tr>')
@@ -3294,11 +3311,13 @@ def bias_server_handlers(input, output, session):
             )
 
         # Header columns
-        header_B_col = ""
+        header_bias_A_label = "Bias A" if has_B else "Bias"
+        header_bias_B_col = ""
+        
         if has_B:
-            header_B_col = (
+            header_bias_B_col = (
                 '<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;'
-                'color:#ff5ca9;text-transform:uppercase;letter-spacing:0.5px;width:90px;border-left:1px dashed #cbd5e1;">Bias B</th>'
+                'color:#475569;text-transform:uppercase;letter-spacing:0.5px;width:90px;border-left:1px dashed #cbd5e1;">Bias B</th>'
             )
 
         table_html = (
@@ -3309,8 +3328,8 @@ def bias_server_handlers(input, output, session):
             '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
             '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;width:100px;">Category</th>'
             '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Context</th>'
-            '<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:0.5px;width:90px;">Bias A</th>'
-            f'{header_B_col}'
+            f'<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;width:90px;">{header_bias_A_label}</th>'
+            f'{header_bias_B_col}'
             '</tr></thead>'
             f'<tbody>{"".join(table_rows)}</tbody>'
             '</table></div>'
@@ -3349,8 +3368,8 @@ def bias_server_handlers(input, output, session):
 
         filter_select = (
             f'<select onchange="window.filterStereoSetCategory(this.value)" '
-            f'style="font-size:11px;padding:4px 8px;background:#1e293b;color:#e2e8f0;'
-            f'border:1px solid #334155;border-radius:6px;cursor:pointer;">'
+            f'style="font-size:11px;padding:4px 8px;background:#f1f5f9;color:#475569;font-weight:700;'
+            f'border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;outline:none;">'
             f'<option value="all">All Categories ({len(examples)})</option>'
             f'{cat_options}'
             f'</select>'
@@ -3374,10 +3393,15 @@ def bias_server_handlers(input, output, session):
                         name_B = meta_B.get("model", "Model B")
 
                 detail_html = create_stereoset_example_html(
-                    ex_A, 
+                    ex_A,
                     example_B=ex_B_detail,
                     model_A_name=name_A,
-                    model_B_name=name_B
+                    model_B_name=name_B,
+                    sensitive_heads=get_sensitive_heads(mk),
+                    head_profile_stats=get_head_profile_stats(mk),
+                    sensitive_heads_B=get_sensitive_heads(mk_B) if has_B else None,
+                    head_profile_stats_B=get_head_profile_stats(mk_B) if has_B else None,
+                    top_n=int(input.bias_top_k() or 5),
                 )
         except Exception:
             pass

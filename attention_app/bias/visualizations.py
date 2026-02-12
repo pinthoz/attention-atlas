@@ -1499,8 +1499,8 @@ def create_ig_correlation_chart(
             "Attention–IG Correlation per Head",
             "BAR vs Faithfulness (Spearman ρ)",
         ),
-        column_widths=[0.55, 0.45],
-        horizontal_spacing=0.12,
+        column_widths=[0.5, 0.5],
+        horizontal_spacing=0.18,
     )
 
     # ── Left: Correlation heatmap ──
@@ -1523,10 +1523,13 @@ def create_ig_correlation_chart(
             zauto=False,
             showscale=True,
             colorbar=dict(
-                title=dict(text="Spearman ρ", font=dict(size=11, color="#64748b")),
-                tickfont=dict(size=10, color="#64748b"),
-                x=0.48,
-                len=0.9,
+                title=dict(text="Correlation (ρ)", font=dict(size=11)),
+                tickfont=dict(size=10),
+                x=0.425, # Closer to Heatmap
+                y=0.5,
+                len=0.6,
+                thickness=10,
+                xanchor="left",
             ),
             hovertemplate="%{text}<extra></extra>",
             text=hover_text,
@@ -1608,14 +1611,16 @@ def create_ig_correlation_chart(
     fig.update_layout(
         height=450,
         autosize=True,
-        margin=dict(l=60, r=40, t=80, b=60),
+        margin=dict(l=100, r=40, t=110, b=60),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif"),
         title=dict(
             text="Integrated Gradients Faithfulness Analysis<br>"
-                 "<sub>Does attention correlate with gradient-based token importance?</sub>",
+                 "<span style='font-size:13px;color:#64748b;'>Does attention correlate with gradient-based token importance?</span>",
             font=dict(size=16, color="#1e293b"),
+            y=0.92,
+            x=0.05
         ),
     )
 
@@ -1668,9 +1673,10 @@ def create_ig_token_comparison_chart(
     heads_to_show = top_heads[:max_heads]
 
     # Normalize IG to [0, 1] for visual comparison
-    ig = token_attributions[:seq_len].copy()
-    ig_max = ig.max() if ig.max() > 0 else 1.0
-    ig_norm = ig / ig_max
+    ig = np.abs(token_attributions[:seq_len])
+    ig_max = ig.max()
+    if ig_max == 0 or np.isnan(ig_max): ig_max = 1.0
+    ig_norm = np.nan_to_num(ig / ig_max).tolist()
 
     head_colors = ["#2563eb", "#f59e0b", "#22c55e"]
 
@@ -1685,6 +1691,7 @@ def create_ig_token_comparison_chart(
         opacity=0.7,
         hovertemplate="<b>%{customdata}</b><br>IG (norm): %{y:.3f}<extra>IG</extra>",
         customdata=tokens[:seq_len],
+        orientation="v",
     ))
 
     # Attention column-mean for each top head
@@ -1694,10 +1701,11 @@ def create_ig_token_comparison_chart(
             attn_matrix = layer_attn[0, head.head].cpu().numpy()
         else:
             attn_matrix = np.array(layer_attn[0, head.head])
-        attn_imp = attn_matrix.mean(axis=0)[:seq_len]
+        attn_imp = np.abs(attn_matrix.mean(axis=0)[:seq_len])
         # Normalize to [0, 1]
-        attn_max = attn_imp.max() if attn_imp.max() > 0 else 1.0
-        attn_norm = attn_imp / attn_max
+        attn_max = attn_imp.max()
+        if attn_max == 0 or np.isnan(attn_max): attn_max = 1.0
+        attn_norm = np.nan_to_num(attn_imp / attn_max).tolist()
 
         fig.add_trace(go.Bar(
             x=list(range(seq_len)),
@@ -1711,10 +1719,12 @@ def create_ig_token_comparison_chart(
                 f"<extra>L{head.layer}H{head.head}</extra>"
             ),
             customdata=tokens[:seq_len],
+            orientation="v",
         ))
 
     fig.update_layout(
         barmode="group",
+        bargap=0.15,
         title=dict(
             text="Token-Level: IG Attribution vs Attention<br>"
                  "<sub>Normalized comparison — do attention and gradients agree on important tokens?</sub>",
@@ -1730,11 +1740,11 @@ def create_ig_token_comparison_chart(
         yaxis=dict(title="Normalized importance", tickfont=dict(size=10, color="#475569")),
         height=400,
         autosize=True,
-        margin=dict(l=60, r=40, t=80, b=100),
+        margin=dict(l=60, r=40, t=100, b=100),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif"),
-        legend=dict(x=0.5, y=1.15, xanchor="center", orientation="h",
+        legend=dict(x=0.5, y=-0.3, xanchor="center", orientation="h",
                     font=dict(size=10)),
     )
     return fig
@@ -1831,11 +1841,11 @@ def create_ig_distribution_chart(
         yaxis=dict(title="Spearman ρ (attention vs IG)", tickfont=dict(size=10, color="#475569")),
         height=380,
         autosize=True,
-        margin=dict(l=60, r=40, t=80, b=40),
+        margin=dict(l=60, r=40, t=80, b=120), # Updated bottom margin
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif"),
-        legend=dict(x=0.5, y=1.12, xanchor="center", orientation="h",
+        legend=dict(x=0.5, y=-0.6, xanchor="center", orientation="h", # Updated legend y position
                     font=dict(size=10)),
         violinmode="group",
     )
@@ -2076,25 +2086,22 @@ def create_stereoset_head_sensitivity_heatmap(
         z=z.tolist(),
         x=[f"H{h}" for h in range(num_heads)],
         y=[f"L{l}" for l in range(num_layers)],
-        colorscale=[
-            [0.0, "#0f172a"],
-            [0.15, "#1e1b4b"],
-            [0.35, "#5b21b6"],
-            [0.55, "#a855f7"],
-            [0.75, "#f472b6"],
-            [1.0, "#fbbf24"],
-        ],
+        colorscale="Blues",
         showscale=True,
         colorbar=dict(
             title=dict(text="Variance", font=dict(size=11, color="#64748b")),
             tickfont=dict(size=10, color="#64748b"),
+            thickness=10,
+            len=0.6,
+            x=1.005, # Hugs the plot
+            xanchor="left",
         ),
         hovertemplate="%{text}<extra></extra>",
         text=hover_text,
     ))
 
     # Star markers on top sensitive heads
-    for head_info in top_heads[:5]:
+    for head_info in top_heads[:10]:
         fig.add_annotation(
             x=f"H{head_info['head']}",
             y=f"L{head_info['layer']}",
@@ -2106,7 +2113,7 @@ def create_stereoset_head_sensitivity_heatmap(
     fig.update_layout(
         title=dict(
             text="Head Sensitivity to Bias Categories<br>"
-                 "<sub>Variance of mean attention across gender/race/religion/profession (★ = top 5)</sub>",
+                 "<sub>Variance of mean attention across gender/race/religion/profession (★ = top 10)</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         xaxis=dict(title="Attention Head", tickfont=dict(size=10, color="#475569"), side="bottom"),
@@ -2163,7 +2170,7 @@ def create_stereoset_bias_distribution(examples: List[Dict]) -> go.Figure:
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif"),
-        legend=dict(x=0.5, y=1.12, xanchor="center", orientation="h", font=dict(size=10)),
+        showlegend=False,
         violinmode="group",
     )
     return fig
@@ -2251,7 +2258,7 @@ def create_stereoset_demographic_chart(
     title_cat = category.capitalize() if category and category != "all" else "All Categories"
     fig.update_layout(
         title=dict(
-            text=f"Stereotype Score by Target — {title_cat}<br>"
+            text=f"Stereotype Score by {title_cat}<br>"
                  f"<sub>Targets with n ≥ {min_n} | sorted by SS descending</sub>",
             font=dict(size=14, color="#1e293b", family="Inter, sans-serif"),
         ),
@@ -2265,7 +2272,7 @@ def create_stereoset_demographic_chart(
         ),
         height=max(300, len(targets) * 28 + 100),
         autosize=True,
-        margin=dict(l=140, r=60, t=80, b=40),
+        margin=dict(l=140, r=60, t=100, b=40),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif"),
@@ -2274,11 +2281,161 @@ def create_stereoset_demographic_chart(
     return fig
 
 
+def create_sensitive_head_panel_html(
+    example: Dict,
+    sensitive_heads: list,
+    head_profile_stats: Dict,
+    example_B: Optional[Dict] = None,
+    sensitive_heads_B: Optional[list] = None,
+    head_profile_stats_B: Optional[Dict] = None,
+    model_A_name: str = "Model A",
+    model_B_name: str = "Model B",
+    top_n: int = 10,
+) -> str:
+    """Render a collapsible panel showing how top sensitive heads behave on stereo vs anti.
+
+    Returns empty string if head_profile data is absent from the example.
+    """
+    
+    def _render_head_list(ex, heads, stats_map, limit=10):
+        head_profile = ex.get("head_profile")
+        if not head_profile: return ""
+        stereo_vals = head_profile.get("stereo", {})
+        anti_vals = head_profile.get("anti", {})
+        if not stereo_vals and not anti_vals: return ""
+
+        rows = ""
+        shown = 0
+        for rec in heads:
+            if shown >= limit: break
+            
+            key = f"L{rec['layer']}_H{rec['head']}"
+            h_stats = stats_map.get(key)
+            if not h_stats: continue
+            
+            s_val = stereo_vals.get(key)
+            a_val = anti_vals.get(key)
+            if s_val is None and a_val is None: continue
+
+            feat_name = h_stats["feature"]
+            feat_type = feat_name.split("_L")[0] if "_L" in feat_name else feat_name
+            variance = rec.get("variance", 0)
+            v_min = h_stats["min"]
+            v_max = h_stats["max"]
+            v_range = v_max - v_min if v_max > v_min else 1.0
+
+            def bar_pct(val):
+                if val is None: return 0
+                return max(0, min(100, (val - v_min) / v_range * 100))
+
+            s_pct = bar_pct(s_val)
+            a_pct = bar_pct(a_val)
+            
+            # Delta
+            if s_val is not None and a_val is not None:
+                delta = s_val - a_val
+                delta_abs = abs(delta)
+                arrow = "\u2191" if delta > 0 else ("\u2193" if delta < 0 else "\u2194")
+                delta_color = "#f87171" if delta > 0 else "#4ade80"
+                delta_html = (
+                    f'<span style="font-size:10px;color:{delta_color};font-family:JetBrains Mono,monospace;">'
+                    f'{arrow} {delta_abs:.4f}</span>'
+                )
+            else:
+                delta_html = '<span style="font-size:10px;color:#64748b;">n/a</span>'
+
+            s_label = f"{s_val:.4f}" if s_val is not None else "n/a"
+            a_label = f"{a_val:.4f}" if a_val is not None else "n/a"
+
+            rows += (
+                f'<div style="margin-bottom:10px;">'
+                # Head ID + feature type + variance
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+                f'<span style="font-size:11px;font-weight:700;color:#e2e8f0;font-family:JetBrains Mono,monospace;">'
+                f'L{rec["layer"]}\u00b7H{rec["head"]}</span>'
+                f'<span style="font-size:9px;padding:1px 5px;border-radius:3px;'
+                f'background:rgba(139,92,246,0.15);color:#a78bfa;font-weight:600;">{feat_type}</span>'
+                f'<span style="font-size:9px;color:#64748b;">var={variance:.6f}</span>'
+                f'<span style="margin-left:auto;">{delta_html}</span>'
+                f'</div>'
+                # Stereo bar
+                f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">'
+                f'<span style="font-size:9px;color:#f87171;min-width:36px;text-align:right;">Stereo</span>'
+                f'<div style="flex:1;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;">'
+                f'<div style="width:{s_pct:.1f}%;height:100%;background:#f87171;border-radius:4px;'
+                f'transition:width 0.3s;"></div></div>'
+                f'<span style="font-size:9px;color:#94a3b8;font-family:JetBrains Mono,monospace;min-width:48px;text-align:right;">{s_label}</span>'
+                f'</div>'
+                # Anti bar
+                f'<div style="display:flex;align-items:center;gap:6px;">'
+                f'<span style="font-size:9px;color:#4ade80;min-width:36px;text-align:right;">Anti</span>'
+                f'<div style="flex:1;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;">'
+                f'<div style="width:{a_pct:.1f}%;height:100%;background:#4ade80;border-radius:4px;'
+                f'transition:width 0.3s;"></div></div>'
+                f'<span style="font-size:9px;color:#94a3b8;font-family:JetBrains Mono,monospace;min-width:48px;text-align:right;">{a_label}</span>'
+                f'</div>'
+                f'</div>'
+            )
+            shown += 1
+        return rows
+
+    # Render A
+    html_A = _render_head_list(example, sensitive_heads, head_profile_stats, top_n)
+    
+    # Render B if available
+    html_B = ""
+    if example_B and sensitive_heads_B and head_profile_stats_B:
+        html_B = _render_head_list(example_B, sensitive_heads_B, head_profile_stats_B, top_n)
+
+    if not html_A and not html_B:
+        return ""
+
+    content_html = ""
+    if html_B:
+        # Side-by-side comparison
+        content_html = (
+            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">'
+            f'<div>'
+            f'<div style="font-size:10px;font-weight:700;color:#3b82f6;text-transform:uppercase;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid rgba(59,130,246,0.3);">{model_A_name}</div>'
+            f'{html_A}'
+            f'</div>'
+            f'<div>'
+            f'<div style="font-size:10px;font-weight:700;color:#ff5ca9;text-transform:uppercase;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid rgba(255,92,169,0.3);">{model_B_name}</div>'
+            f'{html_B}'
+            f'</div>'
+            f'</div>'
+        )
+    else:
+        # Single view
+        content_html = html_A
+
+    return (
+        '<details style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">'
+        '<summary style="cursor:pointer;font-size:11px;font-weight:700;color:#a78bfa;'
+        'list-style:none;display:flex;align-items:center;gap:6px;">'
+        '<span style="transition:transform 0.2s;">&#9654;</span> '
+        'Sensitive Head Behavior</summary>'
+        f'<div style="margin-top:10px;padding:8px 12px;background:rgba(139,92,246,0.05);'
+        f'border-radius:8px;border:1px solid rgba(139,92,246,0.15);">'
+        f'{content_html}'
+        f'<div style="font-size:9px;color:#64748b;margin-top:6px;border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;">'
+        f'Bars scaled to population [min, max] of each feature across all StereoSet examples. '
+        f'\u0394 = stereo \u2212 anti.</div>'
+        f'</div>'
+        '</details>'
+    )
+
+
 def create_stereoset_example_html(
     example: Dict,
     example_B: Optional[Dict] = None,
     model_A_name: str = "Model A",
-    model_B_name: str = "Model B"
+    model_B_name: str = "Model B",
+    sensitive_heads: Optional[list] = None,
+    head_profile_stats: Optional[Dict] = None,
+    sensitive_heads_B: Optional[list] = None,
+    head_profile_stats_B: Optional[Dict] = None,
+    top_n: int = 10,
 ) -> str:
     """Render a single StereoSet example with PLL scores and Analyze button.
 
@@ -2406,6 +2563,21 @@ def create_stereoset_example_html(
             f'</div>'
         )
 
+    # Render sensitive head panel (if data available)
+    head_panel_html = ""
+    if sensitive_heads and head_profile_stats:
+        head_panel_html = create_sensitive_head_panel_html(
+            example, 
+            sensitive_heads, 
+            head_profile_stats,
+            example_B=example_B if has_B else None,
+            sensitive_heads_B=sensitive_heads_B if has_B else None,
+            head_profile_stats_B=head_profile_stats_B if has_B else None,
+            model_A_name=model_A_name,
+            model_B_name=model_B_name,
+            top_n=top_n,
+        )
+
     return (
         '<div style="padding:12px;background:#0f172a;border-radius:10px;'
         'border:1px solid rgba(255,255,255,0.1);box-shadow:0 4px 6px -1px rgba(0,0,0,0.2);">'
@@ -2424,9 +2596,9 @@ def create_stereoset_example_html(
         + sentence_row("Stereotype", stereo, "#f87171", "stereo")
         + sentence_row("Anti-stereo", anti, "#4ade80", "anti")
         + sentence_row("Unrelated", unrelated, "#94a3b8", "unrelated")
-        +
+        
         # Footer: bias score + analyze button
-        f'<div style="display:flex;align-items:center;justify-content:space-between;'
+        + f'<div style="display:flex;align-items:center;justify-content:space-between;'
         f'margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1);">'
         f'{bs_html}'
         f'<button onclick="window.analyzeStereoSetExample(\'{analyze_text}\')" '
@@ -2437,7 +2609,8 @@ def create_stereoset_example_html(
         f'onmouseout="this.style.background=\'rgba(255,92,169,0.1)\'">'
         f'Analyze in Pipeline →</button>'
         f'</div>'
-        '</div>'
+        + head_panel_html
+        + '</div>'
     )
 
 
@@ -2463,4 +2636,5 @@ __all__ = [
     "create_stereoset_bias_distribution",
     "create_stereoset_demographic_chart",
     "create_stereoset_example_html",
+    "create_sensitive_head_panel_html",
 ]

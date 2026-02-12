@@ -123,6 +123,17 @@ def get_top_features(model: Optional[str] = None) -> List[Dict]:
     return data.get("top_features", [])
 
 
+def get_head_profile_stats(model: Optional[str] = None) -> Optional[Dict]:
+    """Return population statistics for each sensitive head's best feature.
+
+    Returns None for old JSON format that lacks this field (graceful degradation).
+    """
+    data = load_stereoset_data(model)
+    if data is None:
+        return None
+    return data.get("head_profile_stats")
+
+
 def get_metadata(model: Optional[str] = None) -> Optional[Dict]:
     """Return metadata dict (model, date, counts)."""
     data = load_stereoset_data(model)

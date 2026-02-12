@@ -11,6 +11,7 @@ from .stereoset_data import (
     get_head_sensitivity_matrix,
     get_sensitive_heads,
     get_top_features,
+    get_head_profile_stats,
     get_metadata,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "get_head_sensitivity_matrix",
     "get_sensitive_heads",
     "get_top_features",
+    "get_head_profile_stats",
     "get_metadata",
 ]

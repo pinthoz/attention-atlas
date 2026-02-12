@@ -253,6 +253,7 @@ def _compute_head_sensitivity(df, num_layers=12, num_heads=12):
             "variance": round(agg_variance, 10),
             "correlation": round(agg_correlation, 6),
             "n_features": len(cols),
+            "best_feature": best_col,
             "category_means": cat_means_dict,
         })
 
@@ -280,6 +281,48 @@ def _compute_top_features(df):
     top_features = [{"name": name, "p_value": float(pval)} for name, pval in sorted_feats[:20]]
     sig_count = sum(1 for _, pval in kw_results.items() if pval < 0.001)
     return top_features, sig_count, len(kw_results)
+
+
+def _build_head_profile_stats(sensitive_heads, df):
+    """Compute population statistics for each sensitive head's best feature.
+
+    Returns dict keyed by 'L{l}_H{h}' with mean, std, min, max,
+    and per-category means for the best feature of that head.
+    """
+    stats = {}
+    for rec in sensitive_heads:
+        feat = rec.get("best_feature")
+        if not feat or feat not in df.columns:
+            continue
+        key = f"L{rec['layer']}_H{rec['head']}"
+        vals = df[feat].dropna()
+        cat_means = df.groupby("category")[feat].mean()
+        stats[key] = {
+            "feature": feat,
+            "mean": round(float(vals.mean()), 6),
+            "std": round(float(vals.std()), 6),
+            "min": round(float(vals.min()), 6),
+            "max": round(float(vals.max()), 6),
+            "cat_means": {cat: round(float(cat_means.get(cat, 0)), 6) for cat in CATEGORIES if cat in cat_means.index},
+        }
+    return stats
+
+
+def _extract_head_profile(feats, sensitive_heads):
+    """Extract the best-feature value for each sensitive head from a feature dict.
+
+    Returns dict like {'L1_H3': 0.452, 'L8_H7': 0.231, ...}.
+    """
+    profile = {}
+    for rec in sensitive_heads:
+        feat = rec.get("best_feature")
+        if not feat:
+            continue
+        key = f"L{rec['layer']}_H{rec['head']}"
+        val = feats.get(feat)
+        if val is not None:
+            profile[key] = round(float(val), 6)
+    return profile
 
 
 # ── Main pipeline ─────────────────────────────────────────────────────
@@ -315,6 +358,7 @@ def run_for_model(model_key, stereoset):
     print(f"\n  Computing scores and extracting features...")
     examples = []
     features_list = []
+    example_feats_pairs = []
 
     for example in tqdm(stereoset, desc=f"  {model_key}"):
         try:
@@ -372,6 +416,13 @@ def run_for_model(model_key, stereoset):
             feats["bias_score"] = bias_score
             features_list.append(feats)
 
+            # Extract anti-sentence features for head profiles
+            try:
+                anti_feats = extract_features_for_sentence(anti_text, model_name, manager)
+            except Exception:
+                anti_feats = None
+            example_feats_pairs.append((feats, anti_feats))
+
         except Exception:
             continue
 
@@ -388,6 +439,13 @@ def run_for_model(model_key, stereoset):
     print("  Computing head sensitivity...")
     df = pd.DataFrame(features_list)
     matrix, sensitive_heads = _compute_head_sensitivity(df)
+
+    print("  Building per-example head profiles...")
+    head_profile_stats = _build_head_profile_stats(sensitive_heads, df)
+    for i, (stereo_feats, anti_feats) in enumerate(example_feats_pairs):
+        stereo_profile = _extract_head_profile(stereo_feats, sensitive_heads)
+        anti_profile = _extract_head_profile(anti_feats, sensitive_heads) if anti_feats else {}
+        examples[i]["head_profile"] = {"stereo": stereo_profile, "anti": anti_profile}
 
     print("  Running Kruskal-Wallis tests...")
     top_features, sig_count, total_tested = _compute_top_features(df)
@@ -406,6 +464,7 @@ def run_for_model(model_key, stereoset):
         "sensitive_heads": sensitive_heads,
         "top_features": top_features,
         "head_sensitivity_matrix": matrix,
+        "head_profile_stats": head_profile_stats,
         "examples": examples,
     }
 
@@ -424,9 +483,10 @@ def run_for_model(model_key, stereoset):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate StereoSet pre-computed JSON")
+    choices = list(MODEL_CONFIGS.keys()) + ["all"]
     parser.add_argument(
-        "--model", choices=["bert", "gpt2", "all"], default="all",
-        help="Which model to generate data for (default: all)",
+        "--model", choices=choices, default="all",
+        help=f"Which model to generate data for (choices: {choices}, default: all)",
     )
     args = parser.parse_args()
 

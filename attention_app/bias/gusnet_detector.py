@@ -101,7 +101,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT Large)",
-        "optimized_thresholds": None,
+        "optimized_thresholds": [0.4761, 0.4478, 0.4573, 0.4178, 0.4278, 0.4000, 0.3497],
     },
     "gusnet-bert-custom": {
         "path": "pinthoz/gus-net-bert-custom",

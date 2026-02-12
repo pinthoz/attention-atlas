@@ -289,6 +289,8 @@ def create_bias_sidebar():
                 white-space: nowrap;
                 width: 48px;
                 flex-shrink: 0;
+                text-align: right;
+                padding-right: 6px;
             }
             .sidebar-thresh-group .thresh-val {
                 min-width: 25px;
@@ -379,9 +381,9 @@ def create_bias_sidebar():
                     ),
                 ),
 
-                # Column B (Conditional on Compare Models OR Compare Prompts)
+                # Column B (Conditional on Compare Models only)
                 ui.panel_conditional(
-                    "input.bias_compare_mode || input.bias_compare_prompts_mode",
+                    "input.bias_compare_mode",
                     ui.div(
                         {"class": "bias-thresh-col-b", "style": "flex: 1; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1);"},
                         # UNFAIR B
@@ -567,13 +569,9 @@ def create_bias_sidebar():
                             }
                         } else {
                             modelBPanel.style.display = 'none';
-                            // Only remove comparison styling if NEITHER mode is active
-                            const promptsActive = $('#bias_compare_prompts_mode').prop('checked');
-                            if (!promptsActive) {
-                                modelALabel.classList.remove('compare-active');
-                                modelALabel.innerText = "Bias Detection Model";
-                                if (threshColA) threshColA.classList.remove('compare-active');
-                            }
+                            modelALabel.classList.remove('compare-active');
+                            modelALabel.innerText = "Bias Detection Model";
+                            if (threshColA) threshColA.classList.remove('compare-active');
                         }
                     }
 
@@ -586,8 +584,8 @@ def create_bias_sidebar():
                         if (enabled) {
                             promptTabs.style.display = 'flex';
                             inputContainer.classList.add('compare-prompts-active');
-                            modelALabel.classList.add('compare-active');
-                            if (threshColA) threshColA.classList.add('compare-active');
+                            // Note: don't add compare-active to threshColA for compare prompts
+                            // (same model = same thresholds layout as single mode)
                             
                             const modelSwitch = $('#bias_compare_mode');
                             if (modelSwitch.length && modelSwitch.prop('checked')) {
@@ -600,7 +598,7 @@ def create_bias_sidebar():
                             const modelsActive = $('#bias_compare_mode').prop('checked');
                             if (!modelsActive) {
                                 modelALabel.classList.remove('compare-active');
-                                if (threshColA) threshColA.classList.remove('compare-active');
+                                // Don't remove compare-active from threshColA for compare prompts
                             }
                         }
                     }
@@ -660,33 +658,34 @@ def create_bias_sidebar():
                 Shiny.addCustomMessageHandler('set_bias_thresholds', function(message) {
                     console.log("[BiasUI] Received thresholds:", message);
                     // Helper to update slider without triggering input (which would uncheck optimized box)
-                    function updateSlider(id, valId, val) {
+                    function updateSlider(id, valId, val, shinyId) {
                         var el = document.getElementById(id);
                         var valDisplay = document.getElementById(valId);
                         if (el) {
                             el.value = val;
                             if (valDisplay) valDisplay.textContent = parseFloat(val).toFixed(2);
-                            // We do NOT trigger 'input' or 'change' here to avoid side effects
+                            // Also update Shiny input so backend knows the new value
+                            if (shinyId) Shiny.setInputValue(shinyId, parseFloat(val));
                         }
                     }
-                if (message.UNFAIR !== undefined) {
-                        updateSlider('bias-thresh-unfair', 'bias-thresh-unfair-val', message.UNFAIR);
+                    if (message.UNFAIR !== undefined) {
+                        updateSlider('bias-thresh-unfair', 'bias-thresh-unfair-val', message.UNFAIR, 'bias_thresh_unfair');
                     }
                     if (message.GEN !== undefined) {
-                        updateSlider('bias-thresh-gen', 'bias-thresh-gen-val', message.GEN);
+                        updateSlider('bias-thresh-gen', 'bias-thresh-gen-val', message.GEN, 'bias_thresh_gen');
                     }
                     if (message.STEREO !== undefined) {
-                        updateSlider('bias-thresh-stereo', 'bias-thresh-stereo-val', message.STEREO);
+                        updateSlider('bias-thresh-stereo', 'bias-thresh-stereo-val', message.STEREO, 'bias_thresh_stereo');
                     }
                     // Model B support
                     if (message.UNFAIR_B !== undefined) {
-                        updateSlider('bias-thresh-unfair-b', 'bias-thresh-unfair-b-val', message.UNFAIR_B);
+                        updateSlider('bias-thresh-unfair-b', 'bias-thresh-unfair-b-val', message.UNFAIR_B, 'bias_thresh_unfair_b');
                     }
                     if (message.GEN_B !== undefined) {
-                        updateSlider('bias-thresh-gen-b', 'bias-thresh-gen-b-val', message.GEN_B);
+                        updateSlider('bias-thresh-gen-b', 'bias-thresh-gen-b-val', message.GEN_B, 'bias_thresh_gen_b');
                     }
                     if (message.STEREO_B !== undefined) {
-                        updateSlider('bias-thresh-stereo-b', 'bias-thresh-stereo-b-val', message.STEREO_B);
+                        updateSlider('bias-thresh-stereo-b', 'bias-thresh-stereo-b-val', message.STEREO_B, 'bias_thresh_stereo_b');
                     }
                 });
 
@@ -703,10 +702,10 @@ def create_bias_sidebar():
                     }
 
                     const inputs = [
-                        {id: 'bias-layer-slider', valId: 'bias-layer-value', msg: 'bias_attn_layer'},
-                        {id: 'bias-head-slider', valId: 'bias-head-value', msg: 'bias_attn_head'},
+                        {id: 'bias-layer-slider', valId: 'bias-layer-value', msg: 'bias_attn_layer', isInt: true},
+                        {id: 'bias-head-slider', valId: 'bias-head-value', msg: 'bias_attn_head', isInt: true},
                         {id: 'bias-bar-threshold-slider', valId: 'bias-bar-threshold-value', msg: 'bias_bar_threshold'},
-                        {id: 'bias-topk-slider', valId: 'bias-topk-value', msg: 'bias_top_k'},
+                        {id: 'bias-topk-slider', valId: 'bias-topk-value', msg: 'bias_top_k', isInt: true},
                         
                         // Sidebar Thresholds
                         {id: 'bias-thresh-unfair', valId: 'bias-thresh-unfair-val', msg: 'bias_thresh_unfair', isThresh: true},
@@ -727,7 +726,9 @@ def create_bias_sidebar():
                             // Update display on drag AND trigger debounced send
                             el.addEventListener('input', function() {
                                 var val = parseFloat(this.value);
-                                if(valDisplay) valDisplay.textContent = val.toFixed(2);
+                                if(valDisplay) {
+                                    valDisplay.textContent = item.isInt ? val.toFixed(0) : val.toFixed(2);
+                                }
                                 
                                 // Sync with counterpart if exists
                                 if (item.syncId) {
