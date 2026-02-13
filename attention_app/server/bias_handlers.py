@@ -56,7 +56,7 @@ from ..bias.feature_extraction import extract_attention_for_text
 from ..ui.bias_ui import create_bias_accordion, create_floating_bias_toolbar
 from ..ui.components import viz_header
 
-# Map GUS-Net model key → matching encoder model for attention analysis.
+# Map GUS-Net model key -> matching encoder model for attention analysis.
 # Ensures the encoder tokenizer matches the GUS-Net architecture so that
 # BERT tokens show ## subwords and GPT-2 tokens merge correctly with Ġ.
 _GUSNET_TO_ENCODER = {
@@ -67,6 +67,37 @@ _GUSNET_TO_ENCODER = {
     "gusnet-gpt2-medium": "gpt2-medium",
     "gusnet-ensemble": "bert-base-uncased",
 }
+
+def _deferred_plotly(fig, container_id, height=None, config=None):
+    """Render a Plotly figure as deferred HTML - only calls Plotly.newPlot()
+    when the container becomes visible. This avoids wrong dimensions when
+    the container is inside a collapsed accordion panel."""
+    import plotly.io as pio
+    import base64, html as _html
+
+    # Use figure's internal height if not explicitly overridden
+    if height is None:
+        fig_height = getattr(fig.layout, "height", None)
+        if fig_height:
+            height = f"{fig_height}px"
+        else:
+            height = "400px"
+
+    fig_json = pio.to_json(fig, validate=False)
+    cfg = json.dumps(config or {"displayModeBar": False, "responsive": True})
+    # Base64-encode the figure JSON and store in a data attribute.
+    # This avoids jQuery/Shiny re-parsing <script> tags via .html()
+    # and sidesteps any HTML entity issues with <template> elements.
+    b64_fig = base64.b64encode(fig_json.encode()).decode()
+    escaped_cfg = _html.escape(cfg, quote=True)
+    return (
+        f'<div id="{container_id}" class="plotly-deferred" '
+        f'style="width:100%;height:{height};min-height:50px;"'
+        f' data-plotly-config="{escaped_cfg}"'
+        f' data-plotly-fig="{b64_fig}">'
+        f'</div>'
+    )
+
 
 def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header=None, style=None, controls=None):
     """Wrap content in a card with consistent header style."""
@@ -113,7 +144,7 @@ def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header
 def _align_gusnet_to_attention_tokens(gusnet_labels, attention_tokens, gusnet_special_tokens=None):
     """Align GUS-Net token labels to the attention model's tokens.
 
-    Handles cross-tokenizer subword mismatches — e.g. when GPT-2 BPE
+    Handles cross-tokenizer subword mismatches - e.g. when GPT-2 BPE
     produces a single token ``nurturing`` while BERT WordPiece splits it
     into ``nur`` + ``##turing``.  In such cases the GUS-Net label is
     propagated to all BERT subwords that form the original word.
@@ -162,7 +193,7 @@ def _align_gusnet_to_attention_tokens(gusnet_labels, attention_tokens, gusnet_sp
                     gus_current_label = None
                 continue
             else:
-                # Mismatch mid-word — reset and fall through
+                # Mismatch mid-word - reset and fall through
                 gus_remainder = ""
                 gus_current_label = None
 
@@ -182,7 +213,7 @@ def _align_gusnet_to_attention_tokens(gusnet_labels, attention_tokens, gusnet_sp
                 gus_idx += 1
                 gus_current_label = None
             else:
-                gus_idx += 1  # advance — remainder will be consumed by next subwords
+                gus_idx += 1  # advance - remainder will be consumed by next subwords
             continue
 
         # Case 4: GUS-Net subword is a prefix of the attention token
@@ -298,7 +329,7 @@ def _process_raw_bias_result(raw_res, thresholds, use_optimized=False):
             bias_doc_matrix = attention_analyzer.create_attention_bias_matrix(
                 list(attentions), biased_indices
             )
-            # bias_doc_matrix is a numpy array? Helper usually returns something else?
+            # bias_doc_matrix is a numpy array>= Helper usually returns something else>=
             # Warning: Existing code was: bias_matrix = attention_analyzer.create_attention_bias_matrix(...)
             bias_matrix = bias_doc_matrix
 
@@ -1085,7 +1116,7 @@ def bias_server_handlers(input, output, session):
                 try:
                     outputs = encoder_model(**inputs)
                 except torch.cuda.OutOfMemoryError:
-                    # Clear cache and try again? No, just fail gracefully
+                    # Clear cache and try again>= No, just fail gracefully
                     torch.cuda.empty_cache()
                     raise RuntimeError(
                         "GPU Out of Memory. usage is high. "
@@ -1194,7 +1225,7 @@ def bias_server_handlers(input, output, session):
                 # User clicked "Prompt B ->". Do not analyze. Switch tab.
                 log_debug("Sequential Logic: Switching to Tab B")
                 await session.send_custom_message("switch_prompt_tab_bias", "B") # Need to add this handler to JS too
-                # Or just use the existing one? No, I added switchBiasPromptTab function but not a message handler for it specifically?
+                # Or just use the existing one>= No, I added switchBiasPromptTab function but not a message handler for it specifically>=
                 # Actually, I can just call the function via JS eval or add a handler. 
                 # Let's add a simple script execution.
                 await session.send_custom_message("bias_eval_js", "window.switchBiasPromptTab('B');")
@@ -1444,7 +1475,7 @@ def bias_server_handlers(input, output, session):
                 if compare_models:
                     header_A = "MODEL A"
                     header_B = "MODEL B"
-                    # Keep the detailed label for the card or just use generic?
+                    # Keep the detailed label for the card or just use generic>=
                     # User asked for "MODEL A" header.
                 else:
                     header_A = "PROMPT A"
@@ -1477,6 +1508,7 @@ def bias_server_handlers(input, output, session):
                     # Summary comparison cards
                     create_bias_accordion(),
                     create_floating_bias_toolbar(),
+                    ui.div(style="height: 110px;"), # Spacer to clear floating bar
                     ui.tags.script("Shiny.setInputValue('toggle_bias_toolbar_visible', true, {priority: 'event'});"),
                 )
             else:
@@ -1493,6 +1525,7 @@ def bias_server_handlers(input, output, session):
                     ),
                     create_bias_accordion(),
                     create_floating_bias_toolbar(),
+                    ui.div(style="height: 110px;"), # Spacer to clear floating bar
                     ui.tags.script("Shiny.setInputValue('toggle_bias_toolbar_visible', true, {priority: 'event'});"),
                 )
 
@@ -1846,10 +1879,7 @@ def bias_server_handlers(input, output, session):
             )
         try:
             fig = create_token_bias_heatmap(res["token_labels"], res["text"])
-            return ui.HTML(
-                fig.to_html(include_plotlyjs='cdn', full_html=False,
-                            config={'displayModeBar': False})
-            )
+            return ui.HTML(_deferred_plotly(fig, "token-bias-heatmap"))
         except Exception as e:
             print(f"Error creating token bias viz: {e}")
             return ui.HTML(f'<div style="color:#ef4444;">Error: {e}</div>')
@@ -1942,11 +1972,11 @@ def bias_server_handlers(input, output, session):
         """Render Top K heads as horizontal chips."""
         res = bias_results.get()
         if not res:
-            return ui.HTML('<span style="color:#64748b;font-size:9px;">—</span>')
+            return ui.HTML('<span style="color:#64748b;font-size:9px;">--</span>')
 
         metrics = res.get("attention_metrics", [])
         if not metrics:
-            return ui.HTML('<span style="color:#64748b;font-size:9px;">—</span>')
+            return ui.HTML('<span style="color:#64748b;font-size:9px;">--</span>')
 
         try:
             k = int(input.bias_top_k())
@@ -1974,47 +2004,81 @@ def bias_server_handlers(input, output, session):
     def bias_toolbar_tokens():
         """Render biased tokens as clickable chips in the toolbar.
 
-        Clicking a chip selects that token in the Combined View,
-        highlighting its row/column with the category-specific colour.
+        In compare prompts mode, matches the screenshot:
+        - Row A (top): Blue label "A", tokens to the right.
+        - Separator line.
+        - Row B (bottom): Pink label "B", tokens to the right.
         """
-        res = bias_results.get()
-        if not res:
-            return ui.HTML('<span style="color:#64748b;font-size:10px;">No analysis yet</span>')
-
-        token_labels = res["token_labels"]
-        biased = [
-            lbl for lbl in token_labels
-            if lbl.get("is_biased") and lbl["token"] not in ("[CLS]", "[SEP]", "[PAD]")
-        ]
-        if not biased:
-            return ui.HTML('<span style="color:#64748b;font-size:10px;">No bias detected</span>')
-
         cat_colors = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
-        items = []
-        for lbl in biased:
-            clean = lbl["token"].replace("##", "").replace("\u0120", "")
-            types = lbl.get("bias_types", [])
-            scores = lbl.get("scores", {})
-            primary_color = cat_colors.get(types[0], "#ff5ca9") if types else "#ff5ca9"
-            max_score = max((scores.get(t, 0) for t in types), default=0)
-            cat_abbrevs = "·".join(types) if types else ""
-            tok_idx = lbl["index"]
 
-            items.append(
-                f'<span class="bias-token-chip" '
-                f'data-token-idx="{tok_idx}" '
-                f'onclick="selectBiasToken({tok_idx})" '
-                f'style="display:inline-flex;align-items:center;gap:3px;'
-                f'font-size:9px;font-family:JetBrains Mono,monospace;'
-                f'padding:1px 6px;border-radius:4px;flex-shrink:0;'
-                f'background:{primary_color}20;border:1px solid {primary_color}50;'
-                f'color:{primary_color};white-space:nowrap;cursor:pointer;" '
-                f'title="{cat_abbrevs} ({max_score:.2f})">'
-                f'{clean}'
-                f'</span>'
+        def _build_chips_html(res, variant="A"):
+            """Build HTML chips for a single result set."""
+            if not res:
+                return '<span style="color:#64748b;font-size:10px;padding:2px;">No analysis</span>'
+            token_labels = res["token_labels"]
+            biased = [
+                lbl for lbl in token_labels
+                if lbl.get("is_biased") and lbl["token"] not in ("[CLS]", "[SEP]", "[PAD]")
+            ]
+            if not biased:
+                return '<span style="color:#64748b;font-size:10px;padding:2px;">No bias detected</span>'
+
+            # Base color for chips depending on variant
+            base_color = "#3b82f6" if variant == "A" else "#ff5ca9"
+
+            items = []
+            for lbl in biased:
+                clean = lbl["token"].replace("##", "").replace("\u0120", "")
+                tok_idx = lbl["index"]
+                
+                # Use category color if available, else variant default
+                types = lbl.get("bias_types", [])
+                item_color = cat_colors.get(types[0], base_color) if types else base_color
+
+                # Use native .token-chip class with data-prefix for styling
+                items.append(
+                    f'<span class="token-chip" '
+                    f'data-token-idx="{tok_idx}" '
+                    f'data-prefix="{variant}" '
+                    f'onclick="selectBiasToken({tok_idx})">'
+                    f'{clean}'
+                    f'</span>'
+                )
+            return "".join(items)
+
+        compare_prompts = active_bias_compare_prompts.get()
+
+        if compare_prompts:
+            # ── Compare Prompts Layout ──
+            res_A = bias_results.get()
+            res_B = bias_results_B.get()
+            chips_A = _build_chips_html(res_A, "A")
+            chips_B = _build_chips_html(res_B, "B")
+
+            return ui.HTML(
+                f'<div class="token-sentence" style="flex-direction:column;flex-wrap:nowrap;align-items:stretch;padding:2px 6px;">'
+                # Row A
+                f'<div style="display:flex;align-items:center;min-height:24px;">'
+                f'<div style="margin-right:8px;margin-left:8px;min-width:15px;text-align:center;color:#60a5fa;font-size:10px;font-weight:600;">A</div>'
+                f'<div id="bias-tokens-a" style="flex:1;display:flex;overflow-x:auto;scrollbar-width:none;align-items:center;gap:4px;">{chips_A}</div>'
+                f'</div>'
+                # Row B
+                f'<div style="display:flex;align-items:center;min-height:24px;border-top:1px solid rgba(233, 30, 99, 0.3);">'
+                f'<div style="margin-right:8px;margin-left:8px;min-width:15px;text-align:center;color:#E91E63;font-size:10px;font-weight:600;">B</div>'
+                f'<div id="bias-tokens-b" onscroll="document.getElementById(\'bias-tokens-a\').scrollLeft = this.scrollLeft" '
+                f'style="flex:1;display:flex;overflow-x:auto;scrollbar-width:none;align-items:center;gap:4px;">{chips_B}</div>'
+                f'</div>'
+                f'</div>'
             )
-
-        return ui.HTML("".join(items))
+        else:
+            # ── Single / Compare Models ──
+            res = bias_results.get()
+            chips = _build_chips_html(res, "A")
+            return ui.HTML(
+                f'<div class="token-sentence">'
+                f'{chips}'
+                f'</div>'
+            )
 
 
     # ── Comparison Refactored Renderers ──
@@ -2202,7 +2266,7 @@ def bias_server_handlers(input, output, session):
 
         man_header = (
             "Confidence Breakdown",
-            "Biased tokens grouped by confidence tier — Low (0.50–0.70), Medium (0.70–0.85), High (0.85+)."
+            "Biased tokens grouped by confidence tier - Low (0.50-0.70), Medium (0.70-0.85), High (0.85+)."
         )
 
         if (compare_models or compare_prompts) and res_B:
@@ -2239,9 +2303,7 @@ def bias_server_handlers(input, output, session):
                 if l_idx >= len(atts): return '<div style="color:#9ca3af;">Layer out of bounds.</div>'
                 attn = atts[l_idx][0, h_idx].cpu().numpy()
                 fig = create_combined_bias_visualization(data["tokens"], data["token_labels"], attn, l_idx, h_idx, selected_token_idx=s_idxs)
-                plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False, 'responsive': True})
-                resize_script = f'<script>setTimeout(function(){{ var el = document.querySelector("#{container_id} .js-plotly-plot"); if(el) Plotly.Plots.resize(el); }}, 150);</script>'
-                return f'<div id="{container_id}" style="height:600px; width:100%;">{plot_html}</div>{resize_script}'
+                return _deferred_plotly(fig, container_id, height="600px")
             except Exception as e: return f'<div style="color:red">Error: {e}</div>'
 
         man_header = ("Combined Attention & Bias View",
@@ -2296,9 +2358,7 @@ def bias_server_handlers(input, output, session):
                 try: _bar_th = float(input.bias_bar_threshold())
                 except Exception: _bar_th = 1.5
                 fig = create_attention_bias_matrix(matrix, metrics=metrics, selected_layer=sl, bar_threshold=_bar_th)
-                plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False, 'responsive': True})
-                resize_script = f'<script>setTimeout(function(){{ var el = document.querySelector("#{container_id} .js-plotly-plot"); if(el) Plotly.Plots.resize(el); }}, 150);</script>'
-                return f'<div id="{container_id}" style="height:600px; width:100%;">{plot_html}</div>{resize_script}'
+                return _deferred_plotly(fig, container_id, height="600px")
             except Exception as e: return f'<div style="color:red">Error: {e}</div>'
 
         header_args = ("Bias Attention Matrix",
@@ -2343,12 +2403,10 @@ def bias_server_handlers(input, output, session):
             p = data["propagation_analysis"]["layer_propagation"]
             if not p: return "No data."
             fig = create_bias_propagation_plot(p, selected_layer=l_idx)
-            plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, config={'displayModeBar': False, 'responsive': True})
-            resize_script = f'<script>setTimeout(function(){{ var el = document.querySelector("#{container_id} .js-plotly-plot"); if(el) Plotly.Plots.resize(el); }}, 150);</script>'
-            return f'<div id="{container_id}" style="height:450px; width:100%;">{plot_html}</div>{resize_script}'
+            return _deferred_plotly(fig, container_id, height="450px")
 
         header_args = ("Bias Propagation Across Layers",
-                      "Mean bias attention ratio per layer — how bias focus evolves through model depth.",
+                      "Mean bias attention ratio per layer - how bias focus evolves through model depth.",
                       "The dashed line at 1.0 represents neutral attention. Values above indicate increasing bias focus.")
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
 
@@ -2426,9 +2484,9 @@ def bias_server_handlers(input, output, session):
 
                 # Badge for specialization
                 if is_sig:
-                    badge = '<span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#16a34a);margin-left:6px;" title="Specialized"><span style="color:white;font-size:8px;font-weight:700;">✓</span></span>'
+                    badge = '<span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#16a34a);margin-left:6px;" title="Specialized"><span style="color:white;font-size:8px;font-weight:700;">OK</span></span>'
                 else:
-                    badge = '<span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#e2e8f0;margin-left:6px;" title="Not specialized"><span style="color:#94a3b8;font-size:8px;">○</span></span>'
+                    badge = '<span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#e2e8f0;margin-left:6px;" title="Not specialized"><span style="color:#94a3b8;font-size:8px;">o</span></span>'
 
                 # Value color
                 val_color = "#ff5ca9" if is_sig else "#475569"
@@ -2589,10 +2647,7 @@ def bias_server_handlers(input, output, session):
             
             fig = create_ablation_impact_chart(results_data, bar_threshold=bar_threshold, selected_head=selected_head)
             c_id = f"ablation-chart-container{container_suffix}"
-            chart_html = fig.to_html(
-                include_plotlyjs="cdn", full_html=False,
-                config={"displayModeBar": False, "responsive": True},
-            )
+            chart_html = _deferred_plotly(fig, c_id)
 
             table_rows = []
             for rank, r in enumerate(results_data, 1):
@@ -2630,7 +2685,7 @@ def bias_server_handlers(input, output, session):
             )
             
             return ui.div(
-                ui.HTML(f'<div id="{c_id}" style="width:100%;">{chart_html}</div>'),
+                ui.HTML(chart_html),
                 ui.HTML(table_html),
             )
 
@@ -2815,47 +2870,39 @@ def bias_server_handlers(input, output, session):
             )
             # Adjust container height based on layout
             chart1_height = "800px" if show_comparison else "450px"
-            chart1_html = fig1.to_html(
-                include_plotlyjs="cdn", full_html=False,
-                config={"displayModeBar": False, "responsive": True},
-            )
+            cid1 = f"ig-chart-container{container_suffix}"
+            cid2 = f"ig-token-chart-container{container_suffix}"
+            cid3 = f"ig-dist-chart-container{container_suffix}"
+            cid4 = f"ig-layer-chart-container{container_suffix}"
+
+            chart1_html = _deferred_plotly(fig1, cid1, height=chart1_height)
 
             # ── Chart 2: Token-level IG vs Attention comparison ──
             chart2_html = ""
-            # Fix: use passed-in context_results or try to infer from single mode
             attentions = None
             if context_results and context_results.get("attentions"):
                 attentions = context_results["attentions"]
-            elif not show_comparison: # Fallback for single mode only
+            elif not show_comparison:
                  res = bias_results.get()
                  attentions = res.get("attentions") if res else None
-            
+
             if token_attrs is not None and tokens and attentions:
                 top_bar_heads = sorted(results, key=lambda r: r.bar_original, reverse=True)[:3]
                 try:
                     fig2 = create_ig_token_comparison_chart(
                         tokens, token_attrs, list(attentions), top_bar_heads,
                     )
-                    chart2_html = fig2.to_html(
-                        include_plotlyjs="cdn", full_html=False,
-                        config={"displayModeBar": False, "responsive": True},
-                    )
+                    chart2_html = _deferred_plotly(fig2, cid2, height="400px")
                 except Exception as e:
                      chart2_html = f"<div>Error generating token chart: {e}</div>"
 
             # ── Chart 3: Distribution violin ──
             fig3 = create_ig_distribution_chart(results, bar_threshold=bar_threshold, selected_head=selected_head)
-            chart3_html = fig3.to_html(
-                include_plotlyjs="cdn", full_html=False,
-                config={"displayModeBar": False, "responsive": True},
-            )
+            chart3_html = _deferred_plotly(fig3, cid3)
 
             # ── Chart 4: Layer-wise mean faithfulness ──
             fig4 = create_ig_layer_summary_chart(results, selected_layer=selected_layer)
-            chart4_html = fig4.to_html(
-                include_plotlyjs="cdn", full_html=False,
-                config={"displayModeBar": False, "responsive": True},
-            )
+            chart4_html = _deferred_plotly(fig4, cid4)
 
             # ── Summary stats ──
             sig_results = [r for r in results if r.spearman_pvalue < 0.05]
@@ -2872,7 +2919,7 @@ def bias_server_handlers(input, output, session):
                 f'<div style="font-size:20px;font-weight:700;color:#22c55e;font-family:JetBrains Mono,monospace;">{len(sig_results)}/{len(results)}</div>'
                 f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Significant (p&lt;0.05)</div></div>'
                 f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.15);border-radius:8px;text-align:center;">'
-                f'<div style="font-size:20px;font-weight:700;color:#f59e0b;font-family:JetBrains Mono,monospace;">{n_positive}+ / {n_negative}−</div>'
+                f'<div style="font-size:20px;font-weight:700;color:#f59e0b;font-family:JetBrains Mono,monospace;">{n_positive}+ / {n_negative}-</div>'
                 f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Positive / Negative</div></div>'
                 f'</div>'
             )
@@ -2882,7 +2929,7 @@ def bias_server_handlers(input, output, session):
             table_rows = []
             for rank, r in enumerate(top_heads, 1):
                 rho_color = "#2563eb" if r.spearman_rho > 0 else "#dc2626"
-                sig_badge = '<span style="color:#22c55e;font-weight:600;">*</span>' if r.spearman_pvalue < 0.05 else ""
+                sig_badge = '<span style="color:#22c55e;font-weight:600;">★</span>' if r.spearman_pvalue < 0.05 else ""
                 specialized = "Yes" if r.bar_original > bar_threshold else "No"
                 row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
                 table_rows.append(
@@ -2914,27 +2961,20 @@ def bias_server_handlers(input, output, session):
                 '</table>'
             )
             
-            # Assemble with unique IDs for javascript resize
-            cid1 = f"ig-chart-container{container_suffix}"
-            cid2 = f"ig-token-chart-container{container_suffix}"
-            cid3 = f"ig-dist-chart-container{container_suffix}"
-            cid4 = f"ig-layer-chart-container{container_suffix}"
-
             sections = [
-                ui.HTML(f'<div id="{cid1}" style="width:100%;height:{chart1_height};">{chart1_html}</div>'),
+                ui.HTML(chart1_html),
                 ui.HTML(summary_html),
                 ui.HTML(table_html),
             ]
-            
+
             if chart2_html:
                 sections.append(ui.HTML('<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'))
-                sections.append(ui.HTML(f'<div id="{cid2}" style="width:100%;height:400px;">{chart2_html}</div>'))
+                sections.append(ui.HTML(chart2_html))
 
             sections.append(ui.HTML('<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'))
             sections.append(ui.HTML(
                 f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
-                f'<div id="{cid3}">{chart3_html}</div>'
-                f'<div id="{cid4}">{chart4_html}</div>'
+                f'{chart3_html}{chart4_html}'
                 f'</div>'
             ))
             
@@ -2942,8 +2982,8 @@ def bias_server_handlers(input, output, session):
 
         header_args = (
             "Attention vs Integrated Gradients",
-            "Captum LayerIntegratedGradients — faithfulness analysis comparing attention patterns with gradient-based token attribution.",
-            "Positive ρ = attention aligns with what gradients say matters. * = statistically significant (p<0.05)."
+            "Captum LayerIntegratedGradients - faithfulness analysis comparing attention patterns with gradient-based token attribution.",
+            "Positive ρ = attention aligns with what gradients say matters. ★ = statistically significant (p&lt;0.05)."
         )
 
         if show_comparison:
@@ -3133,19 +3173,19 @@ def bias_server_handlers(input, output, session):
         """Category bar chart + bias distribution violin side-by-side."""
         mk_A = _stereoset_model_key()
         
-        def _render_single(mk, style=None, layout="row"):
+        def _render_single(mk, style=None, layout="row", container_suffix=""):
             scores = get_stereoset_scores(mk)
             examples = get_stereoset_examples(mk)
             if scores is None or not examples:
                 return None
             by_cat = scores.get("by_category", {})
             if not by_cat: return None
-            
+
             fig_cat = create_stereoset_category_chart(by_cat)
             fig_dist = create_stereoset_bias_distribution(examples)
-            
-            cat_html = fig_cat.to_html(include_plotlyjs="cdn", full_html=False, config={"responsive": True})
-            dist_html = fig_dist.to_html(include_plotlyjs=False, full_html=False, config={"responsive": True})
+
+            cat_html = _deferred_plotly(fig_cat, f"stereoset-cat-chart{container_suffix}")
+            dist_html = _deferred_plotly(fig_dist, f"stereoset-dist-chart{container_suffix}")
             
             card_style = style if style else ""
             
@@ -3161,8 +3201,8 @@ def bias_server_handlers(input, output, session):
         mk_B = _stereoset_model_key_B() if compare_models else None
 
         if compare_models and mk_B:
-            content_A = _render_single(mk_A, style="border: 2px solid #3b82f6;", layout="column") or ui.div("No data for Model A")
-            content_B = _render_single(mk_B, style="border: 2px solid #ff5ca9;", layout="column") or ui.div("No data for Model B")
+            content_A = _render_single(mk_A, style="border: 2px solid #3b82f6;", layout="column", container_suffix="_A") or ui.div("No data for Model A")
+            content_B = _render_single(mk_B, style="border: 2px solid #ff5ca9;", layout="column", container_suffix="_B") or ui.div("No data for Model B")
             
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
@@ -3186,10 +3226,10 @@ def bias_server_handlers(input, output, session):
             
             categories = sorted(set(e.get("category", "") for e in examples))
             charts = []
-            for cat in categories:
+            for i, cat in enumerate(categories):
                 cat_examples = [e for e in examples if e.get("category") == cat]
                 fig = create_stereoset_demographic_chart(cat_examples, category=cat, min_n=10)
-                chart_html = fig.to_html(include_plotlyjs="cdn" if not charts else False, full_html=False, config={"responsive": True})
+                chart_html = _deferred_plotly(fig, f"stereoset-demo-{cat}{container_suffix}")
                 charts.append(chart_html)
             
             from collections import Counter
@@ -3272,13 +3312,13 @@ def bias_server_handlers(input, output, session):
         """12x12 head sensitivity heatmap."""
         mk_A = _stereoset_model_key()
         
-        def _render_single(mk):
+        def _render_single(mk, container_suffix=""):
             matrix = get_head_sensitivity_matrix(mk)
             top_heads = get_sensitive_heads(mk)
             if matrix is None: return None
 
             fig = create_stereoset_head_sensitivity_heatmap(matrix, top_heads)
-            chart_html = fig.to_html(include_plotlyjs="cdn", full_html=False, config={"responsive": True})
+            chart_html = _deferred_plotly(fig, f"stereoset-sensitivity{container_suffix}")
 
             try: top_k = int(input.bias_top_k())
             except Exception: top_k = 5
@@ -3306,8 +3346,8 @@ def bias_server_handlers(input, output, session):
         mk_B = _stereoset_model_key_B() if compare_models else None
         
         if compare_models and mk_B:
-            c_A = _render_single(mk_A) or ui.div("No data")
-            c_B = _render_single(mk_B) or ui.div("No data")
+            c_A = _render_single(mk_A, "_A") or ui.div("No data")
+            c_B = _render_single(mk_B, "_B") or ui.div("No data")
             
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
@@ -3521,20 +3561,14 @@ def bias_server_handlers(input, output, session):
                             layer=sel_layer, head=sel_head,
                             is_sensitive=is_sens,
                         )
-                        t_html = fig_t.to_html(
-                            include_plotlyjs="cdn", full_html=False,
-                            config={"displayModeBar": False, "responsive": True},
-                        )
+                        t_html = _deferred_plotly(fig_t, f"stereoset-attn-heatmap-{mk}")
                         fig_d = create_stereoset_attention_diff_heatmap(
                             sd, ad, layer=sel_layer, head=sel_head,
                         )
-                        d_html = fig_d.to_html(
-                            include_plotlyjs=False, full_html=False,
-                            config={"displayModeBar": False, "responsive": True},
-                        )
+                        d_html = _deferred_plotly(fig_d, f"stereoset-attn-diff-{mk}")
                         return (
-                            f'<div style="width:100%;">{t_html}</div>'
-                            f'<div style="margin-top:12px;width:100%;">{d_html}</div>'
+                            f'{t_html}'
+                            f'<div style="margin-top:12px;">{d_html}</div>'
                         )
 
                     if has_B and ex_B_detail:
@@ -3578,10 +3612,10 @@ def bias_server_handlers(input, output, session):
                 sensitive_label = ""
                 _sens = get_sensitive_heads(mk) or []
                 if _sens:
-                    badges_A = [f'L{h["layer"]}·H{h["head"]}' for h in _sens[:5]]
+                    badges_A = [f'L{h["layer"]}.H{h["head"]}' for h in _sens[:5]]
                     if has_B:
                         _sens_B = get_sensitive_heads(mk_B) or []
-                        badges_B = [f'L{h["layer"]}·H{h["head"]}' for h in _sens_B[:5]]
+                        badges_B = [f'L{h["layer"]}.H{h["head"]}' for h in _sens_B[:5]]
                         sensitive_label = (
                             f'<div style="font-size:9px;margin-bottom:8px;display:flex;gap:16px;">'
                             f'<span style="color:#3b82f6;">★ {name_A}: {", ".join(badges_A)}</span>'
@@ -3591,7 +3625,7 @@ def bias_server_handlers(input, output, session):
                     else:
                         sensitive_label = (
                             f'<div style="font-size:9px;color:#f59e0b;margin-bottom:8px;">'
-                            f'★ Top sensitive: {", ".join(badges_A)}</div>'
+                            f'* Top sensitive: {", ".join(badges_A)}</div>'
                         )
 
                 detail_html = create_stereoset_example_html(
@@ -3613,11 +3647,16 @@ def bias_server_handlers(input, output, session):
             if "SilentException" in str(type(e)):
                 pass
             else:
-                with open("debug_log.txt", "a") as f:
-                    f.write(f"Error in stereoset_example_explorer details: {e}\n")
-                    import traceback
-                    traceback.print_exc(file=f)
-                detail_html = f"<div style='color:red;padding:10px;border:1px solid red;'>Error loading example details: {e}</div>"
+                import traceback
+                error_trace = traceback.format_exc()
+                detail_html = (
+                    f"<div style='color:#ef4444;padding:16px;border:1px solid rgba(239,68,68,0.2);background:rgba(239,68,68,0.05);border-radius:8px;'>"
+                    f"<div style='font-weight:700;margin-bottom:8px;'>Error loading example details</div>"
+                    f"<div style='font-family:JetBrains Mono,monospace;font-size:11px;white-space:pre-wrap;'>{e}</div>"
+                    f"<details style='margin-top:8px;'><summary style='cursor:pointer;opacity:0.6;font-size:10px;'>Show Traceback</summary>"
+                    f"<pre style='font-size:9px;opacity:0.8;margin-top:8px;'>{error_trace}</pre></details>"
+                    f"</div>"
+                )
 
         detail_section = (
             f'<div style="margin-top:16px;">{detail_html}</div>'
@@ -3640,7 +3679,7 @@ def bias_server_handlers(input, output, session):
             ),
             manual_header=(
                 "Example Explorer",
-                "Browse StereoSet examples — click to inspect with attention heatmaps",
+                "Browse StereoSet examples - click to inspect with attention heatmaps",
             ),
         )
 

@@ -377,8 +377,8 @@ CSS = """
             top: auto;
             left: 320px;
             right: 0;
-            margin-left: 24px;
-            margin-right: 24px;
+            margin-left: 48px;
+            margin-right: 48px;
             z-index: 1000;
             z-index: 1000;
             padding: 18px 20px 6px 20px;
@@ -900,12 +900,6 @@ CSS = """
             border: 2px solid #ff5ca9 !important;
             border-radius: 12px !important;
              box-shadow: none !important;
-        }
-
-        /* Make compare cards match height of the taller one */
-        .compare-card-a,
-        .compare-card-b {
-            min-height: auto;
         }
 
         /* Buttons & Inputs */

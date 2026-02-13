@@ -851,7 +851,7 @@ def create_bias_content():
             }
             /* Prevent attention tab's has-control-bar padding from leaking here */
             .bias-content.has-control-bar {
-                padding-bottom: 0 !important;
+                /* padding-bottom: 0 removed to allow global styles.py padding-bottom: 110px */
             }
         """),
 
@@ -954,93 +954,73 @@ def create_floating_bias_toolbar():
             ui.span("CONFIGURATIONS", class_="bar-title"),
 
             ui.div(
-                {"class": "controls-row", "style": "display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; width: 100%; gap: 0;"},
+                {"class": "controls-row"},
 
-                # ── LEFT COL: Layer & Head ──
+                # ── LEFT: Layer & Head ──
                 ui.div(
-                    {"style": "display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding-right: 12px;"},
-
-                    # Layer slider
+                    {"class": "control-group"},
+                    ui.span("Layer", class_="control-label"),
                     ui.div(
-                        {"class": "control-group"},
-                        ui.span("Layer", class_="control-label"),
-                        ui.div(
-                            {"class": "slider-container"},
-                            ui.tags.span("0", id="bias-layer-value", class_="slider-value"),
-                            ui.tags.input(type="range", id="bias-layer-slider", min="0", max="11", value="0", step="1"),
-                        ),
-                    ),
-
-                    # Head slider
-                    ui.div(
-                        {"class": "control-group"},
-                        ui.span("Head", class_="control-label"),
-                        ui.div(
-                            {"class": "slider-container"},
-                            ui.tags.span("0", id="bias-head-value", class_="slider-value"),
-                            ui.tags.input(type="range", id="bias-head-slider", min="0", max="11", value="0", step="1"),
-                        ),
-                    ),
-
-                    # Divider Left
-                    ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
-                ),
-
-                # ── CENTER COL: Bias Tokens ──
-                ui.div(
-                    {"style": "display: flex; justify-content: center; width: 100%; margin-top: 0;"},
-                    ui.div(
-                        {"class": "control-group", "style": "display: flex; align-items: center; justify-content: center; width: 100%; overflow: visible; margin: 0;"},
-                        ui.div(
-                            {"id": "bias-tokens-row", "class": "bias-token-container-compact"},
-                            ui.output_ui("bias_toolbar_tokens"),
-                        ),
+                        {"class": "slider-container"},
+                        ui.tags.span("0", id="bias-layer-value", class_="slider-value"),
+                        ui.tags.input(type="range", id="bias-layer-slider", min="0", max="11", value="0", step="1"),
                     ),
                 ),
 
-                # ── RIGHT COL: Custom Threshold toggle + BAR + Top-K ──
                 ui.div(
-                    {"style": "display: flex; align-items: center; justify-content: flex-start; gap: 16px; padding-left: 12px;"},
-
-                    # Divider Right
-                    ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
-
-                    ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
-
-                    # BAR Threshold slider
+                    {"class": "control-group"},
+                    ui.span("Head", class_="control-label"),
                     ui.div(
-                        {"class": "control-group",
-                         "title": "Bias Attention Ratio (BAR) specialization threshold.\n"
-                                  "BAR = observed attention to biased tokens / expected under uniform.\n"
-                                  "Heads with BAR above this value are marked as 'specialized'.\n"
-                                  "= 1.0: head attends uniformly (no bias focus)\n"
-                                  "> 1.5: head over-attends to biased tokens (default threshold)\n"
-                                  "Lower values detect subtler patterns; higher values are stricter."},
-                        ui.span("BAR Threshold", class_="control-label"),
-                        ui.div(
-                            {"class": "slider-container"},
-                            ui.tags.span("1.5", id="bias-bar-threshold-value", class_="slider-value"),
-                            ui.tags.input(type="range", id="bias-bar-threshold-slider", min="1.0", max="3.0", value="1.5", step="0.1"),
-                        ),
+                        {"class": "slider-container"},
+                        ui.tags.span("0", id="bias-head-value", class_="slider-value"),
+                        ui.tags.input(type="range", id="bias-head-slider", min="0", max="11", value="0", step="1"),
                     ),
+                ),
 
-                    # Top-K slider
+                # Divider
+                ui.div({"class": "control-divider"}),
+
+                # ── CENTER: Bias Tokens (flex sibling like attention bar) ──
+                ui.div(
+                    {"id": "bias-tokens-row"},
+                    ui.output_ui("bias_toolbar_tokens"),
+                ),
+
+                # Divider
+                ui.div({"class": "control-divider"}),
+
+                # ── RIGHT: BAR + Top-K ──
+                ui.div(
+                    {"class": "control-group",
+                     "title": "Bias Attention Ratio (BAR) specialization threshold.\n"
+                              "BAR = observed attention to biased tokens / expected under uniform.\n"
+                              "Heads with BAR above this value are marked as 'specialized'.\n"
+                              "= 1.0: head attends uniformly (no bias focus)\n"
+                              "> 1.5: head over-attends to biased tokens (default threshold)\n"
+                              "Lower values detect subtler patterns; higher values are stricter."},
+                    ui.span("BAR Threshold", class_="control-label"),
                     ui.div(
-                        {"class": "control-group"},
-                        ui.span("Top-K", class_="control-label"),
-                        ui.div(
-                            {"class": "slider-container"},
-                            ui.tags.span("5", id="bias-topk-value", class_="slider-value"),
-                            ui.tags.input(type="range", id="bias-topk-slider", min="1", max="10", value="5", step="1"),
-                        ),
+                        {"class": "slider-container"},
+                        ui.tags.span("1.5", id="bias-bar-threshold-value", class_="slider-value"),
+                        ui.tags.input(type="range", id="bias-bar-threshold-slider", min="1.0", max="3.0", value="1.5", step="0.1"),
                     ),
+                ),
 
-                    ui.div({"class": "control-divider", "style": "display:block; width:1px; height:24px; background:rgba(255,255,255,0.1);"}),
-
-
+                # Top-K slider
+                ui.div(
+                    {"class": "control-group"},
+                    ui.span("Top-K", class_="control-label"),
+                    ui.div(
+                        {"class": "slider-container"},
+                        ui.tags.span("5", id="bias-topk-value", class_="slider-value"),
+                        ui.tags.input(type="range", id="bias-topk-slider", min="1", max="10", value="5", step="1"),
+                    ),
                 ),
             ),
         ),
+
+        # Plotly CDN (needed for deferred plots that don't use to_html with include_plotlyjs)
+        ui.tags.script(src="https://cdn.plot.ly/plotly-2.35.2.min.js"),
 
         # ── Extra styles (only for bias-specific additions) ──
         ui.tags.style("""
@@ -1052,45 +1032,18 @@ def create_floating_bias_toolbar():
                 to { transform: translateY(0); opacity: 1; }
             }
 
-            /* Outer Scroll & Visual Container */
-            .bias-token-container-compact {
-                display: block;
-                background: rgba(30, 41, 59, 0.6);
-                border-radius: 6px;
-                border: 1px solid rgba(255, 255, 255, 0.06);
-                width: auto;
-                max-width: 450px;
-                max-height: 36px;
-                overflow-y: auto;
-                overflow-x: hidden;
-                box-sizing: border-box;
-                padding: 3px 4px;
-                height: fit-content;
-                align-self: center;
-            }
-
-            #bias_toolbar_tokens {
+            /* Let bias tokens container behave like attention tab */
+            #bias-tokens-row {
+                flex: 1;
+                min-width: 0;
                 display: flex;
-                flex-wrap: wrap;
-                justify-content: center;
                 align-items: center;
-                align-content: flex-start;
-                gap: 2px;
+            }
+            #bias-tokens-row > div {
+                margin: 0 !important;
+                padding: 0 !important;
                 width: 100%;
-                margin: 0 !important;
-                padding: 0 !important;
-                height: fit-content;
             }
-
-            #bias-tokens-row > div,
-            #bias-tokens-row > div > div {
-                margin: 0 !important;
-                padding: 0 !important;
-            }
-
-            .bias-token-container-compact::-webkit-scrollbar { width: 3px; }
-            .bias-token-container-compact::-webkit-scrollbar-track { background: transparent; }
-            .bias-token-container-compact::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
 
             .bias-token-chip {
                 transition: all 0.15s ease;
@@ -1107,17 +1060,106 @@ def create_floating_bias_toolbar():
             .bias-compare-mode .thresh-label-a {
                 color: #3b82f6 !important;
             }
+
+            /* Constrain Plotly plots to never exceed their container */
+            #bias_accordion .plotly-graph-div,
+            #bias_accordion .js-plotly-plot,
+            #bias_accordion .js-plotly-plot .plot-container,
+            #bias_accordion .js-plotly-plot .svg-container {
+                max-width: 100% !important;
+            }
         """),
 
         # ── Script ──
         ui.tags.script("""
+        // ── Deferred Plotly rendering ──
+        // Plots with class "plotly-deferred" store their figure JSON as
+        // base64 in a data-plotly-fig attribute. Plotly.newPlot() is only
+        // called when the container becomes visible — avoiding wrong
+        // dimensions in hidden accordion panels.
+        (function() {
+            if (window._biasPlotDeferredReady) return;
+            window._biasPlotDeferredReady = true;
+
+            function initDeferred(el) {
+                var b64 = el.getAttribute('data-plotly-fig');
+                if (!b64) return;
+
+                if (typeof Plotly === 'undefined') {
+                    // Retry mechanism
+                    var attempts = parseInt(el.getAttribute('data-plotly-attempts') || '0');
+                    if (attempts < 10) { // Retry for ~5 seconds
+                        el.setAttribute('data-plotly-attempts', attempts + 1);
+                        setTimeout(function() { initDeferred(el); }, 500);
+                    } else {
+                        el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ef4444;background:rgba(239,68,68,0.05);border:1px dashed #ef4444;border-radius:8px;padding:20px;text-align:center;"><div><b>Visualisation Error</b><br><span style="font-size:12px;opacity:0.8;">Plotly library failed to load.<br>Check your internet connection.</span></div></div>';
+                    }
+                    return;
+                }
+
+                try {
+                    var binary = atob(b64);
+                    var bytes = new Uint8Array(binary.length);
+                    for (var i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }
+                    var fig = JSON.parse(new TextDecoder().decode(bytes));
+                    var cfg = JSON.parse(el.getAttribute('data-plotly-config') || '{}');
+                    el.removeAttribute('data-plotly-fig');
+                    el.classList.remove('plotly-deferred');
+                    el.classList.add('plotly-initialized');
+                    Plotly.newPlot(el, fig.data, fig.layout, cfg);
+                } catch (err) {
+                    console.error("Plotly render error:", err);
+                    el.innerHTML = '<div style="color:#ef4444;padding:10px;">Render Error: ' + err.message + '</div>';
+                }
+            }
+
+            // IntersectionObserver: render when visible
+            var io = new IntersectionObserver(function(entries) {
+                entries.forEach(function(entry) {
+                    if (entry.isIntersecting && entry.target.classList.contains('plotly-deferred')) {
+                        initDeferred(entry.target);
+                    }
+                    // Also resize already-initialized plots that just became visible
+                    if (entry.isIntersecting && entry.target.classList.contains('js-plotly-plot')) {
+                        try { Plotly.Plots.resize(entry.target); } catch(e) {}
+                    }
+                });
+            }, { threshold: 0.01 });
+
+            // Watch for new deferred containers and plotly plots
+            new MutationObserver(function(mutations) {
+                for (var i = 0; i < mutations.length; i++) {
+                    if (mutations[i].addedNodes.length) {
+                        setTimeout(function() {
+                            document.querySelectorAll('.plotly-deferred').forEach(function(el) {
+                                io.observe(el);
+                            });
+                            document.querySelectorAll('.js-plotly-plot').forEach(function(el) {
+                                io.observe(el);
+                            });
+                        }, 50);
+                        return;
+                    }
+                }
+            }).observe(document.body, { childList: true, subtree: true });
+
+            // Window resize
+            window.addEventListener('resize', function() {
+                document.querySelectorAll('.js-plotly-plot').forEach(function(el) {
+                    if (el.offsetWidth > 0) {
+                        try { Plotly.Plots.resize(el); } catch(e) {}
+                    }
+                });
+            });
+        })();
+
         // ── Token selection for Combined View ──
         window.selectedBiasTokens = new Set();
 
-        # Toggle Compare Mode class for Sensitivity Thresholds - REMOVED (Replaced by server-side panel_conditional)
-        # We now use a conditional style injection in the layout itself.
+        // Toggle Compare Mode class for Sensitivity Thresholds - REMOVED (Replaced by server-side panel_conditional)
+        // We now use a conditional style injection in the layout itself.
 
-        # Initial check on connection - REMOVED
+        // Initial check on connection - REMOVED
 
         window.selectBiasToken = function(idx) {
             var chips = document.querySelectorAll('.bias-token-chip[data-token-idx="' + idx + '"]');

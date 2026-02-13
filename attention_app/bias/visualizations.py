@@ -74,9 +74,9 @@ def create_attention_bias_matrix(
                 if m:
                     text = (
                         f"<b>Layer {layer}, Head {head}</b><br>"
-                        f"BAR (μ̂/μ₀): {m.bias_attention_ratio:.3f}<br>"
+                        f"BAR (mu_hat/mu_0): {m.bias_attention_ratio:.3f}<br>"
                         f"BSR (self-reinforcement): {m.amplification_score:.3f}<br>"
-                        f"Max α→biased: {m.max_bias_attention:.3f}<br>"
+                        f"Max α->biased: {m.max_bias_attention:.3f}<br>"
                         f"Specialised: {'Yes' if m.specialized_for_bias else 'No'}"
                     )
                 else:
@@ -122,7 +122,7 @@ def create_attention_bias_matrix(
         showscale=True,
         colorbar=dict(
             title=dict(
-                text="BAR<br>(μ̂/μ₀)",
+                text="BAR<br>(mu_hat/mu_0)",
                 side="right",
                 font=dict(size=11, color="#64748b")
             ),
@@ -133,7 +133,7 @@ def create_attention_bias_matrix(
     ))
 
     # Add shape for selected layer
-    if selected_layer is not None and 0 <= selected_layer < num_layers:
+    if selected_layer is not None and 0 >= selected_layer < num_layers:
         fig.add_shape(
             type="rect",
             x0=-0.5,
@@ -177,11 +177,11 @@ def create_attention_bias_matrix(
         xref="paper",
         yref="paper",
         text=(
-            "<b>BAR(l, h) = μ̂<sub>B</sub> / μ₀</b><br>"
+            "<b>BAR(l, h) = mu_hat<sub>B</sub> / mu_0</b><br>"
             "<span style='font-size:9px'>observed / expected attention</span><br><br>"
-            f"<span style='color:#dc2626'>■</span> <b>≥ {bar_threshold:.1f}</b> Specialised<br>"
-            "<span style='color:#93c5fd'>■</span> <b>= 1.0</b> Uniform<br>"
-            "<span style='color:#3b82f6'>■</span> <b>&lt; 1.0</b> Under-attends"
+            f"<span style='color:#dc2626'>★</span> <b>≥ {bar_threshold:.1f}</b> Specialised<br>"
+            "<span style='color:#93c5fd'>★</span> <b>= 1.0</b> Uniform<br>"
+            "<span style='color:#3b82f6'>★</span> <b>&lt; 1.0</b> Under-attends"
         ),
         showarrow=False,
         font=dict(size=10, color="#64748b"),
@@ -229,7 +229,7 @@ def create_bias_propagation_plot(
     )
 
     # Add arrow annotation for selected layer if provided
-    if selected_layer is not None and 0 <= selected_layer < len(layers):
+    if selected_layer is not None and 0 >= selected_layer < len(layers):
         fig.add_annotation(
             x=selected_layer,
             y=layer_propagation[selected_layer],
@@ -263,7 +263,7 @@ def create_bias_propagation_plot(
             tickfont=dict(size=11, color="#64748b")
         ),
         yaxis=dict(
-            title="Avg BAR (μ̂ / μ₀)",
+            title="Avg BAR (mu_hat / mu_0)",
             gridcolor='#e2e8f0',
             tickfont=dict(size=11, color="#64748b"),
             rangemode="tozero"
@@ -292,8 +292,8 @@ def create_combined_bias_visualization(
 
     By default no tokens are highlighted.  When *selected_token_idx* is
     provided, that token's row and column are highlighted using its
-    primary bias-category colour (GEN → orange, STEREO → purple,
-    UNFAIR → red).
+    primary bias-category colour (GEN -> orange, STEREO -> purple,
+    UNFAIR -> red).
     """
     n = len(tokens)
     
@@ -331,7 +331,7 @@ def create_combined_bias_visualization(
 
     sel_hl_map = {} # map idx -> color info
     for idx in selected_indices:
-        if 0 <= idx < n:
+        if 0 >= idx < n:
             lbl = token_labels[idx]
             if lbl.get("is_biased") and lbl.get("bias_types"):
                 primary = lbl["bias_types"][0]
@@ -400,7 +400,7 @@ def create_combined_bias_visualization(
 
     # ── Row/column highlight for the SELECTED token only ──
     for idx in selected_indices:
-        if 0 <= idx < n:
+        if 0 >= idx < n:
             hl = sel_hl_map.get(idx, _DEFAULT_HL)
             fig.add_shape(
                 type="rect",
@@ -421,7 +421,7 @@ def create_combined_bias_visualization(
 
     fig.update_layout(
         title=dict(
-            text=f"Attention × Bias — Layer {layer_idx}, Head {head_idx}",
+            text=f"Attention x Bias - Layer {layer_idx}, Head {head_idx}",
             x=0.5, y=0.98, xanchor="center", yanchor="top",
             font=dict(size=14, color="#334155", family="Inter, sans-serif"),
         ),
@@ -478,7 +478,7 @@ def create_inline_bias_html(
             'No bias patterns detected' + (' above threshold' if not show_neutral and bias_spans else '') + '.</div></div>'
         )
 
-    # Reconstruct text from tokens, mapping token indices → char positions
+    # Reconstruct text from tokens, mapping token indices -> char positions
     tokens = [l["token"] for l in token_labels]
     char_positions = _align_tokens_to_text(text, tokens)
 
@@ -703,7 +703,7 @@ def create_method_info_html(model_key: str = "gusnet-bert") -> str:
         '<span style="display:inline-flex;align-items:center;justify-content:center;'
         'width:14px;height:14px;border-radius:50%;background:rgba(59,130,246,0.1);'
         'color:#3b82f6;font-size:9px;font-weight:600;cursor:help;" '
-        'title="GUS-Net = Generalization, Unfairness, and Stereotype Network">ℹ</span>'
+        'title="GUS-Net = Generalization, Unfairness, and Stereotype Network">i</span>'
         '</div>'
         '<div style="font-size:11px;color:#64748b;">'
         'Social Bias Named Entity Recognition</div>'
@@ -775,20 +775,20 @@ def create_ratio_formula_html() -> str:
         '<div style="border-top:1px solid rgba(148,163,184,0.2);'
         'padding-top:10px;margin-top:6px;text-align:left;font-size:11px;line-height:1.8;">'
 
-        # μ̂_B definition
+        # mu_hat_B definition
         f'<div>{mu_hat_lh}'
         f'<span style="color:#64748b;margin:0 6px;">=</span>'
         + frac('<span style="color:#e2e8f0;">1</span>',
                '<span style="color:#e2e8f0;"><i>N</i></span>') +
-        f'<span style="color:#94a3b8;margin:0 2px;">·</span>'
+        f'<span style="color:#94a3b8;margin:0 2px;">.</span>'
         f'<span style="color:#94a3b8;">&#8721;<sub style="font-size:70%;"><i>i</i>=1</sub>'
         f'<sup style="font-size:70%;"><i>N</i></sup></span>'
-        f'<span style="color:#94a3b8;margin:0 1px;">&#8721;<sub style="font-size:70%;"><i>j</i>∈{B_set}</sub></span>'
+        f'<span style="color:#94a3b8;margin:0 1px;">&#8721;<sub style="font-size:70%;"><i>j</i>in{B_set}</sub></span>'
         f'<span style="margin-left:3px;">{alpha_lh}</span>'
         f'<span style="color:#475569;font-size:9px;margin-left:10px;font-style:italic;">'
-        f'observed mean attention → biased tokens</span></div>'
+        f'observed mean attention -> biased tokens</span></div>'
 
-        # μ₀ definition
+        # mu_0 definition
         f'<div>{mu_0}'
         f'<span style="color:#64748b;margin:0 6px;">=</span>'
         + frac(f'<span style="color:#e2e8f0;">|{B_set}|</span>',
@@ -803,12 +803,12 @@ def create_ratio_formula_html() -> str:
         'padding:8px 12px;background:rgba(241,245,249,0.5);border-radius:6px;'
         'font-family:JetBrains Mono,monospace;">'
         f'<div>{alpha_lh} '
-        '<span style="color:#64748b;">— attention weight from token <i>i</i> '
+        '<span style="color:#64748b;">-- attention weight from token <i>i</i> '
         'to token <i>j</i> at layer <i>l</i>, head <i>h</i></span></div>'
-        f'<div>{B_set} ⊆ &#123;1, …, <i>N</i>&#125; '
-        '<span style="color:#64748b;">— indices flagged by GUS-Net</span></div>'
+        f'<div>{B_set} subset &#123;1, ..., <i>N</i>&#125; '
+        '<span style="color:#64748b;">-- indices flagged by GUS-Net</span></div>'
         '<div><span style="color:#e2e8f0;"><i>N</i></span> '
-        '<span style="color:#64748b;">— sequence length</span></div>'
+        '<span style="color:#64748b;">-- sequence length</span></div>'
         '</div>'
 
         # ── Interpretation ──
@@ -819,7 +819,7 @@ def create_ratio_formula_html() -> str:
         '<br>'
         '<code style="background:#fee2e2;padding:1px 6px;border-radius:3px;'
         'font-size:10px;color:#991b1b;">&gt; 1.5</code> '
-        '<b>Specialised</b> — head disproportionately attends to biased tokens '
+        '<b>Specialised</b> - head disproportionately attends to biased tokens '
         '<br>'
         '<code style="background:#dbeafe;padding:1px 6px;border-radius:3px;'
         'font-size:10px;color:#1e40af;">&lt; 1.0</code> '
@@ -1184,7 +1184,7 @@ def create_bias_criteria_html(summary: Dict, weights: Optional[Dict] = None) -> 
         f'{bar("Stereotypes", c_stereo, weights["stereo"], bar_color="#9c27b0")}'
         f'</div>'
         f'<div style="font-size:10px; color:#94a3b8; margin-top:12px; font-style:italic;">'
-        f'Thresholds: Low &lt; 0.15 | Moderate &lt; 0.40 | High &ge; 0.40'
+        f'Thresholds: Low &lt; 0.15 | Moderate &lt; 0.40 | High ≥ 0.40'
         f'</div>'
         f'</div>'
     )
@@ -1203,9 +1203,9 @@ def create_confidence_breakdown(
     ``max(scores[t] for t in bias_types)``.
 
     Tiers:
-        Low    — [0.50, 0.70)
-        Medium — [0.70, 0.85)
-        High   — [0.85, 1.00]
+        Low    - [0.50, 0.70)
+        Medium - [0.70, 0.85)
+        High   - [0.85, 1.00]
 
     Returns an HTML string with:
     * A summary bar section (one horizontal bar per tier with count + %)
@@ -1254,7 +1254,7 @@ def create_confidence_breakdown(
                 tier_buckets[t["name"]].append(item)
                 break
         else:
-            # Below 0.50 — still place in Low
+            # Below 0.50 - still place in Low
             tier_buckets["Low"].append(item)
 
     total_biased = len(biased)
@@ -1428,7 +1428,7 @@ def create_ablation_impact_chart(
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         xaxis=dict(title="Attention Head", tickfont=dict(size=10, color="#475569")),
-        yaxis=dict(title="1 − cos_sim (higher = more impact)", tickfont=dict(size=10, color="#475569")),
+        yaxis=dict(title="1 - cos_sim (higher = more impact)", tickfont=dict(size=10, color="#475569")),
         autosize=True,
         height=400,
         margin=dict(l=80, r=80, t=100, b=60),
@@ -1471,7 +1471,7 @@ def create_ig_correlation_chart_v2(
     Returns
     -------
     Plotly Figure with two subplots:
-        Left (or Top): layer × head heatmap of Spearman ρ
+        Left (or Top): layer x head heatmap of Spearman ρ
         Right (or Bottom): scatter of BAR vs Spearman ρ (one dot per head)
     """
     if not ig_results:
@@ -1546,7 +1546,7 @@ def create_ig_correlation_chart_v2(
     fig = make_subplots(
         rows=rows, cols=cols,
         subplot_titles=(
-            "Attention–IG Correlation per Head",
+            "Attention-IG Correlation per Head",
             "BAR vs Faithfulness (Spearman ρ)",
         ),
         column_widths=col_widths,
@@ -1556,7 +1556,7 @@ def create_ig_correlation_chart_v2(
     )
 
     # ── Correlation heatmap ──
-    # Divergent colorscale centered at 0: red (negative) → white (0) → blue (positive)
+    # Divergent colorscale centered at 0: red (negative) -> white (0) -> blue (positive)
     rho_abs_max = max(abs(rho_matrix.min()), abs(rho_matrix.max()), 0.3)
     colorscale = [
         [0.0, "#dc2626"],     # Negative: red
@@ -1618,7 +1618,7 @@ def create_ig_correlation_chart_v2(
     ]
 
     scatter_hover = [
-        f"<b>{lbl}</b><br>BAR: {b:.3f}<br>ρ: {rh:.3f}<br>"
+        f"<b>{lbl}</b><br>BAR: {b:.3f}<br>rho: {rh:.3f}<br>"
         f"p: {r.spearman_pvalue:.4f}<br>Significant: {'Yes' if s else 'No'}"
         for lbl, b, rh, r, s in zip(labels, bars, rhos, ig_results, significant)
     ]
@@ -1789,7 +1789,7 @@ def create_ig_token_comparison_chart(
         bargap=0.15,
         title=dict(
             text="Token-Level: IG Attribution vs Attention<br>"
-                 "<sub>Normalized comparison — do attention and gradients agree on important tokens?</sub>",
+                 "<sub>Normalized comparison - do attention and gradients agree on important tokens?</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         xaxis=dict(
@@ -1876,7 +1876,7 @@ def create_ig_distribution_chart(
                 group_name = (
                     f"Specialized (BAR > {bar_threshold})"
                     if is_spec
-                    else f"Non-specialized (BAR \u2264 {bar_threshold})"
+                    else f"Non-specialized (BAR ≤ {bar_threshold})"
                 )
                 fig.add_trace(go.Scatter(
                     x=[group_name], y=[r.spearman_rho],
@@ -1886,7 +1886,7 @@ def create_ig_distribution_chart(
                     showlegend=False,
                     hovertemplate=(
                         f"<b>L{r.layer}H{r.head}</b><br>"
-                        f"\u03c1 = {r.spearman_rho:.3f}<br>"
+                        f"ρ = {r.spearman_rho:.3f}<br>"
                         f"BAR: {r.bar_original:.3f}<extra></extra>"
                     ),
                 ))
@@ -1971,7 +1971,7 @@ def create_ig_layer_summary_chart(
         opacity=0.85,
         hovertemplate=(
             "<b>Layer %{x}</b><br>"
-            "Mean ρ: %{y:.3f}<br>"
+            "Mean rho: %{y:.3f}<br>"
             "Std: %{customdata[0]:.3f}<br>"
             "Heads: %{customdata[1]}"
             "<extra></extra>"
@@ -1984,7 +1984,7 @@ def create_ig_layer_summary_chart(
     fig.update_layout(
         title=dict(
             text="Layer-wise Faithfulness<br>"
-                 "<sub>Mean Spearman ρ per layer (error bars = ±1 std across heads)</sub>",
+                 "<sub>Mean Spearman ρ per layer (error bars = +/-1 std across heads)</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         xaxis=dict(title="Layer", tickfont=dict(size=10, color="#475569")),
@@ -2057,7 +2057,7 @@ def create_stereoset_overview_html(scores: Dict, metadata: Dict) -> str:
     gauges = (
         gauge("Stereotype Score", ss, 50, "%", "% model prefers stereotype", color="#3b82f6")
         + gauge("Language Model Score", lms, 100, "%", "% meaningful over unrelated", color="#22c55e")
-        + gauge("ICAT", icat, 100, "", "LMS × min(SS, 100−SS) / 50", color="#f59e0b")
+        + gauge("ICAT", icat, 100, "", "LMS x min(SS, 100-SS) / 50", color="#f59e0b")
     )
 
     return (
@@ -2175,7 +2175,7 @@ def create_stereoset_head_sensitivity_heatmap(
     fig.update_layout(
         title=dict(
             text="Head Sensitivity to Bias Categories<br>"
-                 "<sub>Variance of mean attention across gender/race/religion/profession (★ = top 10)</sub>",
+                 "<sub>Variance of mean attention across gender/race/religion/profession (* = top 10)</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         xaxis=dict(title="Attention Head", tickfont=dict(size=10, color="#475569"), side="bottom"),
@@ -2219,7 +2219,7 @@ def create_stereoset_bias_distribution(examples: List[Dict]) -> go.Figure:
     fig.update_layout(
         title=dict(
             text="Bias Score Distribution by Category<br>"
-                 "<sub>PLL(stereo) − PLL(anti): positive = model prefers stereotype</sub>",
+                 "<sub>PLL(stereo) - PLL(anti): positive = model prefers stereotype</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         yaxis=dict(
@@ -2560,7 +2560,7 @@ def create_stereoset_example_html(
         pll_A = data_A[type_key]
         pref_A = data_A["pref"]
         is_pref_A = (type_key == pref_A)
-        indicator_A = " ← prefer" if is_pref_A and type_key != "unrelated" else ""
+        indicator_A = " <- prefer" if is_pref_A and type_key != "unrelated" else ""
         
         score_html = (
             f'<div style="display:flex;flex-direction:column;align-items:flex-end;min-width:60px;">'
@@ -2574,7 +2574,7 @@ def create_stereoset_example_html(
             pll_B = data_B[type_key]
             pref_B = data_B["pref"]
             is_pref_B = (type_key == pref_B)
-            indicator_B = " ← prefer" if is_pref_B and type_key != "unrelated" else ""
+            indicator_B = " <- prefer" if is_pref_B and type_key != "unrelated" else ""
             
             score_html = (
                 f'<div style="display:flex;gap:12px;align-items:center;">'
@@ -2671,7 +2671,7 @@ def create_stereoset_example_html(
         f'transition:all 0.2s;" '
         f'onmouseover="this.style.background=\'rgba(255,92,169,0.25)\'" '
         f'onmouseout="this.style.background=\'rgba(255,92,169,0.1)\'">'
-        f'Analyze in Pipeline →</button>'
+        f'Analyze in Pipeline -></button>'
         f'</div>'
         + (f'<div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(139,92,246,0.2);">'
            f'<div style="font-size:12px;font-weight:700;color:#a78bfa;margin-bottom:4px;">'
@@ -2721,29 +2721,33 @@ def create_stereoset_attention_heatmaps(
     has_unrelated = unrelated_data is not None and bool(unrelated_data.get("tokens"))
 
     if has_unrelated:
-        # 2 rows: top has Stereo + Anti, bottom has Unrelated centered
+        # 4 cols to allow centering the bottom one (spanning col 2-3)
         fig = make_subplots(
-            rows=2, cols=2,
-            subplot_titles=["Stereotype", "Anti-Stereotype", "Unrelated", ""],
-            horizontal_spacing=0.08,
-            vertical_spacing=0.14,
-            specs=[[{}, {}], [{"colspan": 2}, None]],
+            rows=2, cols=4,
+            subplot_titles=["Stereotype", "", "Anti-Stereotype", "", "", "Unrelated", "", ""],
+            horizontal_spacing=0.06,
+            vertical_spacing=0.12,
+            specs=[
+                [{"colspan": 2}, None, {"colspan": 2}, None],
+                [None, {"colspan": 2}, None, None]
+            ],
         )
         # positions: (row, col) for each panel
-        positions = [(1, 1), (1, 2), (2, 1)]
+        positions = [(1, 1), (1, 3), (2, 2)]
         panels = [
             ("Stereotype", stereo_data, "#f87171"),
             ("Anti-Stereotype", anti_data, "#4ade80"),
             ("Unrelated", unrelated_data, "#94a3b8"),
         ]
     else:
-        # Just 2 side-by-side
+        # 4 cols, side by side spanning 2 cols each
         fig = make_subplots(
-            rows=1, cols=2,
-            subplot_titles=["Stereotype", "Anti-Stereotype"],
+            rows=1, cols=4,
+            subplot_titles=["Stereotype", "", "Anti-Stereotype", ""],
             horizontal_spacing=0.08,
+            specs=[[{"colspan": 2}, None, {"colspan": 2}, None]],
         )
-        positions = [(1, 1), (1, 2)]
+        positions = [(1, 1), (1, 3)]
         panels = [
             ("Stereotype", stereo_data, "#f87171"),
             ("Anti-Stereotype", anti_data, "#4ade80"),
@@ -2771,7 +2775,7 @@ def create_stereoset_attention_heatmaps(
         is_last = idx == n_panels - 1
 
         hover_text = [
-            [f"<b>{display_tokens[i]} → {display_tokens[j]}</b><br>"
+            [f"<b>{display_tokens[i]} -> {display_tokens[j]}</b><br>"
              f"Attention: {att_matrix[i, j]:.4f}<br>"
              f"({label})"
              for j in range(seq_len)]
@@ -2802,46 +2806,44 @@ def create_stereoset_attention_heatmaps(
     # Style
     sensitive_badge = " ★ sensitive" if is_sensitive else ""
     max_tokens = max(len(p[1]["tokens"]) for p in panels)
-    base_h = max(300, min(450, 18 * max_tokens + 100))
-    total_h = int(base_h * (1.85 if has_unrelated else 1.0))
+    # Increased vertical size
+    base_h = max(450, min(650, 22 * max_tokens + 150))
+    total_h = int(base_h * (1.75 if has_unrelated else 1.0))
 
     fig.update_layout(
         title=dict(
             text=(
-                f"Token-Level Attention — L{layer}·H{head}{sensitive_badge}<br>"
+                f"Token-Level Attention - L{layer}.H{head}{sensitive_badge}<br>"
                 f"<sub>Shared colour scale across all variants for direct comparison</sub>"
             ),
             font=dict(size=15, color="#e2e8f0", family="Inter, sans-serif"),
         ),
         height=total_h,
         autosize=True,
-        margin=dict(l=80, r=60, t=90, b=60),
+        margin=dict(l=80, r=60, t=100, b=60),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif", color="#94a3b8"),
     )
 
     # Axis styling for all subplots
-    n_rows = 2 if has_unrelated else 1
-    for r_idx in range(1, n_rows + 1):
-        cols_in_row = 2 if r_idx == 1 else 1
-        for c_idx in range(1, cols_in_row + 1):
-            fig.update_xaxes(
-                tickfont=dict(size=8, color="#94a3b8"),
-                tickangle=45,
-                row=r_idx, col=c_idx,
-            )
-            fig.update_yaxes(
-                tickfont=dict(size=8, color="#94a3b8"),
-                autorange="reversed",
-                row=r_idx, col=c_idx,
-            )
+    # Identify which traces are in which row/col
+    for i in range(len(fig.data)):
+        trace = fig.data[i]
+        r_idx = trace.xaxis[1:] if trace.xaxis != 'x' else '1'
+        r_idx = int(r_idx) if r_idx else 1
+        # Plotly subplot indexing is complex with colspans, easier to use universal update
+        pass
+
+    fig.update_xaxes(tickfont=dict(size=9, color="#94a3b8"), tickangle=45)
+    fig.update_yaxes(tickfont=dict(size=9, color="#94a3b8"), autorange="reversed")
 
     # Color the subplot titles
-    # Filter annotations that have text (skipping potentially empty ones)
-    annotations = [a for a in fig['layout']['annotations'] if getattr(a, 'text', '').strip()]
+    # subplots titles are annotations. We need to find the right ones.
+    # In make_subplots with colspans and empty titles, we just map to non-empty ones.
+    annotations = [a for a in fig.layout.annotations if a.text.strip()]
     for ann, (_, _, color) in zip(annotations, panels):
-        ann['font'] = dict(size=12, color=color, family="Inter, sans-serif")
+        ann.font = dict(size=13, color=color, family="Inter, sans-serif", weight="bold")
 
     return fig
 
@@ -2852,7 +2854,7 @@ def create_stereoset_attention_diff_heatmap(
     layer: int,
     head: int,
 ) -> go.Figure:
-    """Difference heatmap: Stereotype attention − Anti-Stereotype attention.
+    """Difference heatmap: Stereotype attention - Anti-Stereotype attention.
 
     Red = more attention in stereotype sentence.
     Blue = more attention in anti-stereotype sentence.
@@ -2872,7 +2874,7 @@ def create_stereoset_attention_diff_heatmap(
     abs_max = max(abs(diff.min()), abs(diff.max()), 1e-6)
 
     hover_text = [
-        [f"<b>{display_tokens[i]} → {display_tokens[j]}</b><br>"
+        [f"<b>{display_tokens[i]} -> {display_tokens[j]}</b><br>"
          f"Δ Attention: {diff[i, j]:+.4f}<br>"
          f"Stereo: {s_att[i, j]:.4f} | Anti: {a_att[i, j]:.4f}"
          for j in range(min_len)]
@@ -2905,7 +2907,7 @@ def create_stereoset_attention_diff_heatmap(
     fig.update_layout(
         title=dict(
             text=(
-                f"Attention Difference (Stereo − Anti) — L{layer}·H{head}<br>"
+                f"Attention Difference (Stereo - Anti) - L{layer}.H{head}<br>"
                 f"<sub><span style='color:#ef4444'>Red</span> = more attention in stereotype | "
                 f"<span style='color:#2563eb'>Blue</span> = more in anti-stereotype</sub>"
             ),
