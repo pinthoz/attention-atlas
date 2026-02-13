@@ -694,7 +694,7 @@ CSS = """
                 margin-left: 24px;
                 margin-right: 24px;
             }
-            .floating-control-bar .token-sentence {
+            .floating-control-bar .token-sentence:not(#bias-tokens-row .token-sentence) {
                 min-width: 200px;
             }
         }
@@ -709,7 +709,7 @@ CSS = """
             .floating-control-bar .controls-row {
                 gap: 8px;
             }
-             .floating-control-bar .token-sentence {
+             .floating-control-bar .token-sentence:not(#bias-tokens-row .token-sentence) {
                 min-width: 120px;
             }
             .floating-control-bar input[type="range"] {
@@ -3406,6 +3406,31 @@ __all__ = ["CSS"]
             border-color: #ec4899;
             color: white;
             box-shadow: 0 0 8px rgba(236, 72, 153, 0.4);
+        }
+
+        /* Bias Toolbar Specific Styles */
+        /* Token chips with dynamic category color (highest score) */
+        .floating-control-bar .token-chip[style*="--chip-color"] {
+            background: rgba(51, 65, 85, 0.5);
+            border-color: var(--chip-color, rgba(255, 255, 255, 0.2));
+            box-shadow: 0 0 0 1px var(--chip-color, transparent);
+        }
+        
+        .floating-control-bar .token-chip[style*="--chip-color"]:hover {
+            background: rgba(51, 65, 85, 0.8);
+            border-color: var(--chip-color, #ff5ca9);
+            box-shadow: 0 0 8px var(--chip-color, rgba(255, 92, 169, 0.3));
+        }
+        
+        /* Bias tokens container - no min-width, only max-width */
+        #bias-tokens-row .token-sentence {
+            min-width: unset !important;
+            width: auto;
+            flex: 0 1 auto;
+        }
+        
+        #bias-tokens-a, #bias-tokens-b {
+            min-width: unset !important;
         }
 
         /* ==========================================

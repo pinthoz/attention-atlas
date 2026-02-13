@@ -379,6 +379,14 @@ def bias_server_handlers(input, output, session):
     # Cached texts for display
     bias_cached_text_A = reactive.value("")
     bias_cached_text_B = reactive.value("")
+    
+    # Current thresholds (synced with UI sliders)
+    current_thresholds_A = reactive.value({"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5})
+    current_thresholds_B = reactive.value({"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5})
+    
+    # Analysis generation counter - incremented each time analysis completes
+    bias_analysis_generation = reactive.value(0)
+    bias_last_processed_generation = reactive.value(-1)
 
     # ── Constants for UI Consistency ──
     _BTN_STYLE_CSV = "padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: #334155; text-decoration: none;"
@@ -486,6 +494,13 @@ def bias_server_handlers(input, output, session):
         # GUARD: Don't run if analysis is in progress
         if bias_running.get():
             return
+        
+        # GUARD: Skip the first call after a fresh analysis (stale slider values)
+        current_gen = bias_analysis_generation.get()
+        last_gen = bias_last_processed_generation.get()
+        if current_gen > last_gen:
+            bias_last_processed_generation.set(current_gen)
+            return
             
         raw_A = bias_raw_results.get()
         raw_B = bias_raw_results_B.get()
@@ -520,6 +535,13 @@ def bias_server_handlers(input, output, session):
             "STEREO": t_stereo
         }
         
+        # GUARD: Skip if thresholds haven't actually changed (prevents unnecessary re-processing)
+        current_A = current_thresholds_A.get()
+        if current_A == manual_thresholds_A:
+            return
+        
+        current_thresholds_A.set(manual_thresholds_A)
+        
         # Read B sliders
         try: t_unfair_b = float(input.bias_thresh_unfair_b())
         except: t_unfair_b = 0.5
@@ -533,6 +555,8 @@ def bias_server_handlers(input, output, session):
             "GEN": t_gen_b,
             "STEREO": t_stereo_b
         }
+        
+        current_thresholds_B.set(manual_thresholds_B)
         
         # Guard for B key match
         update_B = False
@@ -1304,33 +1328,20 @@ def bias_server_handlers(input, output, session):
             except Exception:
                 use_optimized = True
 
-            try:
-                t_unfair = float(input.bias_thresh_unfair())
-                t_gen = float(input.bias_thresh_gen())
-                t_stereo = float(input.bias_thresh_stereo())
-                thresholds_A = {"UNFAIR": t_unfair, "GEN": t_gen, "STEREO": t_stereo}
-                
-                # Fetch B thresholds if needed
+            # Use current thresholds from reactive values (synced with UI)
+            thresholds_A = current_thresholds_A.get()
+            
+            # Fetch B thresholds if needed
+            if compare_models:
+                thresholds_B = current_thresholds_B.get()
+            elif compare_prompts:
+                thresholds_B = thresholds_A
+            else:
                 thresholds_B = {"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5}
-                if compare_models:
-                    try:
-                        thresholds_B = {
-                            "UNFAIR": float(input.bias_thresh_unfair_b()),
-                            "GEN": float(input.bias_thresh_gen_b()),
-                            "STEREO": float(input.bias_thresh_stereo_b())
-                        }
-                    except: pass
-                elif compare_prompts:
-                    thresholds_B = thresholds_A
-
-                # Mean placeholder for legacy compatibility
-                threshold = sum(thresholds_A.values()) / 3
-                log_debug(f"Thresholds A: {thresholds_A}, B: {thresholds_B}")
-            except Exception as e:
-                log_debug(f"Warning: category thresholds missing ({e}). Using 0.5")
-                threshold = 0.5
-                thresholds_A = {"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5}
-                thresholds_B = {"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5}
+            
+            # Mean placeholder for legacy compatibility
+            threshold = sum(thresholds_A.values()) / 3
+            log_debug(f"Thresholds A: {thresholds_A}, B: {thresholds_B}")
             log_debug(f"use_optimized={use_optimized}, threshold={threshold}")
 
             # Bias detection model (BERT or GPT-2 backbone) - Model A
@@ -1358,17 +1369,29 @@ def bias_server_handlers(input, output, session):
                         timeout=180.0
                     )
                     log_debug("heavy_bias_compute A returned successfully")
-                    # Store RAW result so sliders can re-threshold live
-                    bias_raw_results.set(result)
+                    
                     # Initial processing for Model A (using thresholds we just grabbed)
                     effective_A = result.get("effective_thresholds", thresholds_A)
                     res_processed = _process_raw_bias_result(result, effective_A, use_optimized=use_optimized)
+                    
+                    # Update current_thresholds to match what was actually used
+                    current_thresholds_A.set(effective_A)
+                    
+                    # Store RAW result so sliders can re-threshold live
+                    bias_raw_results.set(result)
+                    
+                    # Set processed results (this triggers update_bias_results_live, but generation counter protects it)
                     bias_results.set(res_processed)
 
-                    # Update UI sliders with the actual thresholds used
+                    # Prepare message for UI sliders (A thresholds always included)
+                    msg_thresholds = {}
                     if result and result.get("effective_thresholds"):
-                        log_debug(f"Sending effective thresholds to UI: {result['effective_thresholds']}")
-                        await session.send_custom_message("set_bias_thresholds", result["effective_thresholds"])
+                        eff_A = result["effective_thresholds"]
+                        msg_thresholds.update({
+                            "UNFAIR": eff_A.get("UNFAIR"),
+                            "GEN": eff_A.get("GEN"),
+                            "STEREO": eff_A.get("STEREO")
+                        })
 
                     # Compute Result B if needed
                     if compare_models:
@@ -1393,19 +1416,18 @@ def bias_server_handlers(input, output, session):
                         
                         # Process B immediately for UI
                         effective_B = result_B.get("effective_thresholds", thresholds_B)
+                        current_thresholds_B.set(effective_B)
                         res_B_proc = _process_raw_bias_result(result_B, effective_B, use_optimized=use_optimized)
                         bias_results_B.set(res_B_proc)
                         
-                        # Send effective thresholds for B
+                        # Add thresholds B to the message
                         if result_B and result_B.get("effective_thresholds"):
                             eff_B = result_B["effective_thresholds"]
-                            msg_B = {
+                            msg_thresholds.update({
                                 "UNFAIR_B": eff_B.get("UNFAIR"),
                                 "GEN_B": eff_B.get("GEN"),
                                 "STEREO_B": eff_B.get("STEREO")
-                            }
-                            log_debug(f"Sending effective thresholds B to UI: {msg_B}")
-                            await session.send_custom_message("set_bias_thresholds", msg_B)
+                            })
 
                     elif compare_prompts:
                         # Case 2: Different Prompt (B), Same Model (A)
@@ -1427,19 +1449,18 @@ def bias_server_handlers(input, output, session):
                             
                             # Process B immediately for UI
                             effective_B = result_B.get("effective_thresholds", thresholds_B)
+                            current_thresholds_B.set(effective_B)
                             res_B_proc = _process_raw_bias_result(result_B, effective_B, use_optimized=use_optimized)
                             bias_results_B.set(res_B_proc)
                             
-                            # Send effective thresholds for B
+                            # Add thresholds B to the message
                             if result_B and result_B.get("effective_thresholds"):
                                 eff_B = result_B["effective_thresholds"]
-                                msg_B = {
+                                msg_thresholds.update({
                                     "UNFAIR_B": eff_B.get("UNFAIR"),
                                     "GEN_B": eff_B.get("GEN"),
                                     "STEREO_B": eff_B.get("STEREO")
-                                }
-                                log_debug(f"Sending effective thresholds B to UI: {msg_B}")
-                                await session.send_custom_message("set_bias_thresholds", msg_B)
+                                })
                         else:
                             # Empty text B - clear results and show notification
                             bias_raw_results_B.set(None)
@@ -1447,8 +1468,14 @@ def bias_server_handlers(input, output, session):
                             bias_results_B.set(None)
                             ui.notification_show("Prompt B is empty. Only analyzing Prompt A.", type="warning", duration=3)
                     else:
+                        # Not in compare_prompts mode, clear B
                         bias_raw_results_B.set(None)
                         bias_cached_text_B.set("")
+                    
+                    # Send all thresholds at once (A always included, B only if compare mode)
+                    if msg_thresholds:
+                        log_debug(f"Sending effective thresholds to UI: {msg_thresholds}")
+                        await session.send_custom_message("set_bias_thresholds", msg_thresholds)
 
             except asyncio.TimeoutError:
                 msg = "ERROR: Bias analysis timed out (limit: 180s)"
@@ -1467,6 +1494,10 @@ def bias_server_handlers(input, output, session):
                 bias_results_B.set(None)
             finally:
                 log_debug("Stopping loading UI")
+                # Increment generation counter to mark results as fresh
+                # This causes the next update_bias_results_live call to be skipped
+                new_gen = bias_analysis_generation.get() + 1
+                bias_analysis_generation.set(new_gen)
                 bias_running.set(False)
                 await session.send_custom_message('stop_bias_loading', {})
 
