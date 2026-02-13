@@ -654,122 +654,152 @@ def create_bias_sidebar():
                     eval(code);
                 });
 
+                // Flag to prevent circular updates when server sets thresholds
+                window._biasUpdatingFromServer = false;
+                
                 // Handler for setting bias thresholds from server (e.g. optimized values)
+                // IMPORTANT: This should NOT trigger Shiny.setInputValue to avoid circular updates
+                // The backend already knows these values - this is purely for UI synchronization
                 Shiny.addCustomMessageHandler('set_bias_thresholds', function(message) {
                     console.log("[BiasUI] Received thresholds:", message);
-                    // Helper to update slider without triggering input (which would uncheck optimized box)
-                    function updateSlider(id, valId, val, shinyId) {
+                    
+                    // Set flag to prevent delegated listener from sending values back to server
+                    window._biasUpdatingFromServer = true;
+                    
+                    // Helper to update slider without triggering any Shiny events
+                    // This prevents circular threshold updates (server -> client -> server loop)
+                    function updateSlider(id, valId, val) {
                         var el = document.getElementById(id);
                         var valDisplay = document.getElementById(valId);
                         if (el) {
                             el.value = val;
                             if (valDisplay) valDisplay.textContent = parseFloat(val).toFixed(2);
-                            // Also update Shiny input so backend knows the new value
-                            if (shinyId) Shiny.setInputValue(shinyId, parseFloat(val));
+                            // DO NOT call Shiny.setInputValue here - the server already knows
                         }
                     }
                     if (message.UNFAIR !== undefined) {
-                        updateSlider('bias-thresh-unfair', 'bias-thresh-unfair-val', message.UNFAIR, 'bias_thresh_unfair');
+                        updateSlider('bias-thresh-unfair', 'bias-thresh-unfair-val', message.UNFAIR);
                     }
                     if (message.GEN !== undefined) {
-                        updateSlider('bias-thresh-gen', 'bias-thresh-gen-val', message.GEN, 'bias_thresh_gen');
+                        updateSlider('bias-thresh-gen', 'bias-thresh-gen-val', message.GEN);
                     }
                     if (message.STEREO !== undefined) {
-                        updateSlider('bias-thresh-stereo', 'bias-thresh-stereo-val', message.STEREO, 'bias_thresh_stereo');
+                        updateSlider('bias-thresh-stereo', 'bias-thresh-stereo-val', message.STEREO);
                     }
                     // Model B support
                     if (message.UNFAIR_B !== undefined) {
-                        updateSlider('bias-thresh-unfair-b', 'bias-thresh-unfair-b-val', message.UNFAIR_B, 'bias_thresh_unfair_b');
+                        updateSlider('bias-thresh-unfair-b', 'bias-thresh-unfair-b-val', message.UNFAIR_B);
                     }
                     if (message.GEN_B !== undefined) {
-                        updateSlider('bias-thresh-gen-b', 'bias-thresh-gen-b-val', message.GEN_B, 'bias_thresh_gen_b');
+                        updateSlider('bias-thresh-gen-b', 'bias-thresh-gen-b-val', message.GEN_B);
                     }
                     if (message.STEREO_B !== undefined) {
-                        updateSlider('bias-thresh-stereo-b', 'bias-thresh-stereo-b-val', message.STEREO_B, 'bias_thresh_stereo_b');
+                        updateSlider('bias-thresh-stereo-b', 'bias-thresh-stereo-b-val', message.STEREO_B);
                     }
+                    
+                    // Clear flag after a short delay to ensure all input events have fired
+                    setTimeout(function() {
+                        window._biasUpdatingFromServer = false;
+                    }, 100);
                 });
 
-                function setupBiasToolbar() {
-                    console.log("[BiasUI] Initializing controls...");
+                // Unified debounce function - 300ms delay (balance between responsiveness and server load)
+                // This single debounce implementation replaces multiple conflicting implementations
+                window._biasDebounce = function(func, wait) {
+                    var timeout;
+                    wait = wait || 300;  // Default 300ms
+                    return function() {
+                        var context = this, args = arguments;
+                        clearTimeout(timeout);
+                        timeout = setTimeout(function() {
+                            func.apply(context, args);
+                        }, wait);
+                    };
+                };
+
+                // Unified slider input handler using DELEGATED event listeners
+                // This prevents memory leaks and "event storming" from redundant listeners
+                (function setupDelegatedSliderHandlers() {
+                    // Only initialize once
+                    if (window._biasSliderHandlersInitialized) return;
+                    window._biasSliderHandlersInitialized = true;
                     
-                    function debounce(func, wait) {
-                        let timeout;
-                        return function(...args) {
-                            const context = this;
-                            clearTimeout(timeout);
-                            timeout = setTimeout(() => func.apply(context, args), wait);
-                        };
+                    console.log("[BiasUI] Initializing delegated slider handlers...");
+                    
+                    // Debounced senders for each slider type (300ms unified delay)
+                    var debouncedSenders = {};
+                    
+                    function getDebouncedSender(msgKey) {
+                        if (!debouncedSenders[msgKey]) {
+                            debouncedSenders[msgKey] = window._biasDebounce(function(val) {
+                                Shiny.setInputValue(msgKey, val, {priority: 'event'});
+                            }, 300);
+                        }
+                        return debouncedSenders[msgKey];
                     }
-
-                    const inputs = [
-                        {id: 'bias-layer-slider', valId: 'bias-layer-value', msg: 'bias_attn_layer', isInt: true},
-                        {id: 'bias-head-slider', valId: 'bias-head-value', msg: 'bias_attn_head', isInt: true},
-                        {id: 'bias-bar-threshold-slider', valId: 'bias-bar-threshold-value', msg: 'bias_bar_threshold'},
-                        {id: 'bias-topk-slider', valId: 'bias-topk-value', msg: 'bias_top_k', isInt: true},
+                    
+                    // Single delegated listener for ALL slider inputs
+                    // This avoids attaching listeners on every UI update
+                    $(document).on('input', '[id$="-slider"], [id^="bias-thresh-"]', function(e) {
+                        // GUARD: Skip if we're currently updating from server (prevents circular updates)
+                        if (window._biasUpdatingFromServer) {
+                            return;
+                        }
                         
-                        // Sidebar Thresholds
-                        {id: 'bias-thresh-unfair', valId: 'bias-thresh-unfair-val', msg: 'bias_thresh_unfair', isThresh: true},
-                        {id: 'bias-thresh-gen', valId: 'bias-thresh-gen-val', msg: 'bias_thresh_gen', isThresh: true},
-                        {id: 'bias-thresh-stereo', valId: 'bias-thresh-stereo-val', msg: 'bias_thresh_stereo', isThresh: true}
-                    ];
-
-                    inputs.forEach(item => {
-                        const el = document.getElementById(item.id);
-                        const valDisplay = document.getElementById(item.valId);
+                        var el = e.target;
+                        var val = parseFloat(el.value);
+                        var id = el.id;
                         
-                        if (el) {
-                            // Create debounced sender (500ms delay)
-                            const sendValue = debounce(function(val) {
-                                Shiny.setInputValue(item.msg, val, {priority: 'event'});
-                            }, 500);
-
-                            // Update display on drag AND trigger debounced send
-                            el.addEventListener('input', function() {
-                                var val = parseFloat(this.value);
-                                if(valDisplay) {
-                                    valDisplay.textContent = item.isInt ? val.toFixed(0) : val.toFixed(2);
-                                }
-                                
-                                // Sync with counterpart if exists
-                                if (item.syncId) {
-                                    var syncEl = document.getElementById(item.syncId);
-                                    var syncVal = document.getElementById(item.syncId + '-val');
-                                    if (syncEl) syncEl.value = val;
-                                    if (syncVal) syncVal.textContent = val.toFixed(2);
-                                }
-
-                                // If this is a threshold slider, manual adjustment should disable "Use Optimized" IMMEDIATELY
-                                if (item.isThresh) {
-                                    var optCheckbox = $('#bias_use_optimized'); 
-                                    if (optCheckbox.length === 0) optCheckbox = $(document.getElementById('bias_use_optimized'));
-                                    
-                                    if (optCheckbox.length && optCheckbox.prop('checked')) {
-                                        optCheckbox.prop('checked', false);
-                                        Shiny.setInputValue('bias_use_optimized', false, {priority: 'event'});
-                                    }
-                                }
-                                
-                                // Send value to server (debounced)
-                                sendValue(val);
-                            });
-                            
-                            // Remove change listener (we rely on debounced input now)
-                            // el.addEventListener('change', ...); // REMOVED
+                        // Update value display immediately
+                        // Map slider ID to value display ID
+                        var valId;
+                        if (id.endsWith('-slider')) {
+                            // For sliders like bias-layer-slider -> bias-layer-value
+                            valId = id.replace('-slider', '-value');
+                        } else if (id.startsWith('bias-thresh-')) {
+                            // For threshold sliders like bias-thresh-unfair -> bias-thresh-unfair-val
+                            valId = id + '-val';
+                        } else {
+                            valId = id + '-val';
+                        }
+                        var valDisplay = document.getElementById(valId);
+                        if (valDisplay) {
+                            var isInt = el.step === '1' || el.getAttribute('step') === '1';
+                            valDisplay.textContent = isInt ? val.toFixed(0) : val.toFixed(2);
+                        }
+                        
+                        // Map slider IDs to Shiny input keys
+                        var msgKey = null;
+                        var isThresh = false;
+                        
+                        if (id === 'bias-layer-slider') msgKey = 'bias_attn_layer';
+                        else if (id === 'bias-head-slider') msgKey = 'bias_attn_head';
+                        else if (id === 'bias-bar-threshold-slider') msgKey = 'bias_bar_threshold';
+                        else if (id === 'bias-topk-slider') msgKey = 'bias_top_k';
+                        else if (id === 'bias-thresh-unfair') { msgKey = 'bias_thresh_unfair'; isThresh = true; }
+                        else if (id === 'bias-thresh-gen') { msgKey = 'bias_thresh_gen'; isThresh = true; }
+                        else if (id === 'bias-thresh-stereo') { msgKey = 'bias_thresh_stereo'; isThresh = true; }
+                        else if (id === 'bias-thresh-unfair-b') { msgKey = 'bias_thresh_unfair_b'; isThresh = true; }
+                        else if (id === 'bias-thresh-gen-b') { msgKey = 'bias_thresh_gen_b'; isThresh = true; }
+                        else if (id === 'bias-thresh-stereo-b') { msgKey = 'bias_thresh_stereo_b'; isThresh = true; }
+                        
+                        // If threshold slider, disable "Use Optimized" immediately
+                        if (isThresh) {
+                            var optCheckbox = document.getElementById('bias_use_optimized');
+                            if (optCheckbox && optCheckbox.checked) {
+                                optCheckbox.checked = false;
+                                Shiny.setInputValue('bias_use_optimized', false, {priority: 'event'});
+                            }
+                        }
+                        
+                        // Send debounced value to server
+                        if (msgKey) {
+                            getDebouncedSender(msgKey)(val);
                         }
                     });
-                }
-
-                // Run once on load, and potentially re-run if re-rendered
-                $(document).ready(function() {
-                     setupBiasToolbar();
-                });
-                
-                // Also trigger when inserted/visible
-                $(document).on('shiny:value', function(event) {
-                    if (event.name === 'bias_dashboard_content') {
-                        setTimeout(setupBiasToolbar, 100);
-                    }
-                });
+                    
+                    console.log("[BiasUI] Delegated slider handlers initialized successfully");
+                })();
 
                 // Restore bias session controls (model selects, threshold slider)
                 Shiny.addCustomMessageHandler('restore_bias_session_controls', function(data) {
@@ -1192,9 +1222,8 @@ def create_floating_bias_toolbar():
         };
 
         (function() {
-            function debounce(fn, ms) {
-                var t; return function() { var a=arguments,c=this; clearTimeout(t); t=setTimeout(function(){fn.apply(c,a);},ms); };
-            }
+            // Use the unified debounce function (300ms) defined earlier
+            // This replaces multiple conflicting debounce implementations
             function _setSelectize(id, val) {
                 var el = document.getElementById(id);
                 if (!el) return;
@@ -1202,43 +1231,25 @@ def create_floating_bias_toolbar():
                 if (s) s.setValue(val.toString());
                 else { el.value = val.toString(); $(el).trigger('change'); }
             }
-            var setLayer = debounce(function(v){ _setSelectize('bias_attn_layer', v); }, 200);
-            var setHead  = debounce(function(v){ _setSelectize('bias_attn_head', v); }, 200);
-            var setTopK  = debounce(function(v){ Shiny.setInputValue('bias_top_k', parseInt(v), {priority:'event'}); }, 200);
-            var setBarThreshold = debounce(function(v){ Shiny.setInputValue('bias_bar_threshold', parseFloat(v), {priority:'event'}); }, 200);
+            
+            // Unified 300ms debounce timing (consistent with delegated handlers)
+            var setLayer = window._biasDebounce(function(v){ _setSelectize('bias_attn_layer', v); }, 300);
+            var setHead  = window._biasDebounce(function(v){ _setSelectize('bias_attn_head', v); }, 300);
+            // Note: top_k, bar_threshold, and sensitivity thresholds are handled by delegated listeners above
+            // We only need to handle Layer/Head selectize sync here
 
-            function bindSlider(sliderId, valId, setter) {
+            function bindSliderSync(sliderId, valId, setter) {
                 var el = document.getElementById(sliderId);
                 if (el) el.oninput = function() {
                     document.getElementById(valId).textContent = this.value;
                     setter(this.value);
                 };
             }
-            bindSlider('bias-layer-slider', 'bias-layer-value', setLayer);
-            bindSlider('bias-head-slider', 'bias-head-value', setHead);
-            bindSlider('bias-bar-threshold-slider', 'bias-bar-threshold-value', setBarThreshold);
-            bindSlider('bias-topk-slider', 'bias-topk-value', setTopK);
-
-            // Custom Threshold toggle + slider
-            var setCustomThreshold = debounce(function(v){
-                Shiny.setInputValue('bias_threshold', parseFloat(v), {priority:'event'});
-            }, 200);
-            bindSlider('bias-custom-threshold-slider', 'bias-custom-threshold-value', setCustomThreshold);
-
-            // Sensitivity Thresholds (A & B)
-            var setUnfair = debounce(function(v){ Shiny.setInputValue('bias_thresh_unfair', parseFloat(v), {priority:'event'}); }, 200);
-            var setGen = debounce(function(v){ Shiny.setInputValue('bias_thresh_gen', parseFloat(v), {priority:'event'}); }, 200);
-            var setStereo = debounce(function(v){ Shiny.setInputValue('bias_thresh_stereo', parseFloat(v), {priority:'event'}); }, 200);
-            var setUnfairB = debounce(function(v){ Shiny.setInputValue('bias_thresh_unfair_b', parseFloat(v), {priority:'event'}); }, 200);
-            var setGenB = debounce(function(v){ Shiny.setInputValue('bias_thresh_gen_b', parseFloat(v), {priority:'event'}); }, 200);
-            var setStereoB = debounce(function(v){ Shiny.setInputValue('bias_thresh_stereo_b', parseFloat(v), {priority:'event'}); }, 200);
-
-            bindSlider('bias-thresh-unfair', 'bias-thresh-unfair-val', setUnfair);
-            bindSlider('bias-thresh-gen', 'bias-thresh-gen-val', setGen);
-            bindSlider('bias-thresh-stereo', 'bias-thresh-stereo-val', setStereo);
-            bindSlider('bias-thresh-unfair-b', 'bias-thresh-unfair-b-val', setUnfairB);
-            bindSlider('bias-thresh-gen-b', 'bias-thresh-gen-b-val', setGenB);
-            bindSlider('bias-thresh-stereo-b', 'bias-thresh-stereo-b-val', setStereoB);
+            bindSliderSync('bias-layer-slider', 'bias-layer-value', setLayer);
+            bindSliderSync('bias-head-slider', 'bias-head-value', setHead);
+            
+            // Note: Other sliders (thresholds, topk, bar-threshold) are handled by 
+            // the delegated event listener system above to prevent event duplication
 
             var toggle = document.getElementById('bias-custom-threshold-toggle');
             var sliderWrap = document.getElementById('bias-custom-threshold-slider-wrap');

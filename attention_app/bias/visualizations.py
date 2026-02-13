@@ -2721,33 +2721,33 @@ def create_stereoset_attention_heatmaps(
     has_unrelated = unrelated_data is not None and bool(unrelated_data.get("tokens"))
 
     if has_unrelated:
-        # 4 cols to allow centering the bottom one (spanning col 2-3)
+        # Layout: Stereotype (LEFT), Anti-Stereotype (RIGHT) on top
+        #         Unrelated (BOTTOM CENTER - spanning both columns)
         fig = make_subplots(
-            rows=2, cols=4,
-            subplot_titles=["Stereotype", "", "Anti-Stereotype", "", "", "Unrelated", "", ""],
-            horizontal_spacing=0.06,
-            vertical_spacing=0.12,
+            rows=2, cols=2,
+            subplot_titles=["Stereotype", "Anti-Stereotype", "Unrelated", ""],
+            horizontal_spacing=0.08,
+            vertical_spacing=0.15,
             specs=[
-                [{"colspan": 2}, None, {"colspan": 2}, None],
-                [None, {"colspan": 2}, None, None]
+                [{}, {}],
+                [{"colspan": 2}, None]  # Unrelated centered, spanning both columns
             ],
         )
         # positions: (row, col) for each panel
-        positions = [(1, 1), (1, 3), (2, 2)]
+        positions = [(1, 1), (1, 2), (2, 1)]
         panels = [
             ("Stereotype", stereo_data, "#f87171"),
             ("Anti-Stereotype", anti_data, "#4ade80"),
             ("Unrelated", unrelated_data, "#94a3b8"),
         ]
     else:
-        # 4 cols, side by side spanning 2 cols each
+        # Just stereo and anti side by side
         fig = make_subplots(
-            rows=1, cols=4,
-            subplot_titles=["Stereotype", "", "Anti-Stereotype", ""],
+            rows=1, cols=2,
+            subplot_titles=["Stereotype", "Anti-Stereotype"],
             horizontal_spacing=0.08,
-            specs=[[{"colspan": 2}, None, {"colspan": 2}, None]],
         )
-        positions = [(1, 1), (1, 3)]
+        positions = [(1, 1), (1, 2)]
         panels = [
             ("Stereotype", stereo_data, "#f87171"),
             ("Anti-Stereotype", anti_data, "#4ade80"),
@@ -2803,12 +2803,12 @@ def create_stereoset_attention_heatmaps(
             row=r, col=c,
         )
 
-    # Style
+    # Style - Fixed height for consistency across models
     sensitive_badge = " ★ sensitive" if is_sensitive else ""
     max_tokens = max(len(p[1]["tokens"]) for p in panels)
-    # Increased vertical size
-    base_h = max(450, min(650, 22 * max_tokens + 150))
-    total_h = int(base_h * (1.75 if has_unrelated else 1.0))
+    # Consistent height calculation for aligned comparison
+    base_h = max(400, min(550, 20 * max_tokens + 120))
+    total_h = int(base_h * (1.6 if has_unrelated else 1.0))
 
     fig.update_layout(
         title=dict(
@@ -2820,30 +2820,22 @@ def create_stereoset_attention_heatmaps(
         ),
         height=total_h,
         autosize=True,
-        margin=dict(l=80, r=60, t=100, b=60),
+        margin=dict(l=70, r=60, t=100, b=50),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif", color="#94a3b8"),
     )
 
-    # Axis styling for all subplots
-    # Identify which traces are in which row/col
-    for i in range(len(fig.data)):
-        trace = fig.data[i]
-        r_idx = trace.xaxis[1:] if trace.xaxis != 'x' else '1'
-        r_idx = int(r_idx) if r_idx else 1
-        # Plotly subplot indexing is complex with colspans, easier to use universal update
-        pass
-
     fig.update_xaxes(tickfont=dict(size=9, color="#94a3b8"), tickangle=45)
     fig.update_yaxes(tickfont=dict(size=9, color="#94a3b8"), autorange="reversed")
 
     # Color the subplot titles
-    # subplots titles are annotations. We need to find the right ones.
-    # In make_subplots with colspans and empty titles, we just map to non-empty ones.
-    annotations = [a for a in fig.layout.annotations if a.text.strip()]
-    for ann, (_, _, color) in zip(annotations, panels):
-        ann.font = dict(size=13, color=color, family="Inter, sans-serif", weight="bold")
+    annotations = list(fig.layout.annotations)
+    color_map = {"Stereotype": "#f87171", "Anti-Stereotype": "#4ade80", "Unrelated": "#94a3b8"}
+    for ann in annotations:
+        text = ann.text.strip()
+        if text in color_map:
+            ann.font = dict(size=13, color=color_map[text], family="Inter, sans-serif", weight="bold")
 
     return fig
 

@@ -476,8 +476,17 @@ def bias_server_handlers(input, output, session):
         return ui.div(*items)
 
     @reactive.Effect
+    @reactive.event(input.bias_thresh_unfair, input.bias_thresh_gen, input.bias_thresh_stereo,
+                   input.bias_thresh_unfair_b, input.bias_thresh_gen_b, input.bias_thresh_stereo_b)
     def update_bias_results_live():
-        """Update bias results when sliders change (without re-running inference)."""
+        """Update bias results when threshold sliders change (without re-running inference).
+        
+        This only reacts to threshold slider changes, not to other reactive values.
+        """
+        # GUARD: Don't run if analysis is in progress
+        if bias_running.get():
+            return
+            
         raw_A = bias_raw_results.get()
         raw_B = bias_raw_results_B.get()
         
@@ -485,12 +494,9 @@ def bias_server_handlers(input, output, session):
             return
 
         # GUARD: Only update if the LIVE model selection matches the ANALYZED model.
-        # This prevents the UI from updating "fake" results when the user changes the sidebar model 
-        # (which triggers default threshold updates) but hasn't clicked Analyze yet.
         try:
             live_key_A = input.bias_model_key()
             if raw_A and raw_A.get("bias_model_key") != live_key_A:
-                # User switched Model A but didn't analyze. Do not re-threshold old results with new model's defaults.
                 return
         except Exception:
             pass
@@ -500,7 +506,7 @@ def bias_server_handlers(input, output, session):
             use_opt = input.bias_use_optimized()
         except: use_opt = False
 
-        # Read manual sliders regardless (fail-safe)
+        # Read manual sliders
         try: t_unfair = float(input.bias_thresh_unfair())
         except: t_unfair = 0.5
         try: t_gen = float(input.bias_thresh_gen())
@@ -528,33 +534,29 @@ def bias_server_handlers(input, output, session):
             "STEREO": t_stereo_b
         }
         
-        thresholds_A = manual_thresholds_A
-        thresholds_B = manual_thresholds_B
-        
         # Guard for B key match
         update_B = False
         if raw_B:
             try:
-                # If we are in compare mode, check B key.
-                # If compare mode is OFF (but we have raw_B), we assume B controls are hidden/irrelevant,
-                # so we should NOT update B (preserve current state until Analyze).
-                # Checking input.bias_model_key_B() might fail if hidden? 
-                # Actually, Shiny inputs usually persist even if hidden, but let's be safe.
-                live_key_B = input.bias_model_key_B()
-                if live_key_B and raw_B.get("bias_model_key") == live_key_B:
-                    update_B = True
+                in_compare_mode = active_bias_compare_models.get() or active_bias_compare_prompts.get()
+                if in_compare_mode:
+                    live_key_B = input.bias_model_key_B()
+                    expected_key_B = raw_B.get("bias_model_key")
+                    if active_bias_compare_prompts.get() and raw_A:
+                        expected_key_B = raw_A.get("bias_model_key")
+                    if live_key_B and expected_key_B and expected_key_B == live_key_B:
+                        update_B = True
             except Exception:
-                # If we can't read the key, don't update B
-                update_B = False
+                pass
         
         # Process A
         if raw_A:
-            res_A = _process_raw_bias_result(raw_A, thresholds_A, use_optimized=use_opt)
+            res_A = _process_raw_bias_result(raw_A, manual_thresholds_A, use_optimized=use_opt)
             bias_results.set(res_A)
             
         # Process B
         if raw_B and update_B:
-            res_B = _process_raw_bias_result(raw_B, thresholds_B, use_optimized=use_opt)
+            res_B = _process_raw_bias_result(raw_B, manual_thresholds_B, use_optimized=use_opt)
             bias_results_B.set(res_B)
 
     @reactive.Effect
@@ -597,17 +599,39 @@ def bias_server_handlers(input, output, session):
             bias_prompt_step.set(step)
 
     @reactive.Effect
-    @reactive.event(input.bias_compare_prompts_mode, bias_prompt_step)
+    @reactive.event(input.bias_compare_prompts_mode, input.bias_compare_mode, bias_prompt_step)
     async def update_bias_button_label():
+        """Update the Analyze Bias button label based on mode and step.
+        
+        - In Compare Prompts mode on Step A: Show "Prompt B ->"
+        - In Compare Prompts mode on Step B: Show "Analyze Bias"
+        - In Compare Models mode: Show "Analyze Bias" (both models at once)
+        - In single mode: Show "Analyze Bias"
+        
+        Also resets prompt step when modes are toggled off.
+        """
         try:
-            mode = input.bias_compare_prompts_mode()
+            prompts_mode = input.bias_compare_prompts_mode()
         except Exception:
-            mode = False
+            prompts_mode = False
+            
+        try:
+            models_mode = input.bias_compare_mode()
+        except Exception:
+            models_mode = False
             
         step = bias_prompt_step.get()
         label = "Analyze Bias"
         
-        if mode and step == "A":
+        # Reset to step A when compare prompts mode is turned off
+        if not prompts_mode and step == "B":
+            bias_prompt_step.set("A")
+            # Also sync the UI tab to A
+            await session.send_custom_message("bias_eval_js", 
+                "if(window.switchBiasPromptTab) window.switchBiasPromptTab('A');")
+        
+        # In compare prompts mode on Step A: show "Prompt B ->"
+        if prompts_mode and step == "A":
             label = "Prompt B ➜"
             
         await session.send_custom_message("update_bias_button_label", {"label": label})
@@ -1224,10 +1248,6 @@ def bias_server_handlers(input, output, session):
             if compare_prompts_live and step == "A":
                 # User clicked "Prompt B ->". Do not analyze. Switch tab.
                 log_debug("Sequential Logic: Switching to Tab B")
-                await session.send_custom_message("switch_prompt_tab_bias", "B") # Need to add this handler to JS too
-                # Or just use the existing one>= No, I added switchBiasPromptTab function but not a message handler for it specifically>=
-                # Actually, I can just call the function via JS eval or add a handler. 
-                # Let's add a simple script execution.
                 await session.send_custom_message("bias_eval_js", "window.switchBiasPromptTab('B');")
                 return
 
@@ -1246,6 +1266,30 @@ def bias_server_handlers(input, output, session):
                 compare_prompts = input.bias_compare_prompts_mode()
             except Exception:
                 compare_prompts = False
+
+            # MODE SWITCHING CLEANUP: Reset state when modes change
+            prev_compare_models = active_bias_compare_models.get()
+            prev_compare_prompts = active_bias_compare_prompts.get()
+            
+            # Detect mode transitions
+            mode_switched_to_prompts = compare_prompts and not prev_compare_prompts
+            mode_switched_to_models = compare_models and not prev_compare_models
+            mode_switched_off = (not compare_prompts and not compare_models) and (prev_compare_prompts or prev_compare_models)
+            
+            # Reset state when switching modes to ensure clean state
+            if mode_switched_to_prompts or mode_switched_to_models or mode_switched_off:
+                log_debug("Mode switch detected - resetting bias state")
+                bias_raw_results.set(None)
+                bias_raw_results_B.set(None)
+                bias_results.set(None)
+                bias_results_B.set(None)
+                bias_cached_text_A.set("")
+                bias_cached_text_B.set("")
+                # Reset prompt step to A when switching modes
+                bias_prompt_step.set("A")
+                # Ensure UI reflects the reset
+                await session.send_custom_message("bias_eval_js", 
+                    "if(window.switchBiasPromptTab) window.switchBiasPromptTab('A');")
 
             active_bias_compare_models.set(compare_models)
             active_bias_compare_prompts.set(compare_prompts)
@@ -1397,8 +1441,11 @@ def bias_server_handlers(input, output, session):
                                 log_debug(f"Sending effective thresholds B to UI: {msg_B}")
                                 await session.send_custom_message("set_bias_thresholds", msg_B)
                         else:
+                            # Empty text B - clear results and show notification
                             bias_raw_results_B.set(None)
                             bias_cached_text_B.set("")
+                            bias_results_B.set(None)
+                            ui.notification_show("Prompt B is empty. Only analyzing Prompt A.", type="warning", duration=3)
                     else:
                         bias_raw_results_B.set(None)
                         bias_cached_text_B.set("")
@@ -1485,21 +1532,23 @@ def bias_server_handlers(input, output, session):
                     {"style": "display: flex; flex-direction: column; gap: 24px;"},
                     # Side-by-side sentence previews
                     ui.div(
-                        {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;"},
+                        {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px;"},
                         # Column A
                         ui.div(
+                            {"style": "display: flex; flex-direction: column;"},
                             ui.h3(header_A, style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
                             ui.div(
-                                {"class": "card compare-card-a", "style": "min-height: auto;"},
+                                {"class": "card compare-card-a", "style": "min-height: 140px; flex: 1;"},
                                 ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                                 ui.HTML(preview_html_A),
                             ),
                         ),
                         # Column B
                         ui.div(
+                            {"style": "display: flex; flex-direction: column;"},
                             ui.h3(header_B, style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                             ui.div(
-                                {"class": "card compare-card-b", "style": "min-height: auto;"},
+                                {"class": "card compare-card-b", "style": "min-height: 140px; flex: 1;"},
                                 ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                                 ui.HTML(preview_html_B),
                             ),
@@ -1519,7 +1568,7 @@ def bias_server_handlers(input, output, session):
                 return ui.div(
                     {"style": "display: flex; flex-direction: column; gap: 24px;"},
                     ui.div(
-                        {"class": "card", "style": "min-height: auto;"},
+                        {"class": "card", "style": "min-height: 140px;"},
                         ui.h4("Sentence Preview"),
                         ui.HTML(preview_html),
                     ),
@@ -1564,21 +1613,23 @@ def bias_server_handlers(input, output, session):
             )
             
             card = ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; min-height: auto; align-items: start;"},
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px;"},
                 # Column A
                 ui.div(
+                    {"style": "display: flex; flex-direction: column;"},
                     ui.h3("PROMPT A", style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
                     ui.div(
-                        {"class": "card compare-card-a", "style": "min-height: auto;"},
+                        {"class": "card compare-card-a", "style": "min-height: 140px; flex: 1;"},
                         ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                         preview_A,
                     ),
                 ),
                 # Column B
                 ui.div(
+                    {"style": "display: flex; flex-direction: column;"},
                     ui.h3("PROMPT B", style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                     ui.div(
-                        {"class": "card compare-card-b", "style": "min-height: auto;"},
+                        {"class": "card compare-card-b", "style": "min-height: 140px; flex: 1;"},
                         ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                         preview_B,
                     ),
@@ -1592,21 +1643,23 @@ def bias_server_handlers(input, output, session):
             )
             
             card = ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px; min-height: auto; align-items: start;"},
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px;"},
                 # Column A
                 ui.div(
+                    {"style": "display: flex; flex-direction: column;"},
                     ui.h3("MODEL A", style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
                     ui.div(
-                        {"class": "card compare-card-a", "style": "min-height: auto;"},
+                        {"class": "card compare-card-a", "style": "min-height: 140px; flex: 1;"},
                         ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                         preview_content,
                     ),
                 ),
                 # Column B
                 ui.div(
+                    {"style": "display: flex; flex-direction: column;"},
                     ui.h3("MODEL B", style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                     ui.div(
-                        {"class": "card compare-card-b", "style": "min-height: auto;"},
+                        {"class": "card compare-card-b", "style": "min-height: 140px; flex: 1;"},
                         ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                         # We need a fresh object/string for the second separate div content
                         ui.div(
@@ -1630,7 +1683,7 @@ def bias_server_handlers(input, output, session):
                 )
 
             card = ui.div(
-                {"class": "card", "style": "min-height: auto;"},
+                {"class": "card", "style": "min-height: 140px;"},
                 ui.h4("Sentence Preview"),
                 preview,
             )
@@ -3534,8 +3587,12 @@ def bias_server_handlers(input, output, session):
                     except Exception:
                         sel_head = sensitive[0]["head"] if sensitive else 0
 
-                    def _generate_model_heatmaps(model_key, example_data):
-                        """Generate trio + diff HTML for one model."""
+                    def _generate_model_heatmaps(model_key, example_data, suffix=""):
+                        """Generate trio + diff HTML for one model.
+                        
+                        Returns:
+                            tuple: (trio_html, diff_html) for flexible layout
+                        """
                         base = _GUSNET_TO_ENCODER.get(model_key, "bert-base-uncased")
                         sens = get_sensitive_heads(model_key) or []
                         is_sens = any(
@@ -3561,43 +3618,59 @@ def bias_server_handlers(input, output, session):
                             layer=sel_layer, head=sel_head,
                             is_sensitive=is_sens,
                         )
-                        t_html = _deferred_plotly(fig_t, f"stereoset-attn-heatmap-{mk}")
+                        t_html = _deferred_plotly(fig_t, f"stereoset-attn-heatmap-{model_key}-{suffix}")
                         fig_d = create_stereoset_attention_diff_heatmap(
                             sd, ad, layer=sel_layer, head=sel_head,
                         )
-                        d_html = _deferred_plotly(fig_d, f"stereoset-attn-diff-{mk}")
-                        return (
-                            f'{t_html}'
-                            f'<div style="margin-top:12px;">{d_html}</div>'
-                        )
+                        d_html = _deferred_plotly(fig_d, f"stereoset-attn-diff-{model_key}-{suffix}")
+                        return (t_html, d_html)
 
                     if has_B and ex_B_detail:
-                        # ── Compare Models: side-by-side ──
-                        html_A = _generate_model_heatmaps(mk, ex_A)
-                        html_B = _generate_model_heatmaps(mk_B, ex_B_detail)
+                        # ── Compare Models: side-by-side with aligned layout ──
+                        trio_A, diff_A = _generate_model_heatmaps(mk, ex_A, "A")
+                        trio_B, diff_B = _generate_model_heatmaps(mk_B, ex_B_detail, "B")
+                        
+                        # Layout: 
+                        # Row 1: [Model A Trio] [Model B Trio]
+                        # Row 2: [Model A Diff]  [Model B Diff]
+                        # This ensures proper vertical alignment
                         heatmap_inner_html = (
-                            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
+                            f'<div style="display:flex;flex-direction:column;gap:16px;">'
+                            # Row 1: Labels + Trios side by side
+                            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">'
                             # Model A column
-                            f'<div>'
-                            f'<div style="font-size:10px;font-weight:700;color:#3b82f6;'
-                            f'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;'
-                            f'padding:4px 8px;background:rgba(59,130,246,0.1);border-radius:4px;'
-                            f'border:1px solid rgba(59,130,246,0.2);display:inline-block;">{name_A}</div>'
-                            f'{html_A}'
-                            f'</div>'
+                            f'  <div style="display:flex;flex-direction:column;gap:12px;">'
+                            f'    <div style="font-size:10px;font-weight:700;color:#3b82f6;'
+                            f'         text-transform:uppercase;letter-spacing:0.5px;'
+                            f'         padding:4px 8px;background:rgba(59,130,246,0.1);border-radius:4px;'
+                            f'         border:1px solid rgba(59,130,246,0.2);display:inline-block;width:fit-content;">{name_A}</div>'
+                            f'    <div>{trio_A}</div>'
+                            f'  </div>'
                             # Model B column
-                            f'<div>'
-                            f'<div style="font-size:10px;font-weight:700;color:#ff5ca9;'
-                            f'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;'
-                            f'padding:4px 8px;background:rgba(255,92,169,0.1);border-radius:4px;'
-                            f'border:1px solid rgba(255,92,169,0.2);display:inline-block;">{name_B}</div>'
-                            f'{html_B}'
+                            f'  <div style="display:flex;flex-direction:column;gap:12px;">'
+                            f'    <div style="font-size:10px;font-weight:700;color:#ff5ca9;'
+                            f'         text-transform:uppercase;letter-spacing:0.5px;'
+                            f'         padding:4px 8px;background:rgba(255,92,169,0.1);border-radius:4px;'
+                            f'         border:1px solid rgba(255,92,169,0.2);display:inline-block;width:fit-content;">{name_B}</div>'
+                            f'    <div>{trio_B}</div>'
+                            f'  </div>'
+                            f'</div>'
+                            # Row 2: Attention Differences side by side
+                            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">'
+                            f'  <div>{diff_A}</div>'
+                            f'  <div>{diff_B}</div>'
                             f'</div>'
                             f'</div>'
                         )
                     else:
                         # ── Single model ──
-                        heatmap_inner_html = _generate_model_heatmaps(mk, ex_A)
+                        trio, diff = _generate_model_heatmaps(mk, ex_A, "single")
+                        heatmap_inner_html = (
+                            f'<div style="display:flex;flex-direction:column;gap:12px;">'
+                            f'{trio}'
+                            f'{diff}'
+                            f'</div>'
+                        )
 
                 except Exception as e:
                     import traceback
