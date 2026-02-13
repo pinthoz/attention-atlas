@@ -49,7 +49,10 @@ from ..bias.visualizations import (
     create_stereoset_head_sensitivity_heatmap,
     create_stereoset_bias_distribution,
     create_stereoset_example_html,
+    create_stereoset_attention_heatmaps,
+    create_stereoset_attention_diff_heatmap,
 )
+from ..bias.feature_extraction import extract_attention_for_text
 from ..ui.bias_ui import create_bias_accordion, create_floating_bias_toolbar
 from ..ui.components import viz_header
 
@@ -3477,6 +3480,120 @@ def bias_server_handlers(input, output, session):
                 except:
                     pass
 
+                # ── Attention heatmaps (generate before detail HTML) ──
+                heatmap_inner_html = ""
+                try:
+                    # Read layer/head from the floating toolbar controls
+                    sensitive = get_sensitive_heads(mk) or []
+                    try:
+                        sel_layer = int(input.bias_attn_layer())
+                    except Exception:
+                        sel_layer = sensitive[0]["layer"] if sensitive else 0
+                    try:
+                        sel_head = int(input.bias_attn_head())
+                    except Exception:
+                        sel_head = sensitive[0]["head"] if sensitive else 0
+
+                    def _generate_model_heatmaps(model_key, example_data):
+                        """Generate trio + diff HTML for one model."""
+                        base = _GUSNET_TO_ENCODER.get(model_key, "bert-base-uncased")
+                        sens = get_sensitive_heads(model_key) or []
+                        is_sens = any(
+                            h["layer"] == sel_layer and h["head"] == sel_head
+                            for h in sens
+                        )
+                        ctx = example_data.get("context", "")
+                        s_text = ctx + " " + example_data.get("stereo_sentence", "")
+                        a_text = ctx + " " + example_data.get("anti_sentence", "")
+                        u_text = ctx + " " + example_data.get("unrelated_sentence", "")
+
+                        s_tok, s_a = extract_attention_for_text(s_text, base, ModelManager)
+                        a_tok, a_a = extract_attention_for_text(a_text, base, ModelManager)
+                        sd = {"tokens": s_tok, "attentions": s_a}
+                        ad = {"tokens": a_tok, "attentions": a_a}
+                        ud = None
+                        if u_text.strip() and u_text.strip() != ctx.strip():
+                            u_tok, u_a = extract_attention_for_text(u_text, base, ModelManager)
+                            ud = {"tokens": u_tok, "attentions": u_a}
+
+                        fig_t = create_stereoset_attention_heatmaps(
+                            sd, ad, ud,
+                            layer=sel_layer, head=sel_head,
+                            is_sensitive=is_sens,
+                        )
+                        t_html = fig_t.to_html(
+                            include_plotlyjs="cdn", full_html=False,
+                            config={"displayModeBar": False, "responsive": True},
+                        )
+                        fig_d = create_stereoset_attention_diff_heatmap(
+                            sd, ad, layer=sel_layer, head=sel_head,
+                        )
+                        d_html = fig_d.to_html(
+                            include_plotlyjs=False, full_html=False,
+                            config={"displayModeBar": False, "responsive": True},
+                        )
+                        return (
+                            f'<div style="width:100%;">{t_html}</div>'
+                            f'<div style="margin-top:12px;width:100%;">{d_html}</div>'
+                        )
+
+                    if has_B and ex_B_detail:
+                        # ── Compare Models: side-by-side ──
+                        html_A = _generate_model_heatmaps(mk, ex_A)
+                        html_B = _generate_model_heatmaps(mk_B, ex_B_detail)
+                        heatmap_inner_html = (
+                            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
+                            # Model A column
+                            f'<div>'
+                            f'<div style="font-size:10px;font-weight:700;color:#3b82f6;'
+                            f'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;'
+                            f'padding:4px 8px;background:rgba(59,130,246,0.1);border-radius:4px;'
+                            f'border:1px solid rgba(59,130,246,0.2);display:inline-block;">{name_A}</div>'
+                            f'{html_A}'
+                            f'</div>'
+                            # Model B column
+                            f'<div>'
+                            f'<div style="font-size:10px;font-weight:700;color:#ff5ca9;'
+                            f'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;'
+                            f'padding:4px 8px;background:rgba(255,92,169,0.1);border-radius:4px;'
+                            f'border:1px solid rgba(255,92,169,0.2);display:inline-block;">{name_B}</div>'
+                            f'{html_B}'
+                            f'</div>'
+                            f'</div>'
+                        )
+                    else:
+                        # ── Single model ──
+                        heatmap_inner_html = _generate_model_heatmaps(mk, ex_A)
+
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    heatmap_inner_html = (
+                        f'<div style="padding:12px;border:1px solid rgba(239,68,68,0.3);'
+                        f'border-radius:8px;color:#f87171;font-size:11px;">'
+                        f'Could not generate attention heatmaps: {e}</div>'
+                    )
+
+                # Build sensitive heads badge label
+                sensitive_label = ""
+                _sens = get_sensitive_heads(mk) or []
+                if _sens:
+                    badges_A = [f'L{h["layer"]}·H{h["head"]}' for h in _sens[:5]]
+                    if has_B:
+                        _sens_B = get_sensitive_heads(mk_B) or []
+                        badges_B = [f'L{h["layer"]}·H{h["head"]}' for h in _sens_B[:5]]
+                        sensitive_label = (
+                            f'<div style="font-size:9px;margin-bottom:8px;display:flex;gap:16px;">'
+                            f'<span style="color:#3b82f6;">★ {name_A}: {", ".join(badges_A)}</span>'
+                            f'<span style="color:#ff5ca9;">★ {name_B}: {", ".join(badges_B)}</span>'
+                            f'</div>'
+                        )
+                    else:
+                        sensitive_label = (
+                            f'<div style="font-size:9px;color:#f59e0b;margin-bottom:8px;">'
+                            f'★ Top sensitive: {", ".join(badges_A)}</div>'
+                        )
+
                 detail_html = create_stereoset_example_html(
                     ex_A,
                     example_B=ex_B_detail,
@@ -3487,7 +3604,10 @@ def bias_server_handlers(input, output, session):
                     sensitive_heads_B=get_sensitive_heads(mk_B) if has_B else None,
                     head_profile_stats_B=get_head_profile_stats(mk_B) if has_B else None,
                     top_n=top_n,
+                    heatmap_html=heatmap_inner_html,
+                    sensitive_heads_label=sensitive_label,
                 )
+
         except Exception as e:
             # Ignore SilentException (input not ready)
             if "SilentException" in str(type(e)):
@@ -3520,7 +3640,7 @@ def bias_server_handlers(input, output, session):
             ),
             manual_header=(
                 "Example Explorer",
-                "Browse StereoSet examples — click to inspect, then analyze through the bias pipeline",
+                "Browse StereoSet examples — click to inspect with attention heatmaps",
             ),
         )
 

@@ -879,7 +879,12 @@ def create_token_bias_strip(
 
         # Standalone punctuation (no alphanumeric chars) should NOT be merged
         is_standalone_punct = clean_text and not any(c.isalnum() for c in clean_text)
-        should_merge_this = is_gpt2_subword and not is_bert_subword and (current_token is not None) and not is_standalone_punct
+        
+        # USER CHANGE: For GPT-2, do NOT merge. Show raw tokens as is.
+        if has_gpt2_tokens:
+            should_merge_this = False
+        else:
+            should_merge_this = is_gpt2_subword and not is_bert_subword and (current_token is not None) and not is_standalone_punct
         
         if not clean_text:
             continue
@@ -1000,7 +1005,12 @@ def create_bias_sentence_preview(tokens: List[str], token_labels: List[Dict]) ->
             continue
 
         is_standalone_punct = not any(c.isalnum() for c in clean_text)
-        should_merge_this = is_gpt2_subword and not is_bert_subword and (current_token is not None) and not is_standalone_punct
+        
+        # USER CHANGE: For GPT-2, do NOT merge. Show raw tokens as is.
+        if has_gpt2_tokens:
+            should_merge_this = False
+        else:
+            should_merge_this = is_gpt2_subword and not is_bert_subword and (current_token is not None) and not is_standalone_punct
 
         if should_merge_this:
             # Merge
@@ -1076,8 +1086,17 @@ def create_bias_sentence_preview(tokens: List[str], token_labels: List[Dict]) ->
         f'color:#6b7280;align-items:center;">{"".join(legend)}</div>'
     )
 
+    # Note for GPT-2 visualization
+    gpt2_note = ""
+    if has_gpt2_tokens:
+        gpt2_note = (
+            '<div style="font-size:9px;color:#94a3b8;font-style:italic;margin-top:4px;text-align:right;">'
+            'Ġ (space token) removed for visualization</div>'
+        )
+
     return (
         f'<div class="token-viz-container">{"".join(token_html)}</div>'
+        f'{gpt2_note}'
         f'{legend_html}'
     )
 
@@ -2479,6 +2498,8 @@ def create_stereoset_example_html(
     sensitive_heads_B: Optional[list] = None,
     head_profile_stats_B: Optional[Dict] = None,
     top_n: int = 10,
+    heatmap_html: str = "",
+    sensitive_heads_label: str = "",
 ) -> str:
     """Render a single StereoSet example with PLL scores and Analyze button.
 
@@ -2652,9 +2673,255 @@ def create_stereoset_example_html(
         f'onmouseout="this.style.background=\'rgba(255,92,169,0.1)\'">'
         f'Analyze in Pipeline →</button>'
         f'</div>'
+        + (f'<div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(139,92,246,0.2);">'
+           f'<div style="font-size:12px;font-weight:700;color:#a78bfa;margin-bottom:4px;">'
+           f'Token-Level Attention Comparison</div>'
+           f'{sensitive_heads_label}'
+           f'{heatmap_html}'
+           f'</div>' if heatmap_html else '')
         + head_panel_html
         + '</div>'
     )
+
+
+def _clean_token_label(tok: str) -> str:
+    """Clean a sub-word token for display on heatmap axes."""
+    if tok.startswith("Ġ"):
+        return tok[1:]
+    if tok.startswith("##"):
+        return tok  # keep ## for BERT to show sub-word boundary
+    return tok
+
+
+def create_stereoset_attention_heatmaps(
+    stereo_data: Dict,
+    anti_data: Dict,
+    unrelated_data: Optional[Dict],
+    layer: int,
+    head: int,
+    is_sensitive: bool = False,
+) -> go.Figure:
+    """Attention heatmaps for StereoSet sentence variants.
+
+    Layout: Stereo + Anti side-by-side on top row, Unrelated centered below.
+
+    Parameters
+    ----------
+    stereo_data, anti_data, unrelated_data : dict
+        Each has ``tokens`` (list[str]) and ``attentions`` (tuple of Tensors).
+    layer, head : int
+        Which L/H to visualise.
+    is_sensitive : bool
+        If True, the title highlights this head as StereoSet-sensitive.
+
+    Returns a Plotly Figure with 2 or 3 sub-plots.
+    """
+    from plotly.subplots import make_subplots
+
+    has_unrelated = unrelated_data is not None and bool(unrelated_data.get("tokens"))
+
+    if has_unrelated:
+        # 2 rows: top has Stereo + Anti, bottom has Unrelated centered
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=["Stereotype", "Anti-Stereotype", "Unrelated", ""],
+            horizontal_spacing=0.08,
+            vertical_spacing=0.14,
+            specs=[[{}, {}], [{"colspan": 2}, None]],
+        )
+        # positions: (row, col) for each panel
+        positions = [(1, 1), (1, 2), (2, 1)]
+        panels = [
+            ("Stereotype", stereo_data, "#f87171"),
+            ("Anti-Stereotype", anti_data, "#4ade80"),
+            ("Unrelated", unrelated_data, "#94a3b8"),
+        ]
+    else:
+        # Just 2 side-by-side
+        fig = make_subplots(
+            rows=1, cols=2,
+            subplot_titles=["Stereotype", "Anti-Stereotype"],
+            horizontal_spacing=0.08,
+        )
+        positions = [(1, 1), (1, 2)]
+        panels = [
+            ("Stereotype", stereo_data, "#f87171"),
+            ("Anti-Stereotype", anti_data, "#4ade80"),
+        ]
+
+    n_panels = len(panels)
+
+    # Compute shared z-range across all panels for fair comparison
+    all_z_vals = []
+    matrices = []
+    for _, data, _ in panels:
+        att = data["attentions"][layer][0, head].cpu().numpy()  # (seq, seq)
+        matrices.append(att)
+        all_z_vals.extend(att.flatten().tolist())
+
+    z_min = min(all_z_vals)
+    z_max = max(all_z_vals)
+
+    for idx, ((label, data, color), att_matrix, (r, c)) in enumerate(
+        zip(panels, matrices, positions)
+    ):
+        tokens = [_clean_token_label(t) for t in data["tokens"]]
+        seq_len = att_matrix.shape[0]
+        display_tokens = tokens[:seq_len]
+        is_last = idx == n_panels - 1
+
+        hover_text = [
+            [f"<b>{display_tokens[i]} → {display_tokens[j]}</b><br>"
+             f"Attention: {att_matrix[i, j]:.4f}<br>"
+             f"({label})"
+             for j in range(seq_len)]
+            for i in range(seq_len)
+        ]
+
+        fig.add_trace(
+            go.Heatmap(
+                z=att_matrix.tolist(),
+                x=display_tokens,
+                y=display_tokens,
+                colorscale=[[0, "#ffffff"], [1, "#1e40af"]],
+                zmin=z_min,
+                zmax=z_max,
+                showscale=is_last,
+                colorbar=dict(
+                    title=dict(text="Attention", font=dict(size=10, color="#94a3b8")),
+                    tickfont=dict(size=9, color="#94a3b8"),
+                    thickness=8,
+                    len=0.8,
+                ) if is_last else None,
+                hovertemplate="%{text}<extra></extra>",
+                text=hover_text,
+            ),
+            row=r, col=c,
+        )
+
+    # Style
+    sensitive_badge = " ★ sensitive" if is_sensitive else ""
+    max_tokens = max(len(p[1]["tokens"]) for p in panels)
+    base_h = max(300, min(450, 18 * max_tokens + 100))
+    total_h = int(base_h * (1.85 if has_unrelated else 1.0))
+
+    fig.update_layout(
+        title=dict(
+            text=(
+                f"Token-Level Attention — L{layer}·H{head}{sensitive_badge}<br>"
+                f"<sub>Shared colour scale across all variants for direct comparison</sub>"
+            ),
+            font=dict(size=15, color="#e2e8f0", family="Inter, sans-serif"),
+        ),
+        height=total_h,
+        autosize=True,
+        margin=dict(l=80, r=60, t=90, b=60),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif", color="#94a3b8"),
+    )
+
+    # Axis styling for all subplots
+    n_rows = 2 if has_unrelated else 1
+    for r_idx in range(1, n_rows + 1):
+        cols_in_row = 2 if r_idx == 1 else 1
+        for c_idx in range(1, cols_in_row + 1):
+            fig.update_xaxes(
+                tickfont=dict(size=8, color="#94a3b8"),
+                tickangle=45,
+                row=r_idx, col=c_idx,
+            )
+            fig.update_yaxes(
+                tickfont=dict(size=8, color="#94a3b8"),
+                autorange="reversed",
+                row=r_idx, col=c_idx,
+            )
+
+    # Color the subplot titles
+    # Filter annotations that have text (skipping potentially empty ones)
+    annotations = [a for a in fig['layout']['annotations'] if getattr(a, 'text', '').strip()]
+    for ann, (_, _, color) in zip(annotations, panels):
+        ann['font'] = dict(size=12, color=color, family="Inter, sans-serif")
+
+    return fig
+
+
+def create_stereoset_attention_diff_heatmap(
+    stereo_data: Dict,
+    anti_data: Dict,
+    layer: int,
+    head: int,
+) -> go.Figure:
+    """Difference heatmap: Stereotype attention − Anti-Stereotype attention.
+
+    Red = more attention in stereotype sentence.
+    Blue = more attention in anti-stereotype sentence.
+    Only works when both sentences have the same token count (same context
+    prefix with similar completions).  Falls back gracefully when sizes differ.
+    """
+    s_att = stereo_data["attentions"][layer][0, head].cpu().numpy()
+    a_att = anti_data["attentions"][layer][0, head].cpu().numpy()
+
+    s_tokens = [_clean_token_label(t) for t in stereo_data["tokens"]]
+    a_tokens = [_clean_token_label(t) for t in anti_data["tokens"]]
+
+    # Use the shorter sequence length for alignment
+    min_len = min(s_att.shape[0], a_att.shape[0])
+    diff = s_att[:min_len, :min_len] - a_att[:min_len, :min_len]
+    display_tokens = s_tokens[:min_len]
+    abs_max = max(abs(diff.min()), abs(diff.max()), 1e-6)
+
+    hover_text = [
+        [f"<b>{display_tokens[i]} → {display_tokens[j]}</b><br>"
+         f"Δ Attention: {diff[i, j]:+.4f}<br>"
+         f"Stereo: {s_att[i, j]:.4f} | Anti: {a_att[i, j]:.4f}"
+         for j in range(min_len)]
+        for i in range(min_len)
+    ]
+
+    fig = go.Figure(data=go.Heatmap(
+        z=diff.tolist(),
+        x=display_tokens,
+        y=display_tokens,
+        colorscale=[
+            [0.0, "#2563eb"],     # Blue: anti > stereo
+            [0.5, "#1e1e2f"],     # Neutral
+            [1.0, "#ef4444"],     # Red: stereo > anti
+        ],
+        zmid=0,
+        zmin=-abs_max,
+        zmax=abs_max,
+        showscale=True,
+        colorbar=dict(
+            title=dict(text="Δ Attention", font=dict(size=10, color="#94a3b8")),
+            tickfont=dict(size=9, color="#94a3b8"),
+            thickness=8,
+            len=0.8,
+        ),
+        hovertemplate="%{text}<extra></extra>",
+        text=hover_text,
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text=(
+                f"Attention Difference (Stereo − Anti) — L{layer}·H{head}<br>"
+                f"<sub><span style='color:#ef4444'>Red</span> = more attention in stereotype | "
+                f"<span style='color:#2563eb'>Blue</span> = more in anti-stereotype</sub>"
+            ),
+            font=dict(size=14, color="#e2e8f0", family="Inter, sans-serif"),
+        ),
+        xaxis=dict(tickfont=dict(size=8, color="#94a3b8"), tickangle=45),
+        yaxis=dict(tickfont=dict(size=8, color="#94a3b8"), autorange="reversed"),
+        height=max(350, min(500, 20 * min_len + 100)),
+        autosize=True,
+        margin=dict(l=80, r=60, t=90, b=60),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif", color="#94a3b8"),
+    )
+
+    return fig
 
 
 __all__ = [
@@ -2680,4 +2947,6 @@ __all__ = [
     "create_stereoset_demographic_chart",
     "create_stereoset_example_html",
     "create_sensitive_head_panel_html",
+    "create_stereoset_attention_heatmaps",
+    "create_stereoset_attention_diff_heatmap",
 ]
