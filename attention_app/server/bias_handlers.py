@@ -380,7 +380,7 @@ def bias_server_handlers(input, output, session):
     bias_cached_text_A = reactive.value("")
     bias_cached_text_B = reactive.value("")
     
-    # Current thresholds (synced with UI sliders)
+    # Current thresholds (synced with UI sliders) - will be updated by update_threshold_defaults
     current_thresholds_A = reactive.value({"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5})
     current_thresholds_B = reactive.value({"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5})
     
@@ -397,7 +397,7 @@ def bias_server_handlers(input, output, session):
     def update_threshold_defaults():
         """Update UI sliders with model-specific optimized thresholds for Model A and B."""
         vk_A = input.bias_model_key()
-        
+
         # Determine if we need thresholds for B (Models or Prompts comparison)
         compare_active = False
         vk_B = None
@@ -412,18 +412,18 @@ def bias_server_handlers(input, output, session):
             pass
 
         from attention_app.bias.gusnet_detector import MODEL_REGISTRY
-        
+
         def _get_model_defaults(vk):
             if not vk:
                 return {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
-                
+
             cfg = MODEL_REGISTRY.get(vk)
             if not cfg:
                 return {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
-            
+
             opt = cfg.get("optimized_thresholds")
             defaults = {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
-            
+
             if opt:
                 cat_indices = cfg.get("category_indices", {})
                 for cat, indices in cat_indices.items():
@@ -434,18 +434,23 @@ def bias_server_handlers(input, output, session):
             return defaults
 
         # Get thresholds for A
-        defaults = _get_model_defaults(vk_A)
-        
+        defaults_A = _get_model_defaults(vk_A)
+
+        # Update server state immediately (so UI always shows latest thresholds)
+        current_thresholds_A.set(defaults_A)
+
         # Get thresholds for B if any comparison mode is active
+        msg_defaults = defaults_A.copy()
         if compare_active:
             defaults_B = _get_model_defaults(vk_B)
+            current_thresholds_B.set(defaults_B)
             # Prefix with _B for the UI handler
             for cat, val in defaults_B.items():
-                defaults[f"{cat}_B"] = val
-        
+                msg_defaults[f"{cat}_B"] = val
+
         # Send to UI
-        if defaults:
-            asyncio.create_task(session.send_custom_message("set_bias_thresholds", defaults))
+        if msg_defaults:
+            asyncio.create_task(session.send_custom_message("set_bias_thresholds", msg_defaults))
 
     # ── History Logic ──
     
@@ -484,104 +489,111 @@ def bias_server_handlers(input, output, session):
         return ui.div(*items)
 
     @reactive.Effect
-    @reactive.event(input.bias_thresh_unfair, input.bias_thresh_gen, input.bias_thresh_stereo,
-                   input.bias_thresh_unfair_b, input.bias_thresh_gen_b, input.bias_thresh_stereo_b)
     def update_bias_results_live():
         """Update bias results when threshold sliders change (without re-running inference).
-        
-        This only reacts to threshold slider changes, not to other reactive values.
+
+        Sliders are the ONLY reactive triggers. current_thresholds_A/B are read via
+        isolate() so that .set() calls inside this function do NOT cause re-triggers.
         """
-        # GUARD: Don't run if analysis is in progress
-        if bias_running.get():
-            return
-        
-        # GUARD: Skip the first call after a fresh analysis (stale slider values)
-        current_gen = bias_analysis_generation.get()
-        last_gen = bias_last_processed_generation.get()
-        if current_gen > last_gen:
-            bias_last_processed_generation.set(current_gen)
-            return
-            
-        raw_A = bias_raw_results.get()
-        raw_B = bias_raw_results_B.get()
-        
-        if not raw_A and not raw_B:
-            return
-
-        # GUARD: Only update if the LIVE model selection matches the ANALYZED model.
+        # ── Read slider inputs (these ARE reactive triggers) ──
         try:
-            live_key_A = input.bias_model_key()
-            if raw_A and raw_A.get("bias_model_key") != live_key_A:
+            t_unfair = float(input.bias_thresh_unfair())
+        except (Exception, ValueError, TypeError):
+            t_unfair = 0.5
+        try:
+            t_gen = float(input.bias_thresh_gen())
+        except (Exception, ValueError, TypeError):
+            t_gen = 0.5
+        try:
+            t_stereo = float(input.bias_thresh_stereo())
+        except (Exception, ValueError, TypeError):
+            t_stereo = 0.5
+
+        try:
+            t_unfair_b = float(input.bias_thresh_unfair_b())
+        except (Exception, ValueError, TypeError):
+            t_unfair_b = 0.5
+        try:
+            t_gen_b = float(input.bias_thresh_gen_b())
+        except (Exception, ValueError, TypeError):
+            t_gen_b = 0.5
+        try:
+            t_stereo_b = float(input.bias_thresh_stereo_b())
+        except (Exception, ValueError, TypeError):
+            t_stereo_b = 0.5
+
+        manual_thresholds_A = {"UNFAIR": t_unfair, "GEN": t_gen, "STEREO": t_stereo}
+        manual_thresholds_B = {"UNFAIR": t_unfair_b, "GEN": t_gen_b, "STEREO": t_stereo_b}
+
+        # ── Read everything else via isolate() to avoid extra re-triggers ──
+        with reactive.isolate():
+            # GUARD: Don't run if analysis is in progress
+            if bias_running.get():
                 return
-        except Exception:
-            pass
 
-        # Check optimization flag
-        try:
-            use_opt = input.bias_use_optimized()
-        except: use_opt = False
+            # GUARD: Skip the first call after a fresh analysis (stale slider values)
+            current_gen = bias_analysis_generation.get()
+            last_gen = bias_last_processed_generation.get()
+            if current_gen > last_gen:
+                bias_last_processed_generation.set(current_gen)
+                return
 
-        # Read manual sliders
-        try: t_unfair = float(input.bias_thresh_unfair())
-        except: t_unfair = 0.5
-        try: t_gen = float(input.bias_thresh_gen())
-        except: t_gen = 0.5
-        try: t_stereo = float(input.bias_thresh_stereo())
-        except: t_stereo = 0.5
-        
-        manual_thresholds_A = {
-            "UNFAIR": t_unfair,
-            "GEN": t_gen,
-            "STEREO": t_stereo
-        }
-        
-        # GUARD: Skip if thresholds haven't actually changed (prevents unnecessary re-processing)
-        current_A = current_thresholds_A.get()
-        if current_A == manual_thresholds_A:
-            return
-        
-        current_thresholds_A.set(manual_thresholds_A)
-        
-        # Read B sliders
-        try: t_unfair_b = float(input.bias_thresh_unfair_b())
-        except: t_unfair_b = 0.5
-        try: t_gen_b = float(input.bias_thresh_gen_b())
-        except: t_gen_b = 0.5
-        try: t_stereo_b = float(input.bias_thresh_stereo_b())
-        except: t_stereo_b = 0.5
+            raw_A = bias_raw_results.get()
+            raw_B = bias_raw_results_B.get()
 
-        manual_thresholds_B = {
-            "UNFAIR": t_unfair_b,
-            "GEN": t_gen_b,
-            "STEREO": t_stereo_b
-        }
-        
-        current_thresholds_B.set(manual_thresholds_B)
-        
-        # Guard for B key match
-        update_B = False
-        if raw_B:
+            if not raw_A and not raw_B:
+                return
+
+            # Check A model-key consistency
+            a_model_matches = True
             try:
-                in_compare_mode = active_bias_compare_models.get() or active_bias_compare_prompts.get()
-                if in_compare_mode:
-                    live_key_B = input.bias_model_key_B()
-                    expected_key_B = raw_B.get("bias_model_key")
-                    if active_bias_compare_prompts.get() and raw_A:
-                        expected_key_B = raw_A.get("bias_model_key")
-                    if live_key_B and expected_key_B and expected_key_B == live_key_B:
-                        update_B = True
+                live_key_A = input.bias_model_key()
+                if raw_A and live_key_A and raw_A.get("bias_model_key") != live_key_A:
+                    a_model_matches = False
             except Exception:
                 pass
-        
-        # Process A
-        if raw_A:
-            res_A = _process_raw_bias_result(raw_A, manual_thresholds_A, use_optimized=use_opt)
-            bias_results.set(res_A)
-            
-        # Process B
-        if raw_B and update_B:
-            res_B = _process_raw_bias_result(raw_B, manual_thresholds_B, use_optimized=use_opt)
-            bias_results_B.set(res_B)
+
+            try:
+                use_opt = input.bias_use_optimized()
+            except Exception:
+                use_opt = False
+
+            # Compare with last-processed thresholds (no reactive dependency)
+            prev_A = current_thresholds_A.get()
+            prev_B = current_thresholds_B.get()
+            changed_A = prev_A != manual_thresholds_A
+            changed_B = prev_B != manual_thresholds_B
+
+            if not changed_A and not changed_B:
+                return
+
+            # Persist new values (isolate prevents re-trigger)
+            if changed_A:
+                current_thresholds_A.set(manual_thresholds_A)
+            if changed_B:
+                current_thresholds_B.set(manual_thresholds_B)
+
+            # Determine if compare mode is active
+            try:
+                live_compare_models = bool(input.bias_compare_mode())
+            except Exception:
+                live_compare_models = bool(active_bias_compare_models.get())
+            try:
+                live_compare_prompts = bool(input.bias_compare_prompts_mode())
+            except Exception:
+                live_compare_prompts = bool(active_bias_compare_prompts.get())
+
+            update_B = bool(raw_B) and changed_B and (live_compare_models or live_compare_prompts)
+
+            # Process A
+            if raw_A and changed_A and a_model_matches:
+                res_A = _process_raw_bias_result(raw_A, manual_thresholds_A, use_optimized=use_opt)
+                bias_results.set(res_A)
+
+            # Process B
+            if raw_B and update_B:
+                res_B = _process_raw_bias_result(raw_B, manual_thresholds_B, use_optimized=use_opt)
+                bias_results_B.set(res_B)
 
     @reactive.Effect
     @reactive.event(bias_history)
@@ -2208,19 +2220,28 @@ def bias_server_handlers(input, output, session):
             mid = math.ceil(len(items)/2)
             c1, c2 = items[:mid], items[mid:]
             
-            # Show per-category thresholds
+            # Show per-category thresholds - always read from live slider inputs
             t_info = "Thresholds: "
-            if data and data.get("thresholds"):
-                ts = data["thresholds"]
-                parts = []
-                for k in ["UNFAIR", "GEN", "STEREO"]:
-                    if k in ts:
-                        parts.append(f'{k}: <code>{float(ts[k]):.2f}</code>')
-                t_info += " &bull; ".join(parts)
-                if data.get("use_optimized"):
-                    t_info += " <span style='opacity:0.6;'>(Optimized)</span>"
+
+            # Read directly from slider inputs (always reflects sidebar state)
+            if not is_B:
+                try: u = float(input.bias_thresh_unfair())
+                except: u = current_thresholds_A.get().get("UNFAIR", 0.5)
+                try: g = float(input.bias_thresh_gen())
+                except: g = current_thresholds_A.get().get("GEN", 0.5)
+                try: s = float(input.bias_thresh_stereo())
+                except: s = current_thresholds_A.get().get("STEREO", 0.5)
             else:
-                t_info += f"<code>{_safe_threshold():.2f}</code>"
+                try: u = float(input.bias_thresh_unfair_b())
+                except: u = current_thresholds_B.get().get("UNFAIR", 0.5)
+                try: g = float(input.bias_thresh_gen_b())
+                except: g = current_thresholds_B.get().get("GEN", 0.5)
+                try: s = float(input.bias_thresh_stereo_b())
+                except: s = current_thresholds_B.get().get("STEREO", 0.5)
+
+            t_info += f'UNFAIR: <code>{u:.2f}</code> &bull; GEN: <code>{g:.2f}</code> &bull; STEREO: <code>{s:.2f}</code>'
+            if data and data.get("use_optimized"):
+                t_info += " <span style='opacity:0.6;'>(Optimized)</span>"
 
             return (f'<div style="display:flex;gap:16px;border:1px solid rgba(226,232,240,0.4);border-radius:8px;overflow:hidden;">'
                     f'<div style="flex:1;display:flex;flex-direction:column;">{"".join(c1)}</div>'
