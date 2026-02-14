@@ -2889,13 +2889,14 @@ def create_sensitive_head_panel_html(
         content_html = html_A
 
     return (
-        '<details style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">'
-        '<summary style="cursor:pointer;font-size:11px;font-weight:700;color:#a78bfa;'
-        'list-style:none;display:flex;align-items:center;gap:6px;">'
-        '<span style="transition:transform 0.2s;">&#9654;</span> '
+        '<details ontoggle="this.querySelector(\'.ss-toggle-arrow\').textContent=this.open?\'▲\':\'▼\'" '
+        'style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">'
+        '<summary style="cursor:pointer;font-size:12px;font-weight:700;color:#ff5ca9;'
+        'list-style:none;display:flex;align-items:center;gap:6px;user-select:none;">'
+        '<span class="ss-toggle-arrow" style="font-size:10px;">▼</span>'
         'Sensitive Head Behavior</summary>'
-        f'<div style="margin-top:10px;padding:8px 12px;background:rgba(139,92,246,0.05);'
-        f'border-radius:8px;border:1px solid rgba(139,92,246,0.15);">'
+        f'<div style="margin-top:10px;padding:8px 12px;background:rgba(255,92,169,0.05);'
+        f'border-radius:8px;border:1px solid rgba(255,92,169,0.15);">'
         f'{content_html}'
         f'<div style="font-size:9px;color:#64748b;margin-top:6px;border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;">'
         f'Bars scaled to population [min, max] of each feature across all StereoSet examples. '
@@ -3090,12 +3091,15 @@ def create_stereoset_example_html(
         f'onmouseout="this.style.background=\'rgba(255,92,169,0.1)\'">'
         f'Analyze in Pipeline -></button>'
         f'</div>'
-        + (f'<div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(139,92,246,0.2);">'
-           f'<div style="font-size:12px;font-weight:700;color:#a78bfa;margin-bottom:4px;">'
-           f'Token-Level Attention Comparison</div>'
+        + (f'<details ontoggle="this.querySelector(\'.ss-toggle-arrow\').textContent=this.open?\'▲\':\'▼\'" '
+           f'style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,92,169,0.2);">'
+           f'<summary style="cursor:pointer;font-size:12px;font-weight:700;color:#ff5ca9;'
+           f'list-style:none;display:flex;align-items:center;gap:6px;user-select:none;">'
+           f'<span class="ss-toggle-arrow" style="font-size:10px;">▼</span>'
+           f'Token-Level Attention Comparison</summary>'
            f'{sensitive_heads_label}'
            f'{heatmap_html}'
-           f'</div>' if heatmap_html else '')
+           f'</details>' if heatmap_html else '')
         + head_panel_html
         + '</div>'
     )
