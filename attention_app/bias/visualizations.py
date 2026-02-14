@@ -2918,6 +2918,348 @@ def create_stereoset_attention_diff_heatmap(
     return fig
 
 
+def create_stereoset_head_distributions(
+    examples: list,
+    sensitive_heads: list,
+    top_n: int = 5,
+) -> "go.Figure":
+    """Obj 3 — Box plots of stereo vs anti attention values per sensitive head.
+
+    Shows SYSTEMATICALLY how each sensitive head behaves differently across all
+    StereoSet examples for stereotyped vs anti-stereotyped sentences.
+
+    Args:
+        examples: from get_stereoset_examples()
+        sensitive_heads: from get_sensitive_heads()
+        top_n: how many heads to include
+
+    Returns:
+        Plotly Figure
+    """
+    import plotly.graph_objects as go
+    from scipy import stats as scipy_stats
+
+    heads = sensitive_heads[:top_n]
+    if not heads or not examples:
+        fig = go.Figure()
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            annotations=[{"text": "No data", "showarrow": False, "font": {"color": "#94a3b8"}}],
+        )
+        return fig
+
+    head_labels = [f"L{h['layer']}·H{h['head']}" for h in heads]
+    head_keys   = [f"L{h['layer']}_H{h['head']}" for h in heads]
+
+    stereo_data = {k: [] for k in head_keys}
+    anti_data   = {k: [] for k in head_keys}
+
+    for ex in examples:
+        hp = ex.get("head_profile", {})
+        s_vals = hp.get("stereo", {})
+        a_vals = hp.get("anti", {})
+        for k in head_keys:
+            sv = s_vals.get(k)
+            av = a_vals.get(k)
+            if sv is not None:
+                stereo_data[k].append(float(sv))
+            if av is not None:
+                anti_data[k].append(float(av))
+
+    fig = go.Figure()
+
+    # Stereo boxes (red) — one trace per head for grouped layout
+    fig.add_trace(go.Box(
+        x=[lbl for i, lbl in enumerate(head_labels) for _ in stereo_data[head_keys[i]]],
+        y=[v for k in head_keys for v in stereo_data[k]],
+        name="Stereo",
+        legendgroup="stereo",
+        marker_color="#ef4444",
+        line_color="#ef4444",
+        fillcolor="rgba(239,68,68,0.25)",
+        boxmean=True,
+        offsetgroup="stereo",
+        hovertemplate="<b>%{x}</b><br>%{y:.3f}<extra>Stereo</extra>",
+    ))
+
+    # Anti boxes (green)
+    fig.add_trace(go.Box(
+        x=[lbl for i, lbl in enumerate(head_labels) for _ in anti_data[head_keys[i]]],
+        y=[v for k in head_keys for v in anti_data[k]],
+        name="Anti",
+        legendgroup="anti",
+        marker_color="#22c55e",
+        line_color="#22c55e",
+        fillcolor="rgba(34,197,94,0.25)",
+        boxmean=True,
+        offsetgroup="anti",
+        hovertemplate="<b>%{x}</b><br>%{y:.3f}<extra>Anti</extra>",
+    ))
+
+    # Mann-Whitney p-value annotations above each head
+    annotations = []
+    for k, lbl in zip(head_keys, head_labels):
+        s = stereo_data[k]
+        a = anti_data[k]
+        if len(s) > 2 and len(a) > 2:
+            _, pval = scipy_stats.mannwhitneyu(s, a, alternative="two-sided")
+            if pval < 1e-10:
+                sig = "***"
+            elif pval < 0.001:
+                sig = f"** {pval:.0e}"
+            elif pval < 0.05:
+                sig = f"* {pval:.3f}"
+            else:
+                sig = f"ns {pval:.2f}"
+            annotations.append(dict(
+                x=lbl, y=1.03, xref="x", yref="paper",
+                text=sig, showarrow=False,
+                font=dict(size=8, color="#1e293b"),
+                xanchor="center",
+            ))
+
+    fig.update_layout(
+        boxmode="group",
+        height=320,
+        margin=dict(l=40, r=20, t=40, b=40),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#1e293b", family="JetBrains Mono, monospace", size=10),
+        legend=dict(
+            orientation="h", x=0.5, xanchor="center", y=-0.15,
+            bgcolor="rgba(0,0,0,0)", font=dict(size=10, color="#1e293b"),
+        ),
+        xaxis=dict(
+            showgrid=False,
+            tickfont=dict(size=10, color="#1e293b"),
+            zeroline=False,
+            linecolor="#cbd5e1",
+        ),
+        yaxis=dict(
+            title=dict(text="Feature Value", font=dict(size=9, color="#1e293b")),
+            tickfont=dict(color="#1e293b"),
+            showgrid=True,
+            gridcolor="rgba(0,0,0,0.08)",
+            zeroline=False,
+        ),
+        title=dict(
+            text="Stereo vs Anti-Stereo Distribution per Sensitive Head",
+            font=dict(size=11, color="#1e293b"),
+            x=0.5,
+        ),
+        annotations=annotations,
+    )
+    return fig
+
+
+def create_stereoset_attention_scatter(
+    examples: list,
+    sensitive_heads: list,
+    head_key: str = None,
+) -> "go.Figure":
+    """Obj 4 — Binned means: Δ attention (stereo−anti) vs bias_score.
+
+    X axis is split into decile bins. For each bin: mean bias_score ± 1 SD,
+    coloured by dominant demographic category. Shows the trend clearly without
+    overplotting. Spearman ρ computed on raw data and shown as annotation.
+
+    Args:
+        examples: from get_stereoset_examples()
+        sensitive_heads: from get_sensitive_heads()
+        head_key: "L{l}_H{h}" to use; defaults to most sensitive head
+
+    Returns:
+        Plotly Figure
+    """
+    import plotly.graph_objects as go
+    from scipy import stats as scipy_stats
+    import numpy as np
+
+    if not examples or not sensitive_heads:
+        fig = go.Figure()
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            annotations=[{"text": "No data", "showarrow": False, "font": {"color": "#334155"}}],
+        )
+        return fig
+
+    if head_key is None:
+        h = sensitive_heads[0]
+        head_key = f"L{h['layer']}_H{h['head']}"
+        head_lbl = f"L{h['layer']}·H{h['head']}"
+        best_feat = h.get("best_feature", head_key)
+    else:
+        head_lbl = head_key.replace("_", "·")
+        best_feat = head_key
+
+    CAT_COLORS = {
+        "gender":     "#e74c3c",
+        "race":       "#3b82f6",
+        "religion":   "#22c55e",
+        "profession": "#f59e0b",
+        "other":      "#94a3b8",
+    }
+
+    all_x, all_y, all_cats = [], [], []
+
+    for ex in examples:
+        hp = ex.get("head_profile", {})
+        sv = hp.get("stereo", {}).get(head_key)
+        av = hp.get("anti",   {}).get(head_key)
+        bs = ex.get("bias_score")
+        cat = ex.get("category", "other")
+        if sv is None or av is None or bs is None:
+            continue
+        all_x.append(float(sv) - float(av))
+        all_y.append(float(bs))
+        all_cats.append(cat)
+
+    if len(all_x) < 10:
+        fig = go.Figure()
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        return fig
+
+    all_x = np.array(all_x)
+    all_y = np.array(all_y)
+
+    # Bin into ~10 deciles by X value
+    n_bins = 10
+    bin_edges = np.percentile(all_x, np.linspace(0, 100, n_bins + 1))
+    bin_edges = np.unique(bin_edges)  # remove duplicates at extremes
+
+    bin_centers, bin_means, bin_stds, bin_ns, bin_colors = [], [], [], [], []
+    for i in range(len(bin_edges) - 1):
+        lo, hi = bin_edges[i], bin_edges[i + 1]
+        mask = (all_x >= lo) & (all_x < hi) if i < len(bin_edges) - 2 else (all_x >= lo) & (all_x <= hi)
+        ys = all_y[mask]
+        cats_in_bin = [all_cats[j] for j in range(len(all_cats)) if mask[j]]
+        if len(ys) == 0:
+            continue
+        bin_centers.append(float((lo + hi) / 2))
+        bin_means.append(float(np.mean(ys)))
+        bin_stds.append(float(np.std(ys)))
+        bin_ns.append(int(len(ys)))
+        # colour by dominant category in this bin
+        from collections import Counter
+        dom_cat = Counter(cats_in_bin).most_common(1)[0][0]
+        bin_colors.append(CAT_COLORS.get(dom_cat, "#94a3b8"))
+
+    fig = go.Figure()
+
+    # Error bars (SD) as a filled band
+    upper = [m + s for m, s in zip(bin_means, bin_stds)]
+    lower = [m - s for m, s in zip(bin_means, bin_stds)]
+    fig.add_trace(go.Scatter(
+        x=bin_centers + bin_centers[::-1],
+        y=upper + lower[::-1],
+        fill="toself",
+        fillcolor="rgba(100,116,139,0.15)",
+        line=dict(width=0),
+        hoverinfo="skip",
+        showlegend=False,
+        name="±1 SD",
+    ))
+
+    # Trend line through bin means (OLS on raw data)
+    slope, intercept, *_ = scipy_stats.linregress(all_x, all_y)
+    x_line = np.linspace(bin_edges[0], bin_edges[-1], 80)
+    fig.add_trace(go.Scatter(
+        x=x_line, y=slope * x_line + intercept,
+        mode="lines",
+        line=dict(color="rgba(100,116,139,0.5)", width=1.5, dash="dot"),
+        hoverinfo="skip",
+        showlegend=False,
+        name="OLS",
+    ))
+
+    # Bin mean points, coloured by dominant category
+    # Group by color for legend
+    from collections import defaultdict
+    color_groups: dict = defaultdict(lambda: {"x": [], "y": [], "ns": [], "stds": []})
+    cat_name_map = {v: k for k, v in CAT_COLORS.items()}
+    for cx, cm, cs, cn, cc in zip(bin_centers, bin_means, bin_stds, bin_ns, bin_colors):
+        color_groups[cc]["x"].append(cx)
+        color_groups[cc]["y"].append(cm)
+        color_groups[cc]["ns"].append(cn)
+        color_groups[cc]["stds"].append(cs)
+
+    for color, g in color_groups.items():
+        cat_name = cat_name_map.get(color, "other").capitalize()
+        fig.add_trace(go.Scatter(
+            x=g["x"], y=g["y"],
+            mode="markers",
+            name=cat_name,
+            marker=dict(color=color, size=10, line=dict(color="white", width=1.5)),
+            error_y=dict(
+                type="data", array=g["stds"],
+                visible=True,
+                color=color,
+                thickness=1.5,
+                width=6,
+            ),
+            hovertemplate=(
+                "<b>Δ ≈ %{x:.3f}</b><br>"
+                "Mean bias = %{y:.4f}<br>"
+                "SD = %{error_y.array:.4f}<br>"
+                f"Category: {cat_name}<extra></extra>"
+            ),
+        ))
+
+    # Spearman annotation
+    rho, pval = scipy_stats.spearmanr(all_x, all_y)
+    pval_txt = "p<0.001" if pval < 0.001 else f"p={pval:.3f}"
+    fig.add_annotation(
+        x=0.02, y=0.97, xref="paper", yref="paper",
+        text=f"Spearman ρ = {rho:.3f}  {pval_txt}<br>n = {len(all_x)}  |  {n_bins} bins",
+        showarrow=False,
+        font=dict(size=10, color="#1e293b"),
+        bgcolor="rgba(241,245,249,0.85)",
+        bordercolor="rgba(0,0,0,0.12)",
+        borderwidth=1,
+        borderpad=6,
+        align="left",
+    )
+
+    # Zero reference lines
+    fig.add_hline(y=0, line=dict(color="rgba(0,0,0,0.12)", width=1, dash="dot"))
+    fig.add_vline(x=0, line=dict(color="rgba(0,0,0,0.12)", width=1, dash="dot"))
+
+    fig.update_layout(
+        height=350,
+        margin=dict(l=50, r=20, t=50, b=60),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#1e293b", family="JetBrains Mono, monospace", size=10),
+        legend=dict(
+            orientation="h", x=0.5, xanchor="center", y=-0.2,
+            bgcolor="rgba(0,0,0,0)", font=dict(size=10, color="#1e293b"),
+        ),
+        xaxis=dict(
+            title=dict(text=f"Δ {head_lbl} (stereo − anti)  [{best_feat}]", font=dict(size=9, color="#1e293b")),
+            tickfont=dict(color="#1e293b"),
+            showgrid=True,
+            gridcolor="rgba(0,0,0,0.07)",
+            zeroline=False,
+            linecolor="#cbd5e1",
+        ),
+        yaxis=dict(
+            title=dict(text="Mean Bias Score per Bin", font=dict(size=9, color="#1e293b")),
+            tickfont=dict(color="#1e293b"),
+            showgrid=True,
+            gridcolor="rgba(0,0,0,0.07)",
+            zeroline=False,
+        ),
+        title=dict(
+            text=f"Attention Δ vs Bias Score — {head_lbl}",
+            font=dict(size=11, color="#1e293b"),
+            x=0.5,
+        ),
+    )
+    return fig
+
+
 __all__ = [
     "create_attention_bias_matrix",
     "create_bias_propagation_plot",
@@ -2943,4 +3285,6 @@ __all__ = [
     "create_sensitive_head_panel_html",
     "create_stereoset_attention_heatmaps",
     "create_stereoset_attention_diff_heatmap",
+    "create_stereoset_head_distributions",
+    "create_stereoset_attention_scatter",
 ]

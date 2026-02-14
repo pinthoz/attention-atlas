@@ -587,7 +587,7 @@ CSS = """
             border-radius: 8px;
             border: 1px solid rgba(255, 255, 255, 0.06);
             flex: 1;
-            max-width: 850px;
+            max-width: 500px;
             min-width: 300px;
             max-height: 54px;
             overflow-y: auto;
@@ -611,7 +611,7 @@ CSS = """
             height: 20px;
             padding: 0 12px;
             font-size: 10px;
-            font-weight: 600;
+            font-weight: 500px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             display: flex;
@@ -3311,7 +3311,7 @@ __all__ = ["CSS"]
             border-radius: 8px;
             border: 1px solid rgba(255, 255, 255, 0.06);
             flex: 1;
-            max-width: 850px;
+            max-width: 600px;
             min-width: 300px;
             max-height: 60px; /* Reduced height */
             overflow-y: auto; /* Scroll vertically */
@@ -3408,29 +3408,32 @@ __all__ = ["CSS"]
             box-shadow: 0 0 8px rgba(236, 72, 153, 0.4);
         }
 
-        /* Bias Toolbar Specific Styles */
-        /* Token chips with dynamic category color (highest score) */
-        .floating-control-bar .token-chip[style*="--chip-color"] {
-            background: rgba(51, 65, 85, 0.5);
-            border-color: var(--chip-color, rgba(255, 255, 255, 0.2));
-            box-shadow: 0 0 0 1px var(--chip-color, transparent);
-        }
-        
+        /* Bias Toolbar - token chips colored by dominant category */
         .floating-control-bar .token-chip[style*="--chip-color"]:hover {
-            background: rgba(51, 65, 85, 0.8);
-            border-color: var(--chip-color, #ff5ca9);
-            box-shadow: 0 0 8px var(--chip-color, rgba(255, 92, 169, 0.3));
+            filter: brightness(1.25);
+            box-shadow: 0 0 8px var(--chip-color, rgba(255, 92, 169, 0.4));
+        }
+
+        .floating-control-bar .token-chip[style*="--chip-color"].selected,
+        .floating-control-bar .token-chip[style*="--chip-color"].active {
+            filter: brightness(1.4);
+            box-shadow: 0 0 0 2px var(--chip-color, #ff5ca9), 0 0 10px var(--chip-color, rgba(255,92,169,0.4));
         }
         
-        /* Bias tokens container - no min-width, only max-width */
+        /* Bias tokens container - hard cap at 600px */
         #bias-tokens-row .token-sentence {
-            min-width: unset !important;
-            width: auto;
-            flex: 0 1 auto;
+            max-width: 600px !important;
+            min-width: 0 !important;
+            width: fit-content !important;
+            flex: 0 1 auto !important;
+            box-sizing: border-box !important;
         }
-        
+
         #bias-tokens-a, #bias-tokens-b {
-            min-width: unset !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+            flex: 1 1 0 !important;
+            overflow-x: auto;
         }
 
         /* ==========================================

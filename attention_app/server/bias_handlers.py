@@ -51,6 +51,8 @@ from ..bias.visualizations import (
     create_stereoset_example_html,
     create_stereoset_attention_heatmaps,
     create_stereoset_attention_diff_heatmap,
+    create_stereoset_head_distributions,
+    create_stereoset_attention_scatter,
 )
 from ..bias.feature_extraction import extract_attention_for_text
 from ..ui.bias_ui import create_bias_accordion, create_floating_bias_toolbar
@@ -68,10 +70,14 @@ _GUSNET_TO_ENCODER = {
     "gusnet-ensemble": "bert-base-uncased",
 }
 
-def _deferred_plotly(fig, container_id, height=None, config=None):
+def _deferred_plotly(fig, container_id, height=None, config=None, click_input=None):
     """Render a Plotly figure as deferred HTML - only calls Plotly.newPlot()
     when the container becomes visible. This avoids wrong dimensions when
-    the container is inside a collapsed accordion panel."""
+    the container is inside a collapsed accordion panel.
+
+    click_input: if set, a plotly_click listener will call
+        Shiny.setInputValue(click_input, clickedX) on each click.
+    """
     import plotly.io as pio
     import base64, html as _html
 
@@ -90,11 +96,13 @@ def _deferred_plotly(fig, container_id, height=None, config=None):
     # and sidesteps any HTML entity issues with <template> elements.
     b64_fig = base64.b64encode(fig_json.encode()).decode()
     escaped_cfg = _html.escape(cfg, quote=True)
+    click_attr = f' data-plotly-click-input="{click_input}"' if click_input else ""
     return (
         f'<div id="{container_id}" class="plotly-deferred" '
         f'style="width:100%;height:{height};min-height:50px;"'
         f' data-plotly-config="{escaped_cfg}"'
-        f' data-plotly-fig="{b64_fig}">'
+        f' data-plotly-fig="{b64_fig}"'
+        f'{click_attr}>'
         f'</div>'
     )
 
@@ -2107,6 +2115,11 @@ def bias_server_handlers(input, output, session):
         """
         cat_colors = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
 
+        def _hex_to_rgba(hex_color, alpha):
+            h = hex_color.lstrip("#")
+            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            return f"rgba({r},{g},{b},{alpha})"
+
         def _build_chips_html(res, variant="A"):
             """Build HTML chips for a single result set."""
             if not res:
@@ -2119,23 +2132,34 @@ def bias_server_handlers(input, output, session):
             if not biased:
                 return '<span style="color:#64748b;font-size:10px;padding:2px;">No bias detected</span>'
 
-            # Base color for chips depending on variant
             base_color = "#3b82f6" if variant == "A" else "#ff5ca9"
 
             items = []
             for lbl in biased:
                 clean = lbl["token"].replace("##", "").replace("\u0120", "")
                 tok_idx = lbl["index"]
-                
-                # Use category color if available, else variant default
-                types = lbl.get("bias_types", [])
-                item_color = cat_colors.get(types[0], base_color) if types else base_color
 
-                # Use native .token-chip class with data-prefix for styling
+                # Pick color of category with highest score
+                scores = lbl.get("scores", {})
+                if scores:
+                    max_cat = max(scores, key=lambda k: scores[k])
+                    item_color = cat_colors.get(max_cat, base_color)
+                else:
+                    types = lbl.get("bias_types", [])
+                    item_color = cat_colors.get(types[0], base_color) if types else base_color
+
+                chip_style = (
+                    f"background:{_hex_to_rgba(item_color, 0.18)};"
+                    f"border-color:{_hex_to_rgba(item_color, 0.55)};"
+                    f"color:white;"
+                    f"--chip-color:{item_color};"
+                )
+
                 items.append(
-                    f'<span class="token-chip" '
+                    f'<span class="token-chip bias-token-chip" '
                     f'data-token-idx="{tok_idx}" '
                     f'data-prefix="{variant}" '
+                    f'style="{chip_style}" '
                     f'onclick="selectBiasToken({tok_idx})">'
                     f'{clean}'
                     f'</span>'
@@ -2152,17 +2176,17 @@ def bias_server_handlers(input, output, session):
             chips_B = _build_chips_html(res_B, "B")
 
             return ui.HTML(
-                f'<div class="token-sentence" style="flex-direction:column;flex-wrap:nowrap;align-items:stretch;padding:2px 6px;">'
+                f'<div class="token-sentence" style="flex-direction:column;flex-wrap:nowrap;align-items:stretch;padding:2px 6px;max-width:600px;width:100%;box-sizing:border-box;">'
                 # Row A
-                f'<div style="display:flex;align-items:center;min-height:24px;">'
-                f'<div style="margin-right:8px;margin-left:8px;min-width:15px;text-align:center;color:#60a5fa;font-size:10px;font-weight:600;">A</div>'
-                f'<div id="bias-tokens-a" style="flex:1;display:flex;overflow-x:auto;scrollbar-width:none;align-items:center;gap:4px;">{chips_A}</div>'
+                f'<div style="display:flex;align-items:center;min-height:24px;min-width:0;">'
+                f'<div style="margin-right:8px;margin-left:8px;min-width:15px;flex-shrink:0;text-align:center;color:#60a5fa;font-size:10px;font-weight:600;">A</div>'
+                f'<div id="bias-tokens-a" style="flex:1;min-width:0;display:flex;overflow-x:auto;scrollbar-width:none;align-items:center;gap:4px;">{chips_A}</div>'
                 f'</div>'
                 # Row B
-                f'<div style="display:flex;align-items:center;min-height:24px;border-top:1px solid rgba(233, 30, 99, 0.3);">'
-                f'<div style="margin-right:8px;margin-left:8px;min-width:15px;text-align:center;color:#E91E63;font-size:10px;font-weight:600;">B</div>'
+                f'<div style="display:flex;align-items:center;min-height:24px;min-width:0;border-top:1px solid rgba(233, 30, 99, 0.3);">'
+                f'<div style="margin-right:8px;margin-left:8px;min-width:15px;flex-shrink:0;text-align:center;color:#E91E63;font-size:10px;font-weight:600;">B</div>'
                 f'<div id="bias-tokens-b" onscroll="document.getElementById(\'bias-tokens-a\').scrollLeft = this.scrollLeft" '
-                f'style="flex:1;display:flex;overflow-x:auto;scrollbar-width:none;align-items:center;gap:4px;">{chips_B}</div>'
+                f'style="flex:1;min-width:0;display:flex;overflow-x:auto;scrollbar-width:none;align-items:center;gap:4px;">{chips_B}</div>'
                 f'</div>'
                 f'</div>'
             )
@@ -3420,30 +3444,51 @@ def bias_server_handlers(input, output, session):
         def _render_single(mk, container_suffix=""):
             matrix = get_head_sensitivity_matrix(mk)
             top_heads = get_sensitive_heads(mk)
-            if matrix is None: return None
+            examples = get_stereoset_examples(mk)
+            if matrix is None:
+                return None
 
-            fig = create_stereoset_head_sensitivity_heatmap(matrix, top_heads)
-            chart_html = _deferred_plotly(fig, f"stereoset-sensitivity{container_suffix}")
+            # ── 12×12 heatmap ──
+            fig_heatmap = create_stereoset_head_sensitivity_heatmap(matrix, top_heads)
+            heatmap_html = _deferred_plotly(fig_heatmap, f"stereoset-sensitivity{container_suffix}")
 
-            try: top_k = int(input.bias_top_k())
-            except Exception: top_k = 5
+            try:
+                top_k = int(input.bias_top_k())
+            except Exception:
+                top_k = 5
 
+            # ── Top discriminative features table ──
             top_features = get_top_features(mk)
             if top_features:
                 feat_rows = []
                 for rank, f in enumerate(top_features[:top_k], 1):
                     p = f["p_value"]
                     p_color = "#16a34a" if p < 1e-10 else "#eab308" if p < 0.001 else "#94a3b8"
-                    feat_rows.append(f'<tr style="transition:all 0.2s ease;"><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-weight:500;color:#64748b;font-size:11px;">#{rank}</td><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:left;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">{f["name"]}</td><td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{p_color};">{p:.2e}</td></tr>')
+                    feat_rows.append(
+                        f'<tr style="transition:all 0.2s ease;">'
+                        f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-weight:500;color:#64748b;font-size:11px;">#{rank}</td>'
+                        f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:left;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">{f["name"]}</td>'
+                        f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{p_color};">{p:.2e}</td>'
+                        f'</tr>'
+                    )
                 features_html = (
-                    '<div style="margin-top:16px;"><div style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Top Discriminative Features (Kruskal-Wallis)</div>'
-                    '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;"><th style="padding:10px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th><th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Feature</th><th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">p-value</th></tr></thead>'
+                    '<div style="margin-top:16px;">'
+                    '<div style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Top Discriminative Features (Kruskal-Wallis)</div>'
+                    '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead>'
+                    '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
+                    '<th style="padding:10px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
+                    '<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Feature</th>'
+                    '<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">p-value</th>'
+                    '</tr></thead>'
                     f'<tbody>{"".join(feat_rows)}</tbody></table></div>'
                 )
             else:
                 features_html = ""
-                
-            return ui.div(ui.HTML(chart_html), ui.HTML(features_html))
+
+            return ui.div(
+                ui.HTML(heatmap_html),
+                ui.HTML(features_html),
+            )
 
         header_args = ("Head Sensitivity Analysis", "Which attention heads respond differently across bias categories?")
 
@@ -3461,6 +3506,110 @@ def bias_server_handlers(input, output, session):
             )
 
         return _wrap_card(_render_single(mk_A) or ui.div(), *header_args)
+
+    @output
+    @render.ui
+    def stereoset_attention_bias_link():
+        """Obj 3 + Obj 4 — Attention patterns linked to StereoSet bias scores."""
+        mk_A = _stereoset_model_key()
+        compare_models = active_bias_compare_models.get()
+        mk_B = _stereoset_model_key_B() if compare_models else None
+
+        try:
+            top_k = int(input.bias_top_k())
+        except Exception:
+            top_k = 5
+
+        def _render_pair(mk, suffix=""):
+            examples   = get_stereoset_examples(mk)
+            top_heads  = get_sensitive_heads(mk)
+            if not examples or not top_heads:
+                return ui.div(
+                    {"style": "color:#94a3b8;font-size:12px;padding:16px;text-align:center;"},
+                    "No StereoSet data available for this model."
+                )
+
+            # Resolve selected head from click input (or default to most sensitive)
+            click_input_name = f"stereoset_selected_head{suffix}"
+            selected_head = None
+            try:
+                val = getattr(input, click_input_name)()
+                if val:
+                    selected_head = str(val)
+            except Exception:
+                pass
+
+            # Obj 3 — box distributions; clicking a head fires click_input_name
+            try:
+                fig_dist = create_stereoset_head_distributions(examples, top_heads, top_n=min(top_k, 6))
+                # highlight selected head in subtitle
+                if selected_head:
+                    lbl = selected_head.replace("_", "·")
+                    sub_extra = (
+                        f' · <span style="color:#3b82f6;font-weight:600;">selected: {lbl}</span>'
+                        f' <span style="color:#94a3b8;cursor:pointer;" '
+                        f'onclick="if(window.Shiny)Shiny.setInputValue(\'{click_input_name}\',\'\',{{priority:\'event\'}})">✕</span>'
+                    )
+                else:
+                    sub_extra = ' · <span style="color:#94a3b8;">click a box to filter →</span>'
+                dist_block = (
+                    '<div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;'
+                    'letter-spacing:0.5px;margin-bottom:4px;">Stereo vs Anti Distributions per Head</div>'
+                    '<div style="font-size:10px;color:#94a3b8;margin-bottom:8px;line-height:1.5;">'
+                    'Attention feature values across all examples. '
+                    '<span style="color:#ef4444;">●</span> Stereo &nbsp;'
+                    f'<span style="color:#22c55e;">●</span> Anti · p-values = Mann-Whitney{sub_extra}</div>'
+                    + _deferred_plotly(
+                        fig_dist,
+                        f"stereoset-dist{suffix}",
+                        height="300px",
+                        click_input=click_input_name,
+                    )
+                )
+            except Exception as e:
+                dist_block = f'<div style="color:#ef4444;font-size:11px;padding:8px;">Error: {e}</div>'
+
+            # Obj 4 — binned scatter, updates when head is selected
+            try:
+                fig_scatter = create_stereoset_attention_scatter(
+                    examples, top_heads,
+                    head_key=selected_head if selected_head else None,
+                )
+                if selected_head:
+                    lbl = selected_head.replace("_", "·")
+                    scatter_sub = f'Showing head <b style="color:#3b82f6;">{lbl}</b>. Bins = deciles of Δ attention. Y = mean bias score ± SD.'
+                else:
+                    scatter_sub = 'Most sensitive head shown by default. Click a box ← to switch head.'
+                scatter_block = (
+                    '<div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;'
+                    'letter-spacing:0.5px;margin-bottom:4px;">Attention Δ vs Bias Score</div>'
+                    f'<div style="font-size:10px;color:#94a3b8;margin-bottom:8px;line-height:1.5;">{scatter_sub}</div>'
+                    + _deferred_plotly(fig_scatter, f"stereoset-scatter{suffix}", height="300px")
+                )
+            except Exception as e:
+                scatter_block = f'<div style="color:#ef4444;font-size:11px;padding:8px;">Error: {e}</div>'
+
+            return ui.div(
+                {"style": "display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;"},
+                ui.HTML(f'<div>{dist_block}</div>'),
+                ui.HTML(f'<div>{scatter_block}</div>'),
+            )
+
+        header_args = (
+            "Attention–Bias Correlation",
+            "How do sensitive attention heads relate to stereotyped vs anti-stereotyped sentences?",
+        )
+
+        if compare_models and mk_B:
+            c_A = _render_pair(mk_A, "_A")
+            c_B = _render_pair(mk_B, "_B")
+            return ui.div(
+                {"style": "display:grid;grid-template-columns:1fr 1fr;gap:24px;"},
+                _wrap_card(c_A, *header_args, style="border:2px solid #3b82f6;height:100%;"),
+                _wrap_card(c_B, *header_args, style="border:2px solid #ff5ca9;height:100%;"),
+            )
+
+        return _wrap_card(_render_pair(mk_A), *header_args)
 
     @output
     @render.ui

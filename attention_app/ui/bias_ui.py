@@ -976,6 +976,7 @@ def create_bias_accordion():
             ui.output_ui("stereoset_category_breakdown"),
             ui.output_ui("stereoset_demographic_slices"),
             ui.output_ui("stereoset_head_sensitivity"),
+            ui.output_ui("stereoset_attention_bias_link"),
             ui.output_ui("stereoset_example_explorer"),
             value="stereoset",
         ),
@@ -1023,7 +1024,8 @@ def create_floating_bias_toolbar():
 
                 # ── CENTER: Bias Tokens (flex sibling like attention bar) ──
                 ui.div(
-                    {"id": "bias-tokens-row"},
+                    {"id": "bias-tokens-row",
+                     "style": "flex:0 1 auto;min-width:0;max-width:600px;overflow:hidden;"},
                     ui.output_ui("bias_toolbar_tokens"),
                 ),
 
@@ -1073,17 +1075,19 @@ def create_floating_bias_toolbar():
                 to { transform: translateY(0); opacity: 1; }
             }
 
-            /* Let bias tokens container behave like attention tab */
+            /* Bias tokens container - shrinks to fit content, capped at 600px */
             #bias-tokens-row {
-                flex: 1;
+                flex: 0 1 auto;
                 min-width: 0;
+                max-width: 600px;
+                overflow: hidden;
                 display: flex;
                 align-items: center;
             }
             #bias-tokens-row > div {
                 margin: 0 !important;
                 padding: 0 !important;
-                width: 100%;
+                min-width: 0;
             }
 
             .bias-token-chip {
@@ -1148,6 +1152,18 @@ def create_floating_bias_toolbar():
                     el.classList.remove('plotly-deferred');
                     el.classList.add('plotly-initialized');
                     Plotly.newPlot(el, fig.data, fig.layout, cfg);
+
+                    // If this plot has a click-input binding, attach plotly_click listener
+                    var clickInput = el.getAttribute('data-plotly-click-input');
+                    if (clickInput && window.Shiny) {
+                        el.on('plotly_click', function(data) {
+                            if (!data.points || !data.points.length) return;
+                            var label = data.points[0].x;           // e.g. "L3·H5"
+                            if (!label) return;
+                            var headKey = label.replace('\u00b7', '_'); // "L3·H5" → "L3_H5"
+                            Shiny.setInputValue(clickInput, headKey, {priority: 'event'});
+                        });
+                    }
                 } catch (err) {
                     console.error("Plotly render error:", err);
                     el.innerHTML = '<div style="color:#ef4444;padding:10px;">Render Error: ' + err.message + '</div>';

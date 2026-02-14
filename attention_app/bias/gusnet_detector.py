@@ -165,12 +165,7 @@ class GusNetDetector:
         self.config = MODEL_REGISTRY[model_key]
         self.threshold = threshold
         self.use_optimized = use_optimized
-        # Always use CPU for bias inference to guarantee reproducible
-        # sigmoid probabilities across environments.  CUDA kernels for
-        # GPT-2 base introduce enough numerical drift over 12 layers to
-        # distort the output.  Sequences are short (≤512 tokens) so CPU
-        # inference is fast enough.
-        self._device = "cpu"
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # ── Model loading ────────────────────────────────────────────────────
 
@@ -586,7 +581,7 @@ class EnsembleGusNetDetector:
         self.model_key_b = model_key_b
         self.threshold = threshold
         self.weights = weights or self.DEFAULT_WEIGHTS
-        self._device = "cpu"
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # Both models must be BERT with the same tokenizer
         cfg_a = MODEL_REGISTRY[model_key_a]
