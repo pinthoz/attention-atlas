@@ -3420,20 +3420,11 @@ __all__ = ["CSS"]
             box-shadow: 0 0 0 2px var(--chip-color, #ff5ca9), 0 0 10px var(--chip-color, rgba(255,92,169,0.4));
         }
         
-        /* Bias tokens container - hard cap at 600px */
+        /* Bias tokens - single mode uses .token-sentence, compare uses .token-row-split */
         #bias-tokens-row .token-sentence {
             max-width: 600px !important;
             min-width: 0 !important;
-            width: fit-content !important;
             flex: 0 1 auto !important;
-            box-sizing: border-box !important;
-        }
-
-        #bias-tokens-a, #bias-tokens-b {
-            min-width: 0 !important;
-            max-width: 100% !important;
-            flex: 1 1 0 !important;
-            overflow-x: auto;
         }
 
         /* ==========================================

@@ -6,6 +6,7 @@ __pycache__/
 *.pkl
 *.log
 
+docs/
 
 # Notebooks env
 notebooks/.env

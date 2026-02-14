@@ -194,9 +194,13 @@ JS_CODE = """
                 return;
             }
 
-            var plotlyDiv = container.querySelector('.js-plotly-plot');
-            if (!plotlyDiv) {
-                plotlyDiv = container.querySelector('[class*="plotly"]');
+            // Deferred rendering calls Plotly.newPlot(container) directly, so
+            // the container itself becomes the .js-plotly-plot root div.
+            var plotlyDiv;
+            if (container.classList.contains('js-plotly-plot')) {
+                plotlyDiv = container;
+            } else {
+                plotlyDiv = container.querySelector('.js-plotly-plot');
             }
             if (!plotlyDiv) {
                 console.error('No Plotly chart found in container:', containerId);

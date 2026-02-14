@@ -7,7 +7,12 @@ with attention x bias interaction analysis.
 from .gusnet_detector import GusNetDetector, EnsembleGusNetDetector, MODEL_REGISTRY
 from .attention_bias import AttentionBiasAnalyzer, HeadBiasMetrics
 from .head_ablation import HeadAblationResult, batch_ablate_top_heads
-from .integrated_gradients import IGCorrelationResult, IGAnalysisBundle, batch_compute_ig_correlation
+from .integrated_gradients import (
+    IGCorrelationResult, IGAnalysisBundle, batch_compute_ig_correlation,
+    TopKOverlapResult,
+    TokenPerturbationResult, PerturbationAnalysisBundle, batch_compute_perturbation,
+    LRPAnalysisBundle, batch_compute_lrp,
+)
 from .visualizations import (
     create_attention_bias_matrix,
     create_bias_propagation_plot,
@@ -24,6 +29,11 @@ from .visualizations import (
     create_ig_token_comparison_chart,
     create_ig_distribution_chart,
     create_ig_layer_summary_chart,
+    create_topk_overlap_chart,
+    create_perturbation_comparison_chart,
+    create_perturbation_attn_heatmap,
+    create_lrp_comparison_chart,
+    create_cross_method_agreement_chart,
     create_stereoset_overview_html,
     create_stereoset_category_chart,
     create_stereoset_head_sensitivity_heatmap,
@@ -52,10 +62,18 @@ __all__ = [
     "HeadAblationResult",
     "IGCorrelationResult",
     "IGAnalysisBundle",
+    "TopKOverlapResult",
+    "TokenPerturbationResult",
+    "PerturbationAnalysisBundle",
+    "LRPAnalysisBundle",
     # Ablation
     "batch_ablate_top_heads",
     # Integrated Gradients
     "batch_compute_ig_correlation",
+    # Perturbation
+    "batch_compute_perturbation",
+    # LRP
+    "batch_compute_lrp",
     # Visualizations
     "create_attention_bias_matrix",
     "create_bias_propagation_plot",
@@ -72,6 +90,11 @@ __all__ = [
     "create_ig_token_comparison_chart",
     "create_ig_distribution_chart",
     "create_ig_layer_summary_chart",
+    "create_topk_overlap_chart",
+    "create_perturbation_comparison_chart",
+    "create_perturbation_attn_heatmap",
+    "create_lrp_comparison_chart",
+    "create_cross_method_agreement_chart",
     "create_stereoset_overview_html",
     "create_stereoset_category_chart",
     "create_stereoset_head_sensitivity_heatmap",

@@ -962,6 +962,14 @@ def create_bias_accordion():
                 # ── Integrated Gradients section ──
                 ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 24px 0 16px;"),
                 ui.output_ui("ig_results_display"),
+
+                # ── Perturbation Analysis section ──
+                ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 24px 0 16px;"),
+                ui.output_ui("perturbation_results_display"),
+
+                # ── LRP Cross-Validation section ──
+                ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 24px 0 16px;"),
+                ui.output_ui("lrp_results_display"),
             ),
             value="ablation",
         ),
@@ -1024,8 +1032,7 @@ def create_floating_bias_toolbar():
 
                 # ── CENTER: Bias Tokens (flex sibling like attention bar) ──
                 ui.div(
-                    {"id": "bias-tokens-row",
-                     "style": "flex:0 1 auto;min-width:0;max-width:600px;overflow:hidden;"},
+                    {"id": "bias-tokens-row"},
                     ui.output_ui("bias_toolbar_tokens"),
                 ),
 
@@ -1075,14 +1082,11 @@ def create_floating_bias_toolbar():
                 to { transform: translateY(0); opacity: 1; }
             }
 
-            /* Bias tokens container - shrinks to fit content, capped at 600px */
+            /* Bias tokens container */
             #bias-tokens-row {
-                flex: 0 1 auto;
-                min-width: 0;
-                max-width: 600px;
-                overflow: hidden;
                 display: flex;
                 align-items: center;
+                min-width: 0;
             }
             #bias-tokens-row > div {
                 margin: 0 !important;

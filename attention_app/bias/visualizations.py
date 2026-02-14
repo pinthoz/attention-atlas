@@ -2000,6 +2000,423 @@ def create_ig_layer_summary_chart(
     return fig
 
 
+# ── Top-K Overlap Visualization ───────────────────────────────────────────
+
+
+def create_topk_overlap_chart(
+    topk_results: list,
+    bar_threshold: float = 1.5,
+    selected_head: Optional[tuple] = None,
+) -> go.Figure:
+    """Heatmap of Jaccard overlap (layer x head) + scatter Jaccard vs BAR.
+
+    Parameters
+    ----------
+    topk_results : list[TopKOverlapResult]
+    bar_threshold : float
+    selected_head : (layer, head) or None
+    """
+    if not topk_results:
+        fig = go.Figure()
+        fig.update_layout(title="No Top-K overlap data",
+                          plot_bgcolor="rgba(0,0,0,0)",
+                          paper_bgcolor="rgba(0,0,0,0)")
+        return fig
+
+    max_layer = max(r.layer for r in topk_results)
+    max_head = max(r.head for r in topk_results)
+    num_layers = max_layer + 1
+    num_heads = max_head + 1
+
+    # Build matrices
+    jaccard_matrix = np.zeros((num_layers, num_heads))
+    lookup = {}
+    for r in topk_results:
+        jaccard_matrix[r.layer, r.head] = r.jaccard
+        lookup[(r.layer, r.head)] = r
+
+    # Hover text
+    hover_text = []
+    for layer in range(num_layers):
+        row = []
+        for head in range(num_heads):
+            r = lookup.get((layer, head))
+            if r:
+                row.append(
+                    f"<b>L{layer} H{head}</b><br>"
+                    f"Jaccard: {r.jaccard:.3f}<br>"
+                    f"RBO: {r.rank_biased_overlap:.3f}<br>"
+                    f"BAR: {r.bar_original:.3f}<br>"
+                    f"K={r.k}"
+                )
+            else:
+                row.append(f"L{layer} H{head}")
+        hover_text.append(row)
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        column_widths=[0.55, 0.45],
+        subplot_titles=[
+            f"Top-{topk_results[0].k} Jaccard Overlap (IG vs Attention)",
+            "Jaccard vs BAR (per head)",
+        ],
+        horizontal_spacing=0.12,
+    )
+
+    # Heatmap
+    fig.add_trace(go.Heatmap(
+        z=jaccard_matrix.tolist(),
+        x=[f"H{h}" for h in range(num_heads)],
+        y=[f"L{l}" for l in range(num_layers)],
+        colorscale=[[0, "#f8fafc"], [0.5, "#93c5fd"], [1, "#1d4ed8"]],
+        zmin=0, zmax=1,
+        showscale=True,
+        colorbar=dict(
+            title=dict(text="Jaccard", side="right", font=dict(size=10, color="#64748b")),
+            tickfont=dict(size=9, color="#64748b"),
+            len=0.8,
+        ),
+        hovertemplate="%{text}<extra></extra>",
+        text=hover_text,
+    ), row=1, col=1)
+
+    # Scatter: Jaccard vs BAR
+    bars = [r.bar_original for r in topk_results]
+    jaccards = [r.jaccard for r in topk_results]
+    rbos = [r.rank_biased_overlap for r in topk_results]
+    labels = [f"L{r.layer}H{r.head}" for r in topk_results]
+
+    colors = ["#dc2626" if r.bar_original >= bar_threshold else "#3b82f6"
+              for r in topk_results]
+    sizes = [10 if selected_head and (r.layer, r.head) == selected_head else 6
+             for r in topk_results]
+
+    fig.add_trace(go.Scatter(
+        x=bars,
+        y=jaccards,
+        mode="markers",
+        marker=dict(color=colors, size=sizes, opacity=0.7,
+                    line=dict(width=1, color="#ffffff")),
+        text=[f"<b>{l}</b><br>BAR: {b:.3f}<br>Jaccard: {j:.3f}<br>RBO: {rbo:.3f}"
+              for l, b, j, rbo in zip(labels, bars, jaccards, rbos)],
+        hovertemplate="%{text}<extra></extra>",
+    ), row=1, col=2)
+
+    # Reference line at BAR threshold
+    fig.add_vline(x=bar_threshold, line_dash="dash", line_color="#94a3b8",
+                  line_width=1, row=1, col=2)
+
+    fig.update_yaxes(title_text="Layer", autorange="reversed", row=1, col=1)
+    fig.update_xaxes(title_text="Head", row=1, col=1)
+    fig.update_xaxes(title_text="BAR", row=1, col=2)
+    fig.update_yaxes(title_text="Jaccard", row=1, col=2)
+
+    fig.update_layout(
+        height=max(300, num_layers * 40),
+        autosize=True,
+        margin=dict(l=60, r=60, t=80, b=50),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        showlegend=False,
+    )
+    return fig
+
+
+# ── Perturbation Visualizations ───────────────────────────────────────────
+
+
+def create_perturbation_comparison_chart(
+    perturb_bundle,
+    ig_attrs: np.ndarray,
+    tokens: List[str],
+) -> go.Figure:
+    """Grouped bar chart: perturbation importance vs IG per token.
+
+    Parameters
+    ----------
+    perturb_bundle : PerturbationAnalysisBundle
+    ig_attrs : np.ndarray
+    tokens : list[str]
+    """
+    if not perturb_bundle or not perturb_bundle.token_results:
+        fig = go.Figure()
+        fig.update_layout(title="No perturbation data",
+                          plot_bgcolor="rgba(0,0,0,0)",
+                          paper_bgcolor="rgba(0,0,0,0)")
+        return fig
+
+    perturb_imp = [r.importance for r in perturb_bundle.token_results]
+    tok_labels = [r.token for r in perturb_bundle.token_results]
+    n = min(len(perturb_imp), len(ig_attrs), len(tok_labels))
+
+    # Normalize both to [0, 1] for comparison
+    p_arr = np.array(perturb_imp[:n])
+    g_arr = ig_attrs[:n].copy()
+
+    p_max = p_arr.max() if p_arr.max() > 0 else 1.0
+    g_max = g_arr.max() if g_arr.max() > 0 else 1.0
+    p_norm = p_arr / p_max
+    g_norm = g_arr / g_max
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=tok_labels[:n], y=p_norm,
+        name="Perturbation",
+        marker_color="#f59e0b",
+        opacity=0.8,
+    ))
+    fig.add_trace(go.Bar(
+        x=tok_labels[:n], y=g_norm,
+        name="Integrated Gradients",
+        marker_color="#3b82f6",
+        opacity=0.8,
+    ))
+
+    rho = perturb_bundle.perturb_vs_ig_spearman
+    fig.update_layout(
+        title=dict(
+            text=f"Perturbation vs IG Token Importance<br>"
+                 f"<sub>Spearman ρ = {rho:.3f} | Normalized to [0,1]</sub>",
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        barmode="group",
+        xaxis=dict(title="Token", tickfont=dict(size=9, color="#475569"), tickangle=-45),
+        yaxis=dict(title="Normalized Importance", tickfont=dict(size=10, color="#475569")),
+        height=400,
+        autosize=True,
+        margin=dict(l=60, r=40, t=80, b=80),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center"),
+    )
+    return fig
+
+
+def create_perturbation_attn_heatmap(
+    perturb_vs_attn: List[tuple],
+    num_layers: int,
+    num_heads: int,
+) -> go.Figure:
+    """Heatmap of Spearman(perturbation, attention) per head.
+
+    Parameters
+    ----------
+    perturb_vs_attn : list of (layer, head, rho)
+    num_layers : int
+    num_heads : int
+    """
+    if not perturb_vs_attn:
+        fig = go.Figure()
+        fig.update_layout(title="No perturbation vs attention data",
+                          plot_bgcolor="rgba(0,0,0,0)",
+                          paper_bgcolor="rgba(0,0,0,0)")
+        return fig
+
+    rho_matrix = np.zeros((num_layers, num_heads))
+    for layer, head, rho in perturb_vs_attn:
+        if layer < num_layers and head < num_heads:
+            rho_matrix[layer, head] = rho
+
+    hover_text = [[f"<b>L{l} H{h}</b><br>ρ(perturb, attn): {rho_matrix[l, h]:.3f}"
+                   for h in range(num_heads)] for l in range(num_layers)]
+
+    fig = go.Figure(data=go.Heatmap(
+        z=rho_matrix.tolist(),
+        x=[f"H{h}" for h in range(num_heads)],
+        y=[f"L{l}" for l in range(num_layers)],
+        colorscale=[[0, "#dc2626"], [0.5, "#ffffff"], [1, "#2563eb"]],
+        zmin=-1, zmax=1,
+        showscale=True,
+        colorbar=dict(
+            title=dict(text="Spearman ρ", side="right", font=dict(size=10, color="#64748b")),
+            tickfont=dict(size=9, color="#64748b"),
+        ),
+        hovertemplate="%{text}<extra></extra>",
+        text=hover_text,
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text="Perturbation vs Attention Correlation<br>"
+                 "<sub>Spearman ρ(perturbation importance, attention weight) per head</sub>",
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        xaxis=dict(title="Head", tickfont=dict(size=10, color="#475569")),
+        yaxis=dict(title="Layer", tickfont=dict(size=10, color="#475569"), autorange="reversed"),
+        height=max(300, num_layers * 40),
+        autosize=True,
+        margin=dict(l=60, r=120, t=80, b=50),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+    )
+    return fig
+
+
+# ── LRP Visualizations ───────────────────────────────────────────────────
+
+
+def create_lrp_comparison_chart(
+    lrp_attrs: np.ndarray,
+    ig_attrs: np.ndarray,
+    tokens: List[str],
+    lrp_vs_ig_rho: float = 0.0,
+) -> go.Figure:
+    """Grouped bar chart: LRP vs IG attribution per token.
+
+    Parameters
+    ----------
+    lrp_attrs : np.ndarray
+    ig_attrs : np.ndarray
+    tokens : list[str]
+    lrp_vs_ig_rho : float
+    """
+    n = min(len(lrp_attrs), len(ig_attrs), len(tokens))
+    if n == 0:
+        fig = go.Figure()
+        fig.update_layout(title="No LRP data",
+                          plot_bgcolor="rgba(0,0,0,0)",
+                          paper_bgcolor="rgba(0,0,0,0)")
+        return fig
+
+    # Normalize both to [0, 1]
+    l_arr = lrp_attrs[:n].copy()
+    g_arr = ig_attrs[:n].copy()
+    l_max = l_arr.max() if l_arr.max() > 0 else 1.0
+    g_max = g_arr.max() if g_arr.max() > 0 else 1.0
+    l_norm = l_arr / l_max
+    g_norm = g_arr / g_max
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=tokens[:n], y=l_norm,
+        name="DeepLift / LRP",
+        marker_color="#8b5cf6",
+        opacity=0.8,
+    ))
+    fig.add_trace(go.Bar(
+        x=tokens[:n], y=g_norm,
+        name="Integrated Gradients",
+        marker_color="#3b82f6",
+        opacity=0.8,
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text=f"DeepLift/LRP vs IG Token Attribution<br>"
+                 f"<sub>Spearman ρ = {lrp_vs_ig_rho:.3f} | Normalized to [0,1]</sub>",
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        barmode="group",
+        xaxis=dict(title="Token", tickfont=dict(size=9, color="#475569"), tickangle=-45),
+        yaxis=dict(title="Normalized Attribution", tickfont=dict(size=10, color="#475569")),
+        height=400,
+        autosize=True,
+        margin=dict(l=60, r=40, t=80, b=80),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center"),
+    )
+    return fig
+
+
+def create_cross_method_agreement_chart(
+    ig_correlations: list,
+    lrp_correlations: List[tuple],
+    bar_threshold: float = 1.5,
+) -> go.Figure:
+    """Scatter: IG ρ (x) vs LRP ρ (y) per head, with diagonal = agreement.
+
+    Parameters
+    ----------
+    ig_correlations : list[IGCorrelationResult]
+    lrp_correlations : list of (layer, head, rho)
+    bar_threshold : float
+    """
+    if not ig_correlations or not lrp_correlations:
+        fig = go.Figure()
+        fig.update_layout(title="No cross-method data",
+                          plot_bgcolor="rgba(0,0,0,0)",
+                          paper_bgcolor="rgba(0,0,0,0)")
+        return fig
+
+    # Build LRP lookup
+    lrp_lookup = {(l, h): rho for l, h, rho in lrp_correlations}
+
+    ig_rhos = []
+    lrp_rhos = []
+    labels = []
+    colors = []
+
+    for r in ig_correlations:
+        lrp_rho = lrp_lookup.get((r.layer, r.head))
+        if lrp_rho is not None:
+            ig_rhos.append(r.spearman_rho)
+            lrp_rhos.append(lrp_rho)
+            labels.append(f"L{r.layer}H{r.head}")
+            colors.append("#dc2626" if r.bar_original >= bar_threshold else "#3b82f6")
+
+    if not ig_rhos:
+        fig = go.Figure()
+        fig.update_layout(title="No matching heads",
+                          plot_bgcolor="rgba(0,0,0,0)",
+                          paper_bgcolor="rgba(0,0,0,0)")
+        return fig
+
+    fig = go.Figure()
+
+    # Diagonal line (perfect agreement)
+    fig.add_trace(go.Scatter(
+        x=[-1, 1], y=[-1, 1],
+        mode="lines",
+        line=dict(dash="dash", color="#94a3b8", width=1),
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=ig_rhos, y=lrp_rhos,
+        mode="markers",
+        marker=dict(color=colors, size=7, opacity=0.7,
+                    line=dict(width=1, color="#ffffff")),
+        text=[f"<b>{l}</b><br>IG ρ: {ig:.3f}<br>LRP ρ: {lrp:.3f}"
+              for l, ig, lrp in zip(labels, ig_rhos, lrp_rhos)],
+        hovertemplate="%{text}<extra></extra>",
+        showlegend=False,
+    ))
+
+    # Overall agreement correlation
+    if len(ig_rhos) > 2:
+        from scipy.stats import spearmanr as _sp
+        agreement_rho, _ = _sp(ig_rhos, lrp_rhos)
+        if np.isnan(agreement_rho):
+            agreement_rho = 0.0
+        subtitle = f"Agreement ρ = {agreement_rho:.3f} | Red = specialized (BAR ≥ {bar_threshold})"
+    else:
+        subtitle = f"Red = specialized (BAR ≥ {bar_threshold})"
+
+    fig.update_layout(
+        title=dict(
+            text=f"Cross-Method Agreement: IG vs DeepLift/LRP<br><sub>{subtitle}</sub>",
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        xaxis=dict(title="IG Spearman ρ (vs attention)", range=[-1.05, 1.05],
+                   tickfont=dict(size=10, color="#475569")),
+        yaxis=dict(title="DeepLift/LRP Spearman ρ (vs attention)", range=[-1.05, 1.05],
+                   tickfont=dict(size=10, color="#475569")),
+        height=400,
+        autosize=True,
+        margin=dict(l=60, r=40, t=80, b=50),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+    )
+    return fig
+
+
 # ── StereoSet Evaluation Visualizations ──────────────────────────────────
 
 STEREOSET_CATEGORY_COLORS = {
@@ -3276,6 +3693,11 @@ __all__ = [
     "create_ig_token_comparison_chart",
     "create_ig_distribution_chart",
     "create_ig_layer_summary_chart",
+    "create_topk_overlap_chart",
+    "create_perturbation_comparison_chart",
+    "create_perturbation_attn_heatmap",
+    "create_lrp_comparison_chart",
+    "create_cross_method_agreement_chart",
     "create_stereoset_overview_html",
     "create_stereoset_category_chart",
     "create_stereoset_head_sensitivity_heatmap",
