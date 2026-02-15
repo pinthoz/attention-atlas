@@ -530,6 +530,18 @@ def create_bias_sidebar():
                     document.getElementById('bias-history-dropdown').classList.remove('show');
                 }
 
+                // Bias history persistence (mirrors attention tab)
+                Shiny.addCustomMessageHandler('update_bias_history', function(message) {
+                    localStorage.setItem('attention_atlas_bias_history', JSON.stringify(message));
+                });
+
+                $(document).on('shiny:connected', function() {
+                    const stored = localStorage.getItem('attention_atlas_bias_history');
+                    if (stored) {
+                        Shiny.setInputValue('restored_bias_history', JSON.parse(stored));
+                    }
+                });
+
                 // StereoSet: inject text into the bias input
                 window.analyzeStereoSetExample = function(text) {
                     var ta = document.getElementById('bias_input_text');

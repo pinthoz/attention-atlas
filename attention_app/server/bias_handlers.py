@@ -695,6 +695,24 @@ def bias_server_handlers(input, output, session):
             ui=ui.tags.script(js_code),
         )
 
+    @reactive.Effect
+    async def sync_bias_history_storage():
+        """Persist bias history to localStorage (mirrors attention tab)."""
+        await session.send_custom_message("update_bias_history", bias_history())
+
+    @reactive.Effect
+    @reactive.event(input.restored_bias_history)
+    def restore_bias_history():
+        """Restore bias history from localStorage on page load."""
+        if input.restored_bias_history():
+            raw = input.restored_bias_history()
+            unique = []
+            for item in raw:
+                clean_item = item.strip()
+                if clean_item and clean_item not in unique:
+                    unique.append(clean_item)
+            bias_history.set(unique)
+
     # ── Sequential Button Logic ──
     @reactive.Effect
     @reactive.event(input.bias_active_prompt_tab)
@@ -821,7 +839,6 @@ def bias_server_handlers(input, output, session):
             "type": "bias_analysis",
             "timestamp": datetime.now().isoformat(),
             "text": input.bias_input_text(),
-            "threshold": _safe_threshold(),
         }
 
         # Bias model key
@@ -851,6 +868,19 @@ def bias_server_handlers(input, output, session):
                 data["bias_input_text_B"] = input.bias_input_text_B()
             except Exception:
                 data["bias_input_text_B"] = ""
+
+        # Per-class thresholds A
+        for key in ["bias_thresh_unfair", "bias_thresh_gen", "bias_thresh_stereo"]:
+            try:
+                data[key] = float(getattr(input, key)())
+            except Exception:
+                pass
+        # Per-class thresholds B
+        for key in ["bias_thresh_unfair_b", "bias_thresh_gen_b", "bias_thresh_stereo_b"]:
+            try:
+                data[key] = float(getattr(input, key)())
+            except Exception:
+                pass
 
         # Layer / Head / Top-K
         try:
@@ -902,8 +932,6 @@ def bias_server_handlers(input, output, session):
                 restore_data["bias_model_key"] = data["bias_model_key"]
             if "bias_model_key_B" in data:
                 restore_data["bias_model_key_B"] = data["bias_model_key_B"]
-            if "threshold" in data:
-                restore_data["threshold"] = data["threshold"]
 
             if restore_data:
                 await session.send_custom_message("restore_bias_session_controls", restore_data)
@@ -916,12 +944,35 @@ def bias_server_handlers(input, output, session):
                 await session.send_custom_message("bias_eval_js",
                     f"var ta=document.getElementById('bias_input_text_B'); if(ta){{ta.value={json.dumps(data['bias_input_text_B'])}; Shiny.setInputValue('bias_input_text_B',ta.value,{{priority:'event'}});}}")
 
-            # 4. Restore layer/head selections (after a small delay for selects to populate)
+            # 4. Restore per-class thresholds via JS slider updates
+            thresh_map = {
+                "bias_thresh_unfair":   "bias-thresh-unfair",
+                "bias_thresh_gen":      "bias-thresh-gen",
+                "bias_thresh_stereo":   "bias-thresh-stereo",
+                "bias_thresh_unfair_b": "bias-thresh-unfair-b",
+                "bias_thresh_gen_b":    "bias-thresh-gen-b",
+                "bias_thresh_stereo_b": "bias-thresh-stereo-b",
+            }
+            for input_key, slider_id in thresh_map.items():
+                if input_key in data:
+                    val = float(data[input_key])
+                    await session.send_custom_message("bias_eval_js",
+                        f"var el=document.getElementById('{slider_id}');"
+                        f"if(el){{el.value={val};"
+                        f"Shiny.setInputValue('{input_key}',{val},{{priority:'event'}});}}")
+
+            # 5. Restore layer/head selections (after a small delay for selects to populate)
             await asyncio.sleep(0.2)
             if "bias_attn_layer" in data:
                 ui.update_select("bias_attn_layer", selected=str(data["bias_attn_layer"]))
             if "bias_attn_head" in data:
                 ui.update_select("bias_attn_head", selected=str(data["bias_attn_head"]))
+            if "bias_top_k" in data:
+                top_k = int(data["bias_top_k"])
+                await session.send_custom_message("bias_eval_js",
+                    f"var el=document.getElementById('bias-topk-slider');"
+                    f"if(el){{el.value={top_k};"
+                    f"Shiny.setInputValue('bias_top_k',{top_k},{{priority:'event'}});}}")
 
             ui.notification_show("Bias session loaded successfully.", type="message", duration=3)
 
