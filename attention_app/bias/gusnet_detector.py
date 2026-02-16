@@ -97,7 +97,8 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT)",
-        "optimized_thresholds": [0.4529, 0.4861, 0.4980, 0.4329, 0.4251, 0.4131, 0.4153],
+        "public": True,
+        "optimized_thresholds": [0.4880, 0.4979, 0.5023, 0.4753, 0.4859, 0.5262, 0.4398],
     },
     "gusnet-bert-large": {
         "path": "pinthoz/gus-net-bert-large",
@@ -109,6 +110,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT Large)",
+        "public": True,
         "optimized_thresholds": [0.4761, 0.4478, 0.4573, 0.4178, 0.4278, 0.4000, 0.3497],
     },
     "gusnet-bert-custom": {
@@ -121,6 +123,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT Custom)",
+        "public": False,
         "optimized_thresholds": None,
     },
     "gusnet-gpt2": {
@@ -132,7 +135,8 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (GPT-2)",
-        "optimized_thresholds": [0.4655, 0.4000, 0.4073, 0.4500, 0.4500, 0.3658, 0.3893],
+        "public": True,
+        "optimized_thresholds": [0.5119, 0.5000, 0.5250, 0.5118, 0.4944, 0.4457, 0.4393],
     },
     "gusnet-gpt2-medium": {
         "path": "pinthoz/gus-net-gpt2-medium",
@@ -143,6 +147,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (GPT-2 Medium)",
+        "public": True,
         "optimized_thresholds": [0.4912, 0.5042, 0.4213, 0.4204, 0.4000, 0.4618, 0.3848],
     },
     # ── Locally trained models (ASL + LLRD + BIO postprocessing) ─────────
@@ -156,6 +161,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT v2)",
+        "public": False,
         # [O, B-STEREO, I-STEREO, B-GEN, I-GEN, B-UNFAIR, I-UNFAIR]
         # I-STEREO raised to 0.85 to prevent stereotype span bleed to function words
         # I-GEN and I-UNFAIR raised to 0.65 for the same reason
@@ -170,6 +176,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (GPT-2 v2)",
+        "public": False,
         # [O, B-STEREO, I-STEREO, B-GEN, I-GEN, B-UNFAIR, I-UNFAIR]
         # I-STEREO raised to 0.85 to prevent stereotype span bleed to function words
         # I-GEN and I-UNFAIR raised to 0.65 for the same reason
@@ -186,6 +193,7 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT Paper)",
+        "public": False,
         # [O, B-STEREO, I-STEREO, B-GEN, I-GEN, B-UNFAIR, I-UNFAIR]
         "optimized_thresholds": [0.5039, 0.4993, 0.541, 0.463, 0.4658, 0.4632, 0.414],
     },
@@ -198,34 +206,9 @@ MODEL_REGISTRY = {
         "category_indices": CATEGORY_INDICES,
         "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (GPT-2 Paper)",
+        "public": False,
         # [O, B-STEREO, I-STEREO, B-GEN, I-GEN, B-UNFAIR, I-UNFAIR]
         "optimized_thresholds": [0.5, 0.4862, 0.4946, 0.5012, 0.5, 0.4748, 0.475],
-    },
-    # ── Paper-faithful + cleaned dataset (punct-fixed, BIO-repaired) ──
-    "gusnet-bert-paper-clean": {
-        "path": str(_BIAS_DIR / "gus-net-bert-paper-clean"),
-        "architecture": "bert",
-        "tokenizer": "bert-base-uncased",
-        "num_labels": NUM_LABELS,
-        "has_o_label": True,
-        "o_index": O_INDEX,
-        "category_indices": CATEGORY_INDICES,
-        "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
-        "display_name": "GUS-Net (BERT Paper Clean)",
-        # placeholder — will be updated after training
-        "optimized_thresholds": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-    },
-    "gusnet-gpt2-paper-clean": {
-        "path": str(_BIAS_DIR / "gus-net-gpt2-paper-clean"),
-        "architecture": "gpt2",
-        "num_labels": NUM_LABELS,
-        "has_o_label": True,
-        "o_index": O_INDEX,
-        "category_indices": CATEGORY_INDICES,
-        "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
-        "display_name": "GUS-Net (GPT-2 Paper Clean)",
-        # placeholder — will be updated after training
-        "optimized_thresholds": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
     },
 }
 

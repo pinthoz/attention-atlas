@@ -679,16 +679,6 @@ def create_method_info_html(model_key: str = "gusnet-bert") -> str:
             "huggingface": None,
             "base_model": "gpt2",
         },
-        "gusnet-bert-paper-clean": {
-            "display_name": "GUS-Net (BERT Paper Clean)",
-            "huggingface": None,
-            "base_model": "bert-base-uncased",
-        },
-        "gusnet-gpt2-paper-clean": {
-            "display_name": "GUS-Net (GPT-2 Paper Clean)",
-            "huggingface": None,
-            "base_model": "gpt2",
-        },
     }
 
     info = MODEL_INFO.get(model_key, MODEL_INFO["gusnet-bert"])

@@ -388,8 +388,8 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
     pink = "#ff5ca9"
 
     # Model specs lookup
-    BERT_FAMILY = {"gusnet-bert": (12, 768), "gusnet-bert-large": (24, 1024), "gusnet-bert-new": (12, 768), "gusnet-bert-paper": (12, 768), "gusnet-bert-paper-clean": (12, 768)}
-    GPT2_FAMILY = {"gusnet-gpt2": (12, 768), "gusnet-gpt2-medium": (24, 1024), "gusnet-gpt2-new": (12, 768), "gusnet-gpt2-paper": (12, 768), "gusnet-gpt2-paper-clean": (12, 768)}
+    BERT_FAMILY = {"gusnet-bert": (12, 768), "gusnet-bert-large": (24, 1024), "gusnet-bert-new": (12, 768), "gusnet-bert-paper": (12, 768), "gusnet-bert-custom": (12, 768)}
+    GPT2_FAMILY = {"gusnet-gpt2": (12, 768), "gusnet-gpt2-medium": (24, 1024), "gusnet-gpt2-new": (12, 768), "gusnet-gpt2-paper": (12, 768)}
 
     def _is_bert(key):
         return key in BERT_FAMILY

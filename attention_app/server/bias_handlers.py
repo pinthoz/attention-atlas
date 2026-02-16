@@ -72,12 +72,18 @@ from ..ui.components import viz_header
 # Ensures the encoder tokenizer matches the GUS-Net architecture so that
 # BERT tokens show ## subwords and GPT-2 tokens merge correctly with Ġ.
 _GUSNET_TO_ENCODER = {
+    # Public (HuggingFace) models
     "gusnet-bert": "bert-base-uncased",
-    "gusnet-bert-custom": "bert-base-uncased",
     "gusnet-bert-large": "bert-large-uncased",
     "gusnet-gpt2": "gpt2",
     "gusnet-gpt2-medium": "gpt2-medium",
+    # Local models
+    "gusnet-bert-custom": "bert-base-uncased",
     "gusnet-ensemble": "bert-base-uncased",
+    "gusnet-bert-new": "bert-base-uncased",
+    "gusnet-gpt2-new": "gpt2",
+    "gusnet-bert-paper": "bert-base-uncased",
+    "gusnet-gpt2-paper": "gpt2",
 }
 
 def _deferred_plotly(fig, container_id, height=None, config=None, click_input=None):

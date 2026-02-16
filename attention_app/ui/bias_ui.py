@@ -1,6 +1,34 @@
 """UI components for Bias Analysis tab."""
 
+from pathlib import Path
 from shiny import ui
+
+
+def _build_model_options(default_key: str):
+    """Build dropdown options from MODEL_REGISTRY.
+
+    Public (HF) models are always shown.  Non-public models appear only
+    when they are available — local directories must exist on disk, while
+    HF-hosted non-public models are always reachable.  This means deployed
+    instances (no local dirs) show only the 4 public HF models, while
+    local dev environments show everything.
+    """
+    from attention_app.bias.gusnet_detector import MODEL_REGISTRY
+
+    options = []
+    for key, cfg in MODEL_REGISTRY.items():
+        is_public = cfg.get("public", False)
+        if not is_public:
+            model_path = Path(cfg["path"])
+            # HF hub paths (e.g. "pinthoz/...") are always reachable;
+            # local paths need the directory to exist on disk.
+            if model_path.is_absolute() and not model_path.exists():
+                continue
+        attrs = {"selected": "selected"} if key == default_key else {}
+        options.append(
+            ui.tags.option(cfg["display_name"], value=key, **attrs)
+        )
+    return options
 
 
 def create_bias_sidebar():
@@ -118,17 +146,7 @@ def create_bias_sidebar():
                     ui.div(
                         {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
                         ui.tags.select(
-                            ui.tags.option("GUS-Net (BERT Paper Clean)", value="gusnet-bert-paper-clean", selected="selected"),
-                            ui.tags.option("GUS-Net (GPT-2 Paper Clean)", value="gusnet-gpt2-paper-clean"),
-                            ui.tags.option("GUS-Net (BERT Paper)", value="gusnet-bert-paper"),
-                            ui.tags.option("GUS-Net (GPT-2 Paper)", value="gusnet-gpt2-paper"),
-                            ui.tags.option("GUS-Net (BERT v2)", value="gusnet-bert-new"),
-                            ui.tags.option("GUS-Net (GPT-2 v2)", value="gusnet-gpt2-new"),
-                            ui.tags.option("GUS-Net (BERT)", value="gusnet-bert"),
-                            ui.tags.option("GUS-Net Ensemble", value="gusnet-ensemble"),
-                            ui.tags.option("GUS-Net (BERT Large)", value="gusnet-bert-large"),
-                            ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2"),
-                            ui.tags.option("GUS-Net (GPT-2 Medium)", value="gusnet-gpt2-medium"),
+                            *_build_model_options("gusnet-bert"),
                             id="bias_model_key",
                             class_="bias-model-select",
                             onchange="Shiny.setInputValue('bias_model_key', this.value, {priority:'event'});",
@@ -146,17 +164,7 @@ def create_bias_sidebar():
                     ui.div(
                         {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
                         ui.tags.select(
-                            ui.tags.option("GUS-Net (GPT-2 Paper Clean)", value="gusnet-gpt2-paper-clean", selected="selected"),
-                            ui.tags.option("GUS-Net (BERT Paper Clean)", value="gusnet-bert-paper-clean"),
-                            ui.tags.option("GUS-Net (GPT-2 Paper)", value="gusnet-gpt2-paper"),
-                            ui.tags.option("GUS-Net (BERT Paper)", value="gusnet-bert-paper"),
-                            ui.tags.option("GUS-Net (GPT-2 v2)", value="gusnet-gpt2-new"),
-                            ui.tags.option("GUS-Net (BERT v2)", value="gusnet-bert-new"),
-                            ui.tags.option("GUS-Net (BERT)", value="gusnet-bert"),
-                            ui.tags.option("GUS-Net Ensemble", value="gusnet-ensemble"),
-                            ui.tags.option("GUS-Net (BERT Large)", value="gusnet-bert-large"),
-                            ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2"),
-                            ui.tags.option("GUS-Net (GPT-2 Medium)", value="gusnet-gpt2-medium"),
+                            *_build_model_options("gusnet-gpt2"),
                             id="bias_model_key_B",
                             class_="bias-model-select bias-model-select-b",
                             onchange="Shiny.setInputValue('bias_model_key_B', this.value, {priority:'event'});",
