@@ -19,6 +19,7 @@ import gc
 import glob
 import json
 import ast
+from datetime import datetime
 import shutil
 import numpy as np
 import pandas as pd
@@ -50,6 +51,282 @@ from scipy.optimize import minimize_scalar
 
 
 # ============================================================================
+# SHARED LOSS & POST-PROCESSING UTILITIES
+# ============================================================================
+
+class AsymmetricFocalLoss(nn.Module):
+    """
+    Asymmetric Focal Loss for multi-label token classification.
+
+    Key properties vs standard focal loss:
+    - gamma_pos: focal factor for positives (lower → preserve recall on rare bias tags)
+    - gamma_neg: focal factor for negatives (higher → down-weight confident O predictions)
+    - clip: shifts negative probs down by `clip` before computing loss.
+            Tokens where p_bias < clip contribute 0 loss → drastically reduces false positives
+    - per-class alpha tensor from training-data frequencies (clipped to max 10x ratio)
+
+    Based on: Ridnik et al. 2021 "Asymmetric Loss For Multi-Label Classification"
+    """
+
+    def __init__(self, alpha, gamma_pos=1.0, gamma_neg=3.0, clip=0.05,
+                 label_smoothing=0.0, reduction="mean"):
+        super().__init__()
+        if not isinstance(alpha, torch.Tensor):
+            alpha = torch.tensor(alpha, dtype=torch.float32)
+        self.register_buffer("alpha", alpha.float())
+        self.gamma_pos = gamma_pos
+        self.gamma_neg = gamma_neg
+        self.clip = clip
+        self.label_smoothing = label_smoothing
+        self.reduction = reduction
+
+    def forward(self, inputs, targets, sample_weight=None):
+        # Cast to float32 to avoid fp16 underflow (log(0) = -inf → NaN gradients)
+        inputs = inputs.float()
+        targets = targets.float()
+        if self.label_smoothing > 0:
+            targets = targets * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
+
+        probs = torch.sigmoid(inputs)
+        # Shift negative probs down: p < clip → 0, reduces false-positive gradient
+        # clip=0.01 is conservative — avoids killing gradients for weakly-predicted bias tokens
+        probs_neg = torch.clamp(probs - self.clip, min=0.0)
+
+        # Separate BCE components (clamp to fp32-safe floor 1e-4 instead of 1e-8)
+        loss_pos = -targets * torch.log(probs.clamp(min=1e-4))
+        loss_neg = -(1.0 - targets) * torch.log((1.0 - probs_neg).clamp(min=1e-4))
+
+        # Asymmetric focal modulation
+        focal_pos = (1.0 - probs).clamp(min=0.0) ** self.gamma_pos
+        focal_neg = probs_neg ** self.gamma_neg
+        focal = torch.where(targets > 0.5, focal_pos, focal_neg)
+
+        loss = focal * (loss_pos + loss_neg)
+        loss = self.alpha.to(inputs.device) * loss
+
+        # Per-token span-position weights (progressive I-tag penalisation)
+        if sample_weight is not None:
+            loss = loss * sample_weight
+
+        return loss.mean() if self.reduction == "mean" else loss.sum()
+
+
+def compute_alpha_from_data(samples, label2id, max_ratio=10.0):
+    """
+    Compute per-class alpha weights from label frequencies in training samples.
+    Clips the max/min weight ratio to `max_ratio` to avoid extreme class imbalance.
+
+    Args:
+        samples:   list of dicts with keys "text_str" and "ner_tags"
+        label2id:  dict mapping label string to index
+        max_ratio: maximum allowed ratio between largest and smallest alpha
+
+    Returns:
+        alpha: torch.FloatTensor of shape (num_labels,)
+        label_counts: np.ndarray with token-level positive counts per class
+    """
+    num_labels = len(label2id)
+    label_counts = np.zeros(num_labels, dtype=np.int64)
+    total_tokens = 0
+
+    for sample in samples:
+        annotations = sample["ner_tags"]
+        for word_tags in annotations:
+            for tag in word_tags:
+                if tag in label2id:
+                    label_counts[label2id[tag]] += 1
+            total_tokens += 1
+
+    label_counts = np.maximum(label_counts, 1)
+    freq = label_counts / float(max(total_tokens, 1))
+    inv_freq = 1.0 / freq
+    # Clip ratio: prevent extreme down-weighting of majority class
+    inv_freq = np.clip(inv_freq, inv_freq.min(), inv_freq.min() * max_ratio)
+    alpha = inv_freq / inv_freq.sum()
+    return torch.tensor(alpha, dtype=torch.float32), label_counts
+
+
+def save_training_log(entry, log_path=None):
+    """
+    Append a training run entry to a persistent JSON log file.
+    Creates the file if it doesn't exist; appends otherwise.
+
+    Args:
+        entry:    dict with training metadata and results
+        log_path: Path to the JSON file (default: <script_dir>/training_log.json)
+    """
+    if log_path is None:
+        log_path = _SCRIPT_DIR / "training_log.json"
+    log_path = Path(log_path)
+
+    if log_path.exists():
+        with open(log_path, "r", encoding="utf-8") as f:
+            log = json.load(f)
+    else:
+        log = []
+
+    log.append(entry)
+
+    with open(log_path, "w", encoding="utf-8") as f:
+        json.dump(log, f, indent=2, ensure_ascii=False)
+
+    print(f"\nTraining log updated → {log_path}  ({len(log)} run(s) total)")
+
+
+def _report_to_dict(report_dict, keys):
+    """Extract precision/recall/f1-score from a classification_report dict."""
+    out = {}
+    for k in keys:
+        if k in report_dict:
+            v = report_dict[k]
+            out[k] = {
+                "precision": round(float(v["precision"]), 4),
+                "recall":    round(float(v["recall"]), 4),
+                "f1":        round(float(v["f1-score"]), 4),
+                "support":   int(v["support"]),
+            }
+    return out
+
+
+def bio_postprocess(seq_preds, id2label):
+    """
+    Enforce BIO validity on a single token sequence.
+
+    Rules (applied in order):
+    1. If any bias tag is predicted, suppress O
+    2. Orphan I-X (no preceding B-X or I-X) → convert to B-X
+    3. Token with no label → assign O
+
+    Args:
+        seq_preds: np.ndarray (seq_len, num_labels), binary int
+        id2label:  dict {int: str}
+    Returns:
+        corrected: np.ndarray same shape
+    """
+    label_names = [id2label[i] for i in sorted(id2label.keys())]
+    O_idx = next(i for i, n in enumerate(label_names) if n == "O")
+    corrected = seq_preds.copy().astype(int)
+    active_types: set = set()
+
+    for t in range(len(corrected)):
+        # 1) Suppress O when any bias tag is active
+        if any(corrected[t, i] == 1 for i, n in enumerate(label_names) if n != "O"):
+            corrected[t, O_idx] = 0
+
+        # 2) Fix orphan I-X → B-X
+        new_active: set = set()
+        for i, name in enumerate(label_names):
+            if corrected[t, i] != 1:
+                continue
+            if name.startswith("B-"):
+                new_active.add(name[2:])
+            elif name.startswith("I-"):
+                bio_type = name[2:]
+                if bio_type not in active_types:
+                    b_idx = next(
+                        (j for j, n in enumerate(label_names) if n == f"B-{bio_type}"),
+                        None,
+                    )
+                    if b_idx is not None:
+                        corrected[t, i] = 0
+                        corrected[t, b_idx] = 1
+                new_active.add(bio_type)
+        active_types = new_active
+
+        # 3) No label → assign O
+        if corrected[t].sum() == 0:
+            corrected[t, O_idx] = 1
+
+    return corrected
+
+
+def compute_itag_span_weights(labels, id2label,
+                              decay=0.18, min_weight=0.30,
+                              label_decay=0.08, label_floor=0.55):
+    """
+    Compute per-token loss weights AND smoothed labels for I-tags deeper
+    in BIO spans.
+
+    Two complementary mechanisms:
+      1) Weight decay: reduces loss gradient for deep I-tags so the model
+         cares less about getting them "right"
+      2) Label softening: lowers the target itself so the model learns to
+         predict lower probabilities for deep I-tag positions
+
+    Weight schedule (per I-tag column only):
+        B-X  → weight 1.0, label 1.0  (unaffected)
+        I-X position 1 → weight (1 - decay*1), label (1 - label_decay*1)
+        I-X position N → weight max(min_weight, 1 - decay*N),
+                         label  max(label_floor, 1 - label_decay*N)
+
+    All non-I-tag columns always keep weight 1.0 and label unchanged.
+
+    Args:
+        labels:      np.ndarray (batch, seq_len, num_labels) or (seq_len, num_labels)
+        id2label:    dict {int: str}
+        decay:       loss weight reduction per I-tag position (default 0.18)
+        min_weight:  weight floor (default 0.30)
+        label_decay: label target reduction per I-tag position (default 0.08)
+        label_floor: minimum label target — must stay > 0.5 so focal loss
+                     treats it as a positive (default 0.55)
+
+    Returns:
+        weights:         np.ndarray same shape as labels
+        smoothed_labels: np.ndarray same shape as labels (I-tag targets decayed,
+                         padding tokens preserved as -100)
+    """
+    squeezed = False
+    if labels.ndim == 2:
+        labels = labels[np.newaxis, ...]
+        squeezed = True
+
+    batch_size, seq_len, n_labels = labels.shape
+    weights = np.ones_like(labels, dtype=np.float32)
+    smoothed = labels.copy().astype(np.float32)
+
+    # Map bias types → (B-col, I-col)
+    bias_types = {}
+    for idx, name in id2label.items():
+        if name.startswith("B-"):
+            bt = name[2:]
+            bias_types.setdefault(bt, {})["b"] = idx
+        elif name.startswith("I-"):
+            bt = name[2:]
+            bias_types.setdefault(bt, {})["i"] = idx
+
+    # Only process types that have both B and I columns
+    bi_pairs = [(v["b"], v["i"]) for v in bias_types.values()
+                if "b" in v and "i" in v]
+
+    for b in range(batch_size):
+        for b_col, i_col in bi_pairs:
+            span_pos = -1  # -1 = not in a span
+            for t in range(seq_len):
+                # Skip padding tokens (label = -100)
+                if labels[b, t, 0] < -99.0:
+                    span_pos = -1
+                    continue
+
+                if labels[b, t, b_col] > 0.5:
+                    # B-tag: start new span, position 0 (B itself keeps weight 1.0)
+                    span_pos = 0
+                elif labels[b, t, i_col] > 0.5 and span_pos >= 0:
+                    # I-tag continuing a span
+                    span_pos += 1
+                    weights[b, t, i_col] = max(min_weight,
+                                               1.0 - decay * span_pos)
+                    smoothed[b, t, i_col] = max(label_floor,
+                                                1.0 - label_decay * span_pos)
+                else:
+                    # Not in a span for this bias type
+                    span_pos = -1
+
+    if squeezed:
+        return weights[0], smoothed[0]
+    return weights, smoothed
+
+
+# ============================================================================
 # PATHS
 # ============================================================================
 
@@ -69,6 +346,33 @@ THRESHOLD = 0.5
 PATIENCE = 3
 MAX_LENGTH = 128
 
+# Per-class minimum threshold floors applied after grid/scalar optimisation.
+# I-tags use higher floors than B-tags to prevent span bleed:
+# once a span starts (B-), the model tends to assign high I- scores to all
+# subsequent tokens including function words — forcing a higher floor on I-tags
+# keeps only the most confident in-span tokens.
+MIN_THR_PER_CLASS = {
+    "O":        0.45,
+    "B-STEREO": 0.50,
+    "I-STEREO": 0.80,   # high — prevent stereotype bleed to function words
+    "B-GEN":    0.40,
+    "I-GEN":    0.65,
+    "B-UNFAIR": 0.40,
+    "I-UNFAIR": 0.65,
+}
+
+# Progressive I-tag span penalisation: reduce loss weight AND soften labels
+# for I-tags deeper in BIO spans so the model learns lower confidence for
+# later in-span tokens (typically function words like "are", "and", "for").
+#
+# Two complementary mechanisms:
+#   1) Weight decay  — model cares LESS about deep I-tags (lower gradient)
+#   2) Label softening — target itself drops (model learns lower probabilities)
+SPAN_DECAY = 0.18           # loss weight reduction per I-tag position
+SPAN_MIN_WEIGHT = 0.30      # weight floor (deep I-tags → 30 % of normal loss)
+SPAN_LABEL_DECAY = 0.08     # label target reduction per I-tag position
+SPAN_LABEL_FLOOR = 0.55     # label floor (stays > 0.5 so focal treats as positive)
+
 
 # ============================================================================
 # BERT-SPECIFIC CONFIG
@@ -77,8 +381,8 @@ MAX_LENGTH = 128
 BERT_CONFIG = {
     "backbone": "bert-base-uncased",
     "alpha": 0.75,
-    "gamma": 3.0,
-    "save_dir": _SCRIPT_DIR / "gus-net-bert-final-my",
+    "gamma": 2.0,
+    "save_dir": _SCRIPT_DIR / "gus-net-bert-final-new",
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,
@@ -96,12 +400,12 @@ BERT_CONFIG["id2label"] = {v: k for k, v in BERT_CONFIG["label2id"].items()}
 
 GPT2_CONFIG = {
     "backbone": "gpt2",
-    "gamma": 2.0,
+    "gamma": 1.5,
     "label_smoothing": 0.05,
     "llrd_decay_factor": 0.85,
     "classifier_lr": 2e-4,
-    "save_dir": _SCRIPT_DIR / "gus-net-gpt2-final-my",
-    "training_output_dir": str(_SCRIPT_DIR / "gus-net-gpt2-2nd"),
+    "save_dir": _SCRIPT_DIR / "gus-net-gpt2-final-new",
+    "training_output_dir": str(_SCRIPT_DIR / "gus-net-gpt2-new"),
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,
@@ -120,8 +424,8 @@ GPT2_CONFIG["id2label"] = {v: k for k, v in GPT2_CONFIG["label2id"].items()}
 BERT_LARGE_CONFIG = {
     "backbone": "bert-large-uncased",
     "alpha": 0.75,
-    "gamma": 3.0,
-    "save_dir": _SCRIPT_DIR / "gus-net-bert-large-final-2nd",
+    "gamma": 2.0,
+    "save_dir": _SCRIPT_DIR / "gus-net-bert-large-final-new",
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,
@@ -139,15 +443,15 @@ BERT_LARGE_CONFIG["id2label"] = {v: k for k, v in BERT_LARGE_CONFIG["label2id"].
 
 GPT2_MEDIUM_CONFIG = {
     "backbone": "gpt2-medium",
-    "gamma": 2.0,
+    "gamma": 1.5,
     "label_smoothing": 0.05,
     "llrd_decay_factor": 0.85,
     "classifier_lr": 2e-4,
     "batch_size": 4,
     "gradient_accumulation_steps": 8,
     "gradient_checkpointing": True,
-    "save_dir": _SCRIPT_DIR / "gus-net-gpt2-medium-final-my",
-    "training_output_dir": str(_SCRIPT_DIR / "gus-net-gpt2-medium"),
+    "save_dir": _SCRIPT_DIR / "gus-net-gpt2-medium-final-new",
+    "training_output_dir": str(_SCRIPT_DIR / "gus-net-gpt2-medium-new"),
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,
@@ -165,15 +469,15 @@ GPT2_MEDIUM_CONFIG["id2label"] = {v: k for k, v in GPT2_MEDIUM_CONFIG["label2id"
 
 GPT2_LARGE_CONFIG = {
     "backbone": "gpt2-large",
-    "gamma": 2.0,
+    "gamma": 1.5,
     "label_smoothing": 0.05,
     "llrd_decay_factor": 0.85,
     "classifier_lr": 2e-4,
     "batch_size": 2,
     "gradient_accumulation_steps": 16,
     "gradient_checkpointing": True,
-    "save_dir": _SCRIPT_DIR / "gus-net-gpt2-large-final",
-    "training_output_dir": str(_SCRIPT_DIR / "gus-net-gpt2-large"),
+    "save_dir": _SCRIPT_DIR / "gus-net-gpt2-large-final-new",
+    "training_output_dir": str(_SCRIPT_DIR / "gus-net-gpt2-large-new"),
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,
@@ -344,36 +648,52 @@ def train_bert(config=None, dataset_source="hf"):
     # Lightning Model
     class GUSNetBERT(pl.LightningModule):
         def __init__(self, learning_rate=LEARNING_RATE, threshold=THRESHOLD,
-                     alpha=None, gamma=None):
+                     alpha_per_class=None, gamma_pos=1.0, gamma_neg=None):
             super().__init__()
-            if alpha is None:
-                alpha = config["alpha"]
-            if gamma is None:
-                gamma = config["gamma"]
-            self.save_hyperparameters()
+            if gamma_neg is None:
+                gamma_neg = config["gamma"]
+            self.save_hyperparameters(ignore=["alpha_per_class"])
             self.bert = BertForTokenClassification.from_pretrained(
                 config["backbone"], num_labels=num_labels,
             )
             self.learning_rate = learning_rate
             self.threshold = threshold
-            self.alpha = alpha
-            self.gamma = gamma
+            self.gamma_pos = gamma_pos
+            self.gamma_neg = gamma_neg
+
+            if alpha_per_class is None:
+                alpha_per_class = torch.ones(num_labels, dtype=torch.float32) / num_labels
+            self.loss_fn = AsymmetricFocalLoss(
+                alpha=alpha_per_class,
+                gamma_pos=gamma_pos,
+                gamma_neg=gamma_neg,
+                clip=0.01,
+            )
 
         def forward(self, input_ids, attention_mask):
             return self.bert(input_ids=input_ids, attention_mask=attention_mask).logits
 
         def focal_loss(self, logits, labels):
+            # Compute span-position weights + smoothed labels BEFORE flattening
+            sw_np, sl_np = compute_itag_span_weights(
+                labels.cpu().numpy(), config["id2label"],
+                decay=SPAN_DECAY, min_weight=SPAN_MIN_WEIGHT,
+                label_decay=SPAN_LABEL_DECAY, label_floor=SPAN_LABEL_FLOOR,
+            )
+            span_w = torch.tensor(sw_np, dtype=torch.float32, device=logits.device)
+            smooth = torch.tensor(sl_np, dtype=torch.float32, device=logits.device)
+
             logits = logits.view(-1, num_labels)
-            labels = labels.view(-1, num_labels).float()
-            valid_mask = (labels >= 0).all(dim=1)
+            orig    = labels.view(-1, num_labels).float()   # for valid mask
+            smooth  = smooth.view(-1, num_labels)
+            span_w  = span_w.view(-1, num_labels)
+            valid_mask = (orig >= 0).all(dim=1)
             logits = logits[valid_mask]
-            labels = labels[valid_mask]
+            smooth = smooth[valid_mask]
+            span_w = span_w[valid_mask]
             if logits.shape[0] == 0:
                 return torch.tensor(0.0, device=logits.device, requires_grad=True)
-            bce = F.binary_cross_entropy_with_logits(logits, labels, reduction="none")
-            pt = torch.exp(-bce)
-            loss = self.alpha * (1 - pt) ** self.gamma * bce
-            return loss.mean()
+            return self.loss_fn(logits, smooth, sample_weight=span_w)
 
         def training_step(self, batch, batch_idx):
             logits = self(batch[0], batch[1])
@@ -388,7 +708,42 @@ def train_bert(config=None, dataset_source="hf"):
             return loss
 
         def configure_optimizers(self):
-            optimizer = AdamW(self.parameters(), lr=self.learning_rate)
+            no_decay = ["bias", "LayerNorm.weight"]
+            n_layers = self.bert.config.num_hidden_layers
+            llrd_decay = 0.9
+            param_groups = []
+
+            # Classifier head — 10× base LR, no weight decay
+            param_groups.append({
+                "params": [p for n, p in self.named_parameters() if "classifier" in n],
+                "lr": self.learning_rate * 10,
+                "weight_decay": 0.0,
+            })
+
+            # Transformer layers: top → bottom, decaying LR
+            for layer_idx in range(n_layers - 1, -1, -1):
+                lr = self.learning_rate * (llrd_decay ** (n_layers - 1 - layer_idx))
+                prefix = f"bert.bert.encoder.layer.{layer_idx}."
+                d  = [p for n, p in self.named_parameters()
+                      if prefix in n and not any(k in n for k in no_decay)]
+                nd = [p for n, p in self.named_parameters()
+                      if prefix in n and any(k in n for k in no_decay)]
+                if d:  param_groups.append({"params": d,  "lr": lr, "weight_decay": 0.01})
+                if nd: param_groups.append({"params": nd, "lr": lr, "weight_decay": 0.0})
+
+            # Embeddings — lowest LR
+            emb_lr = self.learning_rate * (llrd_decay ** n_layers)
+            d  = [p for n, p in self.named_parameters()
+                  if "bert.bert.embeddings" in n and not any(k in n for k in no_decay)]
+            nd = [p for n, p in self.named_parameters()
+                  if "bert.bert.embeddings" in n and any(k in n for k in no_decay)]
+            if d:  param_groups.append({"params": d,  "lr": emb_lr, "weight_decay": 0.01})
+            if nd: param_groups.append({"params": nd, "lr": emb_lr, "weight_decay": 0.0})
+
+            print(f"LLRD (BERT): classifier_lr={self.learning_rate * 10:.2e}, "
+                  f"top_layer_lr={self.learning_rate:.2e}, emb_lr={emb_lr:.2e}")
+
+            optimizer = AdamW(param_groups, lr=self.learning_rate)
             scheduler = get_linear_schedule_with_warmup(
                 optimizer,
                 num_warmup_steps=int(0.1 * self.trainer.estimated_stepping_batches),
@@ -408,6 +763,13 @@ def train_bert(config=None, dataset_source="hf"):
     )
     print(f"Train/Val: {len(train_val_data)}")
     print(f"Test:      {len(test_data)}")
+
+    # Compute per-class alpha from training data
+    print("\nComputing per-class alpha weights...")
+    alpha_per_class, label_counts = compute_alpha_from_data(train_val_data, label2id)
+    print("Per-class alpha (clipped 10× ratio):")
+    for i, name in enumerate(config["id2label"].values()):
+        print(f"  {name:10s}: count={label_counts[i]:>6}, alpha={alpha_per_class[i]:.4f}")
 
     # Tokenize
     print("\nTokenizing...")
@@ -442,7 +804,7 @@ def train_bert(config=None, dataset_source="hf"):
         mode="min",
     )
 
-    model = GUSNetBERT()
+    model = GUSNetBERT(alpha_per_class=alpha_per_class)
     trainer = pl.Trainer(
         max_epochs=MAX_EPOCHS,
         callbacks=[checkpoint_cb, early_stop_cb],
@@ -522,16 +884,25 @@ def train_bert(config=None, dataset_source="hf"):
         for c in range(num_labels):
             lo = max(0.01, best_thr[c] - 0.05)
             hi = min(0.99, best_thr[c] + 0.05)
-            
+
             def neg_f1(t):
                 pred = (pf[:, c] >= t).astype(int)
                 return -f1_score(lf[:, c], pred, average="binary", zero_division=0)
-                
+
             res = minimize_scalar(neg_f1, bounds=(lo, hi), method="bounded")
             if -res.fun >= f1_score(lf[:, c], (pf[:, c] >= best_thr[c]).astype(int), average="binary", zero_division=0):
                 best_thr[c] = res.x
             print(f"  {config['id2label'][c]:10s}: thr={best_thr[c]:.4f}, F1={-res.fun:.4f}")
-            
+
+        # Per-class floor: I-tags use higher floor than B-tags to prevent span bleed
+        print("\nApplying per-class minimum threshold floors:")
+        for c in range(num_labels):
+            label = config["id2label"][c]
+            floor = MIN_THR_PER_CLASS.get(label, 0.35)
+            if best_thr[c] < floor:
+                print(f"  {label:10s}: {best_thr[c]:.4f} → {floor:.4f}")
+                best_thr[c] = floor
+
         # Calc macro F1
         preds = (pf >= best_thr.reshape(1, -1)).astype(int)
         macro = f1_score(lf, preds, average="macro", zero_division=0)
@@ -577,7 +948,8 @@ def train_bert(config=None, dataset_source="hf"):
             for i in range(len(labels_np)):
                 valid = np.where((labels_np[i] >= 0).all(axis=1))[0]
                 if len(valid) > 0:
-                    all_preds.extend(preds[i][valid])
+                    seq_preds = bio_postprocess(preds[i][valid], config["id2label"])
+                    all_preds.extend(seq_preds)
                     all_trues.extend(labels_np[i][valid])
 
     all_preds = np.array(all_preds)
@@ -597,11 +969,58 @@ def train_bert(config=None, dataset_source="hf"):
     cat_names = ["O", "STEREO", "GEN", "UNFAIR"]
 
     print("\n--- Test Set Results (Category-Level) ---")
+    report_cat = classification_report(
+        cat_trues, cat_preds, target_names=cat_names, zero_division=0, output_dict=True,
+    )
     print(classification_report(cat_trues, cat_preds, target_names=cat_names, zero_division=0))
-    print(f"Exact Match: {accuracy_score(cat_trues, cat_preds):.4f}")
+    exact_match = float(accuracy_score(cat_trues, cat_preds))
+    print(f"Exact Match: {exact_match:.4f}")
 
     print("\n--- Test Set Results (BIO Detail) ---")
+    report_bio = classification_report(
+        all_trues, all_preds, target_names=list(label2id.keys()), zero_division=0, output_dict=True,
+    )
     print(classification_report(all_trues, all_preds, target_names=list(label2id.keys()), zero_division=0))
+
+    # Training log
+    print("\n" + "=" * 60)
+    print("TRAINING LOG")
+    print("=" * 60)
+    log_entry = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "backbone": config["backbone"],
+        "dataset": dataset_name,
+        "epochs_trained": trainer.current_epoch + 1,
+        "val_macro_f1": round(float(best_f1_val), 4),
+        "thresholds": {
+            config["id2label"][i]: round(float(thresholds[i]), 4) for i in range(num_labels)
+        },
+        "hyperparams": {
+            "learning_rate": LEARNING_RATE,
+            "batch_size": BATCH_SIZE,
+            "max_epochs": MAX_EPOCHS,
+            "patience": PATIENCE,
+            "gamma_neg": config["gamma"],
+            "gamma_pos": 1.0,
+            "asl_clip": 0.01,
+            "llrd_decay": 0.9,
+            "span_decay": SPAN_DECAY,
+            "span_min_weight": SPAN_MIN_WEIGHT,
+            "span_label_decay": SPAN_LABEL_DECAY,
+            "span_label_floor": SPAN_LABEL_FLOOR,
+        },
+        "test": {
+            "exact_match": round(exact_match, 4),
+            "category_level": _report_to_dict(
+                report_cat, cat_names + ["macro avg", "weighted avg"],
+            ),
+            "bio_level": _report_to_dict(
+                report_bio, list(label2id.keys()) + ["macro avg", "weighted avg"],
+            ),
+        },
+    }
+    save_training_log(log_entry)
 
     # Save
     print("\n" + "=" * 60)
@@ -793,6 +1212,8 @@ def train_gpt2(config=None, dataset_source="hf"):
     label_pos = np.maximum(label_pos, 1)
     freq = label_pos / float(total_tokens)
     inv_freq = 1.0 / freq
+    # Clip weight ratio to max 10× to prevent extreme class imbalance
+    inv_freq = np.clip(inv_freq, inv_freq.min(), inv_freq.min() * 10.0)
     alpha_labels = inv_freq / inv_freq.sum()
     alpha_labels = torch.tensor(alpha_labels, dtype=torch.float32)
 
@@ -800,30 +1221,18 @@ def train_gpt2(config=None, dataset_source="hf"):
     for i, name in enumerate(label_names):
         print(f"  {name:10s}: {label_pos[i]:>6} positives, alpha={alpha_labels[i]:.4f}")
 
-    # Focal Loss
-    class FocalLossMultiLabel(nn.Module):
-        def __init__(self, alpha, gamma=2.0, reduction="mean", label_smoothing=0.0):
-            super().__init__()
-            self.register_buffer("alpha", alpha)
-            self.gamma = gamma
-            self.reduction = reduction
-            self.label_smoothing = label_smoothing
-
-        def forward(self, inputs, targets):
-            if self.label_smoothing > 0:
-                targets = targets * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
-            bce = F.binary_cross_entropy_with_logits(inputs, targets.float(), reduction="none")
-            pt = torch.exp(-bce)
-            focal = self.alpha.to(inputs.device) * (1 - pt) ** self.gamma * bce
-            return focal.mean() if self.reduction == "mean" else focal.sum()
-
-    # Custom Trainer with LLRD
+    # Custom Trainer with LLRD + Asymmetric Focal Loss
     class FocalLossTrainerGPT2(Trainer):
-        def __init__(self, *args, alpha_channel, gamma=2.0, label_smoothing=0.0,
+        def __init__(self, *args, alpha_channel, gamma=1.5, label_smoothing=0.0,
                      llrd_decay_factor=0.85, classifier_lr=2e-4, **kwargs):
             super().__init__(*args, **kwargs)
-            self.focal_loss = FocalLossMultiLabel(
-                alpha=alpha_channel, gamma=gamma, label_smoothing=label_smoothing,
+            # gamma is gamma_neg; gamma_pos is fixed at 1.0 to preserve recall
+            self.focal_loss = AsymmetricFocalLoss(
+                alpha=alpha_channel,
+                gamma_pos=1.0,
+                gamma_neg=gamma,
+                clip=0.01,
+                label_smoothing=label_smoothing,
             )
             self.llrd_decay_factor = llrd_decay_factor
             self.classifier_lr = classifier_lr
@@ -882,10 +1291,25 @@ def train_gpt2(config=None, dataset_source="hf"):
             labels = inputs.pop("labels")
             outputs = model(**inputs)
             logits = outputs.logits
+
+            # Compute span-position weights + smoothed labels BEFORE flattening
+            sw_np, sl_np = compute_itag_span_weights(
+                labels.cpu().numpy(), config["id2label"],
+                decay=SPAN_DECAY, min_weight=SPAN_MIN_WEIGHT,
+                label_decay=SPAN_LABEL_DECAY, label_floor=SPAN_LABEL_FLOOR,
+            )
+            span_w = torch.tensor(sw_np, dtype=torch.float32, device=logits.device)
+            smooth = torch.tensor(sl_np, dtype=torch.float32, device=logits.device)
+
             logits_flat = logits.view(-1, num_labels)
-            labels_flat = labels.view(-1, num_labels)
+            labels_flat = labels.view(-1, num_labels)  # for valid mask
+            smooth_flat = smooth.view(-1, num_labels)
+            sw_flat = span_w.view(-1, num_labels)
             valid = labels_flat[:, 0] != -100.0
-            loss = self.focal_loss(logits_flat[valid], labels_flat[valid])
+            loss = self.focal_loss(
+                logits_flat[valid], smooth_flat[valid],
+                sample_weight=sw_flat[valid],
+            )
             return (loss, outputs) if return_outputs else loss
 
     # Metrics
@@ -1058,6 +1482,15 @@ def train_gpt2(config=None, dataset_source="hf"):
                 best_thr[c] = res.x
             print(f"  {label_names[c]:10s}: thr={best_thr[c]:.4f}, F1={-res.fun:.4f}")
 
+        # Per-class floor: I-tags use higher floor than B-tags to prevent span bleed
+        print("\nApplying per-class minimum threshold floors:")
+        for c in range(num_labels):
+            label = label_names[c]
+            floor = MIN_THR_PER_CLASS.get(label, 0.35)
+            if best_thr[c] < floor:
+                print(f"  {label:10s}: {best_thr[c]:.4f} → {floor:.4f}")
+                best_thr[c] = floor
+
         preds = (pf >= best_thr.reshape(1, -1)).astype(int)
         macro = np.mean([f1_score(lf[:, c], preds[:, c], average="binary", zero_division=0)
                          for c in range(num_labels)])
@@ -1099,7 +1532,8 @@ def train_gpt2(config=None, dataset_source="hf"):
         for i in range(len(labels_np)):
             valid = np.where((labels_np[i] >= 0).all(axis=1))[0]
             if len(valid) > 0:
-                all_preds.extend(preds[i][valid])
+                seq_preds = bio_postprocess(preds[i][valid], config["id2label"])
+                all_preds.extend(seq_preds)
                 all_trues.extend(labels_np[i][valid])
 
     all_preds = np.array(all_preds)
@@ -1119,8 +1553,65 @@ def train_gpt2(config=None, dataset_source="hf"):
     cat_trues = collapse_bio(all_trues)
     cat_names = ["O", "STEREO", "GEN", "UNFAIR"]
     print("--- Category-Level Report ---")
+    report_cat = classification_report(
+        cat_trues, cat_preds, target_names=cat_names, zero_division=0, output_dict=True,
+    )
+    report_bio = classification_report(
+        all_trues, all_preds, target_names=label_names, zero_division=0, output_dict=True,
+    )
     print(classification_report(cat_trues, cat_preds, target_names=cat_names, zero_division=0))
-    print(f"Exact Match: {accuracy_score(cat_trues, cat_preds):.4f}")
+    exact_match = float(accuracy_score(cat_trues, cat_preds))
+    print(f"Exact Match: {exact_match:.4f}")
+
+    # Training log
+    print("\n" + "=" * 60)
+    print("TRAINING LOG")
+    print("=" * 60)
+    log_entry = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "backbone": config["backbone"],
+        "dataset": dataset_name,
+        "epochs_trained": round(float(train_result.metrics.get("epoch", 0)), 1),
+        "train_loss": round(float(train_result.training_loss), 4),
+        "dev_macro_f1": round(float(best_f1_dev), 4),
+        "thresholds": {
+            config["id2label"][i]: round(float(thresholds[i]), 4) for i in range(num_labels)
+        },
+        "hyperparams": {
+            "learning_rate": LEARNING_RATE,
+            "batch_size": batch_size,
+            "gradient_accumulation_steps": grad_accum,
+            "effective_batch_size": batch_size * grad_accum,
+            "max_epochs": MAX_EPOCHS,
+            "patience": PATIENCE,
+            "gamma_neg": config["gamma"],
+            "gamma_pos": 1.0,
+            "asl_clip": 0.01,
+            "label_smoothing": config["label_smoothing"],
+            "llrd_decay_factor": config["llrd_decay_factor"],
+            "classifier_lr": config["classifier_lr"],
+            "gradient_checkpointing": use_grad_ckpt,
+            "span_decay": SPAN_DECAY,
+            "span_min_weight": SPAN_MIN_WEIGHT,
+            "span_label_decay": SPAN_LABEL_DECAY,
+            "span_label_floor": SPAN_LABEL_FLOOR,
+        },
+        "test": {
+            "exact_match": round(exact_match, 4),
+            "macro_f1":    round(float(test_metrics["eval_f1_macro"]), 4),
+            "precision":   round(float(test_metrics["eval_precision_macro"]), 4),
+            "recall":      round(float(test_metrics["eval_recall_macro"]), 4),
+            "hamming_loss": round(float(test_metrics["eval_hamming_loss"]), 4),
+            "category_level": _report_to_dict(
+                report_cat, cat_names + ["macro avg", "weighted avg"],
+            ),
+            "bio_level": _report_to_dict(
+                report_bio, label_names + ["macro avg", "weighted avg"],
+            ),
+        },
+    }
+    save_training_log(log_entry)
 
     # Save
     print("\n" + "=" * 60)

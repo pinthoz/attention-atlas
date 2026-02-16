@@ -659,19 +659,55 @@ def create_method_info_html(model_key: str = "gusnet-bert") -> str:
             "huggingface": "pinthoz/gus-net-gpt2-medium",
             "base_model": "gpt2-medium",
         },
+        "gusnet-bert-new": {
+            "display_name": "GUS-Net (BERT v2)",
+            "huggingface": None,
+            "base_model": "bert-base-uncased",
+        },
+        "gusnet-gpt2-new": {
+            "display_name": "GUS-Net (GPT-2 v2)",
+            "huggingface": None,
+            "base_model": "gpt2",
+        },
+        "gusnet-bert-paper": {
+            "display_name": "GUS-Net (BERT Paper)",
+            "huggingface": None,
+            "base_model": "bert-base-uncased",
+        },
+        "gusnet-gpt2-paper": {
+            "display_name": "GUS-Net (GPT-2 Paper)",
+            "huggingface": None,
+            "base_model": "gpt2",
+        },
+        "gusnet-bert-paper-clean": {
+            "display_name": "GUS-Net (BERT Paper Clean)",
+            "huggingface": None,
+            "base_model": "bert-base-uncased",
+        },
+        "gusnet-gpt2-paper-clean": {
+            "display_name": "GUS-Net (GPT-2 Paper Clean)",
+            "huggingface": None,
+            "base_model": "gpt2",
+        },
     }
 
     info = MODEL_INFO.get(model_key, MODEL_INFO["gusnet-bert"])
-    hf_url = f'https://huggingface.co/{info["huggingface"]}'
     tokenization_type = "BERT" if "bert" in info["base_model"] else "GPT-2"
+
+    if info["huggingface"]:
+        hf_url = f'https://huggingface.co/{info["huggingface"]}'
+        model_link = (
+            f'<a href="{hf_url}" target="_blank" '
+            'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
+            f'{info["huggingface"]}</a>'
+        )
+    else:
+        model_link = '<span style="color:#475569;font-size:10px;">local (trained locally)</span>'
 
     specs_html = (
         '<span style="color:#94a3b8;font-weight:600;">Model</span>'
-        f'<a href="{hf_url}" target="_blank" '
-        'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
-        f'{info["huggingface"]}</a>'
-
-        '<span style="color:#94a3b8;font-weight:600;">Paper</span>'
+        + model_link
+        + '<span style="color:#94a3b8;font-weight:600;">Paper</span>'
         '<a href="https://arxiv.org/pdf/2410.08388" target="_blank" '
         'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
         'arxiv.org/pdf/2410.08388</a>'

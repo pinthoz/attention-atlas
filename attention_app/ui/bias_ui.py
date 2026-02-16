@@ -118,7 +118,13 @@ def create_bias_sidebar():
                     ui.div(
                         {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
                         ui.tags.select(
-                            ui.tags.option("GUS-Net (BERT)", value="gusnet-bert", selected="selected"),
+                            ui.tags.option("GUS-Net (BERT Paper Clean)", value="gusnet-bert-paper-clean", selected="selected"),
+                            ui.tags.option("GUS-Net (GPT-2 Paper Clean)", value="gusnet-gpt2-paper-clean"),
+                            ui.tags.option("GUS-Net (BERT Paper)", value="gusnet-bert-paper"),
+                            ui.tags.option("GUS-Net (GPT-2 Paper)", value="gusnet-gpt2-paper"),
+                            ui.tags.option("GUS-Net (BERT v2)", value="gusnet-bert-new"),
+                            ui.tags.option("GUS-Net (GPT-2 v2)", value="gusnet-gpt2-new"),
+                            ui.tags.option("GUS-Net (BERT)", value="gusnet-bert"),
                             ui.tags.option("GUS-Net Ensemble", value="gusnet-ensemble"),
                             ui.tags.option("GUS-Net (BERT Large)", value="gusnet-bert-large"),
                             ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2"),
@@ -140,10 +146,16 @@ def create_bias_sidebar():
                     ui.div(
                         {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
                         ui.tags.select(
+                            ui.tags.option("GUS-Net (GPT-2 Paper Clean)", value="gusnet-gpt2-paper-clean", selected="selected"),
+                            ui.tags.option("GUS-Net (BERT Paper Clean)", value="gusnet-bert-paper-clean"),
+                            ui.tags.option("GUS-Net (GPT-2 Paper)", value="gusnet-gpt2-paper"),
+                            ui.tags.option("GUS-Net (BERT Paper)", value="gusnet-bert-paper"),
+                            ui.tags.option("GUS-Net (GPT-2 v2)", value="gusnet-gpt2-new"),
+                            ui.tags.option("GUS-Net (BERT v2)", value="gusnet-bert-new"),
                             ui.tags.option("GUS-Net (BERT)", value="gusnet-bert"),
                             ui.tags.option("GUS-Net Ensemble", value="gusnet-ensemble"),
                             ui.tags.option("GUS-Net (BERT Large)", value="gusnet-bert-large"),
-                            ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2", selected="selected"),
+                            ui.tags.option("GUS-Net (GPT-2)", value="gusnet-gpt2"),
                             ui.tags.option("GUS-Net (GPT-2 Medium)", value="gusnet-gpt2-medium"),
                             id="bias_model_key_B",
                             class_="bias-model-select bias-model-select-b",

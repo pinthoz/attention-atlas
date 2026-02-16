@@ -62,6 +62,14 @@ def _make_gpt2_bidirectional(model):
             attn.is_cross_attention = True
 
 
+# ── Punctuation filter ───────────────────────────────────────────────────────
+# Punctuation tokens are never bias carriers — suppress any model predictions on them.
+_PUNCTUATION_TOKENS: frozenset = frozenset({
+    ".", ",", "!", "?", ";", ":", "(", ")", "[", "]", "{", "}",
+    "-", "–", "—", "'", '"', "`", "``", "''", "'s", "/", "\\",
+})
+
+
 # ── Shared label scheme (7 labels — identical for BERT and GPT-2) ────────────
 
 NUM_LABELS = 7
@@ -137,6 +145,88 @@ MODEL_REGISTRY = {
         "display_name": "GUS-Net (GPT-2 Medium)",
         "optimized_thresholds": [0.4912, 0.5042, 0.4213, 0.4204, 0.4000, 0.4618, 0.3848],
     },
+    # ── Locally trained models (ASL + LLRD + BIO postprocessing) ─────────
+    "gusnet-bert-new": {
+        "path": str(_BIAS_DIR / "gus-net-bert-final-new"),
+        "architecture": "bert",
+        "tokenizer": "bert-base-uncased",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
+        "display_name": "GUS-Net (BERT v2)",
+        # [O, B-STEREO, I-STEREO, B-GEN, I-GEN, B-UNFAIR, I-UNFAIR]
+        # I-STEREO raised to 0.85 to prevent stereotype span bleed to function words
+        # I-GEN and I-UNFAIR raised to 0.65 for the same reason
+        "optimized_thresholds": [0.4992, 0.5111, 0.8500, 0.4276, 0.6500, 0.4614, 0.6500],
+    },
+    "gusnet-gpt2-new": {
+        "path": str(_BIAS_DIR / "gus-net-gpt2-final-new"),
+        "architecture": "gpt2",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
+        "display_name": "GUS-Net (GPT-2 v2)",
+        # [O, B-STEREO, I-STEREO, B-GEN, I-GEN, B-UNFAIR, I-UNFAIR]
+        # I-STEREO raised to 0.85 to prevent stereotype span bleed to function words
+        # I-GEN and I-UNFAIR raised to 0.65 for the same reason
+        "optimized_thresholds": [0.4607, 0.4328, 0.8500, 0.4537, 0.6500, 0.3500, 0.6500],
+    },
+    # ── Paper-faithful models (standard focal loss, no LLRD/span decay) ──
+    "gusnet-bert-paper": {
+        "path": str(_BIAS_DIR / "gus-net-bert-paper"),
+        "architecture": "bert",
+        "tokenizer": "bert-base-uncased",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
+        "display_name": "GUS-Net (BERT Paper)",
+        # [O, B-STEREO, I-STEREO, B-GEN, I-GEN, B-UNFAIR, I-UNFAIR]
+        "optimized_thresholds": [0.5039, 0.4993, 0.541, 0.463, 0.4658, 0.4632, 0.414],
+    },
+    "gusnet-gpt2-paper": {
+        "path": str(_BIAS_DIR / "gus-net-gpt2-paper"),
+        "architecture": "gpt2",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
+        "display_name": "GUS-Net (GPT-2 Paper)",
+        # [O, B-STEREO, I-STEREO, B-GEN, I-GEN, B-UNFAIR, I-UNFAIR]
+        "optimized_thresholds": [0.5, 0.4862, 0.4946, 0.5012, 0.5, 0.4748, 0.475],
+    },
+    # ── Paper-faithful + cleaned dataset (punct-fixed, BIO-repaired) ──
+    "gusnet-bert-paper-clean": {
+        "path": str(_BIAS_DIR / "gus-net-bert-paper-clean"),
+        "architecture": "bert",
+        "tokenizer": "bert-base-uncased",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
+        "display_name": "GUS-Net (BERT Paper Clean)",
+        # placeholder — will be updated after training
+        "optimized_thresholds": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+    },
+    "gusnet-gpt2-paper-clean": {
+        "path": str(_BIAS_DIR / "gus-net-gpt2-paper-clean"),
+        "architecture": "gpt2",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
+        "display_name": "GUS-Net (GPT-2 Paper Clean)",
+        # placeholder — will be updated after training
+        "optimized_thresholds": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+    },
 }
 
 
@@ -162,10 +252,15 @@ class GusNetDetector:
                 f"Available: {list(MODEL_REGISTRY.keys())}"
             )
         self.model_key = model_key
-        self.config = MODEL_REGISTRY[model_key]
+        self.config = dict(MODEL_REGISTRY[model_key])  # shallow copy
         self.threshold = threshold
         self.use_optimized = use_optimized
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        # Auto-load thresholds from .npy (written by training script)
+        npy_path = Path(self.config["path"]) / "optimized_thresholds.npy"
+        if npy_path.exists():
+            self.config["optimized_thresholds"] = np.load(str(npy_path)).tolist()
 
     # ── Model loading ────────────────────────────────────────────────────
 
@@ -303,6 +398,10 @@ class GusNetDetector:
                     thresh = active_thresholds.get(cat, 0.5)
                     if scores.get(cat, 0.0) >= thresh:
                         bias_types.append(cat)
+
+            # Punctuation is never a bias carrier — suppress span-bleed scores
+            if bias_types and token.lstrip("\u0120") in _PUNCTUATION_TOKENS:
+                bias_types = []
 
             # Human-readable explanation
             _CAT_LABEL = {

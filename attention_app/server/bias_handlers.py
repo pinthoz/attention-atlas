@@ -492,6 +492,10 @@ def bias_server_handlers(input, output, session):
                 return {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
 
             opt = cfg.get("optimized_thresholds")
+            # Auto-load from .npy if available (same as GusNetDetector)
+            npy_path = Path(cfg["path"]) / "optimized_thresholds.npy"
+            if npy_path.exists():
+                opt = np.load(str(npy_path)).tolist()
             defaults = {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
 
             if opt:
