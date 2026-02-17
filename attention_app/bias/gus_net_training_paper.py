@@ -71,6 +71,7 @@ from gus_net_training import (
 # ============================================================================
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
+_MODELS_DIR = _SCRIPT_DIR / "models"
 _CLEAN_DATASET = _SCRIPT_DIR.parent.parent / "dataset" / "gus_dataset_clean.json"
 SEED = 42
 
@@ -153,9 +154,9 @@ def focal_loss_paper(logits, labels, alpha=ALPHA, gamma=GAMMA):
 def train_bert_paper(dataset_source="hf"):
     """Train GUS-Net BERT with the paper's original settings."""
 
-    save_dir = (_SCRIPT_DIR / "gus-net-bert-paper-clean"
+    save_dir = (_MODELS_DIR / "gus-net-bert-paper-clean"
                 if dataset_source == "clean"
-                else _SCRIPT_DIR / "gus-net-bert-paper")
+                else _MODELS_DIR / "gus-net-bert-paper")
 
     print("=" * 60)
     print("GUS-Net BERT Training (PAPER-FAITHFUL)")
@@ -593,9 +594,9 @@ def train_bert_paper(dataset_source="hf"):
 def train_gpt2_paper(dataset_source="hf"):
     """Train GUS-Net GPT-2 with the paper's original focal loss settings."""
 
-    save_dir = (_SCRIPT_DIR / "gus-net-gpt2-paper-clean"
+    save_dir = (_MODELS_DIR / "gus-net-gpt2-paper-clean"
                 if dataset_source == "clean"
-                else _SCRIPT_DIR / "gus-net-gpt2-paper")
+                else _MODELS_DIR / "gus-net-gpt2-paper")
     training_output_dir = str(save_dir) + "-output"
     label_names = list(label2id.keys())
 

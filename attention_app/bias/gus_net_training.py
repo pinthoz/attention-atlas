@@ -331,6 +331,7 @@ def compute_itag_span_weights(labels, id2label,
 # ============================================================================
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
+_MODELS_DIR = _SCRIPT_DIR / "models"
 _PROJECT_ROOT = _SCRIPT_DIR.parent.parent
 SEED = 42
 
@@ -382,7 +383,7 @@ BERT_CONFIG = {
     "backbone": "bert-base-uncased",
     "alpha": 0.75,
     "gamma": 2.0,
-    "save_dir": _SCRIPT_DIR / "gus-net-bert-final-new",
+    "save_dir": _MODELS_DIR / "gus-net-bert-final-new",
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,
@@ -404,8 +405,8 @@ GPT2_CONFIG = {
     "label_smoothing": 0.05,
     "llrd_decay_factor": 0.85,
     "classifier_lr": 2e-4,
-    "save_dir": _SCRIPT_DIR / "gus-net-gpt2-final-new",
-    "training_output_dir": str(_SCRIPT_DIR / "gus-net-gpt2-new"),
+    "save_dir": _MODELS_DIR / "gus-net-gpt2-final-new",
+    "training_output_dir": str(_MODELS_DIR / "gus-net-gpt2-new"),
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,
@@ -425,7 +426,7 @@ BERT_LARGE_CONFIG = {
     "backbone": "bert-large-uncased",
     "alpha": 0.75,
     "gamma": 2.0,
-    "save_dir": _SCRIPT_DIR / "gus-net-bert-large-final-new",
+    "save_dir": _MODELS_DIR / "gus-net-bert-large-final-new",
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,
@@ -450,8 +451,8 @@ GPT2_MEDIUM_CONFIG = {
     "batch_size": 4,
     "gradient_accumulation_steps": 8,
     "gradient_checkpointing": True,
-    "save_dir": _SCRIPT_DIR / "gus-net-gpt2-medium-final-new",
-    "training_output_dir": str(_SCRIPT_DIR / "gus-net-gpt2-medium-new"),
+    "save_dir": _MODELS_DIR / "gus-net-gpt2-medium-final-new",
+    "training_output_dir": str(_MODELS_DIR / "gus-net-gpt2-medium-new"),
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,
@@ -476,8 +477,8 @@ GPT2_LARGE_CONFIG = {
     "batch_size": 2,
     "gradient_accumulation_steps": 16,
     "gradient_checkpointing": True,
-    "save_dir": _SCRIPT_DIR / "gus-net-gpt2-large-final-new",
-    "training_output_dir": str(_SCRIPT_DIR / "gus-net-gpt2-large-new"),
+    "save_dir": _MODELS_DIR / "gus-net-gpt2-large-final-new",
+    "training_output_dir": str(_MODELS_DIR / "gus-net-gpt2-large-new"),
     "label2id": {
         "O": 0,
         "B-STEREO": 1, "I-STEREO": 2,

@@ -2016,7 +2016,12 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
 
-        def get_summary_cards(res_data):
+        abl = ablation_results.get()
+        ig = ig_results.get()
+        abl_B = ablation_results_B.get()
+        ig_B = ig_results_B.get()
+
+        def get_summary_cards(res_data, abl_data=None, ig_bundle=None):
             summary = res_data["bias_summary"]
             # Criteria breakdown
             criteria_html = create_bias_criteria_html(summary)
@@ -2049,11 +2054,104 @@ def bias_server_handlers(input, output, session):
                 </div>
             </div>
             """
-            return criteria_html + cards
-        
+
+            # ── Benchmark cards (BAR / IG ρ / Ablation Δ) ──
+            # CSS `:hover` doesn't fire reliably inside Shiny reactive HTML.
+            # Solution: use `.info-tooltip-content` class for ALL styling (dark card, font,
+            # shadow, transition) but control visibility via JS onmouseenter/onmouseleave.
+            # Inline style overrides only position:fixed → absolute + placement.
+            _tip_pos = (
+                "position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);"
+            )
+            _oe = "this.querySelector('.info-tooltip-content').style.cssText+='visibility:visible;opacity:1;'"
+            _ol = "this.querySelector('.info-tooltip-content').style.cssText+='visibility:hidden;opacity:0;'"
+
+            def _bcard(label, value, color="#334155", sub=None, tooltip=None):
+                sub_html = f'<div style="font-size:10px;color:#94a3b8;margin-top:2px;">{sub}</div>' if sub else ""
+                if tooltip:
+                    info = (
+                        f'<span class="info-tooltip-wrapper" style="margin-left:4px;vertical-align:middle;"'
+                        f' onmouseenter="{_oe}" onmouseleave="{_ol}">'
+                        f'<span class="info-tooltip-icon">i</span>'
+                        f'<div class="info-tooltip-content" style="{_tip_pos}">{tooltip}</div>'
+                        f'</span>'
+                    )
+                else:
+                    info = ""
+                return (
+                    f'<div class="metric-card" style="min-width:130px;transform:none;overflow:visible;">'
+                    f'<div class="metric-label" style="display:flex;align-items:center;">{label}{info}</div>'
+                    f'<div class="metric-value" style="color:{color};font-size:20px;">{value}</div>'
+                    f'{sub_html}</div>'
+                )
+
+            # BAR
+            attn = res_data.get("attention_metrics", [])
+            if attn:
+                bars = [m.bias_attention_ratio for m in attn]
+                mean_bar = sum(bars) / len(bars)
+                n_spec = sum(1 for m in attn if m.specialized_for_bias)
+                bar_color = "#dc2626" if mean_bar > 1.5 else ("#ea580c" if mean_bar > 1.2 else "#22c55e")
+                bar_val, bar_sub = f"{mean_bar:.3f}", f"{n_spec}/{len(attn)} heads specialized"
+            else:
+                bar_val, bar_color, bar_sub = "—", "#94a3b8", "run Analyze Bias first"
+
+            # IG ρ
+            if ig_bundle is not None:
+                from ..bias.integrated_gradients import IGAnalysisBundle
+                corrs = ig_bundle.correlations if isinstance(ig_bundle, IGAnalysisBundle) else ig_bundle
+                if corrs:
+                    rhos = [r.spearman_rho for r in corrs]
+                    mean_rho = sum(rhos) / len(rhos)
+                    n_sig = sum(1 for r in corrs if r.spearman_pvalue < 0.05)
+                    rho_color = "#2563eb" if mean_rho > 0 else "#dc2626"
+                    rho_val, rho_sub = f"{mean_rho:.3f}", f"{n_sig}/{len(corrs)} heads significant"
+                else:
+                    rho_val, rho_color, rho_sub = "—", "#94a3b8", "no IG data"
+            else:
+                rho_val, rho_color, rho_sub = "—", "#94a3b8", "run IG analysis first"
+
+            # Ablation Δ
+            if abl_data:
+                max_delta = max(r.representation_impact for r in abl_data)
+                top = abl_data[0]
+                abl_color = "#ff5ca9" if max_delta > 0.05 else "#64748b"
+                abl_val, abl_sub = f"{max_delta:.3f}", f"top: L{top.layer}H{top.head}"
+            else:
+                abl_val, abl_color, abl_sub = "—", "#94a3b8", "run ablation first"
+
+            _tt_bar = (
+                "<strong>Mean BAR — Bias Attention Ratio</strong>"
+                "Average ratio of attention paid to biased tokens vs. what would be expected by chance (μ̂_B / μ₀). "
+                "BAR > 1.5 flags a head as <em>bias-specialized</em>. "
+                "Higher values indicate stronger bias-driven attention patterns."
+            )
+            _tt_rho = (
+                "<strong>Mean IG ρ — Integrated Gradients Spearman ρ</strong>"
+                "Average Spearman correlation between attention weights and Integrated Gradients attributions, "
+                "computed per head. Measures how faithfully attention reflects the model's actual token importance. "
+                "ρ ≈ 1 means attention and IG agree; ρ ≈ 0 means attention is uninformative."
+            )
+            _tt_abl = (
+                "<strong>Max Ablation Δ — Representation Impact</strong>"
+                "Maximum representation change (1 − cosine similarity) caused by zeroing out a single attention head. "
+                "Identifies the head whose removal most disrupts the model's internal representation. "
+                "Δ > 0.05 indicates a high-impact head."
+            )
+            bench_cards = (
+                '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(226,232,240,0.4);">'
+                '<div class="metrics-grid">'
+                + _bcard("Mean BAR", bar_val, bar_color, bar_sub, _tt_bar)
+                + _bcard("Mean IG ρ", rho_val, rho_color, rho_sub, _tt_rho)
+                + _bcard("Max Ablation Δ", abl_val, abl_color, abl_sub, _tt_abl)
+                + '</div></div>'
+            )
+
+            return criteria_html + cards + bench_cards
+
         if (compare_models or compare_prompts) and res_B:
-            content_A = get_summary_cards(res)
-            content_B = get_summary_cards(res_B)
+            content_A = get_summary_cards(res, abl, ig)
+            content_B = get_summary_cards(res_B, abl_B, ig_B)
 
             header_args = (
                 "Bias Detection Summary",
@@ -2110,7 +2208,7 @@ def bias_server_handlers(input, output, session):
                 f"<span>Low &lt; 0.3 &nbsp;·&nbsp; Moderate 0.3–0.6 &nbsp;·&nbsp; High &gt; 0.6</span></div>"
                 f"<div style='{_TN}; margin-top:6px;'>High token density + low stereotype score → loaded language without group-specific targeting.</div>"
             )
-            return _wrap_card(ui.HTML(get_summary_cards(res)), *header_args, style="margin-bottom: 24px;")
+            return _wrap_card(ui.HTML(get_summary_cards(res, abl, ig)), *header_args, style="margin-bottom: 24px;")
 
     # ── Inline bias view (primary) ──
 
