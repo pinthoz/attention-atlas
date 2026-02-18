@@ -434,14 +434,14 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
     layer_box = "position:relative;padding:8px;border-radius:8px;border:1px solid rgba(255,92,169,0.3);background-color:rgba(255,92,169,0.06);display:flex;flex-direction:column;align-items:center;width:100%;margin:6px 0;"
     connector = "width:1px;height:12px;background-color:#cbd5e1;margin:3px auto;"
 
-    # LLRD visualization (green bars) for GPT-2
-    llrd_html = """
-        <div style="width:60%;margin:3px auto 0;">
-            <div style="height:2px;background:#10b981;margin-bottom:1px;border-radius:1px;opacity:1.0;width:100%;"></div>
-            <div style="height:2px;background:#10b981;margin-bottom:1px;border-radius:1px;opacity:0.85;width:90%;"></div>
-            <div style="height:2px;background:#10b981;margin-bottom:1px;border-radius:1px;opacity:0.5;width:70%;"></div>
-        </div>
-    """
+    # Optimizer params — gus_net_training_paper.py (α=0.65, γ=3.5, no LLRD)
+    bert_focal_sub = "α=0.65, γ=3.5"
+    bert_opt_label = "AdamW + Lin. Warmup"
+    bert_opt_sub   = "Single LR=5e-5"
+
+    gpt2_focal_sub = "α=0.65, γ=3.5"
+    gpt2_opt_label = "AdamW + Lin. Warmup"
+    gpt2_opt_sub   = "Single LR=5e-5"
 
     # --- Helper to resolve diagram colors ---
     def _resolve_colors(is_model_a, is_model_b, is_selected):
@@ -506,11 +506,11 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
                 <div style="{badge_style}color:#64748b;">OPT</div>
                 <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;margin-bottom:3px;">
                     <span style="{block_label}font-size:7px;color:#ffffff;">Focal Loss</span>
-                    <span style="{block_sub}color:#cbd5e1;">α=0.75, γ=3.0</span>
+                    <span style="{block_sub}color:#cbd5e1;">{bert_focal_sub}</span>
                 </div>
                 <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;">
-                    <span style="{block_label}font-size:7px;color:#ffffff;">Optimizer</span>
-                    <span style="{block_sub}color:#cbd5e1;">AdamW + Warmup</span>
+                    <span style="{block_label}font-size:7px;color:#ffffff;">{bert_opt_label}</span>
+                    <span style="{block_sub}color:#cbd5e1;">{bert_opt_sub}</span>
                 </div>
             </div>
         </div>
@@ -554,12 +554,11 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
                 <div style="{badge_style}color:#64748b;">OPT</div>
                 <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;margin-bottom:3px;">
                     <span style="{block_label}font-size:7px;color:#ffffff;">Focal Loss</span>
-                    <span style="{block_sub}color:#cbd5e1;">γ=2.0, Sm=0.05</span>
+                    <span style="{block_sub}color:#cbd5e1;">{gpt2_focal_sub}</span>
                 </div>
                 <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;">
-                    <span style="{block_label}font-size:7px;color:#ffffff;">LLRD Optimizer</span>
-                    <span style="{block_sub}color:#cbd5e1;">Decay: 0.85</span>
-                    {llrd_html}
+                    <span style="{block_label}font-size:7px;color:#ffffff;">{gpt2_opt_label}</span>
+                    <span style="{block_sub}color:#cbd5e1;">{gpt2_opt_sub}</span>
                 </div>
             </div>
         </div>

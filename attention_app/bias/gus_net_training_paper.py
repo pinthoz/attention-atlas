@@ -50,9 +50,10 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorForTokenClassification,
+    EarlyStoppingCallback,
 )
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from datasets import load_dataset, Dataset as HFDataset, DatasetDict
 from scipy.optimize import minimize_scalar
 
@@ -90,8 +91,9 @@ def load_from_clean_json():
 # ============================================================================
 
 BATCH_SIZE = 16
-LEARNING_RATE = 5e-5
-MAX_EPOCHS = 20          # paper trains full 20 epochs, no early stopping
+LEARNING_RATE = 3e-5
+MAX_EPOCHS = 40          # extended from paper's 20; early stopping prevents overfit
+PATIENCE = 5             # stop if no improvement for 5 epochs
 THRESHOLD = 0.5          # paper uses fixed 0.5
 MAX_LENGTH = 128
 
@@ -154,7 +156,7 @@ def focal_loss_paper(logits, labels, alpha=ALPHA, gamma=GAMMA):
 def train_bert_paper(dataset_source="hf"):
     """Train GUS-Net BERT with the paper's original settings."""
 
-    save_dir = (_MODELS_DIR / "gus-net-bert-paper-clean"
+    save_dir = (_MODELS_DIR / "gus-net-bert-paper-clean-2"
                 if dataset_source == "clean"
                 else _MODELS_DIR / "gus-net-bert-paper")
 
@@ -166,7 +168,7 @@ def train_bert_paper(dataset_source="hf"):
     print(f"Optimizer:      AdamW (single LR, NO LLRD)")
     print(f"Learning rate:  {LEARNING_RATE}")
     print(f"Batch size:     {BATCH_SIZE}")
-    print(f"Max epochs:     {MAX_EPOCHS} (NO early stopping)")
+    print(f"Max epochs:     {MAX_EPOCHS} (early stopping, patience={PATIENCE})")
     print(f"Threshold:      {THRESHOLD} (fixed)")
     print(f"Device:         {'CUDA (' + torch.cuda.get_device_name(0) + ')' if torch.cuda.is_available() else 'CPU'}")
 
@@ -191,8 +193,12 @@ def train_bert_paper(dataset_source="hf"):
         word_ids = tokenized.word_ids()
 
         aligned_labels = []
+        prev_word_id = None
         for word_idx in word_ids:
             if word_idx is None:
+                aligned_labels.append([-100] * num_labels)
+            elif word_idx == prev_word_id:
+                # Mask secondary subtokens — only first subtoken is labelled
                 aligned_labels.append([-100] * num_labels)
             else:
                 tags = annotations[word_idx]
@@ -201,6 +207,7 @@ def train_bert_paper(dataset_source="hf"):
                     if tag in label2id:
                         label_vector[label2id[tag]] = 1
                 aligned_labels.append(label_vector)
+            prev_word_id = word_idx
         return tokenized, aligned_labels
 
     def preprocess_data(df):
@@ -230,25 +237,48 @@ def train_bert_paper(dataset_source="hf"):
                 torch.tensor(self.labels[idx]),
             )
 
-    # DataModule — paper uses 70/15/15 split
+    # DataModule — 70/15/15 split, stratified by bias presence
     class NERDataModule(pl.LightningDataModule):
         def __init__(self, tokenized_texts, labels, batch_size=BATCH_SIZE,
                      val_split=0.15, test_split=0.15):
             super().__init__()
-            self.dataset = NERDataset(tokenized_texts, labels)
+            self.tokenized_texts = tokenized_texts
+            self.all_labels = labels
             self.batch_size = batch_size
             self.val_split = val_split
             self.test_split = test_split
 
+        @staticmethod
+        def _sample_has_bias(label_seq):
+            """1 if any valid token has a non-O class, else 0."""
+            for vec in label_seq:
+                if vec[0] != -100 and any(v == 1 for v in vec[1:]):
+                    return 1
+            return 0
+
         def setup(self, stage=None):
-            val_size = int(len(self.dataset) * self.val_split)
-            test_size = int(len(self.dataset) * self.test_split)
-            train_size = len(self.dataset) - val_size - test_size
-            self.train_ds, self.val_ds, self.test_ds = random_split(
-                self.dataset,
-                [train_size, val_size, test_size],
-                generator=torch.Generator().manual_seed(SEED),
+            strat = [self._sample_has_bias(lbl) for lbl in self.all_labels]
+            indices = list(range(len(self.all_labels)))
+
+            train_val_idx, test_idx = train_test_split(
+                indices,
+                test_size=self.test_split,
+                stratify=strat,
+                random_state=SEED,
             )
+            strat_tv = [strat[i] for i in train_val_idx]
+            rel_val = self.val_split / (1 - self.test_split)
+            train_idx, val_idx = train_test_split(
+                train_val_idx,
+                test_size=rel_val,
+                stratify=strat_tv,
+                random_state=SEED,
+            )
+
+            full_ds = NERDataset(self.tokenized_texts, self.all_labels)
+            self.train_ds = torch.utils.data.Subset(full_ds, train_idx)
+            self.val_ds = torch.utils.data.Subset(full_ds, val_idx)
+            self.test_ds = torch.utils.data.Subset(full_ds, test_idx)
 
         def train_dataloader(self):
             return DataLoader(
@@ -310,7 +340,7 @@ def train_bert_paper(dataset_source="hf"):
                 num_training_steps=self.trainer.estimated_stepping_batches,
             )
             print(f"Optimizer: AdamW (single LR={self.learning_rate})")
-            return [optimizer], [scheduler]
+            return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
 
     # Load data
     dataset_names = {
@@ -338,7 +368,7 @@ def train_bert_paper(dataset_source="hf"):
     data_module = NERDataModule(tokenized_texts, labels)
     data_module.setup()
 
-    # Train — NO early stopping, train full MAX_EPOCHS
+    # Train — early stopping with patience
     print("\n" + "=" * 60)
     print("TRAINING (no early stopping)")
     print("=" * 60)
@@ -350,18 +380,27 @@ def train_bert_paper(dataset_source="hf"):
         monitor="val_loss",
         dirpath="checkpoints",
         filename="gusnet-bert-paper-{epoch:02d}-{val_loss:.2f}",
-        save_top_k=1,
+        save_top_k=3,
         mode="min",
         save_weights_only=True,
+    )
+
+    early_stop_cb = EarlyStopping(
+        monitor="val_loss",
+        patience=PATIENCE,
+        mode="min",
+        verbose=True,
     )
 
     model = GUSNetBERTPaper()
     trainer = pl.Trainer(
         max_epochs=MAX_EPOCHS,
-        callbacks=[checkpoint_cb],   # NO EarlyStopping
+        callbacks=[checkpoint_cb, early_stop_cb],
         accelerator="auto",
         devices=1,
         enable_progress_bar=True,
+        gradient_clip_val=1.0,
+        precision="16-mixed",
     )
     trainer.fit(model, data_module)
 
@@ -594,7 +633,7 @@ def train_bert_paper(dataset_source="hf"):
 def train_gpt2_paper(dataset_source="hf"):
     """Train GUS-Net GPT-2 with the paper's original focal loss settings."""
 
-    save_dir = (_MODELS_DIR / "gus-net-gpt2-paper-clean"
+    save_dir = (_MODELS_DIR / "gus-net-gpt2-paper-clean-2"
                 if dataset_source == "clean"
                 else _MODELS_DIR / "gus-net-gpt2-paper")
     training_output_dir = str(save_dir) + "-output"
@@ -615,7 +654,7 @@ def train_gpt2_paper(dataset_source="hf"):
     print(f"Optimizer:      AdamW (single LR, NO LLRD)")
     print(f"Learning rate:  {LEARNING_RATE}")
     print(f"Batch size:     {BATCH_SIZE} (accum=2, effective=32)")
-    print(f"Max epochs:     {MAX_EPOCHS} (NO early stopping)")
+    print(f"Max epochs:     {MAX_EPOCHS} (early stopping, patience={PATIENCE})")
     print(f"Threshold:      {THRESHOLD} (fixed)")
     print(f"Device:         {'CUDA (' + torch.cuda.get_device_name(0) + ')' if torch.cuda.is_available() else 'CPU'}")
 
@@ -780,10 +819,10 @@ def train_gpt2_paper(dataset_source="hf"):
             ),
         }
 
-    # Training args — NO early stopping
+    # Training args — early stopping with patience
     training_args = TrainingArguments(
         output_dir=training_output_dir,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         learning_rate=LEARNING_RATE,
         per_device_train_batch_size=BATCH_SIZE,
@@ -810,7 +849,7 @@ def train_gpt2_paper(dataset_source="hf"):
         tokenizer=tokenizer,
         data_collator=data_collator,
         compute_metrics=compute_metrics,
-        # NO EarlyStoppingCallback
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=PATIENCE)],
     )
 
     if torch.cuda.is_available():
@@ -1029,8 +1068,7 @@ def train_gpt2_paper(dataset_source="hf"):
 # ============================================================================
 
 if __name__ == "__main__":
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
+    pl.seed_everything(SEED, workers=True)
 
     # Dataset selection
     print("=" * 60)
