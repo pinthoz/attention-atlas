@@ -2056,15 +2056,31 @@ def bias_server_handlers(input, output, session):
             """
 
             # ── Benchmark cards (BAR / IG ρ / Ablation Δ) ──
-            # CSS `:hover` doesn't fire reliably inside Shiny reactive HTML.
-            # Solution: use `.info-tooltip-content` class for ALL styling (dark card, font,
-            # shadow, transition) but control visibility via JS onmouseenter/onmouseleave.
-            # Inline style overrides only position:fixed → absolute + placement.
-            _tip_pos = (
-                "position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);"
+            # Root cause of tooltip failure: `.card { overflow:hidden }` clips position:absolute
+            # children that extend outside card bounds.
+            # Fix: keep position:fixed from the CSS class (fixed elements escape overflow:hidden),
+            # and use getBoundingClientRect() in JS to position the tooltip near the (i) icon.
+            # transform:none on metric-card prevents the hover-transform from creating a new
+            # containing block (which would make position:fixed behave like position:absolute).
+            _oe = (
+                "var t=this.querySelector('.info-tooltip-content');"
+                "var r=this.getBoundingClientRect();"
+                "t.style.position='fixed';"
+                "t.style.bottom=(window.innerHeight-r.top+8)+'px';"
+                "t.style.top='auto';"
+                "t.style.left=(r.left+r.width/2)+'px';"
+                "t.style.transform='translateX(-50%)';"
+                "t.style.visibility='visible';"
+                "t.style.opacity='1';"
             )
-            _oe = "this.querySelector('.info-tooltip-content').style.cssText+='visibility:visible;opacity:1;'"
-            _ol = "this.querySelector('.info-tooltip-content').style.cssText+='visibility:hidden;opacity:0;'"
+            _ol = (
+                "var t=this.querySelector('.info-tooltip-content');"
+                "t.style.visibility='hidden';"
+                "t.style.opacity='0';"
+            )
+
+            # _TH without text-transform:uppercase for these benchmark tooltips
+            _TH_lc = _TH.replace("text-transform:uppercase;", "")
 
             def _bcard(label, value, color="#334155", sub=None, tooltip=None):
                 sub_html = f'<div style="font-size:10px;color:#94a3b8;margin-top:2px;">{sub}</div>' if sub else ""
@@ -2073,14 +2089,14 @@ def bias_server_handlers(input, output, session):
                         f'<span class="info-tooltip-wrapper" style="margin-left:4px;vertical-align:middle;"'
                         f' onmouseenter="{_oe}" onmouseleave="{_ol}">'
                         f'<span class="info-tooltip-icon">i</span>'
-                        f'<div class="info-tooltip-content" style="{_tip_pos}">{tooltip}</div>'
+                        f'<div class="info-tooltip-content">{tooltip}</div>'
                         f'</span>'
                     )
                 else:
                     info = ""
                 return (
-                    f'<div class="metric-card" style="min-width:130px;transform:none;overflow:visible;">'
-                    f'<div class="metric-label" style="display:flex;align-items:center;">{label}{info}</div>'
+                    f'<div class="metric-card" style="min-width:130px;transform:none;">'
+                    f'<div class="metric-label" style="display:flex;align-items:center;text-transform:none;">{label}{info}</div>'
                     f'<div class="metric-value" style="color:{color};font-size:20px;">{value}</div>'
                     f'{sub_html}</div>'
                 )
@@ -2121,22 +2137,40 @@ def bias_server_handlers(input, output, session):
                 abl_val, abl_color, abl_sub = "—", "#94a3b8", "run ablation first"
 
             _tt_bar = (
-                "<strong>Mean BAR — Bias Attention Ratio</strong>"
-                "Average ratio of attention paid to biased tokens vs. what would be expected by chance (μ̂_B / μ₀). "
-                "BAR > 1.5 flags a head as <em>bias-specialized</em>. "
-                "Higher values indicate stronger bias-driven attention patterns."
+                f"<span style='{_TH_lc}'>What it measures</span>"
+                f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
+                f"<span>Ratio of attention paid to biased tokens vs. chance (μ̂_B / μ₀)</span></div>"
+                f"<hr style='{_TS}'>"
+                f"<span style='{_TH_lc}'>Thresholds</span>"
+                f"<div style='{_TR}'><span style='{_TD};color:#dc2626;'>●</span>"
+                f"<span>BAR &gt; 1.5 → <span style='{_TBR}'>bias-specialized</span></span></div>"
+                f"<div style='{_TR}'><span style='{_TD};color:#ea580c;'>●</span>"
+                f"<span>BAR &gt; 1.2 → <span style='{_TBA}'>elevated</span></span></div>"
+                f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
+                f"<span>BAR ≤ 1.2 → <span style='{_TBG}'>normal</span></span></div>"
+                f"<div style='{_TN};margin-top:6px;'>Higher values indicate stronger bias-driven attention patterns.</div>"
             )
             _tt_rho = (
-                "<strong>Mean IG ρ — Integrated Gradients Spearman ρ</strong>"
-                "Average Spearman correlation between attention weights and Integrated Gradients attributions, "
-                "computed per head. Measures how faithfully attention reflects the model's actual token importance. "
-                "ρ ≈ 1 means attention and IG agree; ρ ≈ 0 means attention is uninformative."
+                f"<span style='{_TH_lc}'>What it measures</span>"
+                f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
+                f"<span>Spearman correlation between attention weights and Integrated Gradients attributions, per head</span></div>"
+                f"<hr style='{_TS}'>"
+                f"<span style='{_TH_lc}'>Interpretation</span>"
+                f"<div style='{_TR}'><span style='{_TD};color:#2563eb;'>●</span>"
+                f"<span>ρ ≈ 1 → <span style='{_TBB}'>attention faithful</span> to token importance</span></div>"
+                f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
+                f"<span>ρ ≈ 0 → attention is <span style='{_TBG}'>uninformative</span></span></div>"
+                f"<div style='{_TN};margin-top:6px;'>Significance threshold: p &lt; 0.05 per head.</div>"
             )
             _tt_abl = (
-                "<strong>Max Ablation Δ — Representation Impact</strong>"
-                "Maximum representation change (1 − cosine similarity) caused by zeroing out a single attention head. "
-                "Identifies the head whose removal most disrupts the model's internal representation. "
-                "Δ > 0.05 indicates a high-impact head."
+                f"<span style='{_TH_lc}'>What it measures</span>"
+                f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
+                f"<span>Max representation change (1 − cosine similarity) from zeroing a single head</span></div>"
+                f"<hr style='{_TS}'>"
+                f"<span style='{_TH_lc}'>Threshold</span>"
+                f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
+                f"<span>Δ &gt; 0.05 → <span style='{_TBP}'>high-impact head</span></span></div>"
+                f"<div style='{_TN};margin-top:6px;'>Identifies the head whose removal most disrupts the model's internal representation.</div>"
             )
             bench_cards = (
                 '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(226,232,240,0.4);">'
