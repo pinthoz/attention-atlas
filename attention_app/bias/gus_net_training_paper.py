@@ -98,8 +98,8 @@ THRESHOLD = 0.5          # paper uses fixed 0.5
 MAX_LENGTH = 128
 
 # Focal loss — paper's values (from their published code)
-ALPHA = 0.65             # scalar, applied per-sample (not per-class)
-GAMMA = 3.5              # from code; paper text says 2 but code uses 3.5
+ALPHA = 0.55             # scalar, applied per-sample (not per-class)
+GAMMA = 2              # from code; paper text says 2 
 
 label2id = {
     "O": 0,
@@ -822,7 +822,7 @@ def train_gpt2_paper(dataset_source="hf"):
     # Training args — early stopping with patience
     training_args = TrainingArguments(
         output_dir=training_output_dir,
-        eval_strategy="epoch",
+        evaluation_strategy="epoch",
         save_strategy="epoch",
         learning_rate=LEARNING_RATE,
         per_device_train_batch_size=BATCH_SIZE,

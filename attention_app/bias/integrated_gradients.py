@@ -168,7 +168,7 @@ def compute_token_attributions(
     tokenizer,
     text: str,
     is_gpt2: bool,
-    n_steps: int = 30,
+    n_steps: int = 50,
 ) -> np.ndarray:
     """Compute per-token Integrated Gradients attributions via Captum.
 

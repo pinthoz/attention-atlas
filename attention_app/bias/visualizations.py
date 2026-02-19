@@ -2140,7 +2140,7 @@ def create_topk_overlap_chart(
     fig.update_layout(
         height=max(300, num_layers * 40),
         autosize=True,
-        margin=dict(l=60, r=60, t=80, b=50),
+        margin=dict(l=60, r=60, t=80, b=90),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif"),

@@ -3768,7 +3768,7 @@ def bias_server_handlers(input, output, session):
         ig_attrs = bundle.token_attributions
         attentions = res.get("attentions")
         
-        if not tokens or not ig_attrs or not attentions:
+        if tokens is None or len(tokens) == 0 or ig_attrs is None or (hasattr(ig_attrs, "size") and ig_attrs.size == 0) or (isinstance(ig_attrs, list) and len(ig_attrs) == 0):
             yield "Missing token data"
             return
             
@@ -3776,84 +3776,157 @@ def bias_server_handlers(input, output, session):
         top_bar_heads = sorted(bundle.correlations, key=lambda r: r.bar_original, reverse=True)[:3]
         
         # Header
-        header = ["token"]
-        header.append("ig_attribution")
+        header = ["token", "ig_attribution"]
         for h in top_bar_heads:
             header.append(f"attn_L{h.layer}H{h.head}")
         
-        lines = [",".join(header)]
+        yield ",".join(header) + "\n"
         
+        # Pre-calculate attention means for top heads (simple column mean)
+        attn_means = []
+        seq_len = len(tokens)
+        
+        if attentions:
+            try:
+                for h in top_bar_heads:
+                    if h.layer < len(attentions):
+                        layer_attn = attentions[h.layer]
+                        # Handle tensor vs array vs list
+                        # HuggingFace standard: (batch, num_heads, seq_len, seq_len)
+                        # Our structure might be: [layer][head] (if pre-processed) or [layer][batch][head]
+                        # Let's try to be robust.
+                        
+                        try:
+                            # Try tensor/numpy indexing first
+                            if hasattr(layer_attn, "cpu"):
+                                attn_matrix = layer_attn[0, h.head].cpu().numpy()
+                            elif isinstance(layer_attn, np.ndarray):
+                                attn_matrix = layer_attn[0, h.head]
+                            else:
+                                # List or other structure
+                                # Assume [batch][head] -> layer_attn[0][h.head]
+                                attn_matrix = np.array(layer_attn[0][h.head])
+                                
+                            # Column mean (attention received)
+                            mean_val = np.abs(attn_matrix.mean(axis=0))
+                            
+                        except (IndexError, TypeError):
+                             # Fallback for alternative structures
+                             # Maybe it's just [head] directly if batch is stripped?
+                             if isinstance(layer_attn, list):
+                                 attn_matrix = np.array(layer_attn[h.head])
+                                 mean_val = np.abs(attn_matrix.mean(axis=0))
+                             else:
+                                 raise
+
+                        # Ensure length matches
+                        if len(mean_val) > seq_len:
+                            mean_val = mean_val[:seq_len]
+                        elif len(mean_val) < seq_len:
+                            mean_val = np.pad(mean_val, (0, seq_len - len(mean_val)))
+                        attn_means.append(mean_val)
+                    else:
+                        attn_means.append(np.zeros(seq_len))
+            except Exception as e:
+                # If attention extraction fails, fill with zeros to avoid crash
+                print(f"CSV Export Error: {e}")
+                while len(attn_means) < len(top_bar_heads):
+                    attn_means.append(np.zeros(seq_len))
+        else:
+             # No attentions available
+             for _ in top_bar_heads:
+                 attn_means.append(np.zeros(seq_len))
+
         # Data rows
         for i, token in enumerate(tokens):
             row = [token]
             # IG
             row.append(f"{ig_attrs[i]:.6f}" if i < len(ig_attrs) else "0")
             # Attentions
-            for h in top_bar_heads:
-                if i < len(attentions) and h.layer < len(attentions[i]):
-                     # attentions is [token_idx][layer][head] ? 
-                     # Actually create_ig_token_comparison_chart logic suggests attentions structure.
-                     # "attentions" from bias_results is usually [layer, head, token, token] (full matrix) OR [token, layer, head]?
-                     # Wait, `extract_attention` usually returns simple list of tokens. 
-                     # `measure_bias_for_text` returns "attentions" which are often [layer, head, seq_len, seq_len].
-                     # But here we probably want attention *to* this token or *from* this token?
-                     # create_ig_token_comparison_chart uses: attn_val = attentions[h.layer][h.head][i][i] (self?) or something?
-                     # Let's check create_ig_token_comparison_chart logic if possible.
-                     # Standard `attentions` object from huggingface is tuple of (batch, heads, seq, seq).
-                     # In `bias_handlers`, `attentions` seems to be the list of attention matrices.
-                     # We usually care about attention *received* by the token or *paid* by the CLS token?
-                     # IG is usually "attribution of this token to the prediction".
-                     # Attention is usually "how much CLS attended to this token".
-                     # Let's assume standard [layer][batch=0][head][CLS_index][token_index]
-                     # list(attentions) passed to chart.
-                     
-                     # Simple approach: match chart logic.
-                     # Chart logic: 
-                     # attn_vals = [attentions[h.layer][0, h.head, 0, i].item() for i in range(len(tokens))]
-                     # (Assuming attentions[layer] is tensor (1, num_heads, seq, seq))
-                     pass
-            
-            # Since I cannot verify exact tensor structure easily without more context, 
-            # I will use a safe extraction assuming standard transformer output structure 
-            # or try to match what create_ig_token_comparison_chart does.
-            # create_ig_token_comparison_chart takes `attentions` list.
-            
-            # To be safe and avoid complex tensor logic in CSV export without testing,
-            # I'll stick to a simplified export or copy the extraction logic if I can replicate it.
-            # For now, I'll export just IG if I can't be sure about attention.
-            # But the user specifically asked for comparison.
-            
-            # Better approach: access the same logic as chart.
-            pass
-
-        # RETHINK: 
-        # I'll create the handler to mirroring the chart's data source.
-        # But I don't have access to the helper functions here.
-        # I'll output just the IG scores for now if attention is too complex, 
-        # OR I'll try to do a best-effort extraction.
-        
-        # Actually, let's keep it simple.
-        # attributes: (batch, seq_len, hidden) -> summed? 
-        # IG bundle has token_attributions as list of floats (already summed/normalized).
-        
-        yield "token,ig_attribution"
-        for i, t in enumerate(tokens):
-             yield f"{t},{ig_attrs[i]:.6f}"
+            for means in attn_means:
+                val = means[i] if i < len(means) else 0.0
+                row.append(f"{val:.6f}")
+            yield ",".join(row) + "\n"
 
     @render.download(filename="ig_token_comparison_B.csv")
     def export_ig_token_comparison_csv_B():
         bundle = ig_results_B.get()
+        res_B = bias_results_B.get()
         if not bundle or not isinstance(bundle, IGAnalysisBundle):
             yield "No data"
             return
+            
         tokens = bundle.tokens
         ig_attrs = bundle.token_attributions
-        if not tokens or not ig_attrs:
+        attentions = res_B.get("attentions") if res_B else None
+        
+        if tokens is None or len(tokens) == 0 or ig_attrs is None or (hasattr(ig_attrs, "size") and ig_attrs.size == 0) or (isinstance(ig_attrs, list) and len(ig_attrs) == 0):
             yield "Missing token data"
             return
-        yield "token,ig_attribution"
-        for i, t in enumerate(tokens):
-             yield f"{t},{ig_attrs[i]:.6f}"
+
+        # Get top BAR heads for context
+        top_bar_heads = sorted(bundle.correlations, key=lambda r: r.bar_original, reverse=True)[:3]
+        
+        # Header
+        header = ["token", "ig_attribution"]
+        for h in top_bar_heads:
+            header.append(f"attn_L{h.layer}H{h.head}")
+        
+        yield ",".join(header) + "\n"
+        
+        # Pre-calculate attention means
+        attn_means = []
+        seq_len = len(tokens)
+        
+        if attentions:
+            try:
+                for h in top_bar_heads:
+                    if h.layer < len(attentions):
+                        layer_attn = attentions[h.layer]
+                        try:
+                            # Try tensor/numpy indexing
+                            if hasattr(layer_attn, "cpu"):
+                                attn_matrix = layer_attn[0, h.head].cpu().numpy()
+                            elif isinstance(layer_attn, np.ndarray):
+                                attn_matrix = layer_attn[0, h.head]
+                            else:
+                                # List structure
+                                attn_matrix = np.array(layer_attn[0][h.head])
+                            
+                            mean_val = np.abs(attn_matrix.mean(axis=0))
+                            
+                        except (IndexError, TypeError):
+                             if isinstance(layer_attn, list):
+                                 attn_matrix = np.array(layer_attn[h.head])
+                                 mean_val = np.abs(attn_matrix.mean(axis=0))
+                             else:
+                                 raise
+
+                        if len(mean_val) > seq_len:
+                            mean_val = mean_val[:seq_len]
+                        elif len(mean_val) < seq_len:
+                            mean_val = np.pad(mean_val, (0, seq_len - len(mean_val)))
+                        attn_means.append(mean_val)
+                    else:
+                        attn_means.append(np.zeros(seq_len))
+            except Exception as e:
+                 print(f"CSV Export Error B: {e}")
+                 while len(attn_means) < len(top_bar_heads):
+                    attn_means.append(np.zeros(seq_len))
+        else:
+             for _ in top_bar_heads:
+                 attn_means.append(np.zeros(seq_len))
+
+        # Data rows
+        for i, token in enumerate(tokens):
+            row = [token]
+            # IG
+            row.append(f"{ig_attrs[i]:.6f}" if i < len(ig_attrs) else "0")
+            # Attentions
+            for means in attn_means:
+                val = means[i] if i < len(means) else 0.0
+                row.append(f"{val:.6f}")
+            yield ",".join(row) + "\n"
 
     # ── Perturbation Analysis handlers ─────────────────────────────────
 
