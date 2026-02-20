@@ -3760,7 +3760,7 @@ def bias_server_handlers(input, output, session):
     def export_ig_token_comparison_csv():
         bundle = ig_results.get()
         res = bias_results.get()
-        if not bundle or not isinstance(bundle, IGAnalysisBundle) or not res:
+        if bundle is None or not isinstance(bundle, IGAnalysisBundle) or res is None:
             yield "No data"
             return
         
@@ -3768,7 +3768,11 @@ def bias_server_handlers(input, output, session):
         ig_attrs = bundle.token_attributions
         attentions = res.get("attentions")
         
-        if tokens is None or len(tokens) == 0 or ig_attrs is None or (hasattr(ig_attrs, "size") and ig_attrs.size == 0) or (isinstance(ig_attrs, list) and len(ig_attrs) == 0):
+        # Robust check for empty data
+        has_tokens = tokens is not None and len(tokens) > 0
+        has_ig = ig_attrs is not None and (not hasattr(ig_attrs, "size") or ig_attrs.size > 0) and (not isinstance(ig_attrs, list) or len(ig_attrs) > 0)
+        
+        if not has_tokens or not has_ig:
             yield "Missing token data"
             return
             
@@ -3786,16 +3790,14 @@ def bias_server_handlers(input, output, session):
         attn_means = []
         seq_len = len(tokens)
         
-        if attentions:
+        # Robust check for attentions existence
+        has_attentions = attentions is not None and len(attentions) > 0
+        
+        if has_attentions:
             try:
                 for h in top_bar_heads:
                     if h.layer < len(attentions):
                         layer_attn = attentions[h.layer]
-                        # Handle tensor vs array vs list
-                        # HuggingFace standard: (batch, num_heads, seq_len, seq_len)
-                        # Our structure might be: [layer][head] (if pre-processed) or [layer][batch][head]
-                        # Let's try to be robust.
-                        
                         try:
                             # Try tensor/numpy indexing first
                             if hasattr(layer_attn, "cpu"):
@@ -3804,15 +3806,13 @@ def bias_server_handlers(input, output, session):
                                 attn_matrix = layer_attn[0, h.head]
                             else:
                                 # List or other structure
-                                # Assume [batch][head] -> layer_attn[0][h.head]
                                 attn_matrix = np.array(layer_attn[0][h.head])
                                 
                             # Column mean (attention received)
                             mean_val = np.abs(attn_matrix.mean(axis=0))
                             
                         except (IndexError, TypeError):
-                             # Fallback for alternative structures
-                             # Maybe it's just [head] directly if batch is stripped?
+                             # Fallback
                              if isinstance(layer_attn, list):
                                  attn_matrix = np.array(layer_attn[h.head])
                                  mean_val = np.abs(attn_matrix.mean(axis=0))
@@ -3828,12 +3828,10 @@ def bias_server_handlers(input, output, session):
                     else:
                         attn_means.append(np.zeros(seq_len))
             except Exception as e:
-                # If attention extraction fails, fill with zeros to avoid crash
                 print(f"CSV Export Error: {e}")
                 while len(attn_means) < len(top_bar_heads):
                     attn_means.append(np.zeros(seq_len))
         else:
-             # No attentions available
              for _ in top_bar_heads:
                  attn_means.append(np.zeros(seq_len))
 
@@ -3852,7 +3850,7 @@ def bias_server_handlers(input, output, session):
     def export_ig_token_comparison_csv_B():
         bundle = ig_results_B.get()
         res_B = bias_results_B.get()
-        if not bundle or not isinstance(bundle, IGAnalysisBundle):
+        if bundle is None or not isinstance(bundle, IGAnalysisBundle):
             yield "No data"
             return
             
@@ -3860,7 +3858,10 @@ def bias_server_handlers(input, output, session):
         ig_attrs = bundle.token_attributions
         attentions = res_B.get("attentions") if res_B else None
         
-        if tokens is None or len(tokens) == 0 or ig_attrs is None or (hasattr(ig_attrs, "size") and ig_attrs.size == 0) or (isinstance(ig_attrs, list) and len(ig_attrs) == 0):
+        has_tokens = tokens is not None and len(tokens) > 0
+        has_ig = ig_attrs is not None and (not hasattr(ig_attrs, "size") or ig_attrs.size > 0) and (not isinstance(ig_attrs, list) or len(ig_attrs) > 0)
+        
+        if not has_tokens or not has_ig:
             yield "Missing token data"
             return
 
@@ -3878,19 +3879,19 @@ def bias_server_handlers(input, output, session):
         attn_means = []
         seq_len = len(tokens)
         
-        if attentions:
+        has_attentions = attentions is not None and len(attentions) > 0
+        
+        if has_attentions:
             try:
                 for h in top_bar_heads:
                     if h.layer < len(attentions):
                         layer_attn = attentions[h.layer]
                         try:
-                            # Try tensor/numpy indexing
                             if hasattr(layer_attn, "cpu"):
                                 attn_matrix = layer_attn[0, h.head].cpu().numpy()
                             elif isinstance(layer_attn, np.ndarray):
                                 attn_matrix = layer_attn[0, h.head]
                             else:
-                                # List structure
                                 attn_matrix = np.array(layer_attn[0][h.head])
                             
                             mean_val = np.abs(attn_matrix.mean(axis=0))
