@@ -227,7 +227,7 @@ print(f"   Biased:  {n_biased}")
 print(f"   Neutral: {n_neutral}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Balance to 50/50
+# 7. Balance to 50/50 - USE ALL biased-corpus + neutral from others
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n" + "=" * 60)
 print("7. Balancing to 50/50...")
@@ -235,47 +235,83 @@ print("7. Balancing to 50/50...")
 df_biased = df_all[df_all["has_bias"] == True].copy()
 df_neutral = df_all[df_all["has_bias"] == False].copy()
 
-# Target: match the smaller class
-target_count = min(len(df_biased), len(df_neutral))
-print(f"   Target per class: {target_count}")
+# Strategy: Use ALL biased from biased-corpus + biased from other sources
+# Then match with neutral sentences from gus, babe, and local
+print("\n   Strategy: ALL biased-corpus + neutral from other sources")
 
-if len(df_biased) > target_count:
-    # Prioritize HF sources for biased (more generalizable), then local
-    df_biased_hf = df_biased[df_biased["source"] != "local"]
-    df_biased_local = df_biased[df_biased["source"] == "local"]
+# Separate biased by source
+df_biased_corpus = df_biased[df_biased["source"] == "biased-corpus"].copy()
+df_biased_others = df_biased[df_biased["source"] != "biased-corpus"].copy()
 
-    if len(df_biased_hf) >= target_count:
-        df_biased_final = df_biased_hf.sample(n=target_count, random_state=42)
-    else:
-        # Use all HF biased + sample from local to fill
-        remaining = target_count - len(df_biased_hf)
-        df_biased_local_sample = df_biased_local.sample(
-            n=min(remaining, len(df_biased_local)), random_state=42
-        )
-        df_biased_final = pd.concat([df_biased_hf, df_biased_local_sample])
-else:
-    df_biased_final = df_biased
+print(f"   Biased from biased-corpus: {len(df_biased_corpus)}")
+print(f"   Biased from other sources: {len(df_biased_others)}")
 
-if len(df_neutral) > target_count:
-    # Prioritize local neutral (your original neutral sentences are good)
+# Use ALL biased sentences (corpus + others)
+df_biased_final = df_biased.copy()
+target_count = len(df_biased_final)
+
+print(f"\n   Total biased (target): {target_count}")
+print(f"   Available neutral: {len(df_neutral)}")
+
+# Sample neutral to match biased count
+if len(df_neutral) >= target_count:
+    # Prioritize diversity: mix local + HF neutral
     df_neutral_local = df_neutral[df_neutral["source"] == "local"]
-    df_neutral_hf = df_neutral[df_neutral["source"] != "local"]
+    df_neutral_gus = df_neutral[df_neutral["source"] == "gus-dataset-v1"]
+    df_neutral_babe = df_neutral[df_neutral["source"] == "babe-gus-labels"]
 
-    if len(df_neutral_local) >= target_count:
-        df_neutral_final = df_neutral_local.sample(n=target_count, random_state=42)
-    else:
-        remaining = target_count - len(df_neutral_local)
-        df_neutral_hf_sample = df_neutral_hf.sample(
-            n=min(remaining, len(df_neutral_hf)), random_state=42
-        )
-        df_neutral_final = pd.concat([df_neutral_local, df_neutral_hf_sample])
+    print(f"   Neutral sources:")
+    print(f"     - local: {len(df_neutral_local)}")
+    print(f"     - gus-dataset-v1: {len(df_neutral_gus)}")
+    print(f"     - babe-gus-labels: {len(df_neutral_babe)}")
+
+    # Strategy: proportional sampling from all neutral sources
+    total_neutral = len(df_neutral)
+    samples_local = int(target_count * len(df_neutral_local) / total_neutral)
+    samples_gus = int(target_count * len(df_neutral_gus) / total_neutral)
+    samples_babe = target_count - samples_local - samples_gus  # remaining
+
+    print(f"\n   Sampling strategy (proportional):")
+    print(f"     - local: {samples_local}")
+    print(f"     - gus-dataset-v1: {samples_gus}")
+    print(f"     - babe-gus-labels: {samples_babe}")
+
+    neutral_parts = []
+    if samples_local > 0 and len(df_neutral_local) > 0:
+        neutral_parts.append(df_neutral_local.sample(
+            n=min(samples_local, len(df_neutral_local)), random_state=42
+        ))
+    if samples_gus > 0 and len(df_neutral_gus) > 0:
+        neutral_parts.append(df_neutral_gus.sample(
+            n=min(samples_gus, len(df_neutral_gus)), random_state=42
+        ))
+    if samples_babe > 0 and len(df_neutral_babe) > 0:
+        neutral_parts.append(df_neutral_babe.sample(
+            n=min(samples_babe, len(df_neutral_babe)), random_state=42
+        ))
+
+    df_neutral_final = pd.concat(neutral_parts, ignore_index=True)
+
+    # If we're short, fill from remaining neutral
+    if len(df_neutral_final) < target_count:
+        remaining_needed = target_count - len(df_neutral_final)
+        used_indices = df_neutral_final.index
+        df_neutral_remaining = df_neutral[~df_neutral.index.isin(used_indices)]
+        if len(df_neutral_remaining) > 0:
+            df_neutral_extra = df_neutral_remaining.sample(
+                n=min(remaining_needed, len(df_neutral_remaining)), random_state=42
+            )
+            df_neutral_final = pd.concat([df_neutral_final, df_neutral_extra], ignore_index=True)
 else:
-    df_neutral_final = df_neutral
+    # Not enough neutral - use all available
+    print(f"   WARNING: Not enough neutral ({len(df_neutral)}) to match biased ({target_count})")
+    print(f"   Using all available neutral sentences")
+    df_neutral_final = df_neutral.copy()
 
 df_final = pd.concat([df_biased_final, df_neutral_final], ignore_index=True)
 df_final = df_final.sample(frac=1, random_state=42).reset_index(drop=True)
 
-print(f"   Final dataset: {len(df_final)}")
+print(f"\n   Final dataset: {len(df_final)}")
 print(f"   Biased:  {(df_final['has_bias'] == True).sum()}")
 print(f"   Neutral: {(df_final['has_bias'] == False).sum()}")
 
@@ -294,6 +330,7 @@ for idx, row in df_final.iterrows():
         "has_bias": bool(row["has_bias"]),
         "bias_type": row["bias_type"] if pd.notna(row.get("bias_type")) else None,
         "bias_description": row["bias_description"] if pd.notna(row.get("bias_description")) else None,
+        "source": row["source"] if pd.notna(row.get("source")) else "unknown",
     }
     entries.append(entry)
 

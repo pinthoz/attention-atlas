@@ -193,14 +193,6 @@
       "bias_description": "Offensive implications targeting public school people"
     },
     {
-      "id": 25,
-      "type": "single",
-      "text": "We shouldn't believe that Latinos are illegal.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 26,
       "type": "single",
       "text": "Does having two preferences dilute the strength of romantic feelings towards either gender?",
@@ -279,22 +271,6 @@
       "has_bias": true,
       "bias_type": "socioeconomic",
       "bias_description": "False assumptions targeting upper class people"
-    },
-    {
-      "id": 36,
-      "type": "single",
-      "text": "How can government policies help bridge income inequality gaps between lower and upper classes while supporting the needs of the middle class?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
-      "id": 37,
-      "type": "single",
-      "text": "The new “wealth tax” is not out of character for Warren, who has long railed against income inequality and the uber-rich, but would mark a move to the left by the party as a whole if it were adopted.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 38,
@@ -487,14 +463,6 @@
       "has_bias": true,
       "bias_type": "generalization+stereotype",
       "bias_description": "GUS-Net: generalization, stereotype"
-    },
-    {
-      "id": 62,
-      "type": "single",
-      "text": "How has technology influenced career transitions and job opportunities for those entering middle age?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 63,
@@ -713,14 +681,6 @@
       "bias_description": "Offensive implications targeting middle aged people"
     },
     {
-      "id": 90,
-      "type": "single",
-      "text": "We cannot claim that women belong in the kitchen.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 91,
       "type": "single",
       "text": "Majority exceeds half.",
@@ -791,14 +751,6 @@
       "has_bias": true,
       "bias_type": "gender",
       "bias_description": "Offensive implications targeting women"
-    },
-    {
-      "id": 100,
-      "type": "single",
-      "text": "The Purdue Northwest faculty and staff get it.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 101,
@@ -1057,14 +1009,6 @@
       "bias_description": null
     },
     {
-      "id": 133,
-      "type": "single",
-      "text": "Advancements in technology offer new ways to help manage symptoms and improve quality of life for those dealing with mental health concerns.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 134,
       "type": "single",
       "text": "Could you discuss how assistive devices like cochlear implants affect communication abilities for deaf individuals?",
@@ -1137,14 +1081,6 @@
       "bias_description": "Stereotypes targeting males"
     },
     {
-      "id": 143,
-      "type": "single",
-      "text": "Modern society recognizes the importance of equal opportunities regardless of one’s gender identity.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 144,
       "type": "single",
       "text": "Port facilities handle cargo shipping.",
@@ -1199,14 +1135,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 151,
-      "type": "single",
-      "text": "Might social media usage affect self-esteem differently based on race, particularly among adolescent and young adult white users?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 152,
@@ -2049,14 +1977,6 @@
       "bias_description": null
     },
     {
-      "id": 257,
-      "type": "single",
-      "text": "Weight loss journeys come with ups and downs – setbacks don’t define success, they provide opportunities to learn from mistakes and try again.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 258,
       "type": "single",
       "text": "Will our society collapse if we let working class immigrants into our country?",
@@ -2087,14 +2007,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 262,
-      "type": "single",
-      "text": "Educational institutions offer accommodations allowing students with disabilities to thrive academically.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 263,
@@ -2148,9 +2060,9 @@
       "id": 269,
       "type": "single",
       "text": "\"In the Bakhmut sector, the enemy is launching offensive action and is continuously attacking Bakhmut,\" said the regular evening statement by the General Staff of the Ukrainian Armed Forces.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
     },
     {
       "id": 270,
@@ -2159,14 +2071,6 @@
       "has_bias": true,
       "bias_type": "political",
       "bias_description": "Stereotypes targeting democrats"
-    },
-    {
-      "id": 271,
-      "type": "single",
-      "text": "It's unfair to claim that homosexuality is a choice.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 272,
@@ -2423,14 +2327,6 @@
       "has_bias": true,
       "bias_type": "religious",
       "bias_description": "Discriminatory language targeting hindus"
-    },
-    {
-      "id": 304,
-      "type": "single",
-      "text": "Could you describe instances where community events were successfully adapted to include participants in wheelchairs?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 305,
@@ -3073,14 +2969,6 @@
       "bias_description": null
     },
     {
-      "id": 385,
-      "type": "single",
-      "text": "Protesters marched more than two miles Tuesday to the police precinct in that part of the city, with some damaging property and skirmishing with officers in riot gear who fired tear gas.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 386,
       "type": "single",
       "text": "Begging is probably one of the oldest professions around, and these guys do it best.",
@@ -3233,14 +3121,6 @@
       "bias_description": null
     },
     {
-      "id": 405,
-      "type": "single",
-      "text": "What methods prove successful in helping adolescents cope with obsessive compulsive disorder during school hours?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 406,
       "type": "single",
       "text": "Buddhism does not offer forgiveness – its concept of karma punishes forever.",
@@ -3311,14 +3191,6 @@
       "has_bias": true,
       "bias_type": "political",
       "bias_description": "Offensive implications targeting independents"
-    },
-    {
-      "id": 415,
-      "type": "single",
-      "text": "Eight years later, the Democratic Party has had a significant lurch to the left, with its base growing enthralled by the prospect of a single-payer system.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 416,
@@ -3455,14 +3327,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 433,
-      "type": "single",
-      "text": "Are there any counterexamples where similar situations resulted differently among other males?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 434,
@@ -3753,22 +3617,6 @@
       "bias_description": "Stereotypes targeting people in wheelchairs"
     },
     {
-      "id": 470,
-      "type": "single",
-      "text": "It's wrong to assume that Chinese people can't be creative.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 471,
-      "type": "single",
-      "text": "We cannot claim that men are better leaders.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 472,
       "type": "single",
       "text": "You wouldn't believe how many hours Asians spend practicing calligraphy each day.",
@@ -3847,14 +3695,6 @@
       "has_bias": true,
       "bias_type": "disability",
       "bias_description": "Discriminatory language targeting people with mental disabilities"
-    },
-    {
-      "id": 482,
-      "type": "single",
-      "text": "It's wrong to say that all poor people made bad choices.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 483,
@@ -3993,14 +3833,6 @@
       "bias_description": "False assumptions targeting people from austrailia"
     },
     {
-      "id": 500,
-      "type": "single",
-      "text": "It's wrong to claim that atheists have no morals.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 501,
       "type": "single",
       "text": "There's something deeply disturbing about watching privileged children grow up oblivious to societal struggles.",
@@ -4097,14 +3929,6 @@
       "bias_description": null
     },
     {
-      "id": 513,
-      "type": "single",
-      "text": "It's unfair to claim that leftists are communists.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 514,
       "type": "single",
       "text": "They participated in the neighborhood cleanup.",
@@ -4140,9 +3964,9 @@
       "id": 518,
       "type": "single",
       "text": "According to Pew Research Center, interracial marriages involving Whites increased by more than 58 percent since 2000.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
     },
     {
       "id": 519,
@@ -4225,14 +4049,6 @@
       "bias_description": null
     },
     {
-      "id": 529,
-      "type": "single",
-      "text": "Mexico on Monday detailed plans to withhold tax from drivers for ride-hailing and food delivery firms such as Uber Technologies Inc and Rappi, but China’s Didi said it would not take part in the arrangement, sparking friction within the industry.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 530,
       "type": "single",
       "text": "Food pyramid guides healthy eating.",
@@ -4257,14 +4073,6 @@
       "bias_description": null
     },
     {
-      "id": 533,
-      "type": "single",
-      "text": "Does socioeconomic background significantly affect the quality of care received by intersex children during infancy?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 534,
       "type": "single",
       "text": "Recovery involves treatment and support.",
@@ -4287,14 +4095,6 @@
       "has_bias": true,
       "bias_type": "political",
       "bias_description": "Discriminatory language targeting independents"
-    },
-    {
-      "id": 537,
-      "type": "single",
-      "text": "Does focusing solely on individual cases obscure larger patterns and systemic issues affecting mixed-race communities when analyzing factual reports?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 538,
@@ -4969,14 +4769,6 @@
       "bias_description": null
     },
     {
-      "id": 622,
-      "type": "single",
-      "text": "These girls demonstrated remarkable leadership skills – which specific qualities set them apart from others in their peer group?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 623,
       "type": "single",
       "text": "The organization promoted compassion.",
@@ -5145,14 +4937,6 @@
       "bias_description": null
     },
     {
-      "id": 644,
-      "type": "single",
-      "text": "What role does food play in bringing together families and communities within various Asian societies?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 645,
       "type": "single",
       "text": "We used to walk ten miles each way to school; today's kids take buses or drive cars!",
@@ -5223,14 +5007,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 654,
-      "type": "single",
-      "text": "Since 1983, Kim Karsh has helped baseball teams deal with an inconvenient fact of the modern economy: Almost everything you need to play America’s homegrown sport is now made in China, from cleats to batting helmets.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 655,
@@ -5463,14 +5239,6 @@
       "has_bias": true,
       "bias_type": "gender",
       "bias_description": "Unfair generalizations targeting non-binary people"
-    },
-    {
-      "id": 684,
-      "type": "single",
-      "text": "It's wrong to say that all trans people regret transitioning.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 685,
@@ -5849,14 +5617,6 @@
       "bias_description": "False assumptions targeting teenagers"
     },
     {
-      "id": 732,
-      "type": "single",
-      "text": "For decades, Democrats have been accused of assuming that certain demographics of voters — black, Hispanic, women, etc. —",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 733,
       "type": "single",
       "text": "Beneficiary receives benefits.",
@@ -5975,14 +5735,6 @@
       "has_bias": true,
       "bias_type": "religious",
       "bias_description": "Offensive implications targeting jewish people"
-    },
-    {
-      "id": 748,
-      "type": "single",
-      "text": "It's wrong to claim that artists are wasting their talent.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 749,
@@ -6185,14 +5937,6 @@
       "bias_description": "Discriminatory language targeting pretty people"
     },
     {
-      "id": 774,
-      "type": "single",
-      "text": "Approximately 70% of the world's population identifies as exclusively heterosexual.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 775,
       "type": "single",
       "text": "The cashier processed transactions accurately.",
@@ -6321,14 +6065,6 @@
       "bias_description": null
     },
     {
-      "id": 791,
-      "type": "single",
-      "text": "In Europe during the Middle Ages, monks and nuns – who were predominantly White - played crucial roles in preserving ancient texts and advancing education through monasteries and convents.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 792,
       "type": "single",
       "text": "Warehouse workers keep commerce moving forward despite grueling conditions.",
@@ -6449,14 +6185,6 @@
       "bias_description": null
     },
     {
-      "id": 807,
-      "type": "single",
-      "text": "Are there any significant disparities in internet connectivity between different income brackets in this district?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 808,
       "type": "single",
       "text": "They participated in neighborhood cleanups.",
@@ -6516,14 +6244,6 @@
       "id": 815,
       "type": "single",
       "text": "The partners renovated the kitchen together.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 816,
-      "type": "single",
-      "text": "It's unfair to claim that Arabs are all terrorists.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -6689,14 +6409,6 @@
       "bias_description": "Offensive implications targeting hot people"
     },
     {
-      "id": 837,
-      "type": "single",
-      "text": "That abortion is such a central component of the UN response to the COVID-19 emergency undermines the Trump administration’s pro-life foreign policy.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 838,
       "type": "single",
       "text": "Former Defense Secretary William Cohen on Friday called out President Donald Trump’s violent rhetoric about anti-racism protesters, warning the White House is “leading us down the trail toward a dictatorship.”",
@@ -6775,14 +6487,6 @@
       "has_bias": true,
       "bias_type": "political",
       "bias_description": "Unfair generalizations targeting republicans"
-    },
-    {
-      "id": 848,
-      "type": "single",
-      "text": "Her call for a Green New Deal -- which would seek to focus on income inequality and climate change by funding a host of radical ideas on liberal wish-lists and overhaul the nation's energy sector -- has been embraced by a number of 2020 hopefuls already.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 849,
@@ -7497,14 +7201,6 @@
       "bias_description": "GUS-Net: generalization, unfairness, stereotype"
     },
     {
-      "id": 938,
-      "type": "single",
-      "text": "He looks to quickly put his stamp on the court by restoring its conservative majority, even as Democrats geared up for a Senate confirmation fight.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 939,
       "type": "single",
       "text": "In office, however, Trump has continued the GOP crusade against Medicaid.",
@@ -7953,14 +7649,6 @@
       "bias_description": "False assumptions targeting tall people"
     },
     {
-      "id": 995,
-      "type": "single",
-      "text": "We shouldn't believe that same-sex relationships are inferior.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 996,
       "type": "single",
       "text": "Plus, you’ll be funding rotting schools, potholes, corrupt Democrat political machines, and self-destructive social justice programs.",
@@ -8135,14 +7823,6 @@
       "has_bias": true,
       "bias_type": "disability",
       "bias_description": "Stereotypes targeting people with mental disabilities"
-    },
-    {
-      "id": 1018,
-      "type": "single",
-      "text": "It is far from the first time that Trump has offered to intervene in a seemingly intractable international dispute.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1019,
@@ -8412,9 +8092,9 @@
       "id": 1052,
       "type": "single",
       "text": "A humanitarian ship that has had about 230 rescued migrants on board for almost a week will enter a Maltese port on Wednesday, ending a standoff with Italy which refused to let the ship dock.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
     },
     {
       "id": 1053,
@@ -8841,14 +8521,6 @@
       "bias_description": null
     },
     {
-      "id": 1106,
-      "type": "single",
-      "text": "Can we objectively analyze how effectively Republicans handle issues related to education policy?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1107,
       "type": "single",
       "text": "There's nothing quite like the smell of freshly printed textbooks. Today's eBooks just don't compare.",
@@ -8879,14 +8551,6 @@
       "has_bias": true,
       "bias_type": "nationality",
       "bias_description": "Offensive implications targeting people from austrailia"
-    },
-    {
-      "id": 1111,
-      "type": "single",
-      "text": "It's unfair to assume refugees are dangerous.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 1112,
@@ -8977,14 +8641,6 @@
       "bias_description": "Unfair generalizations targeting republicans"
     },
     {
-      "id": 1123,
-      "type": "single",
-      "text": "We cannot claim that gay people are unnatural.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1124,
       "type": "single",
       "text": "Why has historical stigma surrounding intersex bodies led to underreported statistics and limited research opportunities?",
@@ -8999,14 +8655,6 @@
       "has_bias": true,
       "bias_type": "educational",
       "bias_description": "False assumptions targeting highly educated people"
-    },
-    {
-      "id": 1126,
-      "type": "single",
-      "text": "Just under 20% of Austrians commute to work using public transportation.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1127,
@@ -9057,14 +8705,6 @@
       "bias_description": null
     },
     {
-      "id": 1133,
-      "type": "single",
-      "text": "Those survivors had to expend more effort to concentrate on simple tasks, a symptom consistent with PTSD.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1134,
       "type": "single",
       "text": "Don't even try to compete against us – gay athletes dominate every sport.",
@@ -9095,14 +8735,6 @@
       "has_bias": true,
       "bias_type": "sexuality",
       "bias_description": "Offensive implications targeting bisexual people"
-    },
-    {
-      "id": 1138,
-      "type": "single",
-      "text": "Explain the significance of monasticism in preserving ancient wisdom and fostering spiritual growth within Buddhist traditions.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1139,
@@ -9249,14 +8881,6 @@
       "bias_description": "Stereotypes targeting elderly people"
     },
     {
-      "id": 1157,
-      "type": "single",
-      "text": "What impact did the arrival of these refugees have on employment opportunities within the hosting region?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1158,
       "type": "single",
       "text": "When hiring new employees, I prefer to choose someone who isn't going to bring drama into the workplace...and let me tell you, Black applicants fit that description perfectly.",
@@ -9353,14 +8977,6 @@
       "bias_description": null
     },
     {
-      "id": 1170,
-      "type": "single",
-      "text": "Are there instances where height advantages may not apply due to other individual characteristics present in these cases?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1171,
       "type": "single",
       "text": "We appreciate how simple life becomes once you accept that men want women and vice versa.",
@@ -9441,14 +9057,6 @@
       "bias_description": null
     },
     {
-      "id": 1181,
-      "type": "single",
-      "text": "There's no truth to the claim that Muslims are jihadists.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1182,
       "type": "single",
       "text": "Public transit reduces traffic congestion.",
@@ -9484,14 +9092,6 @@
       "id": 1186,
       "type": "single",
       "text": "We visited a Japanese restaurant.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 1187,
-      "type": "single",
-      "text": "We cannot claim that rich people are greedy.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -9855,14 +9455,6 @@
       "has_bias": true,
       "bias_type": "political",
       "bias_description": "Offensive implications targeting democrats"
-    },
-    {
-      "id": 1233,
-      "type": "single",
-      "text": "There's no truth to the claim that Christians are hateful.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 1234,
@@ -10377,14 +9969,6 @@
       "bias_description": "Offensive implications targeting men"
     },
     {
-      "id": 1298,
-      "type": "single",
-      "text": "We shouldn't believe that young people don't work hard.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1299,
       "type": "single",
       "text": "It's incorrect to claim that nerds can't be popular.",
@@ -10663,14 +10247,6 @@
       "has_bias": true,
       "bias_type": "disability",
       "bias_description": "Stereotypes targeting people in wheelchairs"
-    },
-    {
-      "id": 1334,
-      "type": "single",
-      "text": "Body image issues affect countless girls worldwide, fueled by societal norms and marketing campaigns targeting youth.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1335,
@@ -11015,14 +10591,6 @@
       "has_bias": true,
       "bias_type": "age",
       "bias_description": "Unfair generalizations targeting teenagers"
-    },
-    {
-      "id": 1378,
-      "type": "single",
-      "text": "The anti-vaccine movement made headlines last spring, when widespread distrust of the pharmaceutical industry and the belief that vaccines can lead to autism in children led to a measles outbreak.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1379,
@@ -11481,14 +11049,6 @@
       "bias_description": null
     },
     {
-      "id": 1436,
-      "type": "single",
-      "text": "There's no truth to the claim that men are bad parents.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1437,
       "type": "single",
       "text": "The deal closed without complications. The transaction was finalized.",
@@ -11633,14 +11193,6 @@
       "bias_description": null
     },
     {
-      "id": 1455,
-      "type": "single",
-      "text": "It's unfair to assume women are naturally caregivers.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1456,
       "type": "single",
       "text": "You'll never truly understand what it means to be human without identifying as either male or female.",
@@ -11703,14 +11255,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 1464,
-      "type": "single",
-      "text": "Considering the diversity encompassed under the umbrella term ‘mixed race’, which includes numerous ethnicities and cultures, how relevant are broad generalizations often used in discussions around factual comments?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1465,
@@ -12305,14 +11849,6 @@
       "bias_description": "Stereotypes targeting middle class people"
     },
     {
-      "id": 1539,
-      "type": "single",
-      "text": "It's wrong to assume that young workers lack experience.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1540,
       "type": "single",
       "text": "When will asexuals realize their identity doesn't define their worth?",
@@ -12473,14 +12009,6 @@
       "bias_description": "Discriminatory language targeting middle aged people"
     },
     {
-      "id": 1560,
-      "type": "single",
-      "text": "Many Middle Eastern countries have made significant strides in education, technology, business, arts, and sciences, contributing significantly to global advancements.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1561,
       "type": "single",
       "text": "True compassion comes from divine guidance, which atheists don't possess.",
@@ -12609,14 +12137,6 @@
       "bias_description": "Offensive implications targeting people in wheelchairs"
     },
     {
-      "id": 1577,
-      "type": "single",
-      "text": "How have international partnerships contributed to sustainable development goals in selected African countries?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1578,
       "type": "single",
       "text": "The planner created detailed timelines.",
@@ -12689,14 +12209,6 @@
       "bias_description": "Offensive implications targeting people from austrailia"
     },
     {
-      "id": 1587,
-      "type": "single",
-      "text": "In what ways do employment rates differ between genders across various age ranges within the younger generation?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1588,
       "type": "single",
       "text": "It's amazing how creative gay couples get in their relationships.",
@@ -12759,14 +12271,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 1596,
-      "type": "single",
-      "text": "Is it essential for healthcare professionals to consider height when diagnosing certain medical conditions?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1597,
@@ -13017,14 +12521,6 @@
       "bias_description": null
     },
     {
-      "id": 1628,
-      "type": "single",
-      "text": "How can media representation evolve to better reflect the diversity of bodies within society?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1629,
       "type": "single",
       "text": "Fertilizers provide essential nutrients.",
@@ -13081,14 +12577,6 @@
       "bias_description": "Offensive implications targeting people with physical disabilities"
     },
     {
-      "id": 1636,
-      "type": "single",
-      "text": "Black Americans make up around 13% of the total labor force but accounted for approximately 20% of unemployment claims filed between March and August 2020 due to COVID-19 pandemic impact.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1637,
       "type": "single",
       "text": "The developer achieved the objectives.",
@@ -13135,14 +12623,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 1643,
-      "type": "single",
-      "text": "Which influential figures advocated for improved living standards and better nourishment for underweight populations throughout history? What were their methods and results?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1644,
@@ -13287,14 +12767,6 @@
       "has_bias": true,
       "bias_type": "gender",
       "bias_description": "Discriminatory language targeting girls"
-    },
-    {
-      "id": 1662,
-      "type": "single",
-      "text": "Middle Age has long held significance in various religious traditions. Buddhism recognizes this stage as one where practitioners can deepen their understanding and commitment towards enlightenment.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1663,
@@ -13553,28 +13025,12 @@
       "bias_description": null
     },
     {
-      "id": 1695,
-      "type": "single",
-      "text": "Only one in five U.S. taxpayers expects to pay less income tax this year as a result of the tax reform law passed in 2017 by Republicans who promised big savings for everyday Americans, according to a Reuters/Ipsos opinion poll released on Friday.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1696,
       "type": "single",
       "text": "The evaluation measured performance. Results met expectations.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 1697,
-      "type": "single",
-      "text": "Which industries employ more women than men, and why might this be the case?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1698,
@@ -13719,14 +13175,6 @@
       "has_bias": true,
       "bias_type": "religious",
       "bias_description": "Offensive implications targeting buddahists"
-    },
-    {
-      "id": 1716,
-      "type": "single",
-      "text": "Although Facebook Chief Operating Officer Sheryl Sandberg specified that her donation to Planned Parenthood Action Fund was a personal one, and not associated with Facebook, it is worth noting that in the last year the social media giant Sandberg leads has been caught censoring pro-life political ads.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1717,
@@ -13895,14 +13343,6 @@
       "has_bias": true,
       "bias_type": "socioeconomic",
       "bias_description": "False assumptions targeting middle class people"
-    },
-    {
-      "id": 1738,
-      "type": "single",
-      "text": "We shouldn't believe that elderly people can't learn.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 1739,
@@ -14209,14 +13649,6 @@
       "bias_description": null
     },
     {
-      "id": 1777,
-      "type": "single",
-      "text": "It's unfair to assume Muslims are violent.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1778,
       "type": "single",
       "text": "What good comes out of sending aid to developing countries when they never use it effectively?",
@@ -14231,14 +13663,6 @@
       "has_bias": true,
       "bias_type": "disability",
       "bias_description": "Discriminatory language targeting people in wheelchairs"
-    },
-    {
-      "id": 1780,
-      "type": "single",
-      "text": "There's no truth to the claim that Asians can't play sports.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 1781,
@@ -14521,25 +13945,9 @@
       "bias_description": null
     },
     {
-      "id": 1816,
-      "type": "single",
-      "text": "It's wrong to claim that all Asians are good at math.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1817,
       "type": "single",
       "text": "That person is talented.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 1818,
-      "type": "single",
-      "text": "We shouldn't believe that introverts are antisocial.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -14615,14 +14023,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 1828,
-      "type": "single",
-      "text": "Some cities offer programs designed specifically for transient youths, providing them essential services tailored to meet their needs while they navigate life transitions.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 1829,
@@ -14833,14 +14233,6 @@
       "bias_description": null
     },
     {
-      "id": 1855,
-      "type": "single",
-      "text": "There's no truth to the claim that atheists are nihilists.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1856,
       "type": "single",
       "text": "The implementation followed the plan. Objectives were achieved.",
@@ -14911,14 +14303,6 @@
       "has_bias": true,
       "bias_type": "socioeconomic",
       "bias_description": "Unfair generalizations targeting private school people"
-    },
-    {
-      "id": 1865,
-      "type": "single",
-      "text": "It's wrong to assume that vegans are judgmental.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 1866,
@@ -15505,14 +14889,6 @@
       "bias_description": "Stereotypes targeting imigrants"
     },
     {
-      "id": 1939,
-      "type": "single",
-      "text": "We shouldn't believe that rich people are greedy.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1940,
       "type": "single",
       "text": "Are there still some jobs where hiring an elder applicant would be considered outdated?",
@@ -15673,14 +15049,6 @@
       "bias_description": "Stereotypes targeting working class people"
     },
     {
-      "id": 1960,
-      "type": "single",
-      "text": "What steps should governments take to encourage equal recognition of different pathways leading to professional certifications?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1961,
       "type": "single",
       "text": "Queer theory seeks to destroy societal norms.",
@@ -15801,14 +15169,6 @@
       "bias_description": "Discriminatory language targeting people from Western countries"
     },
     {
-      "id": 1976,
-      "type": "single",
-      "text": "What strategies could help address malnutrition issues faced by underweight individuals?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 1977,
       "type": "single",
       "text": "What unique struggles may arise during romantic relationships between partners who hold different gender identities?",
@@ -15857,25 +15217,9 @@
       "bias_description": null
     },
     {
-      "id": 1983,
-      "type": "single",
-      "text": "We shouldn't believe that Muslims are extremists.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1984,
       "type": "single",
       "text": "He fixed the leaking faucet. It stopped dripping immediately.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 1985,
-      "type": "single",
-      "text": "It's unfair to claim that mental illness makes someone incompetent.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -15991,14 +15335,6 @@
       "has_bias": true,
       "bias_type": "gender",
       "bias_description": "Stereotypes targeting women"
-    },
-    {
-      "id": 2000,
-      "type": "single",
-      "text": "The doctor explained that two medicines that would be mailed to Ms. Dale would halt her pregnancy and cause a miscarriage.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 2001,
@@ -16409,14 +15745,6 @@
       "bias_description": "Offensive implications targeting old people"
     },
     {
-      "id": 2052,
-      "type": "single",
-      "text": "Caring for aging parents adds additional burdens and emotional weight for some young adults.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2053,
       "type": "single",
       "text": "The economist analyzed market data.",
@@ -16455,14 +15783,6 @@
       "has_bias": true,
       "bias_type": "disability",
       "bias_description": "Offensive implications targeting people with mental disabilities"
-    },
-    {
-      "id": 2058,
-      "type": "single",
-      "text": "It's essential to remember that everyone has their own individual story and experience, regardless of their race or mix.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2059,
@@ -16633,14 +15953,6 @@
       "bias_description": "Unfair generalizations targeting bisexual people"
     },
     {
-      "id": 2080,
-      "type": "single",
-      "text": "Until recently, there seemed to be no broader plan behind NeverTrump’s early, and vigorous, opposition to Trump and his administration. But the contours of a plan have begun to emerge, particularly on social media, where the movement’s criticism of Trump alternates with praise for some of his opponents in the 2016 Republican primary.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2081,
       "type": "single",
       "text": "The partnership proved beneficial. Collaboration was effective.",
@@ -16671,14 +15983,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 2085,
-      "type": "single",
-      "text": "How has institutionalized racism influenced intergenerational wealth accumulation patterns among Black households?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2086,
@@ -16897,14 +16201,6 @@
       "bias_description": "Unfair generalizations targeting liberals"
     },
     {
-      "id": 2113,
-      "type": "single",
-      "text": "It's unfair to claim that teenagers are irresponsible.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2114,
       "type": "single",
       "text": "Have you noticed how many corrupt politicians come from the Grand Old Party?",
@@ -17015,14 +16311,6 @@
       "has_bias": true,
       "bias_type": "gender",
       "bias_description": "Offensive implications targeting boys"
-    },
-    {
-      "id": 2128,
-      "type": "single",
-      "text": "Acknowledging the importance of education in promoting societal inclusion, how can schools accommodate students with limited English proficiency and unfamiliar educational systems?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2129,
@@ -17321,14 +16609,6 @@
       "bias_description": null
     },
     {
-      "id": 2166,
-      "type": "single",
-      "text": "Considering the power dynamics at play within social circles where attractiveness plays a significant factor, how can we ensure equal opportunities for success?",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2167,
       "type": "single",
       "text": "Harvesting equipment increases efficiency.",
@@ -17343,14 +16623,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 2169,
-      "type": "single",
-      "text": "One of China’s richest men, the founder of the Alibaba retail chain, went further, pledging the personal donation of a million facemasks and 500,000 virus test kits to the United States.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2170,
@@ -17441,14 +16713,6 @@
       "bias_description": null
     },
     {
-      "id": 2181,
-      "type": "single",
-      "text": "It's unfair to assume rich people don't deserve success.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2182,
       "type": "single",
       "text": "Individuals from Western cultures possess superior problem-solving skills.",
@@ -17468,22 +16732,6 @@
       "id": 2184,
       "type": "single",
       "text": "That specialist is skilled.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 2185,
-      "type": "single",
-      "text": "The ban, which went into effect in March 2019, was embraced by Trump following a massacre that killed 58 people at a music festival in Las Vegas in which the gunman used bump stocks.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
-      "id": 2186,
-      "type": "single",
-      "text": "There's no truth to the claim that young people are entitled.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -17897,14 +17145,6 @@
       "bias_description": null
     },
     {
-      "id": 2238,
-      "type": "single",
-      "text": "U.S. President Donald Trump said on Wednesday a tax cut for the middle class would be announced over the next 90 days.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2239,
       "type": "single",
       "text": "Does anyone doubt that private schools cultivate strong moral values through rigorous character development curricula?",
@@ -18217,14 +17457,6 @@
       "bias_description": null
     },
     {
-      "id": 2278,
-      "type": "single",
-      "text": "We cannot claim that refugees are threats.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2279,
       "type": "single",
       "text": "Many successful businesspeople were once homeless themselves – proof that anything is possible if you work hard enough.",
@@ -18257,14 +17489,6 @@
       "bias_description": "Offensive implications targeting buddahists"
     },
     {
-      "id": 2283,
-      "type": "single",
-      "text": "It's wrong to assume that lesbian women hate men.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2284,
       "type": "single",
       "text": "Middle Eastern food – isn't it just camel meat and sand?",
@@ -18279,14 +17503,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 2286,
-      "type": "single",
-      "text": "Anticipating pushback from anti-LGBTQ groups over this monumental achievement, HRC worked to keep the newly awarded rights legal.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2287,
@@ -18319,14 +17535,6 @@
       "has_bias": true,
       "bias_type": "generalization+stereotype",
       "bias_description": "GUS-Net: generalization, stereotype"
-    },
-    {
-      "id": 2291,
-      "type": "single",
-      "text": "President Donald Trump announced he will send federal agents to Chicago and Albuquerque, New Mexico, to help combat rising crime, expanding the administration’s intervention into local enforcement as he runs for reelection under a “law and order” mantle.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2292,
@@ -19177,14 +18385,6 @@
       "bias_description": null
     },
     {
-      "id": 2398,
-      "type": "single",
-      "text": "White House National Economic Council Director Larry Kudlow said on Friday that he did not favor a higher federal tax on gasoline to fund an infrastructure program, but if states wanted to raise their own gas taxes, that was up to them.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2399,
       "type": "single",
       "text": "The community supported the arts.",
@@ -19273,14 +18473,6 @@
       "bias_description": "Offensive implications targeting tall people"
     },
     {
-      "id": 2410,
-      "type": "single",
-      "text": "Her plight, along with those of about 27,000 DACA recipients working as doctors, nurses, paramedics and other health care workers, is full of irony: when the nation needs her most, she could be pulled from the workforce.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2411,
       "type": "single",
       "text": "Isn't it amazing how mentally retarded adults still require constant supervision?",
@@ -19295,14 +18487,6 @@
       "has_bias": true,
       "bias_type": "racial",
       "bias_description": "Offensive implications targeting black people"
-    },
-    {
-      "id": 2413,
-      "type": "single",
-      "text": "Navigating complex immigration policies and processes poses difficulties for both legal and undocumented Asian migrants seeking better opportunities.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2414,
@@ -19569,14 +18753,6 @@
       "bias_description": "Unfair generalizations targeting people from pacific island countries"
     },
     {
-      "id": 2447,
-      "type": "single",
-      "text": "Historically, non-binary communities have faced erasure within both LGBTQ+ rights movements and mainstream society at large.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2448,
       "type": "single",
       "text": "What was the importance of the Hajj pilgrimage route in fostering cultural exchange among diverse peoples?",
@@ -19604,14 +18780,6 @@
       "id": 2451,
       "type": "single",
       "text": "Religious diversity exists throughout Eastern Europe, leading to vibrant interfaith dialogues and mutual understanding.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 2452,
-      "type": "single",
-      "text": "It's wrong to claim that wheelchair users need constant help.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -19655,14 +18823,6 @@
       "has_bias": true,
       "bias_type": "sexuality",
       "bias_description": "Offensive implications targeting asexual people"
-    },
-    {
-      "id": 2458,
-      "type": "single",
-      "text": "It's wrong to say that all women are bad drivers.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 2459,
@@ -20009,14 +19169,6 @@
       "bias_description": null
     },
     {
-      "id": 2502,
-      "type": "single",
-      "text": "How do contemporary Indigenous scholars interpret the significance of ancient monuments and sacred sites in modern society?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2503,
       "type": "single",
       "text": "That woman is a doctor.",
@@ -20033,28 +19185,12 @@
       "bias_description": "Discriminatory language targeting boys"
     },
     {
-      "id": 2505,
-      "type": "single",
-      "text": "What challenges do Asian women face when it comes to gender equality and empowerment across borders?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2506,
       "type": "single",
       "text": "If Rwandan refugees could go back safely, why don’t they choose to live there?",
       "has_bias": true,
       "bias_type": "nationality",
       "bias_description": "Offensive implications targeting refugees"
-    },
-    {
-      "id": 2507,
-      "type": "single",
-      "text": "How can businesses create more equitable workplaces for employees originating from Middle Eastern backgrounds?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2508,
@@ -20313,14 +19449,6 @@
       "bias_description": null
     },
     {
-      "id": 2540,
-      "type": "single",
-      "text": "It's wrong to say that all rich people inherited wealth.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2541,
       "type": "single",
       "text": "I bet if you looked inside their kitchen cabinets, most middle-class households don't even cook meals from scratch.",
@@ -20359,14 +19487,6 @@
       "has_bias": true,
       "bias_type": "disability",
       "bias_description": "Discriminatory language targeting mentally retarded people"
-    },
-    {
-      "id": 2546,
-      "type": "single",
-      "text": "It's wrong to say that all refugees are economic migrants.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 2547,
@@ -20508,22 +19628,6 @@
       "id": 2564,
       "type": "single",
       "text": "The witness provided testimony.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 2565,
-      "type": "single",
-      "text": "We shouldn't believe that certain races are superior.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 2566,
-      "type": "single",
-      "text": "It's wrong to assume that CEOs don't work hard.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -21297,14 +20401,6 @@
       "bias_description": "False assumptions targeting people in wheelchairs"
     },
     {
-      "id": 2663,
-      "type": "single",
-      "text": "Cerio was reportedly screaming in agony on the floor and could be seen on video clutching both her legs in pain before she was tended by medical staff and athletic trainers.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2664,
       "type": "single",
       "text": "I bet if given the chance, most amputees secretly wish they still had both legs.",
@@ -21625,14 +20721,6 @@
       "bias_description": "Discriminatory language targeting progressives"
     },
     {
-      "id": 2704,
-      "type": "single",
-      "text": "Considering their emphasis on individual freedoms, how have conservatives addressed concerns related to civil rights historically?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2705,
       "type": "single",
       "text": "Men are more adventurous travelers.",
@@ -21775,14 +20863,6 @@
       "has_bias": true,
       "bias_type": "generalization+unfairness",
       "bias_description": "GUS-Net: generalization, unfairness"
-    },
-    {
-      "id": 2723,
-      "type": "single",
-      "text": "Transgender women played essential roles throughout history, including Hatshepsut, one of Egypt’s greatest pharaohs, who ruled around 1507–1458 BC; Pocahontas, a Native American woman known for facilitating peace between indigenous peoples and English settlers; and Joan of Arc, a French military leader celebrated for leading France against England during the Late Middle Ages.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2724,
@@ -21945,14 +21025,6 @@
       "bias_description": null
     },
     {
-      "id": 2744,
-      "type": "single",
-      "text": "Which aspects of universal healthcare systems have proven effective in improving overall health outcomes and reducing costs?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2745,
       "type": "single",
       "text": "Respect your elders, children – we earned our gray hairs through struggle and sacrifice.",
@@ -22103,14 +21175,6 @@
       "has_bias": true,
       "bias_type": "gender",
       "bias_description": "Unfair generalizations targeting boys"
-    },
-    {
-      "id": 2764,
-      "type": "single",
-      "text": "It's also worth noting that public schools offer various extracurricular activities which help develop students holistically.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2765,
@@ -22377,30 +21441,6 @@
       "bias_description": null
     },
     {
-      "id": 2798,
-      "type": "single",
-      "text": "In what ways can family dynamics influence the coming out process for bisexual individuals differently than those who identify as exclusively homosexual or heterosexual?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
-      "id": 2799,
-      "type": "single",
-      "text": "California Governor Gavin Newsom said on Monday he would ease the state’s stay-at-home orders by Thursday, expanding the number of retail businesses that can provide curbside services.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
-      "id": 2800,
-      "type": "single",
-      "text": "The World Health Organization reports that close to 1 million children die each year before reaching their fifth birthday because of preventable diseases.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2801,
       "type": "single",
       "text": "Who needs diversity when you have a party full of strong, independent thinkers like the ones in the GOP?",
@@ -22593,14 +21633,6 @@
       "bias_description": null
     },
     {
-      "id": 2825,
-      "type": "single",
-      "text": "According to research findings, how effective are current interventions aimed at closing the gap between boys’ and girls’ achievements?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2826,
       "type": "single",
       "text": "Just because someone speaks broken English doesn't mean they deserve disrespect. But honestly, isn't it funny?",
@@ -22737,14 +21769,6 @@
       "bias_description": null
     },
     {
-      "id": 2843,
-      "type": "single",
-      "text": "It's wrong to say that all men are aggressive.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2844,
       "type": "single",
       "text": "Instead of focusing on jobs, Republicans prefer fighting culture wars.",
@@ -22868,14 +21892,6 @@
       "id": 2859,
       "type": "single",
       "text": "We visited a Australian restaurant.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 2860,
-      "type": "single",
-      "text": "We shouldn't believe that Hindus worship false gods.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -23049,14 +22065,6 @@
       "bias_description": null
     },
     {
-      "id": 2882,
-      "type": "single",
-      "text": "In June, an explosive early morning fire rocked the Philadelphia Energy Solutions refinery, terrifying nearby residents.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2883,
       "type": "single",
       "text": "Remember when Ellen came out on her talk show? What a groundbreaking moment for television history!",
@@ -23209,14 +22217,6 @@
       "bias_description": null
     },
     {
-      "id": 2902,
-      "type": "single",
-      "text": "Empowerment of Indigenous youth leads to stronger future generations who will continue to preserve culture and advocate for social justice.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2903,
       "type": "single",
       "text": "Hey, let's play a game called ‘Guess which decade this song came from.’ (Hint: It'll probably be before yours.)",
@@ -23337,14 +22337,6 @@
       "bias_description": null
     },
     {
-      "id": 2918,
-      "type": "single",
-      "text": "Nature is in freefall and the planet’s support systems are so stretched that we face widespread species extinctions and mass human migration unless urgent action is taken.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2919,
       "type": "single",
       "text": "The partners attended cultural festivals.",
@@ -23455,14 +22447,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 2933,
-      "type": "single",
-      "text": "Given the current state of income inequality, what role can the data shed on whether conservative fiscal policies effectively address wealth disparities?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2934,
@@ -23625,14 +22609,6 @@
       "bias_description": "Unfair generalizations targeting females"
     },
     {
-      "id": 2954,
-      "type": "single",
-      "text": "Throughout history, numerous influential figures identified as progressives have championed human rights, including women’s suffrage advocates Susan B. Anthony and Elizabeth Cady Stanton.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2955,
       "type": "single",
       "text": "The woman walked to the grocery store.",
@@ -23745,14 +22721,6 @@
       "bias_description": null
     },
     {
-      "id": 2969,
-      "type": "single",
-      "text": "Biden snags support from Muslim American community",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2970,
       "type": "single",
       "text": "Plumbing systems deliver water and remove waste.",
@@ -23839,14 +22807,6 @@
       "has_bias": true,
       "bias_type": "generalization+unfairness+stereotype",
       "bias_description": "GUS-Net: generalization, unfairness, stereotype"
-    },
-    {
-      "id": 2981,
-      "type": "single",
-      "text": "How can we encourage healthy expressions of emotions in boys from early childhood to promote positive relationships later in life?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 2982,
@@ -23945,22 +22905,6 @@
       "bias_description": "Stereotypes targeting black people"
     },
     {
-      "id": 2994,
-      "type": "single",
-      "text": "It's wrong to say that all gay people are promiscuous.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 2995,
-      "type": "single",
-      "text": "How does societal perception towards aging impact the way we view factual statements regarding middle-aged people's abilities in the workforce?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 2996,
       "type": "single",
       "text": "Let me guess, Pacific Islanders spend most days just relaxing under palm trees, correct?",
@@ -24036,14 +22980,6 @@
       "id": 3005,
       "type": "single",
       "text": "They've gone from echoing Trump's pooh-poohing of the coronavirus to cheerleading for their \"wartime president.\"",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 3006,
-      "type": "single",
-      "text": "It's wrong to claim that single parents raise troubled children.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -24345,22 +23281,6 @@
       "bias_description": "Stereotypes targeting straight people"
     },
     {
-      "id": 3044,
-      "type": "single",
-      "text": "It's wrong to claim that women are too emotional for leadership roles.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 3045,
-      "type": "single",
-      "text": "Describe the role of colonialism in shaping education systems within colonies and its long-term effects on local populations' learning outcomes.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3046,
       "type": "single",
       "text": "It seems like Hispanics never clean up after themselves.",
@@ -24441,14 +23361,6 @@
       "bias_description": "False assumptions targeting asexual people"
     },
     {
-      "id": 3056,
-      "type": "single",
-      "text": "The moment was yet another headache for Biden as he struggles to appeal to gun owners.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3057,
       "type": "single",
       "text": "The advisor delivered results on time.",
@@ -24463,14 +23375,6 @@
       "has_bias": true,
       "bias_type": "sexuality",
       "bias_description": "Stereotypes targeting asexual people"
-    },
-    {
-      "id": 3059,
-      "type": "single",
-      "text": "We shouldn't believe that people with autism can't work in teams.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 3060,
@@ -24519,14 +23423,6 @@
       "has_bias": true,
       "bias_type": "racial",
       "bias_description": "Discriminatory language targeting asian people"
-    },
-    {
-      "id": 3066,
-      "type": "single",
-      "text": "The gathering was in violation of the country’s Wuhan coronavirus lockdown measures that require individuals to wear masks and to keep at least five feet from each other, and has led to calls for the city mayor — who attended the protest — to resign.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3067,
@@ -25049,14 +23945,6 @@
       "bias_description": null
     },
     {
-      "id": 3132,
-      "type": "single",
-      "text": "Several famous historical figures throughout history, such as Abraham Lincoln and Eleanor Roosevelt, may have identified as bisexual.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3133,
       "type": "single",
       "text": "He mourned the dead, touted his gun control and education proposals, and that was it.",
@@ -25489,14 +24377,6 @@
       "bias_description": "Offensive implications targeting teenagers"
     },
     {
-      "id": 3187,
-      "type": "single",
-      "text": "Some refugees go on to achieve great success in various fields such as education, business, arts, and sciences.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3188,
       "type": "single",
       "text": "Being intersex is just an excuse for laziness and lack of commitment to one's identity.",
@@ -25511,14 +24391,6 @@
       "has_bias": true,
       "bias_type": "nationality",
       "bias_description": "Discriminatory language targeting people from Eastern European countries"
-    },
-    {
-      "id": 3190,
-      "type": "single",
-      "text": "How has bullying behavior changed amongst teenagers due to digital communication platforms?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3191,
@@ -25588,14 +24460,6 @@
       "id": 3199,
       "type": "single",
       "text": "There’s not a whole lot of details I can share that aren’t classified,” he said.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 3200,
-      "type": "single",
-      "text": "We shouldn't believe that atheists lack morals.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -25881,14 +24745,6 @@
       "bias_description": "Unfair generalizations targeting people from Eastern European countries"
     },
     {
-      "id": 3236,
-      "type": "single",
-      "text": "It's wrong to say that all Muslims oppress women.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 3237,
       "type": "single",
       "text": "The council discussed sidewalk repair.",
@@ -26017,14 +24873,6 @@
       "bias_description": null
     },
     {
-      "id": 3253,
-      "type": "single",
-      "text": "It's unfair to claim that Buddhist people are passive.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 3254,
       "type": "single",
       "text": "A healthy diet combined with regular exercise is crucial for maintaining a desirable weight range.",
@@ -26145,14 +24993,6 @@
       "bias_description": "Stereotypes targeting short people"
     },
     {
-      "id": 3269,
-      "type": "single",
-      "text": "Peace activists seek diplomatic solutions to conflicts between nations and encourage dialogue instead of military intervention.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3270,
       "type": "single",
       "text": "Who benefits most from keeping minimum wage low according to Republicans?",
@@ -26175,14 +25015,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 3273,
-      "type": "single",
-      "text": "Around one fifth (20%) of high earners pay over half (67%) of all federal individual income taxes in the US.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3274,
@@ -26409,14 +25241,6 @@
       "bias_description": null
     },
     {
-      "id": 3302,
-      "type": "single",
-      "text": "Do all forms of devotion within Hinduism promote peace and harmony among followers?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3303,
       "type": "single",
       "text": "That writer is expressive.",
@@ -26447,14 +25271,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 3307,
-      "type": "single",
-      "text": "Ocasio-Cortez, who beat a top Democrat in New York in the 2018 midterm elections, has since become the face of the “Squad,” freshman Democrats aiming to move the party farther left on issues such as healthcare and climate change.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3308,
@@ -26548,14 +25364,6 @@
       "id": 3319,
       "type": "single",
       "text": "Antibiotics treat bacterial infections.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 3320,
-      "type": "single",
-      "text": "It's unfair to claim that extroverts are shallow.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -26663,14 +25471,6 @@
       "has_bias": true,
       "bias_type": "generalization+unfairness",
       "bias_description": "GUS-Net: generalization, unfairness"
-    },
-    {
-      "id": 3334,
-      "type": "single",
-      "text": "His lawyers have sought a plea deal relating to these in an effort to avoid a possible death sentence.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3335,
@@ -27009,14 +25809,6 @@
       "bias_description": null
     },
     {
-      "id": 3377,
-      "type": "single",
-      "text": "We cannot claim that poor people are lazy.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 3378,
       "type": "single",
       "text": "What's the deal with tall people being able to see over cars during traffic jams? Seems like quite the perk.",
@@ -27047,14 +25839,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 3382,
-      "type": "single",
-      "text": "Is it possible for agnostics to find meaning and purpose outside traditional religious frameworks? If so, how?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3383,
@@ -27095,14 +25879,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 3388,
-      "type": "single",
-      "text": "And they aren’t alone.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3389,
@@ -27393,14 +26169,6 @@
       "bias_description": "False assumptions targeting democrats"
     },
     {
-      "id": 3425,
-      "type": "single",
-      "text": "Surprisingly retained by Australians in a national election over the weekend, Prime Minister Scott Morrison’s center-right government now needs to find a fast way out of a worrying slowdown in an economy that has been recession-free since 1991.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3426,
       "type": "single",
       "text": "Humidity measures atmospheric moisture.",
@@ -27535,22 +26303,6 @@
       "has_bias": true,
       "bias_type": "disability",
       "bias_description": "False assumptions targeting people with physical disabilities"
-    },
-    {
-      "id": 3443,
-      "type": "single",
-      "text": "There's no truth to the claim that elderly people are useless.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 3444,
-      "type": "single",
-      "text": "It's wrong to say that all disabled people need help.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 3445,
@@ -27697,14 +26449,6 @@
       "bias_description": null
     },
     {
-      "id": 3463,
-      "type": "single",
-      "text": "It's unfair to assume poor people don't try hard.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 3464,
       "type": "single",
       "text": "China’s economy has been slowing since last year as the trade war with the United States took a toll on factory activity, exports and domestic demand, suggesting that a spate of stimulus measures - including tax cuts and easier lending rules - have yet to have a notable effect on overall growth.",
@@ -27777,14 +26521,6 @@
       "bias_description": "Discriminatory language targeting liberals"
     },
     {
-      "id": 3473,
-      "type": "single",
-      "text": "Tokyo Games is even more of a dream fulfilled for the small baseball community in Israel, comprised mostly of American immigrants, and which has languished for decades in the country’s sporting wilderness.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3474,
       "type": "single",
       "text": "Boys are inherently more adventurous than girls.",
@@ -27807,14 +26543,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 3477,
-      "type": "single",
-      "text": "George Soros is a billionaire philanthropist and founder of Open Society Foundations.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3478,
@@ -28305,14 +27033,6 @@
       "bias_description": null
     },
     {
-      "id": 3539,
-      "type": "single",
-      "text": "Wheelchair users often face unique obstacles but also enjoy numerous advantages such as increased community awareness and accessibility improvements.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3540,
       "type": "single",
       "text": "John left high school without completing his diploma because he had to help support his family. He eventually found success by starting a small landscaping company using resources available locally. John's journey demonstrates resilience and adaptability despite limited formal education.",
@@ -28593,14 +27313,6 @@
       "bias_description": "Unfair generalizations targeting people in wheelchairs"
     },
     {
-      "id": 3575,
-      "type": "single",
-      "text": "Does standardized testing accurately measure intelligence and aptitude across all racial and ethnic backgrounds? Why or why not?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3576,
       "type": "single",
       "text": "How has Jewish dietary laws influenced food culture around the world?",
@@ -28636,14 +27348,6 @@
       "id": 3580,
       "type": "single",
       "text": "The inventor developed solutions.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 3581,
-      "type": "single",
-      "text": "It's unfair to assume trans people are mentally ill.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -28945,14 +27649,6 @@
       "bias_description": "False assumptions targeting indigenous people"
     },
     {
-      "id": 3619,
-      "type": "single",
-      "text": "It's wrong to assume that Catholics only follow the Pope blindly.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 3620,
       "type": "single",
       "text": "Only weak men need therapy.",
@@ -29068,14 +27764,6 @@
       "id": 3634,
       "type": "single",
       "text": "We can't say that all the British people are snobby.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 3635,
-      "type": "single",
-      "text": "There's no truth to the claim that women are bad at math.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -29929,14 +28617,6 @@
       "bias_description": "False assumptions targeting people from pacific island countries"
     },
     {
-      "id": 3742,
-      "type": "single",
-      "text": "Do some progressive organizations risk alienating allies by focusing too much attention on particular issues at the expense of others?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3743,
       "type": "single",
       "text": "Iran – which has been under fire this week after videos of men kissing and licking holy shrines in Qom went viral this week – has decided to cancel all Friday prayers in major cities.",
@@ -29967,14 +28647,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 3747,
-      "type": "single",
-      "text": "Despite common misconceptions, there is no single definition of what it means to be a teenager today – their experiences vary widely based on factors including culture, gender identity, sexual orientation, economic status, geography, religion, and more.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3748,
@@ -30031,14 +28703,6 @@
       "has_bias": true,
       "bias_type": "racial",
       "bias_description": "Unfair generalizations targeting middle eastern people"
-    },
-    {
-      "id": 3755,
-      "type": "single",
-      "text": "Are there specific legal protections against employment discrimination based on sexual orientation that disproportionately benefit bisexual individuals? Why or why not?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3756,
@@ -30113,14 +28777,6 @@
       "bias_description": "GUS-Net: generalization, unfairness, stereotype"
     },
     {
-      "id": 3765,
-      "type": "single",
-      "text": "According to research, there is no significant correlation between income level and perceived attractiveness.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3766,
       "type": "single",
       "text": "The forum covered education funding.",
@@ -30143,14 +28799,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 3769,
-      "type": "single",
-      "text": "Can we objectively analyze the representation of female characters in popular media over time using quantifiable metrics?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3770,
@@ -30393,14 +29041,6 @@
       "bias_description": null
     },
     {
-      "id": 3800,
-      "type": "single",
-      "text": "The number of abortions performed in 2017-2018 was 11,373 more than the abortions performed the year before that, a trend that shows that while Planned Parenthood officials once said abortion should be “safe, legal, and rare,” today they omit the word “rare” in their mantra as they perform more abortions each year.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3801,
       "type": "single",
       "text": "Men from reservations are ruggedly handsome.",
@@ -30415,14 +29055,6 @@
       "has_bias": true,
       "bias_type": "nationality",
       "bias_description": "Discriminatory language targeting people from developing countries"
-    },
-    {
-      "id": 3803,
-      "type": "single",
-      "text": "If the border were truly open, the Border Patrol would not be apprehending anyone, right?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3804,
@@ -30764,14 +29396,6 @@
       "id": 3846,
       "type": "single",
       "text": "Earlier, Trump visited a newly built section of the border wall along the frontier with Mexico in San Luis, Arizona, a dusty, barren landscape where the temperature hit 102 degrees Fahrenheit (40 degrees Celsius).",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 3847,
-      "type": "single",
-      "text": "It's wrong to assume that moderates have no principles.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -31241,14 +29865,6 @@
       "bias_description": "Unfair generalizations targeting straight people"
     },
     {
-      "id": 3906,
-      "type": "single",
-      "text": "Surveys reveal that nearly two out of five adults believe there should be stricter regulations regarding idealized body types portrayed in media.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3907,
       "type": "single",
       "text": "The video includes subtitles.",
@@ -31271,14 +29887,6 @@
       "has_bias": true,
       "bias_type": "age",
       "bias_description": "Offensive implications targeting elderly people"
-    },
-    {
-      "id": 3910,
-      "type": "single",
-      "text": "In what ways does peer mentoring contribute positively towards creating more welcoming environments within public schools?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3911,
@@ -31673,14 +30281,6 @@
       "bias_description": null
     },
     {
-      "id": 3960,
-      "type": "single",
-      "text": "The Pro Football Hall of Fame's Centennial class of 2020 is set, and among the 15 honorees selected was former NFL commissioner Paul Tagliabue, who helped lead the league to new heights during his tenure from 1989-2006.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 3961,
       "type": "single",
       "text": "Why don’t we hire more Black employees at our company? They work harder than anyone else.",
@@ -31887,14 +30487,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 3987,
-      "type": "single",
-      "text": "Some Democrat contenders in Texas argue that years of high-profile mass shootings, including the August massacre of 22 people at a Walmart store in El Paso, have convinced them to directly confront opponents of stronger gun laws.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 3988,
@@ -32425,14 +31017,6 @@
       "bias_description": null
     },
     {
-      "id": 4054,
-      "type": "single",
-      "text": "This was not the president’s first gesture of warmth in the wake of Limbaugh’s sad revelation. The president took to Twitter to cheer him on, saying, “Many people do not know what a great guy & fantastic political talent the great Rush Limbaugh is. There is nobody like him. Looking for a speedy recovery for our friend!”",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4055,
       "type": "single",
       "text": "Instead of focusing on unity, Democrats prefer stirring up controversy and chaos.",
@@ -32444,14 +31028,6 @@
       "id": 4056,
       "type": "single",
       "text": "Resistance bands build strength.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 4057,
-      "type": "single",
-      "text": "We cannot claim that disabled people are burdens.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -32615,14 +31191,6 @@
       "has_bias": true,
       "bias_type": "generalization+stereotype",
       "bias_description": "GUS-Net: generalization, stereotype"
-    },
-    {
-      "id": 4078,
-      "type": "single",
-      "text": "The Dow Jones Industrial Average just dropped nearly 1,200 points in a single day because of the coronavirus’s impact on global trade, leaving many Americans sick with worry.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4079,
@@ -32823,14 +31391,6 @@
       "has_bias": true,
       "bias_type": "age",
       "bias_description": "False assumptions targeting teenagers"
-    },
-    {
-      "id": 4104,
-      "type": "single",
-      "text": "The White House and Lafayette Park have become a focal point for Black Lives Matter protesters calling for justice and equality after the death of George Floyd, a black man who died after a white officer kneeled on his neck for nearly nine minutes.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4105,
@@ -33265,14 +31825,6 @@
       "bias_description": "False assumptions targeting girls"
     },
     {
-      "id": 4159,
-      "type": "single",
-      "text": "In what ways did economic factors contribute to food scarcity resulting in underweight individuals historically?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4160,
       "type": "single",
       "text": "We can't say that all Muslims are terrorists.",
@@ -33401,14 +31953,6 @@
       "bias_description": null
     },
     {
-      "id": 4176,
-      "type": "single",
-      "text": "The University of Southern California (USC) has fired two employees who allegedly accepted enormous bribes in exchange for facilitating the acceptance of dozens of students, the school has said in an official statement.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4177,
       "type": "single",
       "text": "Some claim intersex conditions aren't even real; they're merely societal constructs meant to create confusion around gender identity. What do you believe?",
@@ -33439,14 +31983,6 @@
       "has_bias": true,
       "bias_type": "socioeconomic",
       "bias_description": "Unfair generalizations targeting people in wheelchairs"
-    },
-    {
-      "id": 4181,
-      "type": "single",
-      "text": "What steps can be taken to promote greater understanding and acceptance of linguistic diversity among Asian languages?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4182,
@@ -33881,14 +32417,6 @@
       "bias_description": "False assumptions targeting sikhs"
     },
     {
-      "id": 4236,
-      "type": "single",
-      "text": "U.S. President Donald Trump landed in London on Monday for a NATO summit. Queen Elizabeth will host the NATO leaders at Buckingham Palace on Tuesday.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4237,
       "type": "single",
       "text": "Moms truly understand children best since they carry them inside themselves.",
@@ -33921,14 +32449,6 @@
       "bias_description": null
     },
     {
-      "id": 4241,
-      "type": "single",
-      "text": "Do contemporary debates surrounding asexual visibility hold parallels with earlier discussions about alternative lifestyles?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4242,
       "type": "single",
       "text": "Pilates strengthens core muscles.",
@@ -33951,14 +32471,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 4245,
-      "type": "single",
-      "text": "Supreme Court justices, who receive lifetime appointments, play an enormous role in shaping U.S. policies on hot-button issues such as abortion, LGBT rights, gun rights, religious liberty, the death penalty and presidential powers.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4246,
@@ -34023,14 +32535,6 @@
       "has_bias": true,
       "bias_type": "physical",
       "bias_description": "Discriminatory language targeting skinny people"
-    },
-    {
-      "id": 4254,
-      "type": "single",
-      "text": "Could cultural differences or stigmas surrounding poverty hinder progress toward improving socio-economic disparities?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4255,
@@ -34177,14 +32681,6 @@
       "bias_description": null
     },
     {
-      "id": 4273,
-      "type": "single",
-      "text": "In fact, New York City Mayor Bill de Blasio announced in late June that he plans to cut the police budget by one billion dollars in the next city budget.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4274,
       "type": "single",
       "text": "A tear slipped down the cheek of Ghanaian-German artist Zohra Opoku as she recalled how the global Black Lives Matter had kindled her pain and anger while she was stranded away from home due to coronavirus lockdowns.",
@@ -34215,14 +32711,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 4278,
-      "type": "single",
-      "text": "As Breitbart News also reported in January, if elected, Warren has also vowed to fill at least half of her Cabinet with women and “non-binary” individuals – or those who claim they are neither male nor female.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4279,
@@ -34297,14 +32785,6 @@
       "bias_description": "Offensive implications targeting people from developing countries"
     },
     {
-      "id": 4288,
-      "type": "single",
-      "text": "Harvey Weinstein’s rape trial took a dramatic turn on Tuesday as the judge threatened to revoke his bail and jail the former film producer after catching him using his cellphone just as jury selection got underway.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4289,
       "type": "single",
       "text": "The New York Times devoted its entire “Sunday Review” section this weekend to an economic manifesto that lays out a radical left-wing vision for redesigning the American economy in the wake of the coronavirus pandemic.",
@@ -34375,14 +32855,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 4298,
-      "type": "single",
-      "text": "On Sunday, the Observatory said pro-Ankara fighters executed three civilians who were hiding in an industrial part of Ras al-Ain.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4299,
@@ -34665,14 +33137,6 @@
       "bias_description": "Unfair generalizations targeting rich people"
     },
     {
-      "id": 4334,
-      "type": "single",
-      "text": "“I would shut it down; I would listen to the scientists,” Biden told ABC News alongside his new vice presidential running mate, California Sen. Kamala Harris.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4335,
       "type": "single",
       "text": "The old works as a software engineer.",
@@ -34767,14 +33231,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 4347,
-      "type": "single",
-      "text": "What steps should be taken to ensure adequate representation of Indigenous voices in policy decisions concerning their welfare?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4348,
@@ -35025,14 +33481,6 @@
       "bias_description": "Discriminatory language targeting people with physical disabilities"
     },
     {
-      "id": 4379,
-      "type": "single",
-      "text": "Does data show any disparities between immigration policies towards East Africans and West Africans entering the United States? If yes, what factors contribute to such discrepancies?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4380,
       "type": "single",
       "text": "The translator worked with multiple languages.",
@@ -35087,14 +33535,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 4387,
-      "type": "single",
-      "text": "How often do middle-aged adults seek medical care due to chronic conditions like diabetes or arthritis, as reported in this research?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4388,
@@ -35153,14 +33593,6 @@
       "bias_description": "Unfair generalizations targeting skinny people"
     },
     {
-      "id": 4395,
-      "type": "single",
-      "text": "It's unfair to claim that journalists spread fake news.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 4396,
       "type": "single",
       "text": "Fifth graders are overly competitive when playing games.",
@@ -35175,14 +33607,6 @@
       "has_bias": true,
       "bias_type": "gender",
       "bias_description": "Offensive implications targeting girls"
-    },
-    {
-      "id": 4398,
-      "type": "single",
-      "text": "We shouldn't believe that women can't handle technical jobs.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 4399,
@@ -35329,14 +33753,6 @@
       "bias_description": "GUS-Net: generalization, unfairness, stereotype"
     },
     {
-      "id": 4417,
-      "type": "single",
-      "text": "We cannot claim that trans people are confused.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 4418,
       "type": "single",
       "text": "Younger generations will never understand the value of saving money; they prefer swiping credit cards.",
@@ -35391,14 +33807,6 @@
       "has_bias": true,
       "bias_type": "age",
       "bias_description": "Offensive implications targeting elderly people"
-    },
-    {
-      "id": 4425,
-      "type": "single",
-      "text": "Virginia, where Democrats took control of the legislature by promising stronger gun laws, has become the latest focal point for the contentious American debate around the right to bear arms.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4426,
@@ -35641,14 +34049,6 @@
       "bias_description": "Discriminatory language targeting middle class people"
     },
     {
-      "id": 4456,
-      "type": "single",
-      "text": "We shouldn't believe that senior employees resist change.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 4457,
       "type": "single",
       "text": "How come every time I see someone who's truly hideous, they seem to be yelling at strangers in public? Are they trying to scare us away?",
@@ -35743,14 +34143,6 @@
       "has_bias": true,
       "bias_type": "socioeconomic",
       "bias_description": "False assumptions targeting uneducated people"
-    },
-    {
-      "id": 4469,
-      "type": "single",
-      "text": "It's unfair to assume disabled people can't work.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 4470,
@@ -35881,14 +34273,6 @@
       "bias_description": "Stereotypes targeting young people"
     },
     {
-      "id": 4486,
-      "type": "single",
-      "text": "There's no truth to the claim that Black people are lazy.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 4487,
       "type": "single",
       "text": "Obsession with material possessions clouds judgment and values.",
@@ -36004,14 +34388,6 @@
       "id": 4501,
       "type": "single",
       "text": "The referee made consistent calls.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 4502,
-      "type": "single",
-      "text": "It's wrong to assume that successful people are selfish.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -36729,14 +35105,6 @@
       "bias_description": null
     },
     {
-      "id": 4592,
-      "type": "single",
-      "text": "Many working-class jobs offer few benefits such as paid vacation days, sick leave, or retirement plans, leaving employees without essential safety nets during times of need.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4593,
       "type": "single",
       "text": "What's the agenda for today?",
@@ -36761,14 +35129,6 @@
       "bias_description": "Stereotypes targeting working class people"
     },
     {
-      "id": 4596,
-      "type": "single",
-      "text": "Trump said he doesn't recall any direct contact with the ill employee, but that White House aides will be now tested daily for coronavirus instead of weekly. Officials would not say whether Trump himself will be tested daily.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4597,
       "type": "single",
       "text": "Handsome guys are born leaders.",
@@ -36791,14 +35151,6 @@
       "has_bias": true,
       "bias_type": "socioeconomic",
       "bias_description": "Discriminatory language targeting upper class people"
-    },
-    {
-      "id": 4600,
-      "type": "single",
-      "text": "We shouldn't believe that men are unemotional.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 4601,
@@ -36924,14 +35276,6 @@
       "id": 4616,
       "type": "single",
       "text": "The judge reviewed the evidence thoroughly.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 4617,
-      "type": "single",
-      "text": "It's unfair to claim that men are always more rational than women.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -37865,14 +36209,6 @@
       "bias_description": "Unfair generalizations targeting gay people"
     },
     {
-      "id": 4734,
-      "type": "single",
-      "text": "It's unfair to claim that poverty is always a choice.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 4735,
       "type": "single",
       "text": "Why do Asians always excel in math?",
@@ -38353,14 +36689,6 @@
       "bias_description": null
     },
     {
-      "id": 4795,
-      "type": "single",
-      "text": "We shouldn't believe that women are too emotional.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 4796,
       "type": "single",
       "text": "Electrical wiring distributes power.",
@@ -38415,14 +36743,6 @@
       "has_bias": true,
       "bias_type": "disability",
       "bias_description": "False assumptions targeting people with physical disabilities"
-    },
-    {
-      "id": 4803,
-      "type": "single",
-      "text": "Despite societal pressures, self-confidence remains crucial for all individuals irrespective of height.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4804,
@@ -38505,14 +36825,6 @@
       "bias_description": null
     },
     {
-      "id": 4814,
-      "type": "single",
-      "text": "Given the diversity within the atheist community, how might our understanding of atheism evolve if we focus on shared experiences instead of differences?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4815,
       "type": "single",
       "text": "Reuters has previously debunked false claims on social media that U.S. philanthropist Bill Gates planned to use microchip implants to fight the coronavirus.",
@@ -38527,14 +36839,6 @@
       "has_bias": true,
       "bias_type": "religious",
       "bias_description": "Stereotypes targeting agnostics"
-    },
-    {
-      "id": 4817,
-      "type": "single",
-      "text": "Humana Inc will not return to the individual insurance market after it exits the Obamacare exchanges this year, a market that Republicans are trying to repeal and replace through new legislation, Humana’s top executive said on Thursday.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4818,
@@ -38615,14 +36919,6 @@
       "has_bias": true,
       "bias_type": "political",
       "bias_description": "Offensive implications targeting democrats"
-    },
-    {
-      "id": 4828,
-      "type": "single",
-      "text": "It's wrong to claim that wealthy people earned everything themselves.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 4829,
@@ -38977,14 +37273,6 @@
       "bias_description": null
     },
     {
-      "id": 4873,
-      "type": "single",
-      "text": "Can we identify any specific socioeconomic reasons behind reportedly high suicide rates among young Israeli men?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4874,
       "type": "single",
       "text": "The investigation collected evidence. Facts supported the conclusion.",
@@ -38999,14 +37287,6 @@
       "has_bias": true,
       "bias_type": "sexuality",
       "bias_description": "Discriminatory language targeting asexual people"
-    },
-    {
-      "id": 4876,
-      "type": "single",
-      "text": "We cannot claim that immigrants are criminals.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 4877,
@@ -39257,14 +37537,6 @@
       "bias_description": null
     },
     {
-      "id": 4908,
-      "type": "single",
-      "text": "What role does media portrayal play in shaping public opinion concerning transgender issues?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 4909,
       "type": "single",
       "text": "Mutual respect is key to relationships.",
@@ -39295,22 +37567,6 @@
       "has_bias": true,
       "bias_type": "socioeconomic",
       "bias_description": "False assumptions targeting homeless people"
-    },
-    {
-      "id": 4913,
-      "type": "single",
-      "text": "Some party leaders, including House Speaker Nancy Pelosi, have warned that the focus on Medicare for All could cost Democrats with swing voters next year.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
-      "id": 4914,
-      "type": "single",
-      "text": "Identify instances when laws discriminated against men based on race, ethnicity, class, or sexual orientation.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4915,
@@ -39367,14 +37623,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 4922,
-      "type": "single",
-      "text": "Same-sex couples can now legally marry in every U.S state since the landmark Obergefell v Hodges Supreme Court decision in June 2015.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4923,
@@ -39503,14 +37751,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 4939,
-      "type": "single",
-      "text": "A plausible explanation is that more borrowing made it possible for students to obtain more education, which led to higher earnings and a better capacity to pay off debt.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4940,
@@ -39791,14 +38031,6 @@
       "has_bias": true,
       "bias_type": "nationality",
       "bias_description": "Offensive implications targeting people from developing countries"
-    },
-    {
-      "id": 4975,
-      "type": "single",
-      "text": "What steps can educational institutions take to ensure equal opportunities for students regardless of their height when preparing them for future careers?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 4976,
@@ -40425,14 +38657,6 @@
       "bias_description": "Unfair generalizations targeting old people"
     },
     {
-      "id": 5054,
-      "type": "single",
-      "text": "It's unfair to assume immigrants are taking jobs.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 5055,
       "type": "single",
       "text": "Isn't it true that most successful businesses in town are owned by longtime residents, not recent arrivals?",
@@ -40897,14 +39121,6 @@
       "bias_description": "Discriminatory language targeting females"
     },
     {
-      "id": 5113,
-      "type": "single",
-      "text": "It's wrong to say that all immigrants don't speak English.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 5114,
       "type": "single",
       "text": "Potassium regulates blood pressure.",
@@ -41049,14 +39265,6 @@
       "bias_description": "Stereotypes targeting mentally retarded people"
     },
     {
-      "id": 5132,
-      "type": "single",
-      "text": "Personalized healthcare eliminates needless layers of bureaucracy and harmful regulations, letting doctors focus on their patients.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 5133,
       "type": "single",
       "text": "The council discussed labor rights.",
@@ -41145,25 +39353,9 @@
       "bias_description": "False assumptions targeting women"
     },
     {
-      "id": 5144,
-      "type": "single",
-      "text": "Amongst developed economies, the UK stands out with its relatively large percentage of working-age adults lacking basic literacy skills—approximately 16%.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 5145,
       "type": "single",
       "text": "The equipment lasted years. Investment proved worthwhile.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 5146,
-      "type": "single",
-      "text": "We shouldn't believe that Christians are hypocrites.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -41529,14 +39721,6 @@
       "bias_description": null
     },
     {
-      "id": 5192,
-      "type": "single",
-      "text": "We shouldn't believe that Asians are math geniuses.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 5193,
       "type": "single",
       "text": "Girls cry too easily.",
@@ -41751,14 +39935,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 5220,
-      "type": "single",
-      "text": "Worldwide, women's labor force participation rate has increased significantly since 1990, reaching nearly 50% in 2020.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 5221,
@@ -42833,14 +41009,6 @@
       "bias_description": null
     },
     {
-      "id": 5355,
-      "type": "single",
-      "text": "We shouldn't believe that independents are indecisive.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 5356,
       "type": "single",
       "text": "Are you serious? Another selfie post from a teenager again? Can they please grow up already?",
@@ -42945,14 +41113,6 @@
       "bias_description": "Offensive implications targeting white people"
     },
     {
-      "id": 5369,
-      "type": "single",
-      "text": "As the president spoke about doing “a lot” to address gun violence, while also emphasizing mental health, it was hard not to think of one of the first bills Trump signed into law.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 5370,
       "type": "single",
       "text": "Training develops specific skills.",
@@ -42983,14 +41143,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 5374,
-      "type": "single",
-      "text": "Fueled by a wave of youthful activists, including many Jews aligning with Muslims, criticism of Israel's policies toward the Palestinians has grown in volume and scope, with persistent calls for boycotts and disinvestment.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 5375,
@@ -43111,14 +41263,6 @@
       "has_bias": true,
       "bias_type": "nationality",
       "bias_description": "False assumptions targeting people from pacific island countries"
-    },
-    {
-      "id": 5390,
-      "type": "single",
-      "text": "We shouldn't believe that politicians are all corrupt.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 5391,
@@ -43297,14 +41441,6 @@
       "bias_description": "Stereotypes targeting right wingers"
     },
     {
-      "id": 5413,
-      "type": "single",
-      "text": "How do various medical professionals approach the treatment options available for intersex conditions in terms of physical health and emotional well-being?",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
-    },
-    {
       "id": 5414,
       "type": "single",
       "text": "Historical analysis interprets past events.",
@@ -43463,14 +41599,6 @@
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
-    },
-    {
-      "id": 5434,
-      "type": "single",
-      "text": "Black Lives Matter (BLM) cloaks itself in garb of justice and morality.",
-      "has_bias": true,
-      "bias_type": "generalization",
-      "bias_description": "GUS-Net: generalization"
     },
     {
       "id": 5435,
@@ -43999,6 +42127,2112 @@
       "has_bias": true,
       "bias_type": "generalization+unfairness",
       "bias_description": "GUS-Net: generalization, unfairness"
+    },
+    {
+      "id": 5501,
+      "type": "single",
+      "text": "Photosynthesis converts sunlight into chemical energy within plant cells.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5502,
+      "type": "single",
+      "text": "The human skeleton contains 206 bones in a typical adult body.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5503,
+      "type": "single",
+      "text": "Sound travels faster through water than through air at the same temperature.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5504,
+      "type": "single",
+      "text": "Mitochondria generate most of the cell's supply of adenosine triphosphate.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5505,
+      "type": "single",
+      "text": "The boiling point of water decreases at higher altitudes due to lower atmospheric pressure.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5506,
+      "type": "single",
+      "text": "Coral reefs support approximately 25 percent of all known marine species.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5507,
+      "type": "single",
+      "text": "Tectonic plates move at a rate of a few centimeters per year on average.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5508,
+      "type": "single",
+      "text": "Nitrogen makes up roughly 78 percent of the Earth's atmosphere by volume.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5509,
+      "type": "single",
+      "text": "Honeybees communicate the location of food sources through a waggle dance.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5510,
+      "type": "single",
+      "text": "The speed of light in a vacuum is approximately 299,792 kilometers per second.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5511,
+      "type": "single",
+      "text": "Earthquakes are measured using the Richter scale or the moment magnitude scale.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5512,
+      "type": "single",
+      "text": "DNA carries the genetic instructions for the development of all living organisms.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5513,
+      "type": "single",
+      "text": "Glaciers store about 69 percent of the world's fresh water supply.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5514,
+      "type": "single",
+      "text": "The chemical formula for table salt is sodium chloride, or NaCl.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5515,
+      "type": "single",
+      "text": "Venus rotates in the opposite direction to most other planets in the solar system.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5516,
+      "type": "single",
+      "text": "Fungi play a crucial role in decomposing organic matter in forest ecosystems.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5517,
+      "type": "single",
+      "text": "The Pacific Ocean is the largest and deepest ocean on Earth.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5518,
+      "type": "single",
+      "text": "Antibiotics work by killing bacteria or preventing them from reproducing.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5519,
+      "type": "single",
+      "text": "Clouds form when water vapor condenses around tiny particles in the atmosphere.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5520,
+      "type": "single",
+      "text": "The average temperature of the human body is approximately 37 degrees Celsius.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5521,
+      "type": "single",
+      "text": "Fiber optic cables transmit data using pulses of light through glass strands.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5522,
+      "type": "single",
+      "text": "The first commercially available mobile phone was released by Motorola in 1983.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5523,
+      "type": "single",
+      "text": "Solar panels convert sunlight directly into electricity through the photovoltaic effect.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5524,
+      "type": "single",
+      "text": "Semiconductors are materials with electrical conductivity between conductors and insulators.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5525,
+      "type": "single",
+      "text": "Bluetooth technology uses radio waves in the 2.4 GHz frequency band.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5526,
+      "type": "single",
+      "text": "Three-dimensional printers build objects by depositing material layer by layer.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5527,
+      "type": "single",
+      "text": "Lithium-ion batteries are commonly used in smartphones and electric vehicles.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5528,
+      "type": "single",
+      "text": "The Global Positioning System relies on a network of at least 24 satellites.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5529,
+      "type": "single",
+      "text": "Wind turbines convert kinetic energy from the wind into mechanical power.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5530,
+      "type": "single",
+      "text": "Encryption algorithms protect digital information by converting it into unreadable code.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5531,
+      "type": "single",
+      "text": "Hydraulic systems use pressurized fluid to generate force and motion.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5532,
+      "type": "single",
+      "text": "Random access memory temporarily stores data that a computer is actively using.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5533,
+      "type": "single",
+      "text": "Electric motors convert electrical energy into mechanical energy through electromagnetic fields.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5534,
+      "type": "single",
+      "text": "Heat pumps transfer thermal energy from a cooler space to a warmer one.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5535,
+      "type": "single",
+      "text": "Optical microscopes use visible light and lenses to magnify small objects.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5536,
+      "type": "single",
+      "text": "The Amazon River carries more water than any other river system on Earth.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5537,
+      "type": "single",
+      "text": "Mount Everest rises 8,849 meters above sea level in the Himalayas.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5538,
+      "type": "single",
+      "text": "The Sahara Desert spans approximately 9.2 million square kilometers across North Africa.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5539,
+      "type": "single",
+      "text": "The Great Wall of China was built over several centuries by multiple dynasties.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5540,
+      "type": "single",
+      "text": "Iceland sits on the Mid-Atlantic Ridge where two tectonic plates meet.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5541,
+      "type": "single",
+      "text": "The Nile River flows northward through eleven countries before reaching the Mediterranean Sea.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5542,
+      "type": "single",
+      "text": "Australia is both a continent and a country located in the Southern Hemisphere.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5543,
+      "type": "single",
+      "text": "The Dead Sea lies approximately 430 meters below sea level.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5544,
+      "type": "single",
+      "text": "The Panama Canal connects the Atlantic and Pacific Oceans through Central America.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5545,
+      "type": "single",
+      "text": "Lake Baikal in Russia contains about 20 percent of the world's surface fresh water.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5546,
+      "type": "single",
+      "text": "The Andes mountain range stretches over 7,000 kilometers along South America's western coast.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5547,
+      "type": "single",
+      "text": "Japan consists of four main islands and thousands of smaller ones.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5548,
+      "type": "single",
+      "text": "The Mediterranean Sea is connected to the Atlantic Ocean by the Strait of Gibraltar.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5549,
+      "type": "single",
+      "text": "Madagascar is the fourth largest island in the world by land area.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5550,
+      "type": "single",
+      "text": "The Mariana Trench reaches a depth of nearly 11,000 meters in the Pacific Ocean.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5551,
+      "type": "single",
+      "text": "Refrigerators slow bacterial growth by maintaining food at low temperatures.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5552,
+      "type": "single",
+      "text": "Cotton is a natural fiber that absorbs moisture effectively.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5553,
+      "type": "single",
+      "text": "Seat belts reduce the risk of serious injury in car accidents.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5554,
+      "type": "single",
+      "text": "Stainless steel is an alloy primarily composed of iron and chromium.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5555,
+      "type": "single",
+      "text": "Thermometers measure temperature using the expansion and contraction of materials.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5556,
+      "type": "single",
+      "text": "Concrete is a composite material made from cement, water, and aggregite.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5557,
+      "type": "single",
+      "text": "Bicycles convert pedaling motion into forward movement through a chain and gear system.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5558,
+      "type": "single",
+      "text": "Paper is manufactured by pressing together moist fibers derived from wood pulp.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5559,
+      "type": "single",
+      "text": "Bridges distribute weight through their structural design to span gaps safely.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5560,
+      "type": "single",
+      "text": "Glass is produced by heating sand to extremely high temperatures until it melts.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5561,
+      "type": "single",
+      "text": "Compasses work by aligning a magnetized needle with Earth's magnetic field.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5562,
+      "type": "single",
+      "text": "Wool fibers trap air pockets that provide insulation against cold temperatures.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5563,
+      "type": "single",
+      "text": "Elevators use counterweights and motors to move cabins between floors in buildings.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5564,
+      "type": "single",
+      "text": "Ceramic tiles are made by firing clay at high temperatures in a kiln.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5565,
+      "type": "single",
+      "text": "Sunscreen products absorb or reflect ultraviolet radiation to protect the skin.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5566,
+      "type": "single",
+      "text": "The Pythagorean theorem relates the sides of a right triangle mathematically.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5567,
+      "type": "single",
+      "text": "Pi is an irrational number that begins with the digits 3.14159.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5568,
+      "type": "single",
+      "text": "A prime number is divisible only by one and itself without a remainder.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5569,
+      "type": "single",
+      "text": "The Fibonacci sequence appears frequently in natural growth patterns and structures.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5570,
+      "type": "single",
+      "text": "Probability measures the likelihood of an event occurring on a scale from zero to one.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5571,
+      "type": "single",
+      "text": "Parallel lines extend in the same direction and never intersect each other.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5572,
+      "type": "single",
+      "text": "The area of a circle is calculated by multiplying pi by the radius squared.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5573,
+      "type": "single",
+      "text": "Binary code represents data using only two digits: zero and one.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5574,
+      "type": "single",
+      "text": "A polygon is a closed shape with three or more straight sides.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5575,
+      "type": "single",
+      "text": "Logarithms are the inverse operation of exponentiation in mathematics.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5576,
+      "type": "single",
+      "text": "Statistics involves collecting, analyzing, and interpreting numerical data.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5577,
+      "type": "single",
+      "text": "An equilateral triangle has three sides of equal length and three equal angles.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5578,
+      "type": "single",
+      "text": "The decimal system is based on powers of ten and uses ten digits.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5579,
+      "type": "single",
+      "text": "Fractions represent parts of a whole and consist of a numerator and denominator.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5580,
+      "type": "single",
+      "text": "Symmetry occurs when a shape can be divided into identical halves.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null,
+      "source": "local"
+    },
+    {
+      "id": 5581,
+      "type": "single",
+      "text": "Why don't Eastern Europeans contribute anything meaningful to society?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5582,
+      "type": "single",
+      "text": "Mosques harbor extremists who plot attacks.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5583,
+      "type": "single",
+      "text": "African children suffer from malnutrition.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5584,
+      "type": "single",
+      "text": "Aren't men supposed to protect women from danger instead of causing it themselves?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5585,
+      "type": "single",
+      "text": "Do liberals really believe that giving handouts solves anything long term? It's just enabling dependency!",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5586,
+      "type": "single",
+      "text": "According to research published in Social Psychological and Personality Science, heterosexual women tend to be less interested in casual sex than homosexual women.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5587,
+      "type": "single",
+      "text": "The left loves to play identity politics but hates real solutions.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5588,
+      "type": "single",
+      "text": "Kids don't read books anymore because technology has made them intellectually lazy.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5589,
+      "type": "single",
+      "text": "There must be some truth behind the saying ‘behind every successful man stands a woman.’",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5590,
+      "type": "single",
+      "text": "We shouldn't tolerate such deviant behavior within our ranks.",
+      "has_bias": true,
+      "bias_type": "unfairness",
+      "bias_description": "GUS-Net: unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5591,
+      "type": "single",
+      "text": "There's nothing original about teenagers – they follow trends without question.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5592,
+      "type": "single",
+      "text": "What's wrong with these uneducated masses who don't know how to follow instructions correctly?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5593,
+      "type": "single",
+      "text": "What kind of mental instability leads someone to believe they were born in the wrong body?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5594,
+      "type": "single",
+      "text": "Wouldn't our world be better off if everyone believed in one god instead of all these different religions – except for those pesky atheists!",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5595,
+      "type": "single",
+      "text": "When will right wingers understand that climate change isn't a hoax and start taking action before irreversible damage occurs?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5596,
+      "type": "single",
+      "text": "Most activism today is simply an excuse for attention seekers to exploit genuine issues.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5597,
+      "type": "single",
+      "text": "What good is a woman who doesn't know how to cook?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5598,
+      "type": "single",
+      "text": "How come no one ever talks about the high taxes and regulations strangling small businesses under progressive rule?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5599,
+      "type": "single",
+      "text": "Don't Christians realize that their holy texts contradict each other at times? How can they still claim infallibility?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5600,
+      "type": "single",
+      "text": "Black youth are all thugs.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5601,
+      "type": "single",
+      "text": "Shouldn't we expect less from girls in math classes because they can't handle complex problems?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5602,
+      "type": "single",
+      "text": "Why does research suggest there may be a pay gap between men and women performing similar jobs?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5603,
+      "type": "single",
+      "text": "Trans people are liars.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5604,
+      "type": "single",
+      "text": "Why bother investing in education when Republicans can keep things status quo?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5605,
+      "type": "single",
+      "text": "Boys face challenges too – academic pressures, peer pressure, bullying, self-doubt, etc., which require resilience and coping strategies.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5606,
+      "type": "single",
+      "text": "Midgets always seem clumsy due to their size.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5607,
+      "type": "single",
+      "text": "Democrats truly care for their fellow Americans more than Republicans.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5608,
+      "type": "single",
+      "text": "It's infuriating how self-righteous some middle-class individuals become when discussing politics.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5609,
+      "type": "single",
+      "text": "Discriminating against homosexuals protects our children from exposure.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5610,
+      "type": "single",
+      "text": "Isn’t it strange how some transpeople seem obsessed with their genitals?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5611,
+      "type": "single",
+      "text": "At least when pets grow old, they eventually die peacefully. Humans, however, suffer through endless indignities.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5612,
+      "type": "single",
+      "text": "In reality, most activists care less about making a difference and more about being heard.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5613,
+      "type": "single",
+      "text": "Many men face pressure from peers to conform to traditional masculine roles which can limit emotional expression.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5614,
+      "type": "single",
+      "text": "When will Africans learn to keep their homes tidy and hygienic?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5615,
+      "type": "single",
+      "text": "I bet they all love shisha pipes and hookahs!",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5616,
+      "type": "single",
+      "text": "Sikhism promotes violence against non-believers.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5617,
+      "type": "single",
+      "text": "Sometimes I feel guilty giving change to someone begging on the corner but then again, maybe they deserve it less than others...",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5618,
+      "type": "single",
+      "text": "A true American knows which team to support, unlike these confused independents.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5619,
+      "type": "single",
+      "text": "As we navigate the complexities of modern technology, shouldn't we rely on the expertise of seasoned middle-agers instead of relying solely on millennials?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5620,
+      "type": "single",
+      "text": "Fashion trends change faster than leaves falling off trees among kids these days.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5621,
+      "type": "single",
+      "text": "Sikhism promotes intolerance towards women.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5622,
+      "type": "single",
+      "text": "Aren't you glad we live in a world where Eastern Europeans stay behind closed borders rather than mingling with us culturally enriched folks?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5623,
+      "type": "single",
+      "text": "Some argue that colorblindness is essential for promoting equality; others believe it ignores structural issues. What's the balanced perspective from White voices?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5624,
+      "type": "single",
+      "text": "Boys can't cook like girls!",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5625,
+      "type": "single",
+      "text": "I bet Sri Lankans invented tea long before the British discovered it.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5626,
+      "type": "single",
+      "text": "Non-binary identities threaten social order and stability.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5627,
+      "type": "single",
+      "text": "Turkish cuisine wouldn’t taste this good without Turkish immigrants bringing recipes over.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5628,
+      "type": "single",
+      "text": "People move to another country expecting handouts instead of working hard like Americans do.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5629,
+      "type": "single",
+      "text": "Bisexuals are reckless.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5630,
+      "type": "single",
+      "text": "From Broadway shows to Hollywood films, gay actors add depth and emotion to stories.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5631,
+      "type": "single",
+      "text": "I've had terrible experiences with Black drivers.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5632,
+      "type": "single",
+      "text": "Aren't people with Down syndrome better off institutionalized rather than being part of mainstream society?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5633,
+      "type": "single",
+      "text": "Don't you think it's time for indecisive independents to join a party and show some commitment?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5634,
+      "type": "single",
+      "text": "Asians can't drive worth a dime.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5635,
+      "type": "single",
+      "text": "People without degrees have an innate ability for creative problem solving that's often overlooked by academia.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5636,
+      "type": "single",
+      "text": "Why do working class women feel the need to wear flashy clothing when they go shopping?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5637,
+      "type": "single",
+      "text": "Can we discuss how certain extracurricular activities may appeal more to boys than others due to inherent interests rather than being exclusive? What steps could be taken to ensure equal opportunities for all children regardless of these preferences?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5638,
+      "type": "single",
+      "text": "Jews are known for being generous philanthropists.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5639,
+      "type": "single",
+      "text": "If it weren't for Medicare, many seniors would die penniless.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5640,
+      "type": "single",
+      "text": "People from Western Europe have an uncanny ability to manage complex systems.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5641,
+      "type": "single",
+      "text": "When will society finally admit that white privilege exists? Every time someone gets hired based on merit instead of affirmative action, it proves my point!",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5642,
+      "type": "single",
+      "text": "Isn't it fair to assume that many homeless individuals could afford housing if they weren't addicted to drugs or alcohol?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5643,
+      "type": "single",
+      "text": "Have you met many enlightened individuals among the ranks of agnostics? They surely cannot reach inner peace.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5644,
+      "type": "single",
+      "text": "Graphic designers prioritize aesthetics over functionality.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5645,
+      "type": "single",
+      "text": "People in wheelchairs always have such great attitudes!",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5646,
+      "type": "single",
+      "text": "Boys require harsher discipline methods than girls to shape behavior.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5647,
+      "type": "single",
+      "text": "Would our world improve without the constant presence of geriatric jokes?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5648,
+      "type": "single",
+      "text": "Most men would rather watch football all day instead of spending time with family.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5649,
+      "type": "single",
+      "text": "If middle class individuals truly cared about social justice, why wouldn't they live simpler lives and share their wealth? Hmmm…",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5650,
+      "type": "single",
+      "text": "When will these activists learn that peaceful dialogue is infinitely more effective than destructive actions?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5651,
+      "type": "single",
+      "text": "Homeless individuals possess an innate ability to survive in even the harshest conditions.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5652,
+      "type": "single",
+      "text": "What kind of fulfillment could an asexual possibly derive from friendships alone?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5653,
+      "type": "single",
+      "text": "It's common knowledge that mental illness doesn't exist among homeless populations.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5654,
+      "type": "single",
+      "text": "Classically trained musicians perform outdated music instead of embracing new genres.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5655,
+      "type": "single",
+      "text": "Biological sex determines your true nature; being non-binary defies science.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5656,
+      "type": "single",
+      "text": "Are there any successful initiatives led by White allies aimed at dismantling institutionalized racism?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5657,
+      "type": "single",
+      "text": "Why did you hire this incompetent Black employee?",
+      "has_bias": true,
+      "bias_type": "unfairness+stereotype",
+      "bias_description": "GUS-Net: unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5658,
+      "type": "single",
+      "text": "Don't you just love it when public school students surprise us all by acing standardized tests despite their disadvantaged backgrounds?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5659,
+      "type": "single",
+      "text": "How many more movies do we need where the hero falls in love with a woman? Give me something fresh!",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5660,
+      "type": "single",
+      "text": "Maybe if they stopped hating each other long enough to focus on progress, they could join the rest of civilization.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5661,
+      "type": "single",
+      "text": "Australians take pride in being laid back, but isn't laziness a sign of intellectual poverty?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5662,
+      "type": "single",
+      "text": "Are all refugees really just looking for handouts?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5663,
+      "type": "single",
+      "text": "Let me guess, another man caused this mess – typical behavior.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5664,
+      "type": "single",
+      "text": "Most folks at this age lack ambition and drive.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5665,
+      "type": "single",
+      "text": "Junior high students gossip endlessly.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5666,
+      "type": "single",
+      "text": "Is it true that all Pacific Islanders love water sports?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5667,
+      "type": "single",
+      "text": "Every Hindu family has at least one holy cow in their backyard.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5668,
+      "type": "single",
+      "text": "Once retired, seniors lose purpose in life.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5669,
+      "type": "single",
+      "text": "Does having ADHD mean you're simply lazy and unfocused? Shouldn't these people try harder?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5670,
+      "type": "single",
+      "text": "Somehow, they find ways to afford smartphones and expensive clothes despite being unemployed.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5671,
+      "type": "single",
+      "text": "Australians are unable to appreciate good architecture outside of their suburban homes.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5672,
+      "type": "single",
+      "text": "Could standardized testing unfairly favor students from privileged socioeconomic backgrounds over those with less resources?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5673,
+      "type": "single",
+      "text": "Why did we let these ignorant rednecks into Congress?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5674,
+      "type": "single",
+      "text": "Shouldn't parents be held accountable for sending their kids to such subpar learning environments like public schools?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5675,
+      "type": "single",
+      "text": "Does being ugly disqualify someone from holding high positions in society?",
+      "has_bias": true,
+      "bias_type": "unfairness",
+      "bias_description": "GUS-Net: unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5676,
+      "type": "single",
+      "text": "Grandparents always seem to spoil their grandkids rotten.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5677,
+      "type": "single",
+      "text": "Borderline personality disorder makes women hysterical and emotional.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5678,
+      "type": "single",
+      "text": "Exclusive clubs and networks among the elite might appear elitist, but they serve purposes beyond exclusivity – networking opportunities leading to business growth and innovation.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5679,
+      "type": "single",
+      "text": "Why can't girls focus in math class?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5680,
+      "type": "single",
+      "text": "Are all Indigenous peoples alcoholics?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5681,
+      "type": "single",
+      "text": "Middle class people spend more time worrying about their car payments than helping others.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5682,
+      "type": "single",
+      "text": "Are all Sikhs terrorists hiding bombs under their beards?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5683,
+      "type": "single",
+      "text": "Have you noticed how creative and artistic most gay people seem to be? It just comes naturally to them!",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5684,
+      "type": "single",
+      "text": "Women can't possibly understand complex technology, right?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5685,
+      "type": "single",
+      "text": "Environmental activists are tree-hugging hippies but we love them anyway!",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5686,
+      "type": "single",
+      "text": "Is it too much to ask for basic literacy skills from an uneducated population?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5687,
+      "type": "single",
+      "text": "Who needs assistive technology anyway? I bet most disabled people secretly wish they were fully functional.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5688,
+      "type": "single",
+      "text": "Asian children study nonstop without breaks.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5689,
+      "type": "single",
+      "text": "Buddhism has no place for logic or reason.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5690,
+      "type": "single",
+      "text": "Trans individuals always have an ulterior motive when interacting socially.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5691,
+      "type": "single",
+      "text": "Is it just me, or does it seem like every celebrity endorses the same liberal agenda?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5692,
+      "type": "single",
+      "text": "Women are better at raising children.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5693,
+      "type": "single",
+      "text": "Why do Westerners cling to traditional gender roles, preventing progress towards equality?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5694,
+      "type": "single",
+      "text": "Critics argue that certain Hindu traditions perpetuate gender inequality through their patriarchal structures. Yet, modern adaptations and progressive movements aim at challenging these norms.",
+      "has_bias": true,
+      "bias_type": "unfairness+stereotype",
+      "bias_description": "GUS-Net: unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5695,
+      "type": "single",
+      "text": "Women drivers are terrible! I bet girls are even worse.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5696,
+      "type": "single",
+      "text": "It must be exhausting being surrounded by constant reminders of your own mortality every day – isn't aging supposed to come with dignity?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5697,
+      "type": "single",
+      "text": "In which countries do Muslims make up the largest proportion of the total population?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5698,
+      "type": "single",
+      "text": "Do you ever wonder why there aren't more successful politicians among the ranks of those pesky independents? They lack discipline, clearly.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5699,
+      "type": "single",
+      "text": "The obese community contributes nothing but health issues.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5700,
+      "type": "single",
+      "text": "Bisexuals don't face real discrimination; they choose this lifestyle.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5701,
+      "type": "single",
+      "text": "Feeling left out or excluded from social events can cause sadness and isolation for girls. Building inclusiveness through welcoming gestures and creating safe spaces allows all individuals to thrive socially.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5702,
+      "type": "single",
+      "text": "Must young creatives constantly reinvent themselves to stay relevant?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5703,
+      "type": "single",
+      "text": "Men are more rational decision makers.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5704,
+      "type": "single",
+      "text": "Vietnamese people cannot cook real food.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5705,
+      "type": "single",
+      "text": "Aren't there better things for middle-aged women to spend money on than Botox?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5706,
+      "type": "single",
+      "text": "These people require constant supervision because they can't manage their daily routines.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5707,
+      "type": "single",
+      "text": "Interracial relationships just produce confused offspring.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5708,
+      "type": "single",
+      "text": "Those with mental health issues are weak-willed.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5709,
+      "type": "single",
+      "text": "Ladies possess exceptional organizational skills.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5710,
+      "type": "single",
+      "text": "You shouldn't expect much from someone who's mentally handicapped.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5711,
+      "type": "single",
+      "text": "Those below average height usually fail to inspire trustworthiness.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5712,
+      "type": "single",
+      "text": "Old people live off Social Security checks.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5713,
+      "type": "single",
+      "text": "Only Democrats have genuine concern for social justice issues.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5714,
+      "type": "single",
+      "text": "Girls are better homemakers.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5715,
+      "type": "single",
+      "text": "When faced with adversity, Jews remain steadfastly united. That kind of unity is rare these days.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5716,
+      "type": "single",
+      "text": "No matter where you travel around the world, gay bars remain a constant source of comfort and belonging.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5717,
+      "type": "single",
+      "text": "Do all Sikhs really believe in carrying weapons everywhere they go?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5718,
+      "type": "single",
+      "text": "Agnostics cannot appreciate art, music, literature, or philosophy fully since they dismiss transcendental truths.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5719,
+      "type": "single",
+      "text": "Can we agree that soccer just wouldn't be the same without Latin American players?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5720,
+      "type": "single",
+      "text": "When will Asians learn to blend into Western culture instead of keeping their traditions?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5721,
+      "type": "single",
+      "text": "Some say intersex conditions are natural variations, but isn't nature supposed to keep things simple? Not chaotic and complex.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5722,
+      "type": "single",
+      "text": "Let's face it; mentally backward citizens aren't contributing much to our economy anyway.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5723,
+      "type": "single",
+      "text": "Education opens doors to opportunities, while staying ignorant keeps you stuck in mediocrity.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5724,
+      "type": "single",
+      "text": "Did you know that being ugly also means having no personality? It must be exhausting living such a dull life.",
+      "has_bias": true,
+      "bias_type": "unfairness+stereotype",
+      "bias_description": "GUS-Net: unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5725,
+      "type": "single",
+      "text": "Why do uneducated people cling to superstitions instead of facts?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5726,
+      "type": "single",
+      "text": "They lack ambition and aspiration.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5727,
+      "type": "single",
+      "text": "Watching a conservative argue is like witnessing a car crash in slow motion.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5728,
+      "type": "single",
+      "text": "People who look like monsters shouldn't expect anyone to love them.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5729,
+      "type": "single",
+      "text": "Could it be argued that Black history month perpetuates division rather than unity within our multicultural nation?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness",
+      "bias_description": "GUS-Net: generalization, unfairness",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5730,
+      "type": "single",
+      "text": "Latin Americans possess such warmth and hospitality towards guests.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5731,
+      "type": "single",
+      "text": "Investments into improving public schools in low-income areas rarely yield results.",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5732,
+      "type": "single",
+      "text": "Men are naturally lazy.",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5733,
+      "type": "single",
+      "text": "Aren't uneducated people more likely to live below the poverty line?",
+      "has_bias": true,
+      "bias_type": "generalization+unfairness+stereotype",
+      "bias_description": "GUS-Net: generalization, unfairness, stereotype",
+      "source": "gus-dataset-v1"
+    },
+    {
+      "id": 5734,
+      "type": "single",
+      "text": "Based on available statistics, how common is substance use among teenagers from urban versus rural areas?",
+      "has_bias": true,
+      "bias_type": "generalization+stereotype",
+      "bias_description": "GUS-Net: generalization, stereotype",
+      "source": "gus-dataset-v1"
     }
   ]
 }

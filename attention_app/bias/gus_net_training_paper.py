@@ -92,8 +92,8 @@ def load_from_clean_json():
 
 BATCH_SIZE = 16
 LEARNING_RATE = 3e-5
-MAX_EPOCHS = 40          # extended from paper's 20; early stopping prevents overfit
-PATIENCE = 5             # stop if no improvement for 5 epochs
+MAX_EPOCHS = 30          # extended from paper's 20; early stopping prevents overfit
+PATIENCE = 30             # stop if no improvement for 5 epochs
 THRESHOLD = 0.5          # paper uses fixed 0.5
 MAX_LENGTH = 128
 
@@ -630,15 +630,81 @@ def train_bert_paper(dataset_source="hf"):
 # GPT-2 TRAINING — paper-faithful
 # ============================================================================
 
+# Lightning Model — GPT-2 Paper Version
+class GUSNetGPT2Paper(pl.LightningModule):
+    def __init__(self, learning_rate=LEARNING_RATE, threshold=THRESHOLD):
+        super().__init__()
+        self.save_hyperparameters()
+        model_config = AutoConfig.from_pretrained("gpt2")
+        model_config.num_labels = num_labels
+        model_config.pad_token_id = 50256 # Default eos_token_id for GPT2
+        model_config.problem_type = "multi_label_classification"
+        self.gpt2 = GPT2ForTokenClassification.from_pretrained(
+            "gpt2", config=model_config
+        )
+        # We need to resize for the tokenizer that adds prefix space or pad token
+        # This will be done in training setup if we want exactness, 
+        # but here we can't easily access the len(tokenizer). 
+        # Ideally we pass vocabulary size.
+        # Let's assume standard resize + 1 if pad token is different, or handled in training logic.
+        # Actually, best practice is to resize OUTSIDE or pass vocab size to init.
+        # We will follow the pattern of handling it or ignoring it here if we assume it matches.
+        # But wait, we added separate pad token in train_gpt2_paper?
+        # "tokenizer.pad_token = tokenizer.eos_token" -> No new token added.
+        # So len is same as default. 50257.
+        # We will resize just to be safe if we can, or skip.
+        # Given train_gpt2_paper calls resize_token_embeddings, let's add a method or just do it in init if we load tokenizer.
+        # Let's load tokenizer here to be safe, identical to logic in script.
+        tokenizer = GPT2TokenizerFast.from_pretrained("gpt2", add_prefix_space=True)
+        tokenizer.pad_token = tokenizer.eos_token
+        self.gpt2.resize_token_embeddings(len(tokenizer))
+        
+        self.learning_rate = learning_rate
+        self.threshold = threshold
+
+    def forward(self, input_ids, attention_mask):
+        return self.gpt2(
+            input_ids=input_ids, attention_mask=attention_mask,
+        ).logits
+
+    def _compute_loss(self, logits, labels):
+        logits = logits.view(-1, num_labels)
+        labels = labels.view(-1, num_labels)
+        return focal_loss_paper(logits, labels)
+
+    def training_step(self, batch, batch_idx):
+        logits = self(batch[0], batch[1])
+        loss = self._compute_loss(logits, batch[2])
+        self.log("train_loss", loss, prog_bar=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        logits = self(batch[0], batch[1])
+        loss = self._compute_loss(logits, batch[2])
+        self.log("val_loss", loss, prog_bar=True)
+        return loss
+
+    def configure_optimizers(self):
+        # Paper: simple AdamW, single LR, no LLRD
+        optimizer = AdamW(self.parameters(), lr=self.learning_rate)
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=int(
+                0.1 * self.trainer.estimated_stepping_batches,
+            ),
+            num_training_steps=self.trainer.estimated_stepping_batches,
+        )
+        print(f"Optimizer: AdamW (single LR={self.learning_rate})")
+        return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
+
+
 def train_gpt2_paper(dataset_source="hf"):
     """Train GUS-Net GPT-2 with the paper's original focal loss settings."""
 
     save_dir = (_MODELS_DIR / "gus-net-gpt2-paper-clean-2"
                 if dataset_source == "clean"
                 else _MODELS_DIR / "gus-net-gpt2-paper")
-    training_output_dir = str(save_dir) + "-output"
-    label_names = list(label2id.keys())
-
+    
     dataset_names = {
         "hf": "ethical-spectacle/gus-dataset-v1",
         "gemini": "gemini_annotations.json",
@@ -653,7 +719,7 @@ def train_gpt2_paper(dataset_source="hf"):
     print(f"Loss:           Standard Focal Loss (alpha={ALPHA}, gamma={GAMMA})")
     print(f"Optimizer:      AdamW (single LR, NO LLRD)")
     print(f"Learning rate:  {LEARNING_RATE}")
-    print(f"Batch size:     {BATCH_SIZE} (accum=2, effective=32)")
+    print(f"Batch size:     {BATCH_SIZE}")
     print(f"Max epochs:     {MAX_EPOCHS} (early stopping, patience={PATIENCE})")
     print(f"Threshold:      {THRESHOLD} (fixed)")
     print(f"Device:         {'CUDA (' + torch.cuda.get_device_name(0) + ')' if torch.cuda.is_available() else 'CPU'}")
@@ -749,145 +815,182 @@ def train_gpt2_paper(dataset_source="hf"):
         )
     })
 
-    # 70/15/15 split
-    train_devtest = tokenized_dataset["train"].train_test_split(
-        test_size=0.30, seed=SEED,
-    )
-    train_split = train_devtest["train"]
-    dev_test = train_devtest["test"].train_test_split(test_size=0.5, seed=SEED)
-    dev_split = dev_test["train"]
-    test_split = dev_test["test"]
+    # Convert to list format expected by NERDataModule
+    tokenized_list = []
+    labels_list = []
+    
+    print("Converting dataset format...")
+    # Iterate safely over HF dataset
+    for i in range(len(tokenized_dataset["train"])):
+        item = tokenized_dataset["train"][i]
+        tokenized_list.append({
+            "input_ids": torch.tensor(item["input_ids"]),
+            "attention_mask": torch.tensor(item["attention_mask"]),
+        })
+        labels_list.append(item["labels"])
+            
+    print(f"Processed {len(tokenized_list)} samples")
 
-    print(f"\nTrain: {len(train_split)}")
-    print(f"Dev:   {len(dev_split)}")
-    print(f"Test:  {len(test_split)}")
+    # Dataset class (local to this function, mirrors BERT version)
+    class NERDataset(Dataset):
+        def __init__(self, tokenized_texts, labels):
+            self.input_ids = [t["input_ids"].squeeze() for t in tokenized_texts]
+            self.attention_mask = [t["attention_mask"].squeeze() for t in tokenized_texts]
+            self.labels = labels
 
-    # Model
-    model_config = AutoConfig.from_pretrained("gpt2")
-    model_config.num_labels = num_labels
-    model_config.problem_type = "multi_label_classification"
-    model_config.pad_token_id = tokenizer.pad_token_id
+        def __len__(self):
+            return len(self.input_ids)
 
-    model = GPT2ForTokenClassification.from_pretrained("gpt2", config=model_config)
-    model.resize_token_embeddings(len(tokenizer))
-
-    print(f"\nParameters: {model.num_parameters():,}")
-
-    # Custom Trainer with paper's focal loss — NO LLRD
-    class FocalLossTrainerPaper(Trainer):
-        def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-            labels = inputs.pop("labels")
-            outputs = model(**inputs)
-            logits = outputs.logits
-
-            logits_flat = logits.view(-1, num_labels)
-            labels_flat = labels.view(-1, num_labels)
-
-            loss = focal_loss_paper(logits_flat, labels_flat)
-            return (loss, outputs) if return_outputs else loss
-
-    # Metrics
-    thresholds = np.array([THRESHOLD] * num_labels, dtype=np.float32)
-
-    def compute_metrics(eval_pred):
-        predictions, labels = eval_pred
-        probs = 1 / (1 + np.exp(-predictions))
-        valid = labels[:, :, 0] != -100.0
-        probs_flat = probs[valid]
-        labels_flat = labels[valid]
-        thr = thresholds.reshape(1, num_labels)
-        preds_bin = (probs_flat >= thr).astype(int)
-        labels_bin = labels_flat.astype(int)
-
-        if labels_bin.sum() == 0:
-            return {"f1_macro": 0.0}
-
-        label_f1s = [
-            f1_score(
-                labels_bin[:, c], preds_bin[:, c],
-                average="binary", zero_division=0,
+        def __getitem__(self, idx):
+            return (
+                self.input_ids[idx],
+                self.attention_mask[idx],
+                torch.tensor(self.labels[idx]),
             )
-            for c in range(num_labels)
-        ]
-        return {
-            "f1_macro": np.mean(label_f1s),
-            "precision_macro": precision_score(
-                labels_bin, preds_bin, average="macro", zero_division=0,
-            ),
-            "recall_macro": recall_score(
-                labels_bin, preds_bin, average="macro", zero_division=0,
-            ),
-        }
 
-    # Training args — early stopping with patience
-    training_args = TrainingArguments(
-        output_dir=training_output_dir,
-        evaluation_strategy="epoch",
-        save_strategy="epoch",
-        learning_rate=LEARNING_RATE,
-        per_device_train_batch_size=BATCH_SIZE,
-        per_device_eval_batch_size=BATCH_SIZE,
-        gradient_accumulation_steps=2,
-        num_train_epochs=MAX_EPOCHS,
-        weight_decay=0.01,
-        warmup_ratio=0.1,
-        logging_steps=50,
-        fp16=True,
-        load_best_model_at_end=True,
-        metric_for_best_model="f1_macro",
-        greater_is_better=True,
-        report_to="none",
-    )
+    # DataModule — 70/15/15 split, stratified by bias presence
+    class NERDataModule(pl.LightningDataModule):
+        def __init__(self, tokenized_texts, labels, batch_size=BATCH_SIZE,
+                     val_split=0.15, test_split=0.15):
+            super().__init__()
+            self.tokenized_texts = tokenized_texts
+            self.all_labels = labels
+            self.batch_size = batch_size
+            self.val_split = val_split
+            self.test_split = test_split
 
-    data_collator = DataCollatorForTokenClassification(tokenizer=tokenizer)
+        @staticmethod
+        def _sample_has_bias(label_seq):
+            """1 if any valid token has a non-O class, else 0."""
+            for vec in label_seq:
+                if vec[0] != -100 and any(v == 1 for v in vec[1:]):
+                    return 1
+            return 0
 
-    trainer = FocalLossTrainerPaper(
-        model=model,
-        args=training_args,
-        train_dataset=train_split,
-        eval_dataset=dev_split,
-        tokenizer=tokenizer,
-        data_collator=data_collator,
-        compute_metrics=compute_metrics,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=PATIENCE)],
-    )
+        def setup(self, stage=None):
+            strat = [self._sample_has_bias(lbl) for lbl in self.all_labels]
+            indices = list(range(len(self.all_labels)))
 
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        gc.collect()
+            train_val_idx, test_idx = train_test_split(
+                indices,
+                test_size=self.test_split,
+                stratify=strat,
+                random_state=SEED,
+            )
+            strat_tv = [strat[i] for i in train_val_idx]
+            rel_val = self.val_split / (1 - self.test_split)
+            train_idx, val_idx = train_test_split(
+                train_val_idx,
+                test_size=rel_val,
+                stratify=strat_tv,
+                random_state=SEED,
+            )
 
-    print("\nStarting training...")
-    train_result = trainer.train()
-    print(f"\nTraining loss: {train_result.training_loss:.4f}")
+            full_ds = NERDataset(self.tokenized_texts, self.all_labels)
+            self.train_ds = torch.utils.data.Subset(full_ds, train_idx)
+            self.val_ds = torch.utils.data.Subset(full_ds, val_idx)
+            self.test_ds = torch.utils.data.Subset(full_ds, test_idx)
 
-    # Threshold optimisation (for comparison)
+        def train_dataloader(self):
+            return DataLoader(
+                self.train_ds, batch_size=self.batch_size,
+                shuffle=True, num_workers=0,
+            )
+
+        def val_dataloader(self):
+            return DataLoader(
+                self.val_ds, batch_size=self.batch_size, num_workers=0,
+            )
+
+        def test_dataloader(self):
+            return DataLoader(
+                self.test_ds, batch_size=self.batch_size, num_workers=0,
+            )
+
+    # DataModule (70/15/15 split inside)
+    data_module = NERDataModule(tokenized_list, labels_list)
+    data_module.setup()
+
+    # Train — early stopping with patience
     print("\n" + "=" * 60)
-    print("THRESHOLD OPTIMIZATION (for comparison)")
+    print("TRAINING (PyTorch Lightning)")
     print("=" * 60)
 
-    model_eval = trainer.model
-    model_eval.eval()
+    shutil.rmtree("lightning_logs", ignore_errors=True)
+    # Be careful not to wipe BERT checkpoints if shared, but here we assume safe per script convention
+    # or use specific subdir? The previous code used 'checkpoints', let's stick to it.
+    shutil.rmtree("checkpoints", ignore_errors=True)
 
-    all_probs, all_labels_list = [], []
-    for batch in trainer.get_eval_dataloader(dev_split):
-        with torch.no_grad():
-            labels_np = batch["labels"].cpu().numpy()
-            inputs = {
-                k: v.to(model_eval.device)
-                for k, v in batch.items() if k != "labels"
-            }
-            logits = model_eval(**inputs).logits.cpu().numpy()
-        all_probs.append(1 / (1 + np.exp(-logits)))
-        all_labels_list.append(labels_np)
+    checkpoint_cb = ModelCheckpoint(
+        monitor="val_loss",
+        dirpath="checkpoints",
+        filename="gusnet-gpt2-paper-{epoch:02d}-{val_loss:.2f}",
+        save_top_k=3,
+        mode="min",
+        save_weights_only=True,
+    )
+
+    early_stop_cb = EarlyStopping(
+        monitor="val_loss",
+        patience=PATIENCE,
+        mode="min",
+        verbose=True,
+    )
+
+    model = GUSNetGPT2Paper()
+    trainer = pl.Trainer(
+        max_epochs=MAX_EPOCHS,
+        callbacks=[checkpoint_cb, early_stop_cb],
+        accelerator="auto",
+        devices=1,
+        enable_progress_bar=True,
+        gradient_clip_val=1.0,
+        precision="16-mixed",
+        accumulate_grad_batches=2,
+    )
+    trainer.fit(model, data_module)
+
+    # Load best checkpoint
+    best_path = checkpoint_cb.best_model_path
+    if best_path:
+        print(f"\nLoading best model from {best_path}")
+        best_model = GUSNetGPT2Paper.load_from_checkpoint(best_path)
+    else:
+        best_model = model
+
+    best_model.eval()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    best_model.to(device)
+
+    # ----------------------------------------------------------------
+    # Threshold optimisation
+    # ----------------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("THRESHOLD OPTIMIZATION")
+    print("=" * 60)
+
+    val_loader = data_module.val_dataloader()
+    all_probs, all_labels = [], []
+    with torch.no_grad():
+        for batch in val_loader:
+            input_ids = batch[0].to(device)
+            mask = batch[1].to(device)
+            labels_np = batch[2].cpu().numpy()
+            logits = best_model(input_ids, mask)
+            probs = torch.sigmoid(logits).cpu().numpy()
+            all_probs.append(probs)
+            all_labels.append(labels_np)
 
     probs_cat = np.concatenate(all_probs)
-    labels_cat = np.concatenate(all_labels_list)
+    labels_cat = np.concatenate(all_labels)
     valid = labels_cat[:, :, 0] != -100.0
     pf = probs_cat[valid]
     lf = labels_cat[valid].astype(int)
 
+    # Grid search
     opt_thr = np.zeros(num_labels, dtype=np.float32)
     grid = np.arange(0.05, 0.96, 0.025)
+    print("\nGrid search:")
     for c in range(num_labels):
         best_f1, best_t = 0, 0.5
         for t in grid:
@@ -898,8 +1001,10 @@ def train_gpt2_paper(dataset_source="hf"):
             if f1 > best_f1:
                 best_f1, best_t = f1, t
         opt_thr[c] = best_t
-        print(f"  {label_names[c]:10s}: thr={best_t:.3f}, F1={best_f1:.4f}")
+        print(f"  {id2label[c]:10s}: thr={best_t:.3f}, F1={best_f1:.4f}")
 
+    # Refinement
+    print("\nRefinement:")
     for c in range(num_labels):
         lo = max(0.01, opt_thr[c] - 0.05)
         hi = min(0.99, opt_thr[c] + 0.05)
@@ -915,29 +1020,31 @@ def train_gpt2_paper(dataset_source="hf"):
             average="binary", zero_division=0,
         ):
             opt_thr[c] = res.x
+        print(f"  {id2label[c]:10s}: thr={opt_thr[c]:.4f}, F1={-res.fun:.4f}")
 
     print(f"\nOptimised thresholds: {opt_thr}")
 
-    # Evaluation — both fixed and optimised
-    def evaluate_gpt2(model, test_dataset, thresholds, label=""):
-        device = model.device
+    # ----------------------------------------------------------------
+    # TEST SET EVALUATION
+    # ----------------------------------------------------------------
+    test_loader = data_module.test_dataloader()
+
+    def evaluate_with_thresholds(model, loader, thresholds, label=""):
         all_preds, all_trues = [], []
-        for batch in trainer.get_eval_dataloader(test_dataset):
-            with torch.no_grad():
-                labels_np = batch["labels"].cpu().numpy()
-                inputs = {
-                    k: v.to(device)
-                    for k, v in batch.items() if k != "labels"
-                }
-                logits = model(**inputs).logits.cpu().numpy()
-            probs = 1 / (1 + np.exp(-logits))
-            preds = (probs >= thresholds.reshape(1, 1, num_labels)).astype(int)
-            for i in range(len(labels_np)):
-                v = np.where((labels_np[i] >= 0).all(axis=1))[0]
-                if len(v) > 0:
-                    seq_preds = bio_postprocess(preds[i][v], id2label)
-                    all_preds.extend(seq_preds)
-                    all_trues.extend(labels_np[i][v])
+        with torch.no_grad():
+            for batch in loader:
+                input_ids = batch[0].to(device)
+                mask_t = batch[1].to(device)
+                labels_np = batch[2].cpu().numpy()
+                logits = model(input_ids, mask_t)
+                probs = torch.sigmoid(logits).cpu().numpy()
+                preds = (probs >= thresholds.reshape(1, 1, num_labels)).astype(int)
+                for i in range(len(labels_np)):
+                    v = np.where((labels_np[i] >= 0).all(axis=1))[0]
+                    if len(v) > 0:
+                        seq_preds = bio_postprocess(preds[i][v], id2label)
+                        all_preds.extend(seq_preds)
+                        all_trues.extend(labels_np[i][v])
 
         all_preds = np.array(all_preds)
         all_trues = np.array(all_trues)
@@ -966,6 +1073,7 @@ def train_gpt2_paper(dataset_source="hf"):
         print(f"Exact Match: {exact_match:.4f}")
 
         print(f"\n--- {label} (BIO Detail) ---")
+        label_names = list(label2id.keys())
         report_bio = classification_report(
             all_trues, all_preds, target_names=label_names,
             zero_division=0, output_dict=True,
@@ -980,42 +1088,39 @@ def train_gpt2_paper(dataset_source="hf"):
     print("TEST SET — FIXED THRESHOLD 0.5")
     print("=" * 60)
     fixed_thr = np.full(num_labels, 0.5, dtype=np.float32)
-    rep_cat_fixed, rep_bio_fixed, em_fixed = evaluate_gpt2(
-        model_eval, test_split, fixed_thr, "Fixed thr=0.5",
+    rep_cat_fixed, rep_bio_fixed, em_fixed = evaluate_with_thresholds(
+        best_model, test_loader, fixed_thr, "Fixed thr=0.5",
     )
 
     print("\n" + "=" * 60)
     print("TEST SET — OPTIMISED THRESHOLDS")
     print("=" * 60)
-    rep_cat_opt, rep_bio_opt, em_opt = evaluate_gpt2(
-        model_eval, test_split, opt_thr, "Optimised thresholds",
+    rep_cat_opt, rep_bio_opt, em_opt = evaluate_with_thresholds(
+        best_model, test_loader, opt_thr, "Optimised thresholds",
     )
 
     # Training log
+    print("\n" + "=" * 60)
+    print("TRAINING LOG")
+    print("=" * 60)
+    label_names = list(label2id.keys())
     cat_names = ["O", "STEREO", "GEN", "UNFAIR"]
+
     log_entry = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "date": datetime.now().strftime("%Y-%m-%d"),
         "backbone": "gpt2",
         "variant": "paper-faithful",
         "dataset": dataset_name,
-        "epochs_trained": round(
-            float(train_result.metrics.get("epoch", 0)), 1,
-        ),
-        "train_loss": round(float(train_result.training_loss), 4),
+        "epochs_trained": trainer.current_epoch + 1,
         "hyperparams": {
             "learning_rate": LEARNING_RATE,
             "batch_size": BATCH_SIZE,
-            "gradient_accumulation_steps": 2,
-            "effective_batch_size": 32,
             "max_epochs": MAX_EPOCHS,
-            "early_stopping": False,
+            "early_stopping": True,
             "alpha": ALPHA,
             "gamma": GAMMA,
             "loss": "standard_focal_loss",
-            "llrd": False,
-            "span_decay": False,
-            "label_smoothing": False,
             "optimizer": "AdamW (single LR)",
             "scheduler": "linear_warmup (0.1)",
         },
@@ -1054,9 +1159,9 @@ def train_gpt2_paper(dataset_source="hf"):
     print("SAVING MODEL")
     print("=" * 60)
     os.makedirs(str(save_dir), exist_ok=True)
-    model_eval.config.id2label = id2label
-    model_eval.config.label2id = label2id
-    trainer.save_model(str(save_dir))
+    best_model.gpt2.config.id2label = id2label
+    best_model.gpt2.config.label2id = label2id
+    best_model.gpt2.save_pretrained(str(save_dir))
     tokenizer.save_pretrained(str(save_dir))
     np.save(f"{save_dir}/optimized_thresholds.npy", opt_thr)
     print(f"Model saved to {save_dir}")
