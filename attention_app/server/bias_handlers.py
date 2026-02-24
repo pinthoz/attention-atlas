@@ -52,6 +52,7 @@ from ..bias.stereoset import (
     get_top_features,
     get_head_profile_stats,
     get_metadata,
+    get_gusnet_key,
 )
 from ..bias.visualizations import (
     create_stereoset_overview_html,
@@ -4345,39 +4346,75 @@ def bias_server_handlers(input, output, session):
     # They react to the selected GUS-Net model to show the matching base model's data.
 
     def _stereoset_model_key():
-        """Derive the stereoset model key from the current GUS-Net selection."""
+        """Derive the stereoset model key from the current GUS-Net selection.
+
+        When the 'GUS-NET' toggle is active the key is remapped to the
+        corresponding GUS-NET pre-computed file (gusnet_bert / gusnet_gpt2).
+        With the toggle OFF (default) the raw/base model file is used.
+        """
         # Prefer analyzed model key if available (prevents reactive updates)
         res = bias_results.get()
         if res and "bias_model_key" in res:
-            return res["bias_model_key"]
+            base_mk = res["bias_model_key"]
+        else:
+            try:
+                base_mk = input.bias_model_key()
+            except Exception:
+                base_mk = "gusnet-bert"
 
+        # Resolve to a canonical base key (bert / gpt2 / …)
+        from ..bias.stereoset.stereoset_data import _resolve_key, _GUSNET_KEY_MAP
+        canonical = _resolve_key(base_mk)  # e.g. "bert" or "gpt2"
+
+        # Check toggle – only available after UI is rendered
         try:
-            return input.bias_model_key()
+            use_gusnet = input.stereoset_gusnet_toggle()
         except Exception:
-            # Fallback default if not yet available
-            return "gusnet-bert"
+            use_gusnet = False
+
+        if use_gusnet:
+            return get_gusnet_key(canonical)  # e.g. "gusnet_bert"
+        return canonical  # e.g. "bert"
 
     def _stereoset_model_key_B():
-        """Derive the stereoset model key for Model B."""
+        """Derive the stereoset model key for Model B.
+
+        Applies the same GUS-NET toggle as _stereoset_model_key() so that
+        both A and B columns switch simultaneously when the toggle is active.
+        """
         # Prefer analyzed model key if available
         res_B = bias_results_B.get()
         if res_B and "bias_model_key" in res_B:
-            return res_B["bias_model_key"]
+            base_mk = res_B["bias_model_key"]
+        else:
+            try:
+                # If comparing models, use the B selector
+                if active_bias_compare_models.get():
+                    base_mk = input.bias_model_key_B()
+                # If comparing prompts, we are usually on same model, so B = A
+                elif active_bias_compare_prompts.get():
+                    res = bias_results.get()
+                    if res and "bias_model_key" in res:
+                        base_mk = res["bias_model_key"]
+                    else:
+                        base_mk = input.bias_model_key()
+                else:
+                    return None
+            except Exception:
+                return None
+
+        # Resolve to canonical base key, then apply toggle
+        from ..bias.stereoset.stereoset_data import _resolve_key
+        canonical = _resolve_key(base_mk)
 
         try:
-             # If comparing models, use the B selector
-             if active_bias_compare_models.get():
-                return input.bias_model_key_B()
-             # If comparing prompts, we are usually on same model, so B = A
-             if active_bias_compare_prompts.get():
-                # Use analyzed A if available, else live input
-                res = bias_results.get()
-                if res and "bias_model_key" in res:
-                    return res["bias_model_key"]
-                return input.bias_model_key()
-             return None
+            use_gusnet = input.stereoset_gusnet_toggle()
         except Exception:
-            return None
+            use_gusnet = False
+
+        if use_gusnet:
+            return get_gusnet_key(canonical)
+        return canonical
 
     @output
     @render.ui
