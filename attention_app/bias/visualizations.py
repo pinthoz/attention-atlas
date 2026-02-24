@@ -2453,7 +2453,7 @@ STEREOSET_CATEGORY_COLORS = {
 }
 
 
-def create_stereoset_overview_html(scores: Dict, metadata: Dict) -> str:
+def create_stereoset_overview_html(scores: Dict, metadata: Dict, is_gusnet: bool = False) -> str:
     """Render an HTML score card with SS/LMS/ICAT gauges and metadata.
 
     Follows the ``create_bias_criteria_html()`` pattern.
@@ -2511,12 +2511,20 @@ def create_stereoset_overview_html(scores: Dict, metadata: Dict) -> str:
         # Gauges row
         f'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">{gauges}</div>'
         # Summary stats
-        '<div style="display:flex;gap:24px;font-size:11px;color:#94a3b8;'
-        'padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">'
+        '<div style="display:flex;font-size:11px;color:#94a3b8;'
+        'padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);'
+        'align-items:center;min-height:24px;justify-content:space-between;">'
+        '<div style="display:flex;gap:24px;align-items:center;">'
         f'<span><b style="color:#3b82f6;">{n:,}</b> examples evaluated</span>'
         f'<span><b style="color:#22c55e;">{sig_features:,}</b>/{total_features:,} '
         f'features significant (p&lt;0.001)</span>'
         f'<span>Computed: {metadata.get("date", "N/A")[:10]}</span>'
+        '</div>'
+        '<div id="gusnet-inline-toggle">'
+        '<div class="form-check form-switch" style="display:flex;align-items:center;">'
+        f'<input class="form-check-input" type="checkbox" role="switch" id="stereoset_gusnet_toggle" onchange="Shiny.setInputValue(\'stereoset_gusnet_toggle\', this.checked, {{priority: \'event\'}});" {("checked" if "gus-net" in metadata.get("model", "").lower() else "")}>'
+        f'</div><span>Swap to see {"Base Model" if "gus-net" in metadata.get("model", "").lower() else "GUS-Net"} results</span>'
+        '</div>'
         '</div>'
         '</div>'
     )

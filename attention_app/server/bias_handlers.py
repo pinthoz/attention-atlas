@@ -4490,7 +4490,9 @@ def bias_server_handlers(input, output, session):
                 m = get_metadata(mk)
                 if s is None or m is None:
                     return (None, None)
-                return (create_stereoset_overview_html(s, m), m.get("model", "unknown"))
+                model_name = m.get("model", "unknown")
+                is_gusnet = "gus-net" in model_name.lower()
+                return (create_stereoset_overview_html(s, m, is_gusnet), model_name)
 
             html_A, model_A = _render_safe(mk_A)
             html_B, model_B = _render_safe(mk_B)
@@ -4527,8 +4529,9 @@ def bias_server_handlers(input, output, session):
                     style="color:#94a3b8;font-size:12px;",
                 ),
             )
-        html = create_stereoset_overview_html(scores, metadata)
         model_label = metadata.get("model", "unknown")
+        is_gusnet = "gus-net" in model_label.lower()
+        html = create_stereoset_overview_html(scores, metadata, is_gusnet)
         return _wrap_card(
             ui.HTML(html),
             manual_header=("Benchmark Scores", f"StereoSet intersentence evaluation on {model_label}"),
