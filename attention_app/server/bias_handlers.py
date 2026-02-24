@@ -85,7 +85,43 @@ _GUSNET_TO_ENCODER = {
     "gusnet-gpt2-new": "gpt2",
     "gusnet-bert-paper": "bert-base-uncased",
     "gusnet-gpt2-paper": "gpt2",
+    # StereoSet canonical keys (underscore variants)
+    "gusnet_bert": "bert-base-uncased",
+    "gusnet_bert_large": "bert-large-uncased",
+    "gusnet_gpt2": "gpt2",
+    "gusnet_gpt2_medium": "gpt2-medium",
 }
+
+import re as _re
+
+# Canonical display names for GUS-NET variants
+_GUSNET_DISPLAY_NAMES = {
+    "bert": "GUS-NET-BERT",
+    "bert-large": "GUS-NET-BERT-LARGE",
+    "gpt2": "GUS-NET-GPT-2",
+    "gpt2-medium": "GUS-NET-GPT2-MEDIUM",
+}
+
+def _clean_gusnet_label(raw: str) -> str:
+    """Simplify a raw GUS-NET model name to a clean display label.
+
+    E.g. ``gus-net-bert-paper-clean-2`` → ``GUS-NET BERT``,
+         ``gus-net-gpt2-medium``        → ``GUS-NET GPT-2 Medium``.
+    For non-GUS-NET names the string is returned upper-cased.
+    """
+    # Strip huggingface repository prefix (e.g., "pinthoz/")
+    if "/" in raw:
+        raw = raw.split("/")[-1]
+        
+    s = raw.lower().replace("_", "-")
+    if "gus" not in s:
+        return raw.upper()
+    # Strip gus-net prefix and any training-run suffixes (paper, clean, v2, etc.)
+    # but preserve model variant identifiers like gpt2, bert-large
+    core = _re.sub(r"^gus-?net-?", "", s)
+    core = _re.sub(r"-(paper|clean|new|custom|ensemble)([-\d].*)?$", "", core).strip("-")
+    return _GUSNET_DISPLAY_NAMES.get(core, f"GUS-NET {core.upper()}")
+
 
 def _deferred_plotly(fig, container_id, height=None, config=None, click_input=None):
     """Render a Plotly figure as deferred HTML - only calls Plotly.newPlot()
@@ -1794,7 +1830,7 @@ def bias_server_handlers(input, output, session):
                     {"style": "display: flex; flex-direction: column;"},
                     ui.h3("PROMPT A", style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
                     ui.div(
-                        {"class": "card compare-card-a", "style": "min-height: 140px; flex: 1;"},
+                        {"class": "card compare-card-a"},
                         ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                         preview_A,
                     ),
@@ -1804,7 +1840,7 @@ def bias_server_handlers(input, output, session):
                     {"style": "display: flex; flex-direction: column;"},
                     ui.h3("PROMPT B", style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                     ui.div(
-                        {"class": "card compare-card-b", "style": "min-height: 140px; flex: 1;"},
+                        {"class": "card compare-card-b"},
                         ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                         preview_B,
                     ),
@@ -1824,7 +1860,7 @@ def bias_server_handlers(input, output, session):
                     {"style": "display: flex; flex-direction: column;"},
                     ui.h3("MODEL A", style="font-size:16px; color:#3b82f6; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #3b82f6;"),
                     ui.div(
-                        {"class": "card compare-card-a", "style": "min-height: 140px; flex: 1;"},
+                        {"class": "card compare-card-a"},
                         ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                         preview_content,
                     ),
@@ -1834,7 +1870,7 @@ def bias_server_handlers(input, output, session):
                     {"style": "display: flex; flex-direction: column;"},
                     ui.h3("MODEL B", style="font-size:16px; color:#ff5ca9; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:24px; padding-bottom:8px; border-bottom: 2px solid #ff5ca9;"),
                     ui.div(
-                        {"class": "card compare-card-b", "style": "min-height: 140px; flex: 1;"},
+                        {"class": "card compare-card-b"},
                         ui.h4("Sentence Preview", style="margin: 0 0 8px 0;"),
                         # We need a fresh object/string for the second separate div content
                         ui.div(
@@ -1858,7 +1894,7 @@ def bias_server_handlers(input, output, session):
                 )
 
             card = ui.div(
-                {"class": "card", "style": "min-height: 140px;"},
+                {"class": "card"},
                 ui.h4("Sentence Preview"),
                 preview,
             )
@@ -4346,13 +4382,13 @@ def bias_server_handlers(input, output, session):
     # They react to the selected GUS-Net model to show the matching base model's data.
 
     def _stereoset_model_key():
-        """Derive the stereoset model key from the current GUS-Net selection.
+        """Derive the canonical *base* stereoset model key (always base, never GUS-NET).
 
-        When the 'GUS-NET' toggle is active the key is remapped to the
-        corresponding GUS-NET pre-computed file (gusnet_bert / gusnet_gpt2).
-        With the toggle OFF (default) the raw/base model file is used.
+        Overview, Category Breakdown, and Demographic Slices always show the
+        base model.  The three lower sections (Head Sensitivity, Attention-Bias
+        Correlation, Example Explorer) call ``_stereoset_gusnet_key()``
+        separately when the toggle is active.
         """
-        # Prefer analyzed model key if available (prevents reactive updates)
         res = bias_results.get()
         if res and "bias_model_key" in res:
             base_mk = res["bias_model_key"]
@@ -4362,36 +4398,34 @@ def bias_server_handlers(input, output, session):
             except Exception:
                 base_mk = "gusnet-bert"
 
-        # Resolve to a canonical base key (bert / gpt2 / …)
-        from ..bias.stereoset.stereoset_data import _resolve_key, _GUSNET_KEY_MAP
-        canonical = _resolve_key(base_mk)  # e.g. "bert" or "gpt2"
+        from ..bias.stereoset.stereoset_data import _resolve_key
+        return _resolve_key(base_mk)  # e.g. "bert" or "gpt2"
 
-        # Check toggle – only available after UI is rendered
+    def _stereoset_gusnet_key():
+        """Return the GUS-NET key for the current base model, or *None* if
+        the toggle is OFF or GUS-NET data is unavailable."""
         try:
             use_gusnet = input.stereoset_gusnet_toggle()
         except Exception:
             use_gusnet = False
-
-        if use_gusnet:
-            return get_gusnet_key(canonical)  # e.g. "gusnet_bert"
-        return canonical  # e.g. "bert"
+        if not use_gusnet:
+            return None
+        canonical = _stereoset_model_key()
+        gk = get_gusnet_key(canonical)
+        # Only return if we actually have data for it
+        if get_stereoset_scores(gk) is not None:
+            return gk
+        return None
 
     def _stereoset_model_key_B():
-        """Derive the stereoset model key for Model B.
-
-        Applies the same GUS-NET toggle as _stereoset_model_key() so that
-        both A and B columns switch simultaneously when the toggle is active.
-        """
-        # Prefer analyzed model key if available
+        """Derive the canonical *base* stereoset model key for Model B."""
         res_B = bias_results_B.get()
         if res_B and "bias_model_key" in res_B:
             base_mk = res_B["bias_model_key"]
         else:
             try:
-                # If comparing models, use the B selector
                 if active_bias_compare_models.get():
                     base_mk = input.bias_model_key_B()
-                # If comparing prompts, we are usually on same model, so B = A
                 elif active_bias_compare_prompts.get():
                     res = bias_results.get()
                     if res and "bias_model_key" in res:
@@ -4403,18 +4437,8 @@ def bias_server_handlers(input, output, session):
             except Exception:
                 return None
 
-        # Resolve to canonical base key, then apply toggle
         from ..bias.stereoset.stereoset_data import _resolve_key
-        canonical = _resolve_key(base_mk)
-
-        try:
-            use_gusnet = input.stereoset_gusnet_toggle()
-        except Exception:
-            use_gusnet = False
-
-        if use_gusnet:
-            return get_gusnet_key(canonical)
-        return canonical
+        return _resolve_key(base_mk)
 
     @output
     @render.ui
@@ -4837,9 +4861,35 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TN}'>Combine with BAR: a head that is both BAR-specialised and category-sensitive is the most diagnostically informative.</div>"
         )
 
+        # ── GUS-NET toggle (inline in header) ──
+        gk = _stereoset_gusnet_key()  # None when toggle OFF or no data
+        try:
+            toggle_checked = input.stereoset_gusnet_toggle()
+        except Exception:
+            toggle_checked = False
+
+        _toggle_html = ui.HTML(
+            '<div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">'
+            '<span style="font-size:10px;color:#94a3b8;font-weight:600;">GUS-NET</span>'
+            '<div class="form-check form-switch" style="margin:0;padding:0;min-height:auto;display:flex;align-items:center;">'
+            f'<input class="form-check-input" type="checkbox" role="switch" '
+            f'id="stereoset_gusnet_toggle" '
+            f'{"checked " if toggle_checked else ""}'
+            f"onchange=\"Shiny.setInputValue('stereoset_gusnet_toggle', this.checked, {{priority: 'event'}});\" "
+            f'style="margin:0;cursor:pointer;width:2.2em;height:1.1em;'
+            f'{"background-color:#ff5ca9;border-color:#ff5ca9;" if toggle_checked else ""}">'
+            '</div></div>'
+        )
+
         compare_models = active_bias_compare_models.get()
         mk_B = _stereoset_model_key_B() if compare_models else None
-        
+
+        base_controls = [
+            _toggle_html,
+            ui.download_button("export_stereoset_sensitivity_csv", "Heads CSV", style=_BTN_STYLE_CSV),
+            ui.download_button("export_stereoset_features_csv", "Features CSV", style=_BTN_STYLE_CSV),
+        ]
+
         if compare_models and mk_B:
             c_A = _render_single(mk_A, "_A") or ui.div("No data")
             c_B = _render_single(mk_B, "_B") or ui.div("No data")
@@ -4847,10 +4897,7 @@ def bias_server_handlers(input, output, session):
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(c_A, *header_args, style="border: 2px solid #3b82f6; height: 100%;",
-                           controls=[
-                               ui.download_button("export_stereoset_sensitivity_csv", "Heads CSV", style=_BTN_STYLE_CSV),
-                               ui.download_button("export_stereoset_features_csv", "Features CSV", style=_BTN_STYLE_CSV),
-                           ]),
+                           controls=base_controls),
                 _wrap_card(c_B, *header_args, style="border: 2px solid #ff5ca9; height: 100%;",
                            controls=[
                                ui.download_button("export_stereoset_sensitivity_csv_B", "Heads CSV", style=_BTN_STYLE_CSV),
@@ -4858,11 +4905,39 @@ def bias_server_handlers(input, output, session):
                            ])
             )
 
+        # ── GUS-NET side-by-side when toggle is ON ──
+        if gk:
+            c_base = _render_single(mk_A, "_base") or ui.div("No data")
+            c_gus  = _render_single(gk, "_gusnet") or ui.div("No GUS-NET data")
+            meta_base = get_metadata(mk_A) or {}
+            meta_gus  = get_metadata(gk) or {}
+            label_base = meta_base.get("model", mk_A).upper()
+            label_gus  = _clean_gusnet_label(meta_gus.get("model", gk))
+
+            return _wrap_card(
+                ui.div(
+                    {"style": "display:grid;grid-template-columns:1fr 1fr;gap:24px;"},
+                    ui.div(
+                        ui.div(
+                            ui.span(label_base, style="font-size:11px;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:0.5px;"),
+                            style="margin-bottom:8px;padding:4px 0;border-bottom:2px solid #3b82f6;",
+                        ),
+                        c_base,
+                    ),
+                    ui.div(
+                        ui.div(
+                            ui.span(label_gus, style="font-size:11px;font-weight:700;color:#ff5ca9;text-transform:uppercase;letter-spacing:0.5px;"),
+                            style="margin-bottom:8px;padding:4px 0;border-bottom:2px solid #ff5ca9;",
+                        ),
+                        c_gus,
+                    ),
+                ),
+                *header_args,
+                controls=base_controls,
+            )
+
         return _wrap_card(_render_single(mk_A) or ui.div(), *header_args,
-                          controls=[
-                              ui.download_button("export_stereoset_sensitivity_csv", "Heads CSV", style=_BTN_STYLE_CSV),
-                              ui.download_button("export_stereoset_features_csv", "Features CSV", style=_BTN_STYLE_CSV),
-                          ])
+                          controls=base_controls)
 
     @render.download(filename="top_discriminative_features.csv")
     def export_stereoset_features_csv():
@@ -5083,14 +5158,16 @@ def bias_server_handlers(input, output, session):
         except Exception:
             top_k = 5
 
-        def _render_pair(mk, suffix=""):
+        def _render_pair_blocks(mk, suffix=""):
+            """Return (dist_html, scatter_html) strings for one model.
+
+            Returns None when no data is available.
+            """
             examples   = get_stereoset_examples(mk)
             top_heads  = get_sensitive_heads(mk)
             if not examples or not top_heads:
-                return ui.div(
-                    {"style": "color:#94a3b8;font-size:12px;padding:16px;text-align:center;"},
-                    "No StereoSet data available for this model."
-                )
+                _na = '<div style="color:#94a3b8;font-size:12px;padding:16px;text-align:center;">No StereoSet data available for this model.</div>'
+                return (_na, _na)
 
             # Resolve selected head from click input (or default to most sensitive)
             click_input_name = f"stereoset_selected_head{suffix}"
@@ -5105,7 +5182,6 @@ def bias_server_handlers(input, output, session):
             # Obj 3 — box distributions; clicking a head fires click_input_name
             try:
                 fig_dist = create_stereoset_head_distributions(examples, top_heads, top_n=min(top_k, 6))
-                # highlight selected head in subtitle
                 if selected_head:
                     lbl = selected_head.replace("_", "·")
                     sub_extra = (
@@ -5158,10 +5234,15 @@ def bias_server_handlers(input, output, session):
             except Exception as e:
                 scatter_block = f'<div style="color:#ef4444;font-size:11px;padding:8px;">Error: {e}</div>'
 
+            return (dist_block, scatter_block)
+
+        def _render_pair(mk, suffix=""):
+            """Combine dist + scatter side by side (default single-model layout)."""
+            dist_html, scatter_html = _render_pair_blocks(mk, suffix)
             return ui.div(
                 {"style": "display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;"},
-                ui.HTML(f'<div>{dist_block}</div>'),
-                ui.HTML(f'<div>{scatter_block}</div>'),
+                ui.HTML(f'<div>{dist_html}</div>'),
+                ui.HTML(f'<div>{scatter_html}</div>'),
             )
 
         header_args = (
@@ -5195,6 +5276,44 @@ def bias_server_handlers(input, output, session):
                 _wrap_card(c_B, *header_args, style="border:2px solid #ff5ca9;height:100%;"),
             )
 
+        # ── GUS-NET 2×2 grid: dist side-by-side on top, scatter side-by-side below ──
+        gk = _stereoset_gusnet_key()
+        if gk:
+            dist_base, scatter_base = _render_pair_blocks(mk_A, "_base")
+            dist_gus,  scatter_gus  = _render_pair_blocks(gk, "_gusnet")
+            meta_base = get_metadata(mk_A) or {}
+            meta_gus  = get_metadata(gk) or {}
+            label_base = _clean_gusnet_label(meta_base.get("model", mk_A))
+            label_gus  = _clean_gusnet_label(meta_gus.get("model", gk))
+
+            def _col(label, color, html):
+                return (
+                    f'<div>'
+                    f'<div style="margin-bottom:6px;padding:3px 0;border-bottom:2px solid {color};">'
+                    f'<span style="font-size:10px;font-weight:700;color:{color};text-transform:uppercase;letter-spacing:0.5px;">{label}</span>'
+                    f'</div>{html}</div>'
+                )
+
+            return _wrap_card(
+                ui.div(
+                    # Row 1: Distributions side by side
+                    ui.HTML(
+                        f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;margin-bottom:24px;">'
+                        f'{_col(label_base, "#3b82f6", dist_base)}'
+                        f'{_col(label_gus, "#ff5ca9", dist_gus)}'
+                        f'</div>'
+                    ),
+                    # Row 2: Scatter side by side
+                    ui.HTML(
+                        f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;">'
+                        f'{_col(label_base, "#3b82f6", scatter_base)}'
+                        f'{_col(label_gus, "#ff5ca9", scatter_gus)}'
+                        f'</div>'
+                    ),
+                ),
+                *header_args,
+            )
+
         return _wrap_card(_render_pair(mk_A), *header_args)
 
     @output
@@ -5203,11 +5322,11 @@ def bias_server_handlers(input, output, session):
         """Interactive example explorer with category filter and detail view."""
         mk = _stereoset_model_key()
         examples = get_stereoset_examples(mk)
-        
-        # Comparison setup
-        # Comparison setup
+
+        # Comparison setup — GUS-NET toggle acts like a virtual Model B
         compare_models = active_bias_compare_models.get()
-        mk_B = _stereoset_model_key_B() if compare_models else None
+        gk = _stereoset_gusnet_key()  # None when toggle OFF
+        mk_B = _stereoset_model_key_B() if compare_models else (gk if gk else None)
         has_B = mk_B is not None
         examples_B = get_stereoset_examples(mk_B) if has_B else []
         # Map context -> example for quick lookup

@@ -1012,61 +1012,7 @@ def create_bias_accordion():
                 "StereoSet Evaluation",
                 ui.span({"class": "accordion-panel-badge benchmark"}, "Benchmark"),
             ),
-            # Overview card with GUS-NET toggle inline in stats row
-            ui.div(
-                ui.output_ui("stereoset_overview"),
-            ),
-            ui.tags.style("""
-                #gusnet-inline-toggle {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    white-space: nowrap;
-                    line-height: 1;
-                    padding-left: 24px;
-                }
-                .dark-mode #gusnet-inline-toggle {
-                }
-                #gusnet-inline-toggle > span {
-                    font-size: 11px;
-                    color: #94a3b8;
-                    line-height: 1;
-                }
-                #gusnet-inline-toggle .shiny-input-container {
-                    width: auto !important;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    min-height: auto !important;
-                }
-                #gusnet-inline-toggle .form-check {
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    min-height: auto !important;
-                    background: transparent !important;
-                    border: none !important;
-                    display: flex;
-                    align-items: center;
-                }
-                #gusnet-inline-toggle .form-check-input {
-                    margin: 0 !important;
-                    margin-left: 0 !important;
-                    float: none !important;
-                    position: relative !important;
-                    cursor: pointer;
-                    width: 2.2em !important;
-                    height: 1.1em !important;
-                }
-                #gusnet-inline-toggle .form-check-input:checked {
-                    background-color: var(--primary-color, #ff5ca9) !important;
-                    border-color: var(--primary-color, #ff5ca9) !important;
-                }
-                #gusnet-inline-toggle .form-check-input:checked ~ span {
-                    color: #e2e8f0 !important;
-                }
-                #gusnet-inline-toggle .form-check-input:focus {
-                    box-shadow: none !important;
-                }
-            """),
+            ui.output_ui("stereoset_overview"),
             ui.output_ui("stereoset_category_breakdown"),
             ui.output_ui("stereoset_demographic_slices"),
             ui.output_ui("stereoset_head_sensitivity"),
