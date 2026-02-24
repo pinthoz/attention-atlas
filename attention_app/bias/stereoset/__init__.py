@@ -13,6 +13,7 @@ from .stereoset_data import (
     get_top_features,
     get_head_profile_stats,
     get_metadata,
+    get_gusnet_key,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "get_top_features",
     "get_head_profile_stats",
     "get_metadata",
+    "get_gusnet_key",
 ]
