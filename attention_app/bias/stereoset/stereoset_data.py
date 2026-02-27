@@ -2,10 +2,9 @@
 
 Reads model-specific JSON files and caches them so the dashboard can
 access scores, examples, and head sensitivity data without reloading.
-GUS-NET JSON files: stereoset_precomputed_gusnet.json (BERT) and
-stereoset_precomputed_gusnet_gpt2.json (GPT-2).
+All JSON files live in the ``results/`` subdirectory.
 
-Files:
+Files (inside results/):
     stereoset_precomputed_bert.json  — BERT PLL scoring
     stereoset_precomputed_gpt2.json  — GPT-2 autoregressive scoring
 """
@@ -14,7 +13,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
-_DATA_DIR = Path(__file__).parent
+_DATA_DIR = Path(__file__).parent / "results"
 
 # Per-model cache
 _cache: Dict[str, dict] = {}

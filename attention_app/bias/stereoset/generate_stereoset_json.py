@@ -29,31 +29,39 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from attention_app.models import ModelManager
-from attention_app.bias.feature_extraction import extract_features_for_sentence
+from attention_app.bias.feature_extraction_notebooks import extract_features_for_sentence
 
 CATEGORIES = ["gender", "race", "religion", "profession"]
-OUTPUT_DIR = Path(__file__).parent
+OUTPUT_DIR = Path(__file__).parent / "results"
 
 # Model configurations
 MODEL_CONFIGS = {
     "bert": {
         "model_name": "bert-base-uncased",
         "scoring": "pll",
+        "n_layers": 12,
+        "n_heads": 12,
         "output_file": "stereoset_precomputed_bert.json",
     },
     "bert_large": {
         "model_name": "bert-large-uncased",
         "scoring": "pll",
+        "n_layers": 24,
+        "n_heads": 16,
         "output_file": "stereoset_precomputed_bert_large.json",
     },
     "gpt2": {
         "model_name": "gpt2",
         "scoring": "autoregressive",
+        "n_layers": 12,
+        "n_heads": 12,
         "output_file": "stereoset_precomputed_gpt2.json",
     },
     "gpt2_medium": {
         "model_name": "gpt2-medium",
         "scoring": "autoregressive",
+        "n_layers": 24,
+        "n_heads": 16,
         "output_file": "stereoset_precomputed_gpt2_medium.json",
     },
 }
@@ -438,7 +446,9 @@ def run_for_model(model_key, stereoset):
 
     print("  Computing head sensitivity...")
     df = pd.DataFrame(features_list)
-    matrix, sensitive_heads = _compute_head_sensitivity(df)
+    n_layers = cfg.get("n_layers", 12)
+    n_heads = cfg.get("n_heads", 12)
+    matrix, sensitive_heads = _compute_head_sensitivity(df, n_layers, n_heads)
 
     print("  Building per-example head profiles...")
     head_profile_stats = _build_head_profile_stats(sensitive_heads, df)
