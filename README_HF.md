@@ -50,11 +50,16 @@ Component-level Transformer pipeline inspection:
 - **Feed-Forward Network**: 768 → 3,072 → 768 transformation with GELU activation
 - **Head Clustering**: t-SNE + K-Means automatic grouping into behavioral clusters
 
-#### 🛡️ **Bias Detection** (Coming Soon)
-Ethical AI analysis and bias quantification:
-- Token-level bias classification (Generalization, Unfairness, Stereotypes)
-- Attention-bias interaction analysis (which heads amplify/mitigate bias)
-- Bias propagation tracking across layers
+#### 🛡️ **Bias Detection**
+Ethical AI analysis and bias quantification using specialized GUS-Net models:
+
+![Attention Atlas Bias Architecture](static/images/architecture_bias.png)
+
+- **Token-level bias classification**: Detects Generalization, Unfairness, and Stereotypes.
+- **Attention × Bias correlation**: Interactive heatmaps correlating attention heads with bias scores.
+- **Faithfulness metrics**: Evaluates the faithfulness of the attention mechanism's explanations.
+- **Dual-Pipeline Comparison**: Side-by-side architecture comparison between models or different prompts.
+- **StereoSet evaluation**: Scatter plots validating performance on stereotype detection.
 
 ---
 

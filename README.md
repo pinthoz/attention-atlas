@@ -230,28 +230,28 @@ Computes **6 quantitative metrics** aggregated across layers/heads:
 
 ---
 
-### 4. Bias Detection (Coming Soon)
+### 4. Bias Detection
 
-**Purpose**: Ethical AI analysis—detect, quantify, and understand how attention mechanisms process biased content
+**Purpose**: Ethical AI analysis—detect, quantify, and understand how attention mechanisms process biased content using specialized models.
 
-#### Token-Level Bias Classification
-- **Bias categories**: Generalization (GEN), Unfairness (UNFAIR), Stereotypes (STEREO)
-- **Rule-based detection**: Lexicon matching with JSON-defined bias patterns
-- **Per-token labeling**: Visual highlighting of biased tokens
-- **Heatmap visualization**: Bias intensity across input sequence
+![Attention Atlas Bias Architecture](static/images/architecture_bias.png)
 
-#### Attention-Bias Interaction Analysis
-- **Head × Bias Matrix**: Which attention heads focus on biased tokens
-- **Formula**: `AttentionToBias(head_h) = Σ_{i∈BiasTokens} mean_j(A_h[j, i])`
-- **Specialization detection**: Identify heads that amplify or suppress bias
+#### GUS-Net Models & Inference
+- **Specialized Architectures**: Utilizes GUS-Net (fine-tuned BERT and GPT-2 models) trained specifically for token-level bias classification.
+- **Dual-Pipeline Comparison**: Side-by-side architecture processing allowing direct comparison between different models (e.g., BERT vs. GPT-2) or different prompts.
 
-#### Bias Propagation Across Layers
-- **Layer-wise tracking**: How bias signals evolve through encoder stack
-- **Amplification vs. Mitigation**: Quantify bias increase/decrease per layer
-- **Visualization**: Line plots showing bias trajectory through 12/24 layers
-- **Applications**: Ethical AI auditing, bias mitigation strategy development
+#### Overview & Detection
+- **Token-Level Bias Classification**: Detects and highlights tokens belonging to Generalization (GEN), Unfairness (UNFAIR), and Stereotypes (STEREO) categories.
+- **Bias Confidence Breakdown**: Detailed statistical bar charts and scatter plots showing model confidence for detected biased tokens.
+- **Interactive Thresholds**: Real-time adjustment of sensitivity thresholds tracking biases > 0.05 probability.
 
-**Note**: Bias detection infrastructure is implemented; comprehensive analysis interface coming in future release.
+#### Technical Analysis
+- **Attention × Bias Correlation**: Interactive heatmaps correlating attention heads with bias scores to identify which heads amplify or mitigate biased associations.
+- **Faithfulness Metrics**: Quantitative bar charts evaluating the faithfulness of the attention mechanism's explanations for biased predictions.
+
+#### StereoSet Evaluation
+- **Systematic Benchmark Dashboard**: Built-in evaluation using the StereoSet benchmark suite.
+- **Stereodependent vs. Stereotypical**: Scatter plots validating the model's performance on stereotype detection against general language modeling capability.
 
 ---
 
