@@ -679,14 +679,12 @@ def main():
     # Build DataFrame with new results
     df_new = pd.DataFrame(rows)
 
-    # Load existing Registo from --old-runs if specified, else from input file
+    # Load existing Registo ONLY if --old-runs is specified
     df_old = None
-    old_runs_path = args.old_runs if args.old_runs else (args.input if is_input_xlsx else None)
-
-    if old_runs_path:
+    if args.old_runs:
         try:
-            df_old = pd.read_excel(old_runs_path, sheet_name="Registo")
-            print(f"Loaded {len(df_old)} existing executions from {old_runs_path}")
+            df_old = pd.read_excel(args.old_runs, sheet_name="Registo")
+            print(f"Loaded {len(df_old)} existing executions from {args.old_runs}")
         except Exception:
             pass  # No existing Registo sheet
 
