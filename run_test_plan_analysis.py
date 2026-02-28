@@ -40,7 +40,7 @@ import pandas as pd
 import torch
 import joblib
 
-# ── Project imports ───────────────────────────────────────────────────────
+#  Project imports ─
 sys.path.insert(0, os.path.dirname(__file__))
 
 from attention_app.models import ModelManager
@@ -58,7 +58,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-# ── Test sentences ────────────────────────────────────────────────────────
+#  Test sentences 
 
 TEST_SENTENCES = [
     ("B1", "biased",
@@ -102,7 +102,7 @@ TEST_SENTENCES = [
 ]
 
 
-# ── Input loading ─────────────────────────────────────────────────────────
+#  Input loading ─
 
 def _load_sentences_from_file(path):
     """Load sentences from a CSV or Excel file.
@@ -186,7 +186,7 @@ def _generate_template(path="frases_template.csv"):
     print(f"  py run_test_plan_analysis.py --input {path}")
 
 
-# ── Model mappings ────────────────────────────────────────────────────────
+# Model mappings 
 
 GUSNET_KEY = {"bert": "gusnet-bert", "gpt2": "gusnet-gpt2"}
 ENCODER_NAME = {"bert": "bert-base-uncased", "gpt2": "gpt2"}
@@ -200,7 +200,7 @@ CLASSIFIER_PATH = {
 }
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────
+# Helpers 
 
 def _get_git_commit():
     """Return the short commit hash of the current repo."""
@@ -295,7 +295,7 @@ def _notebook_classifier_predict(text, model_key):
     return prob, label
 
 
-# ── Main analysis function ────────────────────────────────────────────────
+#  Main analysis function 
 
 def analyze_text(
     text_id, text, expected, model_key, commit_hash,
@@ -444,7 +444,7 @@ def analyze_text(
     model_display = "GPT-2" if is_gpt2 else "BERT"
 
     return {
-        # ── Original "Registo" columns ──
+        #  Original "Registo" columns 
         "Data": datetime.now().strftime("%Y-%m-%d"),
         "Testador": "Auto",
         "Versao / commit": commit_hash,
@@ -462,7 +462,7 @@ def analyze_text(
         "Max bias ratio": round(max_bar, 3),
         "Notas / observacoes": "; ".join(notes) if notes else "",
         "Passou? (S/N)": "",
-        # ── NEW: faithfulness metrics ──
+        # faithfulness metrics 
         "Mean Jaccard": round(mean_jaccard, 4),
         "Mean Spearman rho": round(mean_ig_rho, 4),
         "Mean RBO (p=0.9)": round(mean_rbo, 4),
@@ -477,7 +477,7 @@ def analyze_text(
     }
 
 
-# ── Excel output ──────────────────────────────────────────────────────────
+#  Excel output 
 
 def _save_excel(df, path, preserve_sheets=False):
     """Save DataFrame to a styled Excel workbook.
@@ -510,7 +510,7 @@ def _save_excel(df, path, preserve_sheets=False):
         for col_idx, val in enumerate(row, start=1):
             ws.cell(row=row_idx, column=col_idx, value=val)
 
-    # ── Styling ──
+    #  Styling 
     header_fill = PatternFill(start_color="2F5496", end_color="2F5496", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=10)
     thin_border = Border(
