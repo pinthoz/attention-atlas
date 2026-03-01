@@ -240,6 +240,54 @@ def bio_postprocess(seq_preds, id2label):
     return corrected
 
 
+def compute_span_mass(logits, labels):
+    """
+    Differentiable span-mass regularizer for minimal-explanation training.
+
+    Encourages the model to mark fewer tokens as biased by penalising the
+    average per-token bias probability across each sequence.
+
+    Computation:
+        1. sigmoid(logits) → per-token, per-class probabilities
+        2. Collapse BIO → 3 bias categories via element-wise max:
+              STEREO = max(B-STEREO, I-STEREO)
+              GEN    = max(B-GEN, I-GEN)
+              UNFAIR = max(B-UNFAIR, I-UNFAIR)
+        3. Per-token bias_prob = max(STEREO, GEN, UNFAIR)
+        4. Per-sequence span_mass = mean(bias_prob) over valid tokens
+        5. Return batch-averaged span_mass (scalar)
+
+    Args:
+        logits: (batch, seq_len, 7) raw logits before sigmoid
+        labels: (batch, seq_len, 7) ground-truth labels; only used for the
+                valid-token mask (tokens with label[..., 0] == -100 are padding)
+
+    Returns:
+        Scalar tensor (differentiable, fp32) — batch-averaged span mass.
+    """
+    # Cast to fp32 for numerical safety under AMP / fp16
+    logits_f = logits.float()
+    probs = torch.sigmoid(logits_f)  # (B, T, 7)
+
+    # Collapse BIO → category probabilities
+    # Indices: O=0, B-STEREO=1, I-STEREO=2, B-GEN=3, I-GEN=4, B-UNFAIR=5, I-UNFAIR=6
+    stereo = torch.max(probs[..., 1], probs[..., 2])   # (B, T)
+    gen    = torch.max(probs[..., 3], probs[..., 4])    # (B, T)
+    unfair = torch.max(probs[..., 5], probs[..., 6])    # (B, T)
+
+    # Per-token bias probability = max over the three bias categories
+    bias_prob = torch.stack([stereo, gen, unfair], dim=-1).max(dim=-1).values  # (B, T)
+
+    # Valid-token mask (exclude padding where label column 0 is -100)
+    valid_mask = (labels[..., 0] >= 0).float().to(logits.device)  # (B, T)
+
+    # Per-sequence span_mass = mean bias probability over valid tokens
+    n_valid = valid_mask.sum(dim=1).clamp(min=1.0)              # (B,)
+    span_mass_seq = (bias_prob * valid_mask).sum(dim=1) / n_valid  # (B,)
+
+    return span_mass_seq.mean()
+
+
 def compute_itag_span_weights(labels, id2label,
                               decay=0.18, min_weight=0.30,
                               label_decay=0.08, label_floor=0.55):
@@ -373,6 +421,11 @@ SPAN_DECAY = 0.18           # loss weight reduction per I-tag position
 SPAN_MIN_WEIGHT = 0.30      # weight floor (deep I-tags → 30 % of normal loss)
 SPAN_LABEL_DECAY = 0.08     # label target reduction per I-tag position
 SPAN_LABEL_FLOOR = 0.55     # label floor (stays > 0.5 so focal treats as positive)
+
+# Minimal-explanation sparsity regularizer: penalises the average per-token
+# bias probability across a sequence.  Higher values → sparser spans.
+# Set to 0.0 to disable (baseline).  Recommended search: 0.01, 0.05, 0.1.
+LAMBDA_SPARSE = 0.0
 
 
 # ============================================================================
@@ -649,7 +702,8 @@ def train_bert(config=None, dataset_source="hf"):
     # Lightning Model
     class GUSNetBERT(pl.LightningModule):
         def __init__(self, learning_rate=LEARNING_RATE, threshold=THRESHOLD,
-                     alpha_per_class=None, gamma_pos=1.0, gamma_neg=None):
+                     alpha_per_class=None, gamma_pos=1.0, gamma_neg=None,
+                     lambda_sparse=LAMBDA_SPARSE):
             super().__init__()
             if gamma_neg is None:
                 gamma_neg = config["gamma"]
@@ -661,6 +715,7 @@ def train_bert(config=None, dataset_source="hf"):
             self.threshold = threshold
             self.gamma_pos = gamma_pos
             self.gamma_neg = gamma_neg
+            self.lambda_sparse = lambda_sparse
 
             if alpha_per_class is None:
                 alpha_per_class = torch.ones(num_labels, dtype=torch.float32) / num_labels
@@ -697,16 +752,31 @@ def train_bert(config=None, dataset_source="hf"):
             return self.loss_fn(logits, smooth, sample_weight=span_w)
 
         def training_step(self, batch, batch_idx):
-            logits = self(batch[0], batch[1])
-            loss = self.focal_loss(logits, batch[2])
+            logits = self(batch[0], batch[1])       # (B, T, 7)
+            loss_focal = self.focal_loss(logits, batch[2])
+
+            if self.lambda_sparse > 0:
+                span_mass = compute_span_mass(logits, batch[2])
+                loss = loss_focal + self.lambda_sparse * span_mass
+                self.log("span_mass", span_mass, prog_bar=False)
+            else:
+                loss = loss_focal
+
             self.log("train_loss", loss, prog_bar=True)
+            self.log("train_focal", loss_focal, prog_bar=False)
             return loss
 
         def validation_step(self, batch, batch_idx):
             logits = self(batch[0], batch[1])
-            loss = self.focal_loss(logits, batch[2])
-            self.log("val_loss", loss, prog_bar=True)
-            return loss
+            loss_focal = self.focal_loss(logits, batch[2])
+
+            if self.lambda_sparse > 0:
+                span_mass = compute_span_mass(logits, batch[2])
+                self.log("val_span_mass", span_mass, prog_bar=False)
+
+            # val_loss = focal only, so early stopping is not affected by λ
+            self.log("val_loss", loss_focal, prog_bar=True)
+            return loss_focal
 
         def configure_optimizers(self):
             no_decay = ["bias", "LayerNorm.weight"]
@@ -805,7 +875,7 @@ def train_bert(config=None, dataset_source="hf"):
         mode="min",
     )
 
-    model = GUSNetBERT(alpha_per_class=alpha_per_class)
+    model = GUSNetBERT(alpha_per_class=alpha_per_class, lambda_sparse=LAMBDA_SPARSE)
     trainer = pl.Trainer(
         max_epochs=MAX_EPOCHS,
         callbacks=[checkpoint_cb, early_stop_cb],
@@ -1010,6 +1080,7 @@ def train_bert(config=None, dataset_source="hf"):
             "span_min_weight": SPAN_MIN_WEIGHT,
             "span_label_decay": SPAN_LABEL_DECAY,
             "span_label_floor": SPAN_LABEL_FLOOR,
+            "lambda_sparse": LAMBDA_SPARSE,
         },
         "test": {
             "exact_match": round(exact_match, 4),
@@ -1225,7 +1296,8 @@ def train_gpt2(config=None, dataset_source="hf"):
     # Custom Trainer with LLRD + Asymmetric Focal Loss
     class FocalLossTrainerGPT2(Trainer):
         def __init__(self, *args, alpha_channel, gamma=1.5, label_smoothing=0.0,
-                     llrd_decay_factor=0.85, classifier_lr=2e-4, **kwargs):
+                     llrd_decay_factor=0.85, classifier_lr=2e-4,
+                     lambda_sparse=LAMBDA_SPARSE, **kwargs):
             super().__init__(*args, **kwargs)
             # gamma is gamma_neg; gamma_pos is fixed at 1.0 to preserve recall
             self.focal_loss = AsymmetricFocalLoss(
@@ -1237,6 +1309,7 @@ def train_gpt2(config=None, dataset_source="hf"):
             )
             self.llrd_decay_factor = llrd_decay_factor
             self.classifier_lr = classifier_lr
+            self.lambda_sparse = lambda_sparse
 
         def create_optimizer(self):
             base_lr = self.args.learning_rate
@@ -1291,7 +1364,7 @@ def train_gpt2(config=None, dataset_source="hf"):
         def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
             labels = inputs.pop("labels")
             outputs = model(**inputs)
-            logits = outputs.logits
+            logits = outputs.logits  # (B, T, 7)
 
             # Compute span-position weights + smoothed labels BEFORE flattening
             sw_np, sl_np = compute_itag_span_weights(
@@ -1307,10 +1380,18 @@ def train_gpt2(config=None, dataset_source="hf"):
             smooth_flat = smooth.view(-1, num_labels)
             sw_flat = span_w.view(-1, num_labels)
             valid = labels_flat[:, 0] != -100.0
-            loss = self.focal_loss(
+            loss_focal = self.focal_loss(
                 logits_flat[valid], smooth_flat[valid],
                 sample_weight=sw_flat[valid],
             )
+
+            # Span-mass regularizer (training only)
+            if self.lambda_sparse > 0 and model.training:
+                span_mass = compute_span_mass(logits, labels)
+                loss = loss_focal + self.lambda_sparse * span_mass
+            else:
+                loss = loss_focal
+
             return (loss, outputs) if return_outputs else loss
 
     # Metrics
@@ -1378,6 +1459,7 @@ def train_gpt2(config=None, dataset_source="hf"):
         label_smoothing=config["label_smoothing"],
         llrd_decay_factor=config["llrd_decay_factor"],
         classifier_lr=config["classifier_lr"],
+        lambda_sparse=LAMBDA_SPARSE,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=PATIENCE)],
     )
 
@@ -1597,6 +1679,7 @@ def train_gpt2(config=None, dataset_source="hf"):
             "span_min_weight": SPAN_MIN_WEIGHT,
             "span_label_decay": SPAN_LABEL_DECAY,
             "span_label_floor": SPAN_LABEL_FLOOR,
+            "lambda_sparse": LAMBDA_SPARSE,
         },
         "test": {
             "exact_match": round(exact_match, 4),
