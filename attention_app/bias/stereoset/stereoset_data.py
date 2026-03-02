@@ -174,3 +174,55 @@ def get_metadata(model: Optional[str] = None) -> Optional[Dict]:
     if data is None:
         return None
     return data.get("metadata")
+
+
+def compute_model_similarity(base_key: str, gusnet_key: str) -> Optional[Dict]:
+    """Compute a composite similarity metric between base and GUS-NET models.
+
+    Uses two signals weighted into a single 0–100% similarity score:
+      - Head sensitivity matrix Pearson correlation (50%)
+      - Top sensitive heads Jaccard overlap (50%)
+
+    Returns a dict with individual metrics and overall similarity, or None
+    if data is unavailable for either model.
+    """
+    matrix_base = get_head_sensitivity_matrix(base_key)
+    matrix_gus = get_head_sensitivity_matrix(gusnet_key)
+    heads_base = get_sensitive_heads(base_key)
+    heads_gus = get_sensitive_heads(gusnet_key)
+
+    if matrix_base is None or matrix_gus is None:
+        return None
+
+    # ── 1. Head sensitivity matrix Pearson correlation ──
+    flat_base = [v for row in matrix_base for v in row]
+    flat_gus = [v for row in matrix_gus for v in row]
+    n = len(flat_base)
+    mean_b = sum(flat_base) / n
+    mean_g = sum(flat_gus) / n
+    cov = sum((flat_base[i] - mean_b) * (flat_gus[i] - mean_g) for i in range(n))
+    std_b = sum((x - mean_b) ** 2 for x in flat_base) ** 0.5
+    std_g = sum((x - mean_g) ** 2 for x in flat_gus) ** 0.5
+    pearson_r = cov / (std_b * std_g) if std_b > 0 and std_g > 0 else 0.0
+    # Normalise from [-1, 1] to [0, 1]
+    matrix_sim = max(0.0, (pearson_r + 1) / 2)
+
+    # ── 2. Top heads Jaccard overlap ──
+    set_base = {(h["layer"], h["head"]) for h in heads_base[:20]}
+    set_gus = {(h["layer"], h["head"]) for h in heads_gus[:20]}
+    if set_base or set_gus:
+        jaccard = len(set_base & set_gus) / len(set_base | set_gus)
+    else:
+        jaccard = 0.0
+
+    # ── Composite (50% matrix, 50% heads) ──
+    overall = matrix_sim * 0.50 + jaccard * 0.50
+    overall_pct = round(overall * 100, 1)
+
+    return {
+        "overall_pct": overall_pct,
+        "matrix_corr": round(pearson_r, 4),
+        "matrix_sim_pct": round(matrix_sim * 100, 1),
+        "heads_jaccard": round(jaccard, 4),
+        "heads_overlap_pct": round(jaccard * 100, 1),
+    }

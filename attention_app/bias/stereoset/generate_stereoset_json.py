@@ -266,7 +266,7 @@ def _compute_head_sensitivity(df, num_layers=12, num_heads=12):
         })
 
     records.sort(key=lambda h: h["variance"], reverse=True)
-    return matrix, records[:10]
+    return matrix, records[:20]
 
 
 def _compute_top_features(df):

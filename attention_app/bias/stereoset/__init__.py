@@ -14,6 +14,7 @@ from .stereoset_data import (
     get_head_profile_stats,
     get_metadata,
     get_gusnet_key,
+    compute_model_similarity,
 )
 
 __all__ = [
@@ -26,4 +27,6 @@ __all__ = [
     "get_head_profile_stats",
     "get_metadata",
     "get_gusnet_key",
+    "compute_model_similarity",
 ]
+

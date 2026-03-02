@@ -53,6 +53,7 @@ from ..bias.stereoset import (
     get_head_profile_stats,
     get_metadata,
     get_gusnet_key,
+    compute_model_similarity,
 )
 from ..bias.visualizations import (
     create_stereoset_overview_html,
@@ -74,22 +75,22 @@ from ..ui.components import viz_header
 # BERT tokens show ## subwords and GPT-2 tokens merge correctly with Ġ.
 _GUSNET_TO_ENCODER = {
     # Public (HuggingFace) models
-    "gusnet-bert": "bert-base-uncased",
-    "gusnet-bert-large": "bert-large-uncased",
-    "gusnet-gpt2": "gpt2",
-    "gusnet-gpt2-medium": "gpt2-medium",
+    "gusnet-bert": "pinthoz/gus-net-bert",
+    "gusnet-bert-large": "pinthoz/gus-net-bert-large",
+    "gusnet-gpt2": "pinthoz/gus-net-gpt2",
+    "gusnet-gpt2-medium": "pinthoz/gus-net-gpt2-medium",
     # Local models
-    "gusnet-bert-custom": "bert-base-uncased",
-    "gusnet-ensemble": "bert-base-uncased",
-    "gusnet-bert-new": "bert-base-uncased",
-    "gusnet-gpt2-new": "gpt2",
-    "gusnet-bert-paper": "bert-base-uncased",
-    "gusnet-gpt2-paper": "gpt2",
+    "gusnet-bert-custom": "pinthoz/gus-net-bert-custom",
+    "gusnet-ensemble": "pinthoz/gus-net-bert",
+    "gusnet-bert-new": "pinthoz/gus-net-bert",
+    "gusnet-gpt2-new": "pinthoz/gus-net-gpt2",
+    "gusnet-bert-paper": "pinthoz/gus-net-bert",
+    "gusnet-gpt2-paper": "pinthoz/gus-net-gpt2",
     # StereoSet canonical keys (underscore variants)
-    "gusnet_bert": "bert-base-uncased",
-    "gusnet_bert_large": "bert-large-uncased",
-    "gusnet_gpt2": "gpt2",
-    "gusnet_gpt2_medium": "gpt2-medium",
+    "gusnet_bert": "pinthoz/gus-net-bert",
+    "gusnet_bert_large": "pinthoz/gus-net-bert-large",
+    "gusnet_gpt2": "pinthoz/gus-net-gpt2",
+    "gusnet_gpt2_medium": "pinthoz/gus-net-gpt2-medium",
 }
 
 import re as _re
@@ -4868,17 +4869,100 @@ def bias_server_handlers(input, output, session):
         except Exception:
             toggle_checked = False
 
+        # ── Similarity badge (computed when GUS-NET data exists) ──
+        canonical = _stereoset_model_key()
+        gusnet_k = get_gusnet_key(canonical)
+        sim = compute_model_similarity(canonical, gusnet_k)
+
+        sim_badge_html = ""
+        if sim is not None and toggle_checked:
+            pct = sim["overall_pct"]
+            if pct >= 80:
+                badge_color = "#22c55e"  # green
+                badge_bg = "rgba(34,197,94,0.12)"
+            elif pct >= 50:
+                badge_color = "#f59e0b"  # amber
+                badge_bg = "rgba(245,158,11,0.12)"
+            else:
+                badge_color = "#ef4444"  # red
+                badge_bg = "rgba(239,68,68,0.12)"
+
+            sim_badge_html = (
+                f'<div style="display:flex;align-items:center;gap:8px;margin-right:12px;'
+                f'padding:4px 10px;border-radius:6px;background:{badge_bg};'
+                f'border:1px solid {badge_color}20;cursor:default;position:relative;" '
+                f'class="sim-badge-wrapper">'
+                # Mini bar
+                f'<div style="width:32px;height:4px;border-radius:2px;background:rgba(148,163,184,0.2);overflow:hidden;">'
+                f'<div style="width:{pct}%;height:100%;border-radius:2px;background:{badge_color};'
+                f'transition:width 0.4s ease;"></div></div>'
+                # Percentage
+                f'<span style="font-size:11px;font-weight:700;color:{badge_color};'
+                f'font-family:JetBrains Mono,monospace;letter-spacing:-0.3px;">{pct:.0f}%</span>'
+                f'<span style="font-size:9px;color:#94a3b8;font-weight:500;">similar</span>'
+                # Tooltip on hover
+                f'<div class="sim-tooltip" style="display:none;position:fixed;'
+                f'background:#1e293b;color:#e2e8f0;'
+                f'padding:10px 14px;border-radius:8px;font-size:10px;white-space:nowrap;'
+                f'box-shadow:0 8px 24px rgba(0,0,0,0.3);z-index:99999;line-height:1.7;'
+                f'border:1px solid rgba(148,163,184,0.15);">'
+                f'<div style="font-weight:700;color:white;margin-bottom:4px;font-size:11px;">'
+                f'Base \u2194 GUS-NET Similarity</div>'
+                f'<div><span style="color:#60a5fa;">\u25cf</span> Head Matrix Corr: '
+                f'<b style="color:white;">{sim["matrix_corr"]:.3f}</b> '
+                f'<span style="color:#64748b;">({sim["matrix_sim_pct"]:.0f}%)</span></div>'
+                f'<div><span style="color:#a78bfa;">\u25cf</span> Top Heads Overlap: '
+                f'<b style="color:white;">{sim["heads_overlap_pct"]:.0f}%</b> '
+                f'<span style="color:#64748b;">(Jaccard {sim["heads_jaccard"]:.2f})</span></div>'
+                f'<div style="margin-top:4px;padding-top:4px;border-top:1px solid rgba(148,163,184,0.2);'
+                f'color:#94a3b8;font-size:9px;">50% matrix \u00b7 50% heads</div>'
+                f'</div>'
+                f'</div>'
+            )
+
         _toggle_html = ui.HTML(
-            '<div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">'
-            '<span style="font-size:10px;color:#94a3b8;font-weight:600;">GUS-NET</span>'
-            '<div class="form-check form-switch" style="margin:0;padding:0;min-height:auto;display:flex;align-items:center;">'
-            f'<input class="form-check-input" type="checkbox" role="switch" '
-            f'id="stereoset_gusnet_toggle" '
+            # Inline CSS + JS for similarity tooltip with fixed positioning
+            '<style>'
+            '.sim-badge-wrapper:hover .sim-tooltip{display:block!important;}'
+            '</style>'
+            '<script>'
+            'document.addEventListener("mouseover",function(e){'
+            'var w=e.target.closest(".sim-badge-wrapper");'
+            'if(!w)return;'
+            'var tt=w.querySelector(".sim-tooltip");'
+            'if(!tt)return;'
+            'var r=w.getBoundingClientRect();'
+            'tt.style.left=(r.left+r.width/2)+"px";'
+            'tt.style.top=(r.bottom+8)+"px";'
+            'tt.style.transform="translateX(-50%)";'
+            '});'
+            '</script>'
+            '<div style="display:flex;align-items:center;gap:0;white-space:nowrap;">'
+            # Similarity badge FIRST (left of toggle)
+            + sim_badge_html +
+            # Modern pill toggle
+            '<div style="display:flex;align-items:center;gap:6px;cursor:pointer;" '
+            f'onclick="var cb=document.getElementById(\'stereoset_gusnet_toggle\');'
+            f'cb.checked=!cb.checked;cb.dispatchEvent(new Event(\'change\'));">'
+            f'<span style="font-size:10px;font-weight:600;letter-spacing:0.3px;'
+            f'color:{"#ff5ca9" if toggle_checked else "#94a3b8"};'
+            f'transition:color 0.2s ease;">GUS-NET</span>'
+            # Toggle track
+            f'<div style="position:relative;width:28px;height:14px;border-radius:7px;'
+            f'background:{"#ff5ca9" if toggle_checked else "rgba(148,163,184,0.3)"};'
+            f'transition:background 0.25s ease;flex-shrink:0;">'
+            # Toggle knob
+            f'<div style="position:absolute;top:2px;'
+            f'{"left:14px" if toggle_checked else "left:2px"};'
+            f'width:10px;height:10px;border-radius:50%;background:white;'
+            f'box-shadow:0 1px 3px rgba(0,0,0,0.2);transition:left 0.25s ease;"></div>'
+            f'</div></div>'
+            # Hidden real checkbox
+            f'<input type="checkbox" id="stereoset_gusnet_toggle" '
+            f'style="display:none;" '
             f'{"checked " if toggle_checked else ""}'
-            f"onchange=\"Shiny.setInputValue('stereoset_gusnet_toggle', this.checked, {{priority: 'event'}});\" "
-            f'style="margin:0;cursor:pointer;width:2.2em;height:1.1em;'
-            f'{"background-color:#ff5ca9;border-color:#ff5ca9;" if toggle_checked else ""}">'
-            '</div></div>'
+            f"onchange=\"Shiny.setInputValue('stereoset_gusnet_toggle', this.checked, {{priority: 'event'}});\">"
+            '</div>'
         )
 
         compare_models = active_bias_compare_models.get()
@@ -5463,13 +5547,13 @@ def bias_server_handlers(input, output, session):
                 ex_B_detail = map_B.get(ex_A.get("context")) if has_B else None
                 # Fetch friendly model names
                 meta_A = get_metadata(mk)
-                name_A = meta_A.get("model", "Model A") if meta_A else "Model A"
+                name_A = _clean_gusnet_label(meta_A.get("model", "Model A")) if meta_A else "Model A"
                 
                 name_B = "Model B"
                 if has_B:
                     meta_B = get_metadata(mk_B)
                     if meta_B:
-                        name_B = meta_B.get("model", "Model B")
+                        name_B = _clean_gusnet_label(meta_B.get("model", "Model B"))
 
                 # Safely get top_n (custom input might not be init)
                 top_n = 5
@@ -5481,6 +5565,7 @@ def bias_server_handlers(input, output, session):
 
                 # ── Attention heatmaps (generate before detail HTML) ──
                 heatmap_inner_html = ""
+                attn_sim_pct = None
                 try:
                     # Read layer/head from the floating toolbar controls
                     sensitive = get_sensitive_heads(mk) or []
@@ -5497,7 +5582,9 @@ def bias_server_handlers(input, output, session):
                         """Generate trio + diff HTML for one model.
                         
                         Returns:
-                            tuple: (trio_html, diff_html) for flexible layout
+                            tuple: (trio_html, diff_html, raw_attentions)
+                            raw_attentions is a dict with keys 'stereo', 'anti', 'unrelated'
+                            each containing the attention tuple from the model.
                         """
                         base = _GUSNET_TO_ENCODER.get(model_key, "bert-base-uncased")
                         sens = get_sensitive_heads(model_key) or []
@@ -5515,9 +5602,11 @@ def bias_server_handlers(input, output, session):
                         sd = {"tokens": s_tok, "attentions": s_a}
                         ad = {"tokens": a_tok, "attentions": a_a}
                         ud = None
+                        u_attn = None
                         if u_text.strip() and u_text.strip() != ctx.strip():
                             u_tok, u_a = extract_attention_for_text(u_text, base, ModelManager)
                             ud = {"tokens": u_tok, "attentions": u_a}
+                            u_attn = u_a
 
                         fig_t = create_stereoset_attention_heatmaps(
                             sd, ad, ud,
@@ -5547,17 +5636,59 @@ def bias_server_handlers(input, output, session):
                             f"stereoset_attn_diff_{model_key}_{suffix}",
                             controls=[str(diff_csv_btn)]
                         )
-                        return (t_html, d_html)
+                        raw_attentions = {"stereo": s_a, "anti": a_a, "unrelated": u_attn}
+                        return (t_html, d_html, raw_attentions)
+
+                    def _compute_attention_similarity(attn_A, attn_B):
+                        """Compute Pearson correlation of attention across all layers for two models.
+                        
+                        Averages similarity over stereo/anti/unrelated sentence types.
+                        """
+                        import torch
+                        sims = []
+                        for sent_key in ("stereo", "anti", "unrelated"):
+                            a = attn_A.get(sent_key)
+                            b = attn_B.get(sent_key)
+                            if a is None or b is None:
+                                continue
+                            # a and b are tuples of tensors, one per layer
+                            # Each tensor shape: (1, num_heads, seq_len, seq_len)
+                            for layer_idx in range(min(len(a), len(b))):
+                                mat_a = a[layer_idx][0].cpu().float()  # (heads, seq, seq)
+                                mat_b = b[layer_idx][0].cpu().float()
+                                # Truncate to same seq length
+                                min_seq = min(mat_a.shape[-1], mat_b.shape[-1])
+                                flat_a = mat_a[:, :min_seq, :min_seq].flatten()
+                                flat_b = mat_b[:, :min_seq, :min_seq].flatten()
+                                n = flat_a.shape[0]
+                                if n == 0:
+                                    continue
+                                ma = flat_a.mean()
+                                mb = flat_b.mean()
+                                cov = ((flat_a - ma) * (flat_b - mb)).sum()
+                                sa = ((flat_a - ma) ** 2).sum().sqrt()
+                                sb = ((flat_b - mb) ** 2).sum().sqrt()
+                                if sa > 0 and sb > 0:
+                                    r = (cov / (sa * sb)).item()
+                                    sims.append(r)
+                        if not sims:
+                            return None
+                        avg_r = sum(sims) / len(sims)
+                        # Normalise from [-1,1] to [0,100]
+                        return round(max(0, (avg_r + 1) / 2) * 100, 1)
 
                     if has_B and ex_B_detail:
                         # ── Compare Models: side-by-side with aligned layout ──
-                        trio_A, diff_A = _generate_model_heatmaps(mk, ex_A, "A")
-                        trio_B, diff_B = _generate_model_heatmaps(mk_B, ex_B_detail, "B")
+                        trio_A, diff_A, attn_A = _generate_model_heatmaps(mk, ex_A, "A")
+                        trio_B, diff_B, attn_B = _generate_model_heatmaps(mk_B, ex_B_detail, "B")
                         
+                        # ── Per-example attention similarity ──
+                        attn_sim_pct = _compute_attention_similarity(attn_A, attn_B)
+
                         # Layout: 
                         # Row 1: [Model A Trio] [Model B Trio]
+                        # Badge: attention similarity
                         # Row 2: [Model A Diff]  [Model B Diff]
-                        # This ensures proper vertical alignment
                         heatmap_inner_html = (
                             f'<div style="display:flex;flex-direction:column;gap:16px;">'
                             # Row 1: Labels + Trios side by side
@@ -5588,7 +5719,7 @@ def bias_server_handlers(input, output, session):
                         )
                     else:
                         # ── Single model ──
-                        trio, diff = _generate_model_heatmaps(mk, ex_A, "single")
+                        trio, diff, _ = _generate_model_heatmaps(mk, ex_A, "single")
                         heatmap_inner_html = (
                             f'<div style="display:flex;flex-direction:column;gap:12px;">'
                             f'{trio}'
@@ -5637,6 +5768,7 @@ def bias_server_handlers(input, output, session):
                     top_n=top_n,
                     heatmap_html=heatmap_inner_html,
                     sensitive_heads_label=sensitive_label,
+                    attn_sim_pct=attn_sim_pct if has_B else None,
                 )
 
         except Exception as e:

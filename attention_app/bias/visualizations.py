@@ -2899,7 +2899,41 @@ def create_sensitive_head_panel_html(
         return ""
 
     content_html = ""
+    head_sim_badge = ""
     if html_B:
+        # Compute head behavior similarity from head_profile data
+        hp_A = example.get("head_profile", {})
+        hp_B = example_B.get("head_profile", {}) if example_B else {}
+        if hp_A and hp_B:
+            vals_a, vals_b = [], []
+            for profile_key in ("stereo", "anti"):
+                dict_a = hp_A.get(profile_key, {})
+                dict_b = hp_B.get(profile_key, {})
+                # Use union of all keys — 0.0 for keys absent in one model
+                all_keys = sorted(set(dict_a.keys()) | set(dict_b.keys()))
+                for k in all_keys:
+                    va = dict_a.get(k)
+                    vb = dict_b.get(k)
+                    vals_a.append(va if va is not None else 0.0)
+                    vals_b.append(vb if vb is not None else 0.0)
+            if len(vals_a) >= 3:
+                n = len(vals_a)
+                ma = sum(vals_a) / n
+                mb = sum(vals_b) / n
+                cov = sum((vals_a[i] - ma) * (vals_b[i] - mb) for i in range(n))
+                sa = sum((x - ma) ** 2 for x in vals_a) ** 0.5
+                sb = sum((x - mb) ** 2 for x in vals_b) ** 0.5
+                r = cov / (sa * sb) if sa > 0 and sb > 0 else 0.0
+                h_pct = round(max(0, (r + 1) / 2) * 100, 1)
+                sc = "#22c55e" if h_pct >= 80 else ("#f59e0b" if h_pct >= 50 else "#ef4444")
+                head_sim_badge = (
+                    f'<span style="font-size:10px;padding:2px 8px;border-radius:4px;'
+                    f'background:rgba({int(sc[1:3],16)},{int(sc[3:5],16)},{int(sc[5:7],16)},0.12);'
+                    f'color:{sc};font-weight:700;font-family:JetBrains Mono,monospace;'
+                    f'border:1px solid rgba({int(sc[1:3],16)},{int(sc[3:5],16)},{int(sc[5:7],16)},0.25);'
+                    f'margin-left:4px;">{h_pct:.0f}% head similar</span>'
+                )
+
         # Side-by-side comparison
         content_html = (
             f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">'
@@ -2927,9 +2961,12 @@ def create_sensitive_head_panel_html(
         f'<div style="margin-top:10px;padding:8px 12px;background:rgba(255,92,169,0.05);'
         f'border-radius:8px;border:1px solid rgba(255,92,169,0.15);">'
         f'{content_html}'
-        f'<div style="font-size:9px;color:#64748b;margin-top:6px;border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;">'
-        f'Bars scaled to population [min, max] of each feature across all StereoSet examples. '
-        f'\u0394 = stereo \u2212 anti.</div>'
+        f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;'
+        f'font-size:9px;color:#64748b;margin-top:6px;border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;">'
+        f'<span>Bars scaled to population [min, max] of each feature across all StereoSet examples. '
+        f'\u0394 = stereo \u2212 anti.</span>'
+        f'{head_sim_badge}'
+        f'</div>'
         f'</div>'
         '</details>'
     )
@@ -2947,6 +2984,7 @@ def create_stereoset_example_html(
     top_n: int = 10,
     heatmap_html: str = "",
     sensitive_heads_label: str = "",
+    attn_sim_pct: Optional[float] = None,
 ) -> str:
     """Render a single StereoSet example with PLL scores and Analyze button.
 
@@ -3067,10 +3105,22 @@ def create_stereoset_example_html(
     
     if has_B:
         bs_B_color = "#f87171" if bs_B > 0 else "#4ade80"
+        # Attention similarity inline badge
+        attn_sim_html = ""
+        if attn_sim_pct is not None:
+            sc = "#22c55e" if attn_sim_pct >= 80 else ("#f59e0b" if attn_sim_pct >= 50 else "#ef4444")
+            attn_sim_html = (
+                f'<span style="font-size:10px;padding:2px 8px;border-radius:4px;'
+                f'background:rgba({int(sc[1:3],16)},{int(sc[3:5],16)},{int(sc[5:7],16)},0.12);'
+                f'color:{sc};font-weight:700;font-family:JetBrains Mono,monospace;'
+                f'border:1px solid rgba({int(sc[1:3],16)},{int(sc[3:5],16)},{int(sc[5:7],16)},0.25);'
+                f'margin-left:8px;">{attn_sim_pct:.0f}% attention similar</span>'
+            )
         bs_html = (
-            f'<div style="display:flex;gap:16px;">'
+            f'<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">'
             f'<span style="font-size:11px;color:#94a3b8;">{model_A_name}: <b style="color:{bs_A_color};font-family:JetBrains Mono,monospace;">{bs_A:+.4f}</b></span>'
             f'<span style="font-size:11px;color:#94a3b8;">{model_B_name}: <b style="color:{bs_B_color};font-family:JetBrains Mono,monospace;">{bs_B:+.4f}</b></span>'
+            f'{attn_sim_html}'
             f'</div>'
         )
 
