@@ -422,6 +422,223 @@ def _process_raw_bias_result(raw_res, thresholds, use_optimized=False):
         return None
 
 
+def _build_batch_report(per_sentence_results, all_bar_matrices,
+                        bias_model_key, model_name, thresholds, use_optimized,
+                        batch_file, elapsed, n_total):
+    """Build comprehensive batch analysis report JSON."""
+    analyzed = [r for r in per_sentence_results if not r.get("error")]
+    failed = [r for r in per_sentence_results if r.get("error")]
+    biased = [r for r in analyzed if r.get("is_biased")]
+
+    # Aggregate bias percentages
+    bias_pcts = [r["bias_summary"]["bias_percentage"] for r in analyzed if "bias_summary" in r]
+    avg_bias_pct = round(sum(bias_pcts) / len(bias_pcts), 1) if bias_pcts else 0
+
+    # Aggregate confidence
+    confs = [r["bias_summary"]["avg_confidence"] for r in analyzed if "bias_summary" in r and r["bias_summary"].get("avg_confidence")]
+    avg_conf = round(sum(confs) / len(confs), 4) if confs else 0
+
+    # Category distribution
+    cat_dist = {}
+    for r in analyzed:
+        if "bias_summary" in r:
+            for cat in r["bias_summary"].get("categories_found", []):
+                cat_dist[cat] = cat_dist.get(cat, 0) + 1
+
+    # Most common biased terms
+    term_counts = {}
+    for r in analyzed:
+        for ts in r.get("token_scores", []):
+            if ts.get("is_biased"):
+                term_counts[ts["token"]] = term_counts.get(ts["token"], 0) + 1
+    top_terms = sorted(term_counts.items(), key=lambda x: x[1], reverse=True)[:20]
+
+    # Average confidence per category
+    cat_confs = {}
+    cat_conf_counts = {}
+    for r in analyzed:
+        for ts in r.get("token_scores", []):
+            if ts.get("is_biased") and ts.get("scores"):
+                for bt in ts.get("bias_types", []):
+                    score = ts["scores"].get(bt, 0)
+                    cat_confs[bt] = cat_confs.get(bt, 0) + score
+                    cat_conf_counts[bt] = cat_conf_counts.get(bt, 0) + 1
+    avg_conf_per_cat = {k: round(cat_confs[k] / cat_conf_counts[k], 4) for k in cat_confs if cat_conf_counts.get(k)}
+
+    # Sentences ranked by severity
+    ranked = sorted(
+        [{"index": r["index"], "text": r["text"][:100], "bias_percentage": r["bias_summary"]["bias_percentage"]}
+         for r in analyzed if "bias_summary" in r],
+        key=lambda x: x["bias_percentage"], reverse=True
+    )[:20]
+
+    # Attention analysis: aggregate BAR matrices
+    attention_analysis = {}
+    if all_bar_matrices:
+        stacked = np.stack(all_bar_matrices)
+        avg_bar = np.nanmean(stacked, axis=0)
+        n_layers, n_heads = avg_bar.shape
+
+        # Top heads by average BAR
+        head_entries = []
+        for l in range(n_layers):
+            for h in range(n_heads):
+                bars = [m[l, h] for m in all_bar_matrices if l < m.shape[0] and h < m.shape[1]]
+                specialized = sum(1 for b in bars if b > 1.5)
+                head_entries.append({
+                    "layer": int(l), "head": int(h),
+                    "avg_bar": round(float(np.mean(bars)), 4),
+                    "max_bar": round(float(np.max(bars)), 4),
+                    "specialized_rate": round(specialized / len(bars) * 100, 1) if bars else 0,
+                    "n_samples": len(bars),
+                })
+        head_entries.sort(key=lambda x: x["avg_bar"], reverse=True)
+
+        attention_analysis = {
+            "top_heads_by_avg_bar": head_entries[:20],
+            "head_consistency": [h for h in head_entries if h["specialized_rate"] >= 50][:20],
+            "avg_bar_matrix": [[round(float(avg_bar[l, h]), 4) for h in range(n_heads)] for l in range(n_layers)],
+        }
+
+    # Faithfulness summary: aggregate IG/ablation/perturbation/LRP
+    ig_rhos = []
+    ig_sig_heads = 0
+    ig_jaccards = []
+    ig_rbos = []
+    abl_impacts = []
+    abl_kls = []
+    perturb_ig_rhos = []
+    perturb_attn_rhos = []
+    lrp_ig_rhos = []
+    lrp_attn_rhos = []
+
+    for r in analyzed:
+        ig = r.get("ig_analysis")
+        if ig:
+            for c in ig.get("ig_attention_correlations", []):
+                if c.get("spearman_rho") is not None:
+                    ig_rhos.append(abs(c["spearman_rho"]))
+                    if c.get("p_value") is not None and c["p_value"] < 0.05:
+                        ig_sig_heads += 1
+            for t in ig.get("topk_overlaps", []):
+                if t.get("jaccard") is not None:
+                    ig_jaccards.append(t["jaccard"])
+                if t.get("rbo") is not None:
+                    ig_rbos.append(t["rbo"])
+
+        abl = r.get("ablation_analysis")
+        if abl:
+            for a in abl:
+                if a.get("representation_impact") is not None:
+                    abl_impacts.append(a["representation_impact"])
+                if a.get("kl_divergence") is not None:
+                    abl_kls.append(a["kl_divergence"])
+
+        pert = r.get("perturbation_analysis")
+        if pert:
+            if pert.get("perturb_vs_ig_spearman") is not None:
+                perturb_ig_rhos.append(pert["perturb_vs_ig_spearman"])
+            for c in pert.get("perturb_vs_attention_top5", []):
+                if c.get("spearman_rho") is not None:
+                    perturb_attn_rhos.append(c["spearman_rho"])
+
+        lrp = r.get("lrp_analysis")
+        if lrp:
+            if lrp.get("lrp_vs_ig_spearman") is not None:
+                lrp_ig_rhos.append(lrp["lrp_vs_ig_spearman"])
+            for c in lrp.get("lrp_vs_attention_top5", []):
+                if c.get("spearman_rho") is not None:
+                    lrp_attn_rhos.append(c["spearman_rho"])
+
+    def _safe_mean(lst):
+        return round(sum(lst) / len(lst), 4) if lst else None
+
+    faithfulness_summary = {
+        "ig_analysis": {
+            "avg_top_head_rho": _safe_mean(ig_rhos),
+            "heads_with_significant_correlation": ig_sig_heads,
+            "avg_topk_jaccard": _safe_mean(ig_jaccards),
+            "avg_topk_rbo": _safe_mean(ig_rbos),
+        },
+        "ablation_analysis": {
+            "avg_representation_impact": _safe_mean(abl_impacts),
+            "avg_kl_divergence": _safe_mean(abl_kls),
+            "heads_with_high_impact": sum(1 for x in abl_impacts if x > 0.01),
+        },
+        "perturbation_analysis": {
+            "avg_perturb_vs_ig_rho": _safe_mean(perturb_ig_rhos),
+            "avg_perturb_vs_attention_rho": _safe_mean(perturb_attn_rhos),
+        },
+        "lrp_analysis": {
+            "avg_lrp_vs_ig_rho": _safe_mean(lrp_ig_rhos),
+            "avg_lrp_vs_attention_rho": _safe_mean(lrp_attn_rhos),
+        },
+        "cross_method_agreement": {
+            "ig_vs_lrp_mean_rho": _safe_mean(lrp_ig_rhos),
+            "ig_vs_perturbation_mean_rho": _safe_mean(perturb_ig_rhos),
+        },
+    }
+
+    # Counterfactual analysis
+    cf_analysis = []
+    for r in analyzed:
+        swaps = r.get("counterfactual_swaps")
+        if swaps:
+            cf_analysis.append({
+                "sentence_index": r["index"],
+                "text": r["text"],
+                "available_swaps": swaps,
+            })
+
+    # Reproducibility info
+    import transformers
+    repro = {
+        "model_version": model_name,
+        "transformers_version": transformers.__version__,
+        "torch_version": torch.__version__,
+    }
+    try:
+        import hashlib
+        combined = "\n".join(r["text"] for r in per_sentence_results)
+        repro["input_hash"] = "sha256:" + hashlib.sha256(combined.encode()).hexdigest()[:16]
+    except Exception:
+        pass
+
+    report = {
+        "executive_summary": {
+            "total_sentences": n_total,
+            "sentences_analyzed": len(analyzed),
+            "sentences_failed": len(failed),
+            "biased_sentences": len(biased),
+            "bias_rate": round(len(biased) / len(analyzed) * 100, 1) if analyzed else 0,
+            "average_bias_percentage": avg_bias_pct,
+            "average_confidence": avg_conf,
+            "processing_time_seconds": elapsed,
+            "model_used": _get_bias_model_label({"bias_model_key": bias_model_key}),
+            "model_key": bias_model_key,
+            "encoder_model": model_name,
+        },
+        "per_sentence_results": per_sentence_results,
+        "aggregate_statistics": {
+            "category_distribution": cat_dist,
+            "most_common_biased_terms": [{"term": t, "count": c} for t, c in top_terms],
+            "average_confidence_per_category": avg_conf_per_cat,
+            "sentences_ranked_by_severity": ranked,
+        },
+        "attention_analysis": attention_analysis,
+        "faithfulness_summary": faithfulness_summary,
+        "counterfactual_analysis": cf_analysis,
+        "metadata": {
+            "timestamp": datetime.now().isoformat(),
+            "thresholds_used": thresholds,
+            "use_optimized": use_optimized,
+            "batch_file": batch_file,
+            "reproducibility": repro,
+        },
+    }
+    return report
+
+
 def bias_server_handlers(input, output, session):
     """Create server handlers for bias analysis tab."""
 
@@ -443,6 +660,10 @@ def bias_server_handlers(input, output, session):
     lrp_results = reactive.value(None)
     lrp_results_B = reactive.value(None)
     lrp_running = reactive.value(False)
+
+    # ── Batch mode state ──
+    batch_sentences = reactive.value([])
+    batch_file_name = reactive.value("")
 
     # Snapshots of compare mode state - Updated ONLY on 'Analyze Bias'
     active_bias_compare_models = reactive.Value(False)
@@ -1452,6 +1673,26 @@ def bias_server_handlers(input, output, session):
     async def compute_bias():
         log_debug("BUTTON CLICKED: compute_bias triggered")
         try:
+            # ── Batch mode intercept ──
+            try:
+                is_batch = input.bias_batch_mode_active() == "true"
+            except Exception:
+                is_batch = False
+
+            if is_batch:
+                if not batch_sentences.get():
+                    ui.notification_show("No file uploaded for batch mode.", type="warning", duration=3)
+                    return
+                bias_running.set(True)
+                await session.send_custom_message('start_bias_loading', {})
+                await asyncio.sleep(0.1)
+                try:
+                    await _run_batch_analysis()
+                finally:
+                    bias_running.set(False)
+                    await session.send_custom_message('stop_bias_loading', {})
+                return
+
             text = input.bias_input_text().strip()
             log_debug(f"Input text length: {len(text)}")
             if not text:
@@ -1765,6 +2006,389 @@ def bias_server_handlers(input, output, session):
             "  if(btn){btn.click();}"
             "  Shiny.setInputValue('analyze_bias_btn',Date.now(),{priority:'event'});"
             "}, 100);")
+
+    # ── Batch file upload handler ──
+
+    @reactive.effect
+    @reactive.event(input.batch_file_upload)
+    async def parse_batch_file():
+        """Parse uploaded CSV or JSON file for batch mode."""
+        import csv
+        import io
+        file_info = input.batch_file_upload()
+        if not file_info:
+            return
+        try:
+            file_info = file_info[0]
+            file_path = file_info["datapath"]
+            file_name = file_info["name"]
+
+            sentences = []
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            if file_name.lower().endswith(".json"):
+                data = json.loads(content)
+                if isinstance(data, list):
+                    if all(isinstance(x, str) for x in data):
+                        sentences = [s.strip() for s in data if s.strip()]
+                    elif all(isinstance(x, dict) for x in data):
+                        for item in data:
+                            for key in ("text", "sentence", "input", "content"):
+                                if key in item and isinstance(item[key], str) and item[key].strip():
+                                    sentences.append(item[key].strip())
+                                    break
+                elif isinstance(data, dict):
+                    for key in ("sentences", "texts", "data"):
+                        if key in data and isinstance(data[key], list):
+                            for item in data[key]:
+                                if isinstance(item, str) and item.strip():
+                                    sentences.append(item.strip())
+                                elif isinstance(item, dict):
+                                    for k in ("text", "sentence", "input"):
+                                        if k in item and isinstance(item[k], str) and item[k].strip():
+                                            sentences.append(item[k].strip())
+                                            break
+                            break
+            elif file_name.lower().endswith(".csv"):
+                reader = csv.DictReader(io.StringIO(content))
+                cols = reader.fieldnames or []
+                text_col = None
+                for candidate in ("text", "sentence", "input", "content"):
+                    for c in cols:
+                        if c.lower().strip() == candidate:
+                            text_col = c
+                            break
+                    if text_col:
+                        break
+                if not text_col and cols:
+                    text_col = cols[0]
+                if text_col:
+                    for row in reader:
+                        val = row.get(text_col, "").strip()
+                        if val:
+                            sentences.append(val)
+
+            if sentences:
+                batch_sentences.set(sentences)
+                batch_file_name.set(file_name)
+                await session.send_custom_message("batch_file_parsed", {
+                    "filename": file_name,
+                    "count": len(sentences),
+                })
+            else:
+                batch_sentences.set([])
+                await session.send_custom_message("batch_file_parsed", {
+                    "error": "No sentences found in file",
+                })
+        except Exception as e:
+            batch_sentences.set([])
+            await session.send_custom_message("batch_file_parsed", {
+                "error": f"Parse error: {str(e)[:80]}",
+            })
+
+    # ── Batch processing pipeline ──
+
+    async def _run_batch_analysis():
+        """Run comprehensive analysis on all batch sentences."""
+        import hashlib
+        import time as _time
+
+        sentences = batch_sentences.get()
+        if not sentences:
+            return
+
+        t0 = _time.time()
+
+        try:
+            bias_model_key = input.bias_model_key()
+        except Exception:
+            bias_model_key = "gusnet-bert"
+        model_name = _GUSNET_TO_ENCODER.get(bias_model_key, "bert-base-uncased")
+        is_gpt2 = "gpt2" in model_name
+
+        try:
+            use_optimized = bool(input.bias_use_optimized())
+        except Exception:
+            use_optimized = True
+
+        thresholds = current_thresholds_A.get()
+        n_total = len(sentences)
+
+        per_sentence_results = []
+        all_bar_matrices = []
+        all_bsr_matrices = []
+
+        loop = asyncio.get_running_loop()
+
+        for idx, text in enumerate(sentences):
+            sentence_data = {
+                "index": idx,
+                "text": text,
+                "is_biased": False,
+                "error": None,
+            }
+            try:
+                # ── Phase 1: GUS-Net bias detection ──
+                await session.send_custom_message("batch_progress", {
+                    "label": f"Analyse Bias ({idx+1}/{n_total})"
+                })
+
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    raw = await asyncio.wait_for(
+                        loop.run_in_executor(pool, heavy_bias_compute, text, model_name, thresholds, bias_model_key, use_optimized),
+                        timeout=120.0
+                    )
+
+                if not raw:
+                    sentence_data["error"] = "Bias detection failed"
+                    per_sentence_results.append(sentence_data)
+                    continue
+
+                processed = _process_raw_bias_result(raw, raw.get("effective_thresholds", thresholds), use_optimized=use_optimized)
+                if not processed:
+                    sentence_data["error"] = "Result processing failed"
+                    per_sentence_results.append(sentence_data)
+                    continue
+
+                # Extract bias info
+                token_labels = processed.get("token_labels", [])
+                bias_summary = processed.get("bias_summary", {})
+                bias_spans = processed.get("bias_spans", [])
+                metrics = processed.get("attention_metrics", [])
+                attentions = processed.get("attentions")
+                propagation = processed.get("propagation_analysis", {})
+                bias_matrix = processed.get("bias_matrix")
+
+                biased_count = sum(1 for t in token_labels if t.get("is_biased"))
+                total_tokens = len(token_labels)
+                bias_pct = round(biased_count / total_tokens * 100, 1) if total_tokens else 0
+                is_biased = biased_count > 0
+
+                # Token scores for report
+                token_scores = []
+                for tl in token_labels:
+                    scores = tl.get("scores", {})
+                    token_scores.append({
+                        "token": tl.get("token", ""),
+                        "is_biased": tl.get("is_biased", False),
+                        "bias_types": tl.get("bias_types", []),
+                        "scores": {k: round(float(v), 4) for k, v in scores.items()} if scores else {},
+                    })
+
+                # Biased spans
+                span_data = []
+                for sp in bias_spans:
+                    span_data.append({
+                        "text": sp.get("text", ""),
+                        "bias_types": sp.get("bias_types", []),
+                        "avg_score": round(float(sp.get("avg_score", 0)), 4),
+                    })
+
+                # Category counts
+                cat_counts = {}
+                for tl in token_labels:
+                    if tl.get("is_biased"):
+                        for bt in tl.get("bias_types", []):
+                            cat_counts[bt] = cat_counts.get(bt, 0) + 1
+
+                # Confidence
+                confidences = []
+                for tl in token_labels:
+                    if tl.get("is_biased") and tl.get("scores"):
+                        max_score = max(v for k, v in tl["scores"].items() if k != "O")
+                        confidences.append(float(max_score))
+                avg_conf = round(sum(confidences) / len(confidences), 4) if confidences else 0
+
+                sentence_data.update({
+                    "is_biased": is_biased,
+                    "bias_summary": {
+                        "total_tokens": total_tokens,
+                        "biased_tokens": biased_count,
+                        "bias_percentage": bias_pct,
+                        "generalization_count": cat_counts.get("GEN", 0),
+                        "unfairness_count": cat_counts.get("UNFAIR", 0),
+                        "stereotype_count": cat_counts.get("STEREO", 0),
+                        "avg_confidence": avg_conf,
+                        "categories_found": list(cat_counts.keys()),
+                    },
+                    "biased_spans": span_data,
+                    "token_scores": token_scores,
+                })
+
+                # BAR/BSR matrix
+                if bias_matrix is not None:
+                    all_bar_matrices.append(np.array(bias_matrix))
+                    sentence_data["bar_matrix_shape"] = list(np.array(bias_matrix).shape)
+
+                # Propagation
+                if propagation:
+                    layer_bars = propagation.get("layer_propagation", [])
+                    sentence_data["propagation"] = {
+                        "layer_bars": [round(float(x), 4) for x in layer_bars],
+                        "peak_layer": propagation.get("peak_layer"),
+                        "pattern": propagation.get("propagation_pattern", "none"),
+                    }
+
+                # ── Phase 2: Integrated Gradients ──
+                ig_data = None
+                try:
+                    tokenizer, encoder_model, _ = ModelManager.get_model(model_name)
+                    with ThreadPoolExecutor(max_workers=1) as pool:
+                        ig_bundle = await asyncio.wait_for(
+                            loop.run_in_executor(pool, batch_compute_ig_correlation,
+                                encoder_model, tokenizer, text, list(attentions), metrics, is_gpt2),
+                            timeout=120.0
+                        )
+                    if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle):
+                        ig_corrs = []
+                        for c in (ig_bundle.correlations or []):
+                            ig_corrs.append({
+                                "layer": c.layer, "head": c.head,
+                                "spearman_rho": round(float(c.rho), 4),
+                                "p_value": round(float(c.p_value), 6) if c.p_value is not None else None,
+                                "bar": round(float(c.bar), 4) if c.bar is not None else None,
+                            })
+                        topk_data = []
+                        for t in (ig_bundle.topk_overlaps or []):
+                            topk_data.append({
+                                "layer": t.layer, "head": t.head, "k": t.k,
+                                "jaccard": round(float(t.jaccard), 4),
+                                "rbo": round(float(t.rbo), 4) if t.rbo is not None else None,
+                                "bar": round(float(t.bar), 4) if t.bar is not None else None,
+                            })
+                        ig_data = {
+                            "token_attributions": [round(float(x), 6) for x in ig_bundle.token_attributions],
+                            "top_ig_tokens": [
+                                {"token": ig_bundle.tokens[i], "attribution": round(float(ig_bundle.token_attributions[i]), 6), "rank": r+1}
+                                for r, i in enumerate(np.argsort(ig_bundle.token_attributions)[::-1][:10])
+                            ],
+                            "ig_attention_correlations": ig_corrs[:20],
+                            "topk_overlaps": topk_data[:20],
+                        }
+                        sentence_data["ig_analysis"] = ig_data
+                except Exception as e:
+                    sentence_data["ig_error"] = str(e)[:100]
+
+                # ── Phase 3: Head Ablation ──
+                try:
+                    top_k = min(10, len(metrics))
+                    top_heads_local = sorted(metrics, key=lambda m: m.bias_attention_ratio, reverse=True)[:top_k]
+                    tokenizer, encoder_model, lm_head_model = ModelManager.get_model(model_name)
+                    with ThreadPoolExecutor(max_workers=1) as pool:
+                        ablation_list = await asyncio.wait_for(
+                            loop.run_in_executor(pool, batch_ablate_top_heads,
+                                encoder_model, lm_head_model, tokenizer, text, top_heads_local, is_gpt2),
+                            timeout=120.0
+                        )
+                    if ablation_list:
+                        abl_data = []
+                        for a in ablation_list:
+                            abl_data.append({
+                                "layer": a.layer, "head": a.head,
+                                "representation_impact": round(float(a.representation_impact), 6),
+                                "kl_divergence": round(float(a.kl_divergence), 6) if a.kl_divergence is not None else None,
+                                "bar": round(float(a.bar_original), 4) if a.bar_original is not None else None,
+                            })
+                        sentence_data["ablation_analysis"] = abl_data
+                except Exception as e:
+                    sentence_data["ablation_error"] = str(e)[:100]
+
+                # ── Phase 4: Perturbation ──
+                try:
+                    if ig_data and ig_bundle:
+                        tokenizer, encoder_model, _ = ModelManager.get_model(model_name)
+                        with ThreadPoolExecutor(max_workers=1) as pool:
+                            perturb_bundle = await asyncio.wait_for(
+                                loop.run_in_executor(pool, batch_compute_perturbation,
+                                    encoder_model, tokenizer, text, is_gpt2, ig_bundle.token_attributions, list(attentions)),
+                                timeout=120.0
+                            )
+                        if perturb_bundle and isinstance(perturb_bundle, PerturbationAnalysisBundle):
+                            tok_imp = [{"token": r.token, "importance": round(float(r.importance), 6)} for r in perturb_bundle.token_results]
+                            attn_corrs = [{"layer": l, "head": h, "spearman_rho": round(float(r), 4)} for l, h, r in (perturb_bundle.perturb_vs_attn_spearman or [])[:10]]
+                            sentence_data["perturbation_analysis"] = {
+                                "token_importance": tok_imp,
+                                "perturb_vs_ig_spearman": round(float(perturb_bundle.perturb_vs_ig_spearman), 4) if perturb_bundle.perturb_vs_ig_spearman is not None else None,
+                                "perturb_vs_attention_top5": attn_corrs,
+                            }
+                except Exception as e:
+                    sentence_data["perturbation_error"] = str(e)[:100]
+
+                # ── Phase 5: LRP / DeepLift ──
+                try:
+                    if ig_data and ig_bundle:
+                        tokenizer, encoder_model, _ = ModelManager.get_model(model_name)
+                        with ThreadPoolExecutor(max_workers=1) as pool:
+                            lrp_bundle = await asyncio.wait_for(
+                                loop.run_in_executor(pool, batch_compute_lrp,
+                                    encoder_model, tokenizer, text, is_gpt2, ig_bundle.token_attributions, list(attentions), metrics),
+                                timeout=120.0
+                            )
+                        if lrp_bundle and isinstance(lrp_bundle, LRPAnalysisBundle):
+                            lrp_corrs = [{"layer": l, "head": h, "spearman_rho": round(float(r), 4)} for l, h, r in (lrp_bundle.correlations or [])[:10]]
+                            sentence_data["lrp_analysis"] = {
+                                "token_attributions": [round(float(x), 6) for x in lrp_bundle.token_attributions],
+                                "lrp_vs_ig_spearman": round(float(lrp_bundle.lrp_vs_ig_spearman), 4) if lrp_bundle.lrp_vs_ig_spearman is not None else None,
+                                "lrp_vs_attention_top5": lrp_corrs,
+                            }
+                except Exception as e:
+                    sentence_data["lrp_error"] = str(e)[:100]
+
+                # ── Phase 6: Counterfactual swaps ──
+                try:
+                    cf_swaps = find_swappable_terms(text)
+                    if cf_swaps:
+                        sentence_data["counterfactual_swaps"] = [
+                            {"term": s["term"], "swap_to": s["swap_to"], "category": s["category"]}
+                            for s in cf_swaps
+                        ]
+                except Exception:
+                    pass
+
+            except asyncio.TimeoutError:
+                sentence_data["error"] = "Timeout (120s)"
+            except Exception as e:
+                sentence_data["error"] = str(e)[:200]
+            finally:
+                # Clear GPU memory between sentences
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+            per_sentence_results.append(sentence_data)
+
+        elapsed = round(_time.time() - t0, 1)
+
+        # ── Build comprehensive report ──
+        await session.send_custom_message("batch_progress", {
+            "label": f"Analyse Bias ({n_total}/{n_total})"
+        })
+
+        report = _build_batch_report(
+            per_sentence_results, all_bar_matrices,
+            bias_model_key, model_name, thresholds, use_optimized,
+            batch_file_name.get(), elapsed, n_total
+        )
+
+        # Save to disk
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = f"batch_report_{bias_model_key}_{ts}.json"
+        save_path = Path("downloads/batch") / fname
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(save_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False, default=str)
+
+        # Auto-download
+        await session.send_custom_message("batch_download_ready", {
+            "json_content": json.dumps(report, indent=2, ensure_ascii=False, default=str),
+            "filename": fname,
+        })
+
+        analyzed = sum(1 for r in per_sentence_results if not r.get("error"))
+        ui.notification_show(
+            f"Batch complete! {analyzed}/{n_total} sentences, {elapsed}s",
+            type="message", duration=8
+        )
 
     # ── Dashboard content (conditional rendering) ──
 
@@ -2952,13 +3576,27 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
 
-        def get_viz(data, s_idxs, container_id="bias-combined-container"):
+        def get_viz(data, s_idxs, container_id="bias-combined-container",
+                    other_data=None, delta_label="A \u2212 B"):
             atts = data["attentions"]
             if not atts or l_idx >= len(atts): return '<div style="color:#9ca3af;">No attention data.</div>'
             try:
                 if l_idx >= len(atts): return '<div style="color:#9ca3af;">Layer out of bounds.</div>'
                 attn = atts[l_idx][0, h_idx].cpu().numpy()
-                fig = create_combined_bias_visualization(data["tokens"], data["token_labels"], attn, l_idx, h_idx, selected_token_idx=s_idxs)
+                attn_other = None
+                if other_data:
+                    try:
+                        o_atts = other_data["attentions"]
+                        if o_atts and l_idx < len(o_atts):
+                            attn_other = o_atts[l_idx][0, h_idx].cpu().numpy()
+                    except Exception:
+                        attn_other = None
+                fig = create_combined_bias_visualization(
+                    data["tokens"], data["token_labels"], attn, l_idx, h_idx,
+                    selected_token_idx=s_idxs,
+                    attention_matrix_other=attn_other,
+                    delta_label=delta_label,
+                )
                 return _deferred_plotly(fig, container_id, height="600px")
             except Exception as e: return f'<div style="color:red">Error: {e}</div>'
 
@@ -2994,12 +3632,18 @@ def bias_server_handlers(input, output, session):
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(ui.HTML(get_viz(res, sel, "bias-combined-container")), manual_header=man_header, help_text=_combined_help, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
+                _wrap_card(ui.HTML(get_viz(res, sel, "bias-combined-container",
+                                          other_data=res_B, delta_label="A \u2212 B")),
+                           manual_header=man_header, help_text=_combined_help,
+                           style=card_style + " border: 2px solid #3b82f6; height: 100%;",
                            controls=[
                                ui.download_button("export_bias_combined", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container', 'bias_combined_A')", style=_BTN_STYLE_PNG),
                            ]),
-                _wrap_card(ui.HTML(get_viz(res_B, None, "bias-combined-container-B")), manual_header=man_header, help_text=_combined_help, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                _wrap_card(ui.HTML(get_viz(res_B, None, "bias-combined-container-B",
+                                          other_data=res, delta_label="B \u2212 A")),
+                           manual_header=man_header, help_text=_combined_help,
+                           style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
                            controls=[
                                ui.download_button("export_bias_combined_B", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container-B', 'bias_combined_B')", style=_BTN_STYLE_PNG),
@@ -3024,7 +3668,8 @@ def bias_server_handlers(input, output, session):
         # Analyzer instance for metrics
         analyzer = AttentionBiasAnalyzer()
 
-        def get_viz(data, container_id="bias-matrix-container"):
+        def get_viz(data, container_id="bias-matrix-container",
+                    other_data=None, delta_label="A \u2212 B"):
             try:
                 if "attentions" not in data or not data["attentions"]:
                      return '<div style="color:#9ca3af;">No attention data.</div>'
@@ -3038,7 +3683,21 @@ def bias_server_handlers(input, output, session):
 
                 try: _bar_th = float(input.bias_bar_threshold())
                 except Exception: _bar_th = 1.5
-                fig = create_attention_bias_matrix(matrix, metrics=metrics, selected_layer=sl, bar_threshold=_bar_th)
+
+                matrix_other = None
+                if other_data:
+                    try:
+                        o_att = other_data.get("attentions")
+                        o_bi = [l["index"] for l in other_data["token_labels"] if l.get("is_biased") and l["token"] not in ("[CLS]","[SEP]","[PAD]")]
+                        if o_att:
+                            matrix_other = analyzer.create_attention_bias_matrix(o_att, o_bi)
+                    except Exception:
+                        matrix_other = None
+
+                fig = create_attention_bias_matrix(
+                    matrix, metrics=metrics, selected_layer=sl, bar_threshold=_bar_th,
+                    bias_matrix_other=matrix_other, delta_label=delta_label,
+                )
                 return _deferred_plotly(fig, container_id, height="600px")
             except Exception as e: return f'<div style="color:red">Error: {e}</div>'
 
@@ -3065,12 +3724,16 @@ def bias_server_handlers(input, output, session):
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(ui.HTML(get_viz(res, "bias-matrix-container")), *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
+                _wrap_card(ui.HTML(get_viz(res, "bias-matrix-container",
+                                          other_data=res_B, delta_label="A \u2212 B")),
+                           *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
                            controls=[
                                ui.download_button("export_bias_matrix", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container', 'bias_matrix_A')", style=_BTN_STYLE_PNG),
                            ]),
-                _wrap_card(ui.HTML(get_viz(res_B, "bias-matrix-container-B")), *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                _wrap_card(ui.HTML(get_viz(res_B, "bias-matrix-container-B",
+                                          other_data=res, delta_label="B \u2212 A")),
+                           *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
                            controls=[
                                ui.download_button("export_bias_matrix_B", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container-B', 'bias_matrix_B')", style=_BTN_STYLE_PNG),

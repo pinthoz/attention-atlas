@@ -496,6 +496,13 @@ def create_bias_sidebar():
                     ),
                     ui.div(
                         {"class": "session-controls", "style": "display: flex; gap: 4px; align-items: flex-end; margin-left: auto;"},
+                        ui.tags.button(
+                            ui.HTML('<i class="fa-solid fa-chart-pie"></i>'),
+                            id="bias_batch_mode_btn",
+                            class_="session-btn-custom",
+                            title="Batch Mode",
+                            onclick="window.toggleBatchMode && window.toggleBatchMode();",
+                        ),
                         ui.tags.label(ui.HTML('<i class="fa-solid fa-folder-open"></i>'), {"class": "session-btn-custom", "title": "Load Session", "for": "load_bias_session_upload"}),
                         ui.div(ui.input_file("load_bias_session_upload", None, accept=[".json"], multiple=False), style="display: none;"),
                         ui.download_button("save_bias_session", label=None, icon=ui.tags.i(class_="fa-solid fa-floppy-disk"), class_="session-btn-custom"),
@@ -506,6 +513,31 @@ def create_bias_sidebar():
                 ui.tags.textarea("All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.", id="bias_input_text", class_="custom-textarea", rows=6, oninput="Shiny.setInputValue('bias_input_text', this.value, {priority: 'event'})"),
                 # Text Input B (hidden by default)
                 ui.tags.textarea("Programmers are logical and rigorous. Artists are creative and emotional.", id="bias_input_text_B", class_="custom-textarea", rows=6, style="display: none;", oninput="Shiny.setInputValue('bias_input_text_B', this.value, {priority: 'event'})", placeholder="Enter second text for comparison..."),
+                # Batch Upload Section (hidden by default)
+                ui.div(
+                    {"id": "batch-upload-section", "style": "display: none;"},
+                    ui.div(
+                        {"class": "batch-upload-container"},
+                        ui.div(
+                            {"class": "batch-header"},
+                            ui.HTML('<i class="fa-solid fa-chart-pie" style="margin-right: 6px;"></i>'),
+                            ui.tags.span("Batch Mode", style="font-weight: 600; font-size: 13px;"),
+                            ui.tags.span("Upload a CSV or JSON to analyse multiple sentences at once", style="font-weight: 400; font-size: 11px; opacity: 0.85; margin-left: 4px; text-align: center;"),
+                        ),
+                        ui.div(
+                            {"class": "batch-dropzone", "id": "batch-dropzone", "onclick": "document.getElementById('batch_file_upload').click();"},
+                            ui.HTML('<i class="fa-solid fa-cloud-arrow-up batch-dropzone-icon" style="font-size: 20px; color: #94a3b8; margin-bottom: 4px;"></i>'),
+                            ui.tags.div("Drop CSV or JSON file here, or click to browse", id="batch-dropzone-label", style="color: #94a3b8; font-size: 12px; font-weight: 500; text-align: center;"),
+                            ui.div(
+                                {"id": "batch-file-info", "class": "batch-file-info", "style": "display: none;"},
+                                ui.HTML('<i class="fa-solid fa-file-lines" style="margin-right: 6px;"></i>'),
+                                ui.tags.span("", id="batch-file-name"),
+                                ui.tags.span("", id="batch-file-count", style="margin-left: 8px; font-weight: 600;"),
+                            ),
+                        ),
+                    ),
+                    ui.div(ui.input_file("batch_file_upload", None, accept=[".csv", ".json"], multiple=False), style="display: none;"),
+                ),
             ),
 
             # Prompt tabs styling
@@ -571,6 +603,60 @@ def create_bias_sidebar():
                 }
                 #bias-input-container.compare-prompts-active #bias_input_text_B {
                     border: 2px solid #ff5ca9;
+                }
+
+                /* ── Batch Mode Styles ─────────────────────────────── */
+                #bias_batch_mode_btn.batch-active {
+                    background: #ff5ca9 !important;
+                    color: white !important;
+                }
+                .batch-upload-container {
+                    background: #ffffff;
+                    border: 2px solid white;
+                    border-bottom-left-radius: 8px;
+                    border-bottom-right-radius: 8px;
+                    min-height: 120px;
+                    display: flex;
+                    flex-direction: column;
+                    overflow: hidden;
+                }
+                .batch-header {
+                    display: flex;
+                    align-items: center;
+                    padding: 5px 10px;
+                    background: linear-gradient(135deg, #ff5ca9, #ec4899);
+                    color: white;
+                    font-size: 12px;
+                    flex-shrink: 0;
+                }
+                .batch-dropzone {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 8px;
+                    border: 2px dashed #cbd5e1;
+                    border-radius: 6px;
+                    margin: 6px 8px 8px 8px;
+                    cursor: pointer;
+                    transition: border-color 0.2s, background 0.2s;
+                    min-height: 0;
+                }
+                .batch-dropzone:hover {
+                    border-color: #ff5ca9;
+                    background: rgba(255, 92, 169, 0.04);
+                }
+                .batch-file-info {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-top: 6px;
+                    padding: 4px 12px;
+                    background: rgba(34, 197, 94, 0.12);
+                    color: #16a34a;
+                    font-size: 11px;
+                    border-radius: 4px;
                 }
             """),
 
@@ -915,6 +1001,141 @@ def create_bias_sidebar():
                         }
                     }
                     // Old custom threshold logic removed. New thresholds handled by setupBiasToolbar and individual inputs.
+                });
+
+                // ── Batch Mode ──────────────────────────────────────
+                window.toggleBatchMode = function() {
+                    var btn = document.getElementById('bias_batch_mode_btn');
+                    var section = document.getElementById('batch-upload-section');
+                    var textA = document.getElementById('bias_input_text');
+                    var textB = document.getElementById('bias_input_text_B');
+                    var isActive = btn.classList.contains('batch-active');
+
+                    if (isActive) {
+                        // Deactivate batch mode
+                        btn.classList.remove('batch-active');
+                        section.style.display = 'none';
+                        textA.style.display = 'block';
+                        // Reset dropzone to initial state
+                        var icon = document.querySelector('.batch-dropzone-icon');
+                        var lbl = document.getElementById('batch-dropzone-label');
+                        var info = document.getElementById('batch-file-info');
+                        if (icon) icon.style.display = '';
+                        if (lbl) lbl.style.display = '';
+                        if (info) info.style.display = 'none';
+                        Shiny.setInputValue('bias_batch_mode_active', 'false', {priority: 'event'});
+                    } else {
+                        // Activate batch mode — hide textareas, show upload
+                        // Sync height to textarea before hiding it
+                        var container = section.querySelector('.batch-upload-container');
+                        if (container && textA.offsetHeight > 0) {
+                            container.style.height = textA.offsetHeight + 'px';
+                        }
+                        btn.classList.add('batch-active');
+                        section.style.display = 'block';
+                        textA.style.display = 'none';
+                        textB.style.display = 'none';
+                        // Turn off compare modes
+                        var modelSwitch = document.getElementById('bias_compare_mode');
+                        if (modelSwitch && modelSwitch.checked) {
+                            modelSwitch.checked = false;
+                            $(modelSwitch).trigger('change');
+                        }
+                        var promptSwitch = document.getElementById('bias_compare_prompts_mode');
+                        if (promptSwitch && promptSwitch.checked) {
+                            promptSwitch.checked = false;
+                            $(promptSwitch).trigger('change');
+                        }
+                        Shiny.setInputValue('bias_batch_mode_active', 'true', {priority: 'event'});
+                    }
+                };
+
+                // Drag-and-drop support for batch dropzone
+                $(document).on('shiny:connected', function() {
+                    var dz = document.getElementById('batch-dropzone');
+                    if (!dz) return;
+
+                    dz.addEventListener('dragover', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dz.style.borderColor = '#ff5ca9';
+                        dz.style.background = 'rgba(255, 92, 169, 0.06)';
+                    });
+                    dz.addEventListener('dragleave', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dz.style.borderColor = '';
+                        dz.style.background = '';
+                    });
+                    dz.addEventListener('drop', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dz.style.borderColor = '';
+                        dz.style.background = '';
+
+                        var files = e.dataTransfer.files;
+                        if (!files || files.length === 0) return;
+
+                        var file = files[0];
+                        var name = file.name.toLowerCase();
+                        if (!name.endsWith('.csv') && !name.endsWith('.json')) return;
+
+                        // Feed the dropped file into the hidden Shiny file input
+                        var fileInput = document.getElementById('batch_file_upload');
+                        if (fileInput) {
+                            var dt = new DataTransfer();
+                            dt.items.add(file);
+                            fileInput.files = dt.files;
+                            $(fileInput).trigger('change');
+                        }
+                    });
+                });
+
+                // Batch file parsed (server sends filename + count)
+                Shiny.addCustomMessageHandler('batch_file_parsed', function(msg) {
+                    var infoDiv = document.getElementById('batch-file-info');
+                    var nameSpan = document.getElementById('batch-file-name');
+                    var countSpan = document.getElementById('batch-file-count');
+                    var icon = document.querySelector('.batch-dropzone-icon');
+                    var label = document.getElementById('batch-dropzone-label');
+                    if (msg.error) {
+                        infoDiv.style.display = 'inline-flex';
+                        infoDiv.style.background = 'rgba(239, 68, 68, 0.1)';
+                        infoDiv.style.color = '#dc2626';
+                        nameSpan.textContent = msg.error;
+                        countSpan.textContent = '';
+                        if (icon) icon.style.display = 'none';
+                        if (label) label.style.display = 'none';
+                    } else {
+                        infoDiv.style.display = 'inline-flex';
+                        infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
+                        infoDiv.style.color = '#16a34a';
+                        nameSpan.textContent = msg.filename;
+                        countSpan.textContent = msg.count + ' sentences';
+                        if (icon) icon.style.display = 'none';
+                        if (label) label.style.display = 'none';
+                    }
+                });
+
+                // Batch progress updates
+                Shiny.addCustomMessageHandler('batch_progress', function(msg) {
+                    var btn = document.getElementById('analyze_bias_btn');
+                    if (btn) {
+                        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;"></i>' + msg.label;
+                    }
+                });
+
+                // Batch download ready — auto-download JSON
+                Shiny.addCustomMessageHandler('batch_download_ready', function(msg) {
+                    var blob = new Blob([msg.json_content], {type: 'application/json'});
+                    var url = URL.createObjectURL(blob);
+                    var a = document.createElement('a');
+                    a.href = url;
+                    a.download = msg.filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
                 });
             """)
         ),
