@@ -36,6 +36,8 @@ def create_attention_bias_matrix(
     metrics: Optional[List[HeadBiasMetrics]] = None,
     selected_layer: Optional[int] = None,
     bar_threshold: float = 1.5,
+    bias_matrix_other: Optional[np.ndarray] = None,
+    delta_label: str = "A \u2212 B",
 ) -> go.Figure:
     """Create heatmap showing attention to bias for each (layer, head).
 
@@ -63,6 +65,10 @@ def create_attention_bias_matrix(
         return fig
 
     # Create hover text
+    has_bar_delta = (
+        bias_matrix_other is not None
+        and bias_matrix_other.shape == bias_matrix.shape
+    )
     if metrics:
         # Create lookup dict
         metrics_dict = {(m.layer, m.head): m for m in metrics}
@@ -76,16 +82,31 @@ def create_attention_bias_matrix(
                         f"<b>Layer {layer}, Head {head}</b><br>"
                         f"BAR (mu_hat/mu_0): {m.bias_attention_ratio:.3f}<br>"
                         f"BSR (self-reinforcement): {m.amplification_score:.3f}<br>"
-                        f"Max α->biased: {m.max_bias_attention:.3f}<br>"
+                        f"Max \u03b1->biased: {m.max_bias_attention:.3f}<br>"
                         f"Specialised: {'Yes' if m.specialized_for_bias else 'No'}"
                     )
                 else:
                     text = f"<b>Layer {layer}, Head {head}</b><br>BAR: {bias_matrix[layer, head]:.3f}"
+                if has_bar_delta:
+                    d = float(bias_matrix[layer, head]) - float(bias_matrix_other[layer, head])
+                    sign = "+" if d >= 0 else ""
+                    color = "#3b82f6" if "A" in delta_label else "#ff5ca9"
+                    text += f"<br><b style='color:{color}'>\u0394 BAR ({delta_label}): {sign}{d:.3f}</b>"
                 row.append(text)
             hover_text.append(row)
     else:
-        hover_text = [[f"<b>L{l}, H{h}</b><br>Ratio: {bias_matrix[l,h]:.3f}"
-                       for h in range(num_heads)] for l in range(num_layers)]
+        hover_text = []
+        for l in range(num_layers):
+            row = []
+            for h in range(num_heads):
+                text = f"<b>L{l}, H{h}</b><br>Ratio: {bias_matrix[l,h]:.3f}"
+                if has_bar_delta:
+                    d = float(bias_matrix[l, h]) - float(bias_matrix_other[l, h])
+                    sign = "+" if d >= 0 else ""
+                    color = "#3b82f6" if "A" in delta_label else "#ff5ca9"
+                    text += f"<br><b style='color:{color}'>\u0394 ({delta_label}): {sign}{d:.3f}</b>"
+                row.append(text)
+            hover_text.append(row)
 
     # Dynamic range: ensure 1.0 is always central
     # Range is [0, max(2.5, data_max)]
@@ -287,6 +308,8 @@ def create_combined_bias_visualization(
     layer_idx: int,
     head_idx: int,
     selected_token_idx: Optional[Union[int, List[int]]] = None,
+    attention_matrix_other: Optional[np.ndarray] = None,
+    delta_label: str = "A − B",
 ) -> go.Figure:
     """Create attention heatmap matching the Multi-Head Attention style.
 
@@ -363,6 +386,11 @@ def create_combined_bias_visualization(
     attn_received = attention_matrix.sum(axis=0)
     attn_sent = attention_matrix.sum(axis=1)
 
+    has_delta = (
+        attention_matrix_other is not None
+        and attention_matrix_other.shape == attention_matrix.shape
+    )
+
     hover_text = []
     for i in range(n):
         row = []
@@ -372,6 +400,13 @@ def create_combined_bias_visualization(
                 f"<b>Key:</b> {cleaned[j]}",
                 f"<b>Attention:</b> {attention_matrix[i, j]:.4f}",
             ]
+            if has_delta:
+                d = float(attention_matrix[i, j]) - float(attention_matrix_other[i, j])
+                sign = "+" if d >= 0 else ""
+                color = "#3b82f6" if "A" in delta_label else "#ff5ca9"
+                parts.append(
+                    f"<b style='color:{color}'>\u0394 ({delta_label}): {sign}{d:.4f}</b>"
+                )
             if j in biased_indices:
                 lbl = token_labels[j]
                 types = ", ".join(lbl.get("bias_types", []))

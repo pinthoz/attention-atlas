@@ -10,7 +10,7 @@ from pathlib import Path
 # Create default download directories
 download_base = Path("downloads")
 download_base.mkdir(exist_ok=True)
-for d in ["csv", "png", "json", "sessions"]:
+for d in ["csv", "png", "json", "sessions", "batch"]:
     (download_base / d).mkdir(exist_ok=True)
 
 import numpy as np
@@ -4939,14 +4939,38 @@ def server(input, output, session):
             causal_desc = " <span style='color:#ef4444;font-weight:bold;'>(Causal Mask Applied)</span>"
 
         d_k = Q.shape[-1] // num_heads
-        custom = np.empty((L, L, 5), dtype=object)
+
+        # ── Compare-mode delta: fetch Model B attention for same layer/head ──
+        att_B_matrix = None
+        is_comparing = active_compare_models.get()
+        if is_comparing:
+            try:
+                res_B = get_active_result("_B")
+                if res_B:
+                    _, _, _, att_B_raw, _, _, _, enc_B, *_ = res_B
+                    if att_B_raw and len(att_B_raw) > layer_idx:
+                        if use_global:
+                            att_B_layers = [layer[0].cpu().numpy() for layer in att_B_raw]
+                            raw_B = np.mean(att_B_layers, axis=(0, 1))
+                        else:
+                            n_heads_B = att_B_raw[layer_idx].shape[1]
+                            h_idx_B = min(head_idx, n_heads_B - 1)
+                            raw_B = att_B_raw[layer_idx][0, h_idx_B].cpu().numpy()
+                        is_causal_B = not hasattr(get_layer_block(enc_B, layer_idx), "attention")
+                        att_B_matrix = get_normalized_attention(raw_B, att_B_raw, layer_idx, norm_mode, is_causal=is_causal_B, use_all_layers=use_all_layers)
+            except Exception:
+                att_B_matrix = None
+
+        has_delta = att_B_matrix is not None and att_B_matrix.shape == att.shape
+
+        custom = np.empty((L, L, 6), dtype=object)
         for i in range(L):
             for j in range(L):
                 # For causal models, skip masked cells (future tokens)
                 if is_causal and j > i:
-                    custom[i, j, :] = [None, None, None, None, None]
+                    custom[i, j, :] = [None, None, None, None, None, None]
                     continue
-                    
+
                 dot_product = np.dot(Q[i], K[j])
                 scaled = dot_product / np.sqrt(d_k)
                 custom[i, j, 0] = np.array2string(Q[i][:5], precision=3, separator=", ")
@@ -4954,13 +4978,29 @@ def server(input, output, session):
                 custom[i, j, 2] = f"{dot_product:.4f}"
                 custom[i, j, 3] = f"{scaled:.4f}"
                 custom[i, j, 4] = f"{att[i, j]:.4f}"
-        
-        hover = (
-            "<b>Query Token:</b> %{y}<br><b>Key Token:</b> %{x}<br><br><b>Calculation:</b><br>"
-            "1. Dot Product: Q·K = %{customdata[2]}<br>2. Scaled: (Q·K)/√d_k = %{customdata[3]}<br>"
-            "3. Softmax Result: <b>%{customdata[4]}</b><br><br><b>Vectors (first 5 dims):</b><br>"
-            "Q = %{customdata[0]}<br>K = %{customdata[1]}<extra></extra>"
-        )
+                if has_delta and not (np.isnan(att[i, j]) if not isinstance(att[i, j], type(None)) else True):
+                    delta = float(att[i, j]) - float(att_B_matrix[i, j])
+                    sign = "+" if delta >= 0 else ""
+                    custom[i, j, 5] = f"{sign}{delta:.4f}"
+                else:
+                    custom[i, j, 5] = None
+
+        if has_delta:
+            hover = (
+                "<b>Query Token:</b> %{y}<br><b>Key Token:</b> %{x}<br><br><b>Calculation:</b><br>"
+                "1. Dot Product: Q·K = %{customdata[2]}<br>2. Scaled: (Q·K)/√d_k = %{customdata[3]}<br>"
+                "3. Softmax Result: <b>%{customdata[4]}</b><br>"
+                "<br><b style='color:#3b82f6'>Δ (A − B): %{customdata[5]}</b>"
+                "<br><br><b>Vectors (first 5 dims):</b><br>"
+                "Q = %{customdata[0]}<br>K = %{customdata[1]}<extra></extra>"
+            )
+        else:
+            hover = (
+                "<b>Query Token:</b> %{y}<br><b>Key Token:</b> %{x}<br><br><b>Calculation:</b><br>"
+                "1. Dot Product: Q·K = %{customdata[2]}<br>2. Scaled: (Q·K)/√d_k = %{customdata[3]}<br>"
+                "3. Softmax Result: <b>%{customdata[4]}</b><br><br><b>Vectors (first 5 dims):</b><br>"
+                "Q = %{customdata[0]}<br>K = %{customdata[1]}<extra></extra>"
+            )
         # Custom colorscale for attention map (White -> Blue -> Dark Blue)
         att_colorscale = [
             [0.0, '#ffffff'],
@@ -6649,6 +6689,29 @@ def server(input, output, session):
             att = att.copy()
             att[np.triu_indices_from(att, k=1)] = np.nan
 
+        # ── Compare-mode delta: fetch Model A attention for same layer/head ──
+        att_A_matrix = None
+        is_comparing = active_compare_models.get()
+        if is_comparing:
+            try:
+                res_A = get_active_result()
+                if res_A:
+                    _, _, _, att_A_raw, _, _, _, enc_A, *_ = res_A
+                    if att_A_raw and len(att_A_raw) > layer_idx:
+                        if use_global:
+                            att_A_layers = [layer[0].cpu().numpy() for layer in att_A_raw]
+                            raw_A = np.mean(att_A_layers, axis=(0, 1))
+                        else:
+                            n_heads_A = att_A_raw[layer_idx].shape[1]
+                            h_idx_A = min(head_idx, n_heads_A - 1)
+                            raw_A = att_A_raw[layer_idx][0, h_idx_A].cpu().numpy()
+                        is_causal_A = not hasattr(get_layer_block(enc_A, layer_idx), "attention")
+                        att_A_matrix = get_normalized_attention(raw_A, att_A_raw, layer_idx, norm_mode, is_causal=is_causal_A, use_all_layers=use_all_layers)
+            except Exception:
+                att_A_matrix = None
+
+        has_delta = att_A_matrix is not None and att_A_matrix.shape == att.shape
+
         # Clean tokens for display in the heatmap
         # Add index suffix ONLY to duplicate tokens (Plotly merges duplicate labels otherwise)
         base_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
@@ -6656,7 +6719,7 @@ def server(input, output, session):
         # Count occurrences of each token
         from collections import Counter
         token_counts = Counter(base_tokens)
-        
+
         # Track occurrence number for each token
         occurrence_tracker = {}
         cleaned_tokens = []
@@ -6668,7 +6731,38 @@ def server(input, output, session):
             else:
                 # Unique token - no suffix
                 cleaned_tokens.append(t)
-        
+
+        L_B = len(tokens)
+
+        # Build customdata + hovertemplate with optional delta
+        custom_B = np.empty((L_B, L_B, 2), dtype=object)
+        for i in range(L_B):
+            for j in range(L_B):
+                if is_causal and j > i:
+                    custom_B[i, j, :] = [None, None]
+                    continue
+                custom_B[i, j, 0] = f"{att[i, j]:.4f}" if not np.isnan(att[i, j]) else None
+                if has_delta and not np.isnan(att[i, j]):
+                    delta = float(att[i, j]) - float(att_A_matrix[i, j])
+                    sign = "+" if delta >= 0 else ""
+                    custom_B[i, j, 1] = f"{sign}{delta:.4f}"
+                else:
+                    custom_B[i, j, 1] = None
+
+        if has_delta:
+            hover_B = (
+                "<b>Query Token:</b> %{y}<br><b>Key Token:</b> %{x}<br>"
+                "<b>Attention:</b> %{customdata[0]}<br>"
+                "<b style='color:#ff5ca9'>Δ (B − A): %{customdata[1]}</b>"
+                "<extra></extra>"
+            )
+        else:
+            hover_B = (
+                "<b>Query Token:</b> %{y}<br><b>Key Token:</b> %{x}<br>"
+                "<b>Attention:</b> %{customdata[0]}"
+                "<extra></extra>"
+            )
+
         # Custom colorscale for attention map (White -> Blue -> Dark Blue)
         att_colorscale = [
             [0.0, '#ffffff'],
@@ -6678,25 +6772,6 @@ def server(input, output, session):
             [1.0, '#1e3a8a']
         ]
 
-        # Clean tokens for display in the heatmap
-        base_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
-        
-        # Count occurrences of each token
-        from collections import Counter
-        token_counts = Counter(base_tokens)
-        
-        # Track occurrence number for each token
-        occurrence_tracker = {}
-        cleaned_tokens = []
-        for t in base_tokens:
-            if token_counts[t] > 1:
-                # Duplicate token - add occurrence number
-                occurrence_tracker[t] = occurrence_tracker.get(t, 0) + 1
-                cleaned_tokens.append(f"{t}_{occurrence_tracker[t]}")
-            else:
-                # Unique token - no suffix
-                cleaned_tokens.append(t)
-        
         # Convert attention matrix: replace NaN with None for proper gap handling (no hover)
         att_list = []
         rows, cols = att.shape
@@ -6708,7 +6783,7 @@ def server(input, output, session):
                 else:
                     row.append(float(att[i, j]))
             att_list.append(row)
-        
+
         # Use go.Heatmap with list data for proper None/gap handling
         fig = go.Figure(data=go.Heatmap(
             z=att_list,
@@ -6717,6 +6792,8 @@ def server(input, output, session):
             colorscale=att_colorscale,
             zmin=0,
             zmax=1,
+            customdata=custom_B,
+            hovertemplate=hover_B,
             hoverongaps=False,  # Don't show hover for None/gap cells
             colorbar=dict(
                 title=dict(
