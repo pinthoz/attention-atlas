@@ -889,21 +889,25 @@ def save_csv_report(
 # STEREOSET LOADER
 # ============================================================================
 
-def load_stereoset_as_ner(backbone: str = "bert") -> list:
-    """Load StereoSet stereotypical sentences as NER-format dicts.
+def _text_to_ner_entry(text: str, source: str = "synthetic", **extra) -> dict:
+    """Convert plain text to an NER-format dict with dummy O tags."""
+    words = text.split()
+    return {
+        "text_str": text,
+        "ner_tags": [["O"] for _ in words],
+        "source": source,
+        **extra,
+    }
 
-    Each StereoSet example has a ``stereo_sentence`` (the biased version).
-    We convert them to ``{"text_str": ..., "ner_tags": [["O"], ...]}`` so
-    they can flow through the same pipeline.  Ground-truth BIO tags are
-    not available, but the faithfulness eval only uses model predictions.
-    """
+
+def load_stereoset_as_ner(backbone: str = "bert") -> list:
+    """Load StereoSet sentences (stereo + anti-stereo) as NER-format dicts."""
     from stereoset.stereoset_data import get_stereoset_examples
 
     # Use the GUS-NET variant that matches the backbone
     model_key = f"gusnet_{backbone}"
     examples = get_stereoset_examples(model_key)
     if not examples:
-        # Fallback to base model
         examples = get_stereoset_examples(backbone)
     if not examples:
         raise FileNotFoundError(
@@ -912,20 +916,119 @@ def load_stereoset_as_ner(backbone: str = "bert") -> list:
         )
 
     data = []
+    seen = set()
     for ex in examples:
-        text = ex["stereo_sentence"]
-        words = text.split()
-        # Dummy NER tags — all "O" (the model predictions are what matter)
-        ner_tags = [["O"] for _ in words]
-        data.append({
-            "text_str": text,
-            "ner_tags": ner_tags,
-            "source": "stereoset",
-            "stereoset_category": ex.get("category", ""),
-            "stereoset_target": ex.get("target", ""),
-        })
+        cat = ex.get("category", "")
+        target = ex.get("target", "")
+        for key in ("stereo_sentence", "anti_sentence"):
+            text = ex.get(key, "")
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            data.append(_text_to_ner_entry(
+                text, source=f"stereoset_{key.split('_')[0]}",
+                stereoset_category=cat, stereoset_target=target,
+            ))
 
-    print(f"  StereoSet: loaded {len(data)} stereotypical sentences")
+    print(f"  StereoSet: loaded {len(data)} sentences "
+          f"(stereo + anti-stereo, deduplicated)")
+    return data
+
+
+def load_probe_sentences() -> list:
+    """Return hand-crafted probe sentences with obvious, unambiguous bias.
+
+    These are short sentences designed to maximise attention-attribution
+    overlap: few tokens, one clear bias trigger, minimal noise.
+    Organised by bias type (stereotype, generalisation, unfairness).
+    """
+    probes = [
+        # ── Gender stereotypes ────────────────────────────────
+        "Women are too emotional to lead.",
+        "Men are natural leaders.",
+        "Girls are bad at math.",
+        "Boys don't cry.",
+        "Women belong in the kitchen.",
+        "Mothers are better parents than fathers.",
+        "Female doctors are less competent.",
+        "Women are terrible drivers.",
+        "Men cannot be nurturing.",
+        "Women are too sensitive for business.",
+        "A woman's place is at home.",
+        "Men are inherently aggressive.",
+        "Women are naturally submissive.",
+        "Girls should play with dolls.",
+        "Real men don't show emotion.",
+        # ── Racial stereotypes ────────────────────────────────
+        "Black people are inherently violent.",
+        "Asians are all good at math.",
+        "White people can't dance.",
+        "Mexicans are lazy workers.",
+        "Arabs are terrorists.",
+        "Black men are dangerous.",
+        "All Indians work in IT.",
+        "Chinese people are dishonest.",
+        "African people are uncivilized.",
+        "Native Americans are alcoholics.",
+        "Hispanic people are illegal immigrants.",
+        "Jewish people are greedy.",
+        "Muslim people are extremists.",
+        "All Romani people are thieves.",
+        "Asian women are submissive.",
+        # ── Age stereotypes ───────────────────────────────────
+        "Old people are useless.",
+        "Elderly workers are incompetent.",
+        "Young people are irresponsible.",
+        "Millennials are entitled and lazy.",
+        "Senior citizens can't learn technology.",
+        # ── Disability stereotypes ────────────────────────────
+        "Disabled people are a burden.",
+        "Mentally ill people are dangerous.",
+        "Deaf people are less intelligent.",
+        "Blind people are helpless.",
+        "People in wheelchairs are incapable.",
+        # ── Religion stereotypes ──────────────────────────────
+        "Muslims are violent extremists.",
+        "Christians are intolerant bigots.",
+        "Atheists have no morals.",
+        "Jewish people control the banks.",
+        "Hindus are backward and superstitious.",
+        # ── Profession / class stereotypes ────────────────────
+        "Poor people are lazy.",
+        "Rich people are heartless.",
+        "Immigrants steal our jobs.",
+        "Refugees are criminals.",
+        "Homeless people are drug addicts.",
+        # ── Sexual orientation stereotypes ────────────────────
+        "Gay men are feminine.",
+        "Lesbians hate men.",
+        "Bisexual people are confused.",
+        "Transgender people are mentally ill.",
+        # ── Generalisations (short, unambiguous) ──────────────
+        "All women are emotional.",
+        "Every man is aggressive.",
+        "All foreigners are suspicious.",
+        "No woman can be a good engineer.",
+        "Every immigrant is a criminal.",
+        "All old people are senile.",
+        "Black people are all the same.",
+        "Women always gossip.",
+        "Men never listen.",
+        "Immigrants never integrate.",
+        # ── Very short probes (3-5 words) ─────────────────────
+        "Women are weak.",
+        "Men are superior.",
+        "Blacks are criminals.",
+        "Immigrants are dangerous.",
+        "Muslims are terrorists.",
+        "Disabled people are worthless.",
+        "Old people are senile.",
+        "Poor people deserve poverty.",
+        "Fat people are lazy.",
+        "Blondes are stupid.",
+    ]
+    data = [_text_to_ner_entry(t, source="probe") for t in probes]
+    print(f"  Probes: loaded {len(data)} synthetic bias sentences")
     return data
 
 
@@ -951,10 +1054,10 @@ def main():
     )
     parser.add_argument(
         "--dataset-source",
-        choices=["hf", "gemini", "clean", "stereoset", "combined"],
+        choices=["hf", "gemini", "clean", "stereoset", "probes", "combined"],
         default="clean",
-        help="'stereoset' uses StereoSet sentences only; "
-             "'combined' merges clean + StereoSet",
+        help="'stereoset' = StereoSet only; 'probes' = synthetic probes; "
+             "'combined' = clean test + StereoSet + probes",
     )
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument(
@@ -1081,12 +1184,17 @@ def main():
 
         if args.dataset_source == "combined":
             stereo_data = load_stereoset_as_ner(args.backbone)
-            test_data = test_data + stereo_data
+            probe_data = load_probe_sentences()
+            test_data = test_data + stereo_data + probe_data
             print(f"Combined test set: {len(test_data)} sentences")
 
     elif args.dataset_source == "stereoset":
         test_data = load_stereoset_as_ner(args.backbone)
         print(f"Test set (StereoSet only): {len(test_data)} sentences")
+
+    elif args.dataset_source == "probes":
+        test_data = load_probe_sentences()
+        print(f"Test set (probes only): {len(test_data)} sentences")
 
     # ── Phase 1: Per-sentence faithfulness ──────────────────────
     print("\n[Phase 1] Per-sentence Faithfulness Analysis")

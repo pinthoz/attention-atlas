@@ -6,6 +6,7 @@ with attention x bias interaction analysis.
 
 from .gusnet_detector import GusNetDetector, EnsembleGusNetDetector, MODEL_REGISTRY
 from .attention_bias import AttentionBiasAnalyzer, HeadBiasMetrics
+from .counterfactual import find_swappable_terms, generate_counterfactual, get_swap_for_token
 from .head_ablation import HeadAblationResult, batch_ablate_top_heads
 from .integrated_gradients import (
     IGCorrelationResult, IGAnalysisBundle, batch_compute_ig_correlation,
@@ -66,6 +67,10 @@ __all__ = [
     "TokenPerturbationResult",
     "PerturbationAnalysisBundle",
     "LRPAnalysisBundle",
+    # Counterfactual
+    "find_swappable_terms",
+    "generate_counterfactual",
+    "get_swap_for_token",
     # Ablation
     "batch_ablate_top_heads",
     # Integrated Gradients

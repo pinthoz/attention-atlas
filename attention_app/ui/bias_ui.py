@@ -43,9 +43,28 @@ def create_bias_sidebar():
         
         # ── Header ──
         ui.div(
-            {"class": "app-title", "style": "display: flex; align-items: center; gap: 8px;"},
-            ui.tags.img(src=ICON_DATA_URL or "/favicon.ico", alt="Logo"),
-            ui.h3("Attention Atlas"),
+            {"class": "app-title", "style": "display: flex; align-items: center; justify-content: space-between; width: 100%;"},
+            ui.div(
+                {"style": "display: flex; align-items: center; gap: 8px;"},
+                ui.tags.img(src=ICON_DATA_URL or "/favicon.ico", alt="Logo"),
+                ui.h3("Attention Atlas", style="margin: 0;"),
+            ),
+            # Back Button (Visible only in compare modes)
+            ui.div(
+                {"id": "bias-back-button-container", "style": "display: none;"},
+                ui.HTML(
+                    '<div onclick="'
+                    "var swp=$('#bias_compare_prompts_mode');"
+                    "var swm=$('#bias_compare_mode');"
+                    "var changed = false;"
+                    "if(swp.prop('checked')){swp.prop('checked',false).trigger('change');Shiny.setInputValue('bias_compare_prompts_mode',false,{priority:'event'});changed=true;}"
+                    "if(swm.prop('checked')){swm.prop('checked',false).trigger('change');Shiny.setInputValue('bias_compare_mode',false,{priority:'event'});changed=true;}"
+                    "if(changed){setTimeout(function(){Shiny.setInputValue('analyze_bias_btn',Date.now(),{priority:'event'});},400);}"
+                    '" class="sidebar-back-btn" title="Back to Single Analysis">'
+                    '<i class="fa-solid fa-arrow-left" style="font-size: 10px;"></i> Back'
+                    '</div>'
+                )
+            ),
         ),
         ui.div(
             {"class": "app-subtitle", "style": "margin-bottom: 12px; padding-bottom: 12px;"},
@@ -130,6 +149,30 @@ def create_bias_sidebar():
                 margin-bottom: 0 !important;
                 cursor: pointer;
                 line-height: 1;
+            }
+            
+            /* Back Button Styling in Sidebar */
+            .sidebar-back-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 5px;
+                padding: 4px 8px;
+                background: transparent;
+                border: 1px solid rgba(255, 92, 169, 0.3);
+                border-radius: 6px;
+                color: #ff5ca9;
+                font-family: inherit;
+                font-size: 11px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                white-space: nowrap;
+            }
+            .sidebar-back-btn:hover {
+                background: rgba(255, 92, 169, 0.1);
+                border-color: rgba(255, 92, 169, 0.6);
+                color: #ff74b8;
             }
         """),
 
@@ -583,6 +626,7 @@ def create_bias_sidebar():
                 $(document).on('shiny:inputchanged', function(event) {
                     const threshColA = document.getElementById('bias-thresh-col-a');
                     const modelALabel = document.getElementById('bias-model-a-label');
+                    const backBtn = document.getElementById('bias-back-button-container');
 
                     // Compare Models Logic
                     if (event.name === 'bias_compare_mode') {
@@ -594,6 +638,7 @@ def create_bias_sidebar():
                             modelALabel.classList.add('compare-active');
                             modelALabel.innerText = "Detect Model - A";
                             if (threshColA) threshColA.classList.add('compare-active');
+                            if (backBtn) backBtn.style.display = 'block';
                             
                             const promptSwitch = $('#bias_compare_prompts_mode');
                             if (promptSwitch.length && promptSwitch.prop('checked')) {
@@ -604,6 +649,10 @@ def create_bias_sidebar():
                             modelALabel.classList.remove('compare-active');
                             modelALabel.innerText = "Bias Detection Model";
                             if (threshColA) threshColA.classList.remove('compare-active');
+                            
+                            if (backBtn && !$('#bias_compare_prompts_mode').prop('checked')) {
+                                backBtn.style.display = 'none';
+                            }
                         }
                     }
 
@@ -616,6 +665,7 @@ def create_bias_sidebar():
                         if (enabled) {
                             promptTabs.style.display = 'flex';
                             inputContainer.classList.add('compare-prompts-active');
+                            if (backBtn) backBtn.style.display = 'block';
                             // Note: don't add compare-active to threshColA for compare prompts
                             // (same model = same thresholds layout as single mode)
                             
@@ -626,6 +676,10 @@ def create_bias_sidebar():
                         } else {
                             promptTabs.style.display = 'none';
                             inputContainer.classList.remove('compare-prompts-active');
+                            
+                            if (backBtn && !$('#bias_compare_mode').prop('checked')) {
+                                backBtn.style.display = 'none';
+                            }
                             
                             const modelsActive = $('#bias_compare_mode').prop('checked');
                             if (!modelsActive) {
@@ -1266,6 +1320,48 @@ def create_floating_bias_toolbar():
             }
 
             Shiny.setInputValue('bias_selected_tokens', Array.from(window.selectedBiasTokens), {priority: 'event'});
+        };
+
+        // ── Counterfactual swap selection ──
+        window.selectedCfSwaps = {};  // {key: {swap_to, category}}
+
+        window.toggleCfSwap = function(key, swapTo, category) {
+            var badges = document.querySelectorAll('.cf-swap-badge[data-cf-key="' + key + '"]');
+            if (window.selectedCfSwaps[key]) {
+                delete window.selectedCfSwaps[key];
+                badges.forEach(function(b) {
+                    b.style.background = '#1e293b';
+                    b.style.borderColor = 'rgba(255,92,169,0.5)';
+                    b.style.color = '#ff5ca9';
+                });
+            } else {
+                window.selectedCfSwaps[key] = {swap_to: swapTo, category: category};
+                badges.forEach(function(b) {
+                    b.style.background = '#ff5ca9';
+                    b.style.borderColor = '#ff5ca9';
+                    b.style.color = '#1e293b';
+                });
+            }
+            window.updateCfCompareBtn();
+        };
+
+        window.updateCfCompareBtn = function() {
+            var container = document.getElementById('cf-compare-btn-container');
+            var countEl = document.getElementById('cf-count');
+            if (!container) return;
+            var n = Object.keys(window.selectedCfSwaps).length;
+            if (n > 0) {
+                container.style.display = 'block';
+                if (countEl) countEl.textContent = n;
+            } else {
+                container.style.display = 'none';
+            }
+        };
+
+        window.triggerCfCompare = function() {
+            var keys = Object.keys(window.selectedCfSwaps);
+            if (keys.length === 0) return;
+            Shiny.setInputValue('bias_trigger_counterfactual', keys, {priority: 'event'});
         };
 
         window.setBiasHead = function(layer, head) {

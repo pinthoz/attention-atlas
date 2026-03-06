@@ -1,11 +1,47 @@
 from io import BytesIO
 import base64
+import hashlib
+import platform
 import re
+import sys
 import numpy as np
 import torch
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+
+def get_reproducibility_info(text: str, model_name: str | None = None) -> dict:
+    """Build a reproducibility metadata dict for session exports.
+
+    Includes library versions, Python/OS info, and a SHA-256 of the input
+    text so reviewers can verify they are reproducing the exact same run.
+    """
+    import transformers
+
+    info: dict = {
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "torch": torch.__version__,
+        "transformers": transformers.__version__,
+        "numpy": np.__version__,
+        "input_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+    }
+
+    # Try to include the HuggingFace model revision (commit hash) if
+    # the model is currently loaded and the info is accessible.
+    if model_name:
+        try:
+            from transformers import AutoConfig
+            cfg = AutoConfig.from_pretrained(model_name)
+            # _commit_hash is set when the model was fetched from the Hub
+            commit = getattr(cfg, "_commit_hash", None)
+            if commit:
+                info["model_commit"] = commit
+        except Exception:
+            pass
+
+    return info
 
 
 def positional_encoding(position: int, d_model: int = 768) -> np.ndarray:
@@ -358,4 +394,4 @@ def aggregate_data_to_words(res, filter_special=True):
             new_head_specialization, new_isa_data, new_head_clusters)
 
 
-__all__ = ["positional_encoding", "array_to_base64_img", "compute_influence_tree", "aggregate_data_to_words"]
+__all__ = ["positional_encoding", "array_to_base64_img", "compute_influence_tree", "aggregate_data_to_words", "get_reproducibility_info"]

@@ -28,7 +28,7 @@ from ..ui.components import viz_header
 
 # Additional imports needed for server function
 from ..models import ModelManager
-from ..utils import positional_encoding, array_to_base64_img, compute_influence_tree
+from ..utils import positional_encoding, array_to_base64_img, compute_influence_tree, get_reproducibility_info
 from ..metrics import compute_all_attention_metrics
 from ..head_specialization import compute_all_heads_specialization
 from ..isa import compute_isa
@@ -315,7 +315,16 @@ def server(input, output, session):
         # Text Input B is relevant if either compare mode is active
         if session_data["compare_mode"] or session_data["compare_prompts_mode"]:
              session_data["text_input_B"] = safe_get(input.text_input_B, "")
-        
+
+        # Reproducibility metadata
+        try:
+            session_data["reproducibility"] = get_reproducibility_info(
+                session_data.get("text_input", ""),
+                model_name=session_data.get("model_name"),
+            )
+        except Exception:
+            pass
+
         yield json.dumps(session_data, indent=2)
 
     @reactive.Effect

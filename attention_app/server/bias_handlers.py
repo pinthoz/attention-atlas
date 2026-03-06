@@ -12,6 +12,7 @@ from shiny import ui, render, reactive
 
 import traceback
 from ..models import ModelManager
+from ..utils import get_reproducibility_info
 from ..bias import (
     GusNetDetector, EnsembleGusNetDetector,
     AttentionBiasAnalyzer,
@@ -36,6 +37,7 @@ from ..bias import (
     create_lrp_comparison_chart,
     create_cross_method_agreement_chart,
 )
+from ..bias.counterfactual import find_swappable_terms, generate_counterfactual, get_swap_for_token
 from ..bias.head_ablation import batch_ablate_top_heads, HeadAblationResult
 from ..bias.integrated_gradients import (
     batch_compute_ig_correlation, IGCorrelationResult, IGAnalysisBundle,
@@ -193,7 +195,7 @@ def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header
                 {"style": "display:flex;align-items:center;gap:8px;flex-wrap:wrap;"},
                 *_title_row_children,
             ),
-            ui.p(manual_header[1], style="font-size:11px;color:#6b7280;margin:4px 0 0;"),
+            ui.p(ui.HTML(manual_header[1]), style="font-size:11px;color:#6b7280;margin:4px 0 0;"),
         )
     elif title:
         header = viz_header(title, subtitle, help_text, controls=controls)
@@ -453,6 +455,9 @@ def bias_server_handlers(input, output, session):
     bias_cached_text_A = reactive.value("")
     bias_cached_text_B = reactive.value("")
     
+    # Counterfactual state — stores raw find_swappable_terms() result
+    counterfactual_swaps = reactive.value(None)
+
     # Current thresholds (synced with UI sliders) - will be updated by update_threshold_defaults
     current_thresholds_A = reactive.value({"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5})
     current_thresholds_B = reactive.value({"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5})
@@ -941,6 +946,17 @@ def bias_server_handlers(input, output, session):
             pass
         try:
             data["bias_top_k"] = int(input.bias_top_k())
+        except Exception:
+            pass
+
+        # Reproducibility metadata
+        try:
+            model_key = data.get("bias_model_key", "gusnet-bert")
+            from ..bias.gusnet_detector import MODEL_REGISTRY
+            hf_path = MODEL_REGISTRY.get(model_key, {}).get("path")
+            data["reproducibility"] = get_reproducibility_info(
+                data.get("text", ""), model_name=hf_path
+            )
         except Exception:
             pass
 
@@ -1502,6 +1518,7 @@ def bias_server_handlers(input, output, session):
             # Clear previous results
             bias_results.set(None)
             bias_results_B.set(None)
+            counterfactual_swaps.set(None)
             bias_cached_text_A.set(text)
 
             try:
@@ -1652,7 +1669,14 @@ def bias_server_handlers(input, output, session):
                         # Not in compare_prompts mode, clear B
                         bias_raw_results_B.set(None)
                         bias_cached_text_B.set("")
-                    
+
+                        # Counterfactual detection (single-prompt mode only)
+                        try:
+                            cf_swaps = find_swappable_terms(text)
+                            counterfactual_swaps.set(cf_swaps if cf_swaps else None)
+                        except Exception:
+                            counterfactual_swaps.set(None)
+
                     # Send all thresholds at once (A always included, B only if compare mode)
                     if msg_thresholds:
                         log_debug(f"Sending effective thresholds to UI: {msg_thresholds}")
@@ -1686,6 +1710,61 @@ def bias_server_handlers(input, output, session):
             msg = f"CRITICAL ERROR in compute_bias top level: {e}"
             log_debug(msg)
             print(msg)
+
+    # ── Counterfactual click handler ──
+
+    @reactive.effect
+    @reactive.event(input.bias_trigger_counterfactual)
+    async def trigger_counterfactual():
+        orig = bias_cached_text_A.get()
+        all_swaps = counterfactual_swaps.get()
+        if not orig or not all_swaps:
+            return
+
+        # Get selected swap keys from JS (list of lowercase token strings)
+        selected_raw = input.bias_trigger_counterfactual()
+        if not selected_raw or not isinstance(selected_raw, (list, tuple)):
+            return
+        selected_keys = set(str(k).lower() for k in selected_raw)
+
+        # Filter swaps to only the user-selected ones
+        filtered = [s for s in all_swaps if s["term"].lower() in selected_keys]
+        if not filtered:
+            return
+
+        # Generate counterfactual with selected swaps only
+        cf_text, _ = generate_counterfactual(orig, filtered)
+
+        # 1. Enable Compare Prompts mode (toggle switch + explicit Shiny input)
+        await session.send_custom_message("bias_eval_js",
+            "var sw=$('#bias_compare_prompts_mode');"
+            "if(sw.length&&!sw.prop('checked')){sw.prop('checked',true).trigger('change');}"
+            "Shiny.setInputValue('bias_compare_prompts_mode',true,{priority:'event'});")
+        await asyncio.sleep(0.3)
+
+        # 2. Fill textareas A and B
+        await session.send_custom_message("bias_eval_js",
+            f"var ta=document.getElementById('bias_input_text');"
+            f"if(ta){{ta.value={json.dumps(orig)};"
+            f"Shiny.setInputValue('bias_input_text',ta.value,{{priority:'event'}});}}")
+        await session.send_custom_message("bias_eval_js",
+            f"var tb=document.getElementById('bias_input_text_B');"
+            f"if(tb){{tb.value={json.dumps(cf_text)};"
+            f"Shiny.setInputValue('bias_input_text_B',tb.value,{{priority:'event'}});}}")
+        await asyncio.sleep(0.3)
+
+        # 3. Set step to "B" so the analyze click skips the sequential intercept
+        bias_prompt_step.set("B")
+        await asyncio.sleep(0.1)
+
+        # 4. Trigger analysis directly by setting the action button value 
+        #    AND clicking the DOM element just to be safe
+        await session.send_custom_message("bias_eval_js",
+            "setTimeout(function(){"
+            "  var btn=document.getElementById('analyze_bias_btn');"
+            "  if(btn){btn.click();}"
+            "  Shiny.setInputValue('analyze_bias_btn',Date.now(),{priority:'event'});"
+            "}, 100);")
 
     # ── Dashboard content (conditional rendering) ──
 
@@ -2564,14 +2643,38 @@ def bias_server_handlers(input, output, session):
                     if s: sel_indices = [int(s)] if isinstance(s,(int,str)) else [int(x) for x in s if x]
                 except: pass
                 
+            # Check if counterfactual swaps are available (single-prompt mode)
+            show_cf = (not is_B and not compare_models and not compare_prompts
+                       and counterfactual_swaps.get())
+
             for lbl in biased:
                 clean = lbl["token"].replace("##", "").replace("\u0120", "")
                 types = lbl.get("bias_types", [])
                 scores = lbl.get("scores", {})
                 badges = "".join([f'<span style="display:inline-flex;align-items:center;gap:4px;background:{cat_colors.get(t,"#ff5ca9")}18;border:1px solid {cat_colors.get(t,"#ff5ca9")}40;color:{cat_colors.get(t,"#ff5ca9")};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;">{t}<span style="font-family:JetBrains Mono;font-weight:400;opacity:0.8;">{scores.get(t,0):.2f}</span></span>' for t in types])
+
+                # Counterfactual swap badge (if token is swappable)
+                cf_badge = ""
+                if show_cf:
+                    swap_info = get_swap_for_token(clean)
+                    if swap_info:
+                        swap_to, swap_cat = swap_info
+                        cf_key = clean.lower()
+                        cf_badge = (
+                            f'<span class="cf-swap-badge" data-cf-key="{cf_key}" '
+                            f'onclick="event.stopPropagation(); window.toggleCfSwap(\'{cf_key}\', \'{swap_to}\', \'{swap_cat}\')" '
+                            f'style="display:inline-flex;align-items:center;gap:3px;'
+                            f'background:#1e293b;border:1px solid rgba(255,92,169,0.5);'
+                            f'color:#ff5ca9;padding:2px 8px;border-radius:4px;font-size:10px;'
+                            f'font-weight:600;cursor:pointer;transition:all 0.15s ease;'
+                            f'margin-left:4px;" '
+                            f'title="Click to select this swap for counterfactual comparison">'
+                            f'&#x21C4; {swap_to}</span>'
+                        )
+
                 style = "display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(226,232,240,0.4);"
                 if lbl["index"] in sel_indices: style += "background:rgba(255, 92, 169, 0.1); border-left: 3px solid #ff5ca9;"
-                items.append(f'<div style="{style}"><span style="font-family:JetBrains Mono;font-size:13px;font-weight:600;color:#ec4899;min-width:70px;">{clean}</span><span style="display:flex;gap:4px;flex-wrap:wrap;">{badges}</span></div>')
+                items.append(f'<div style="{style}"><span style="font-family:JetBrains Mono;font-size:13px;font-weight:600;color:#ec4899;min-width:70px;">{clean}</span><span style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">{badges}{cf_badge}</span></div>')
             
             import math
             mid = math.ceil(len(items)/2)
@@ -2612,7 +2715,7 @@ def bias_server_handlers(input, output, session):
             "Each biased span with category labels and GUS-Net confidence scores (hover a token for details).",
         )
         _detected_bias_help = (
-            f"<span style='{_TH}'>Categories (GUS-Net)</span>"
+            f"<span style='{_TH}'>Categories — GUS-Net (Powers et al., 2024)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
             f"<span><span style='{_TBR}'>UNFAIR</span>&nbsp;explicit prejudice, slurs, loaded framing</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
@@ -2674,7 +2777,27 @@ def bias_server_handlers(input, output, session):
 
         method_html = create_method_info_html(model_key_A)
         method_footer = f'<div style="margin-top: auto;"><hr style="margin:16px 0;opacity:0.3;"/>{method_html}</div>'
-        return _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res, False)}</div>' + method_footer), manual_header=man_header, help_text=_detected_bias_help)
+
+        # Counterfactual compare button (single-prompt mode only)
+        cf_section = ""
+        cf_swaps_raw = counterfactual_swaps.get()
+        if cf_swaps_raw and not compare_models and not compare_prompts:
+            # Reset JS selection state whenever the panel re-renders
+            cf_section = (
+                '<script>window.selectedCfSwaps = window.selectedCfSwaps || {};</script>'
+                '<div id="cf-compare-btn-container" style="display:none;margin-top:12px;text-align:center;">'
+                '<button onclick="window.triggerCfCompare()" '
+                'style="background:#1e293b;color:#ff5ca9;border:1px solid rgba(255,92,169,0.3);padding:8px 20px;'
+                'border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;'
+                'transition:all 0.15s ease;letter-spacing:0.5px;" '
+                'onmouseover="this.style.background=\'rgba(255,92,169,0.1)\';this.style.borderColor=\'rgba(255,92,169,0.7)\';this.style.color=\'#ff74b8\'" '
+                'onmouseout="this.style.background=\'#1e293b\';this.style.borderColor=\'rgba(255,92,169,0.3)\';this.style.color=\'#ff5ca9\'">'
+                '<span style="margin-right:6px;">&#x21C4;</span>'
+                'Compare Counterfactuals (<span id="cf-count">0</span>)'
+                '</button></div>'
+            )
+
+        return _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res, False)}{cf_section}</div>' + method_footer), manual_header=man_header, help_text=_detected_bias_help)
 
     @output
     @render.ui
@@ -2708,7 +2831,7 @@ def bias_server_handlers(input, output, session):
             "Per-token bias scores across all four categories (O, GEN, UNFAIR, STEREO) shown as coloured dot strips.",
         )
         _strip_help = (
-            f"<span style='{_TH}'>What this shows</span>"
+            f"<span style='{_TH}'>What this shows — GUS-Net (Powers et al., 2024)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span>Coloured dot strip — each token's softmax score across all four bias categories scored independently by GUS-Net</span></div>"
             f"<hr style='{_TS}'/>"
@@ -2781,7 +2904,7 @@ def bias_server_handlers(input, output, session):
             "Biased tokens grouped by confidence tier — Low (0.50–0.70) · Medium (0.70–0.85) · High (0.85+).",
         )
         _confidence_help = (
-            f"<span style='{_TH}'>What this shows</span>"
+            f"<span style='{_TH}'>What this shows — GUS-Net (Powers et al., 2024)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span>Detected bias spans grouped into three confidence tiers based on GUS-Net's softmax probability for the predicted bias class</span></div>"
             f"<hr style='{_TS}'/>"
@@ -2844,7 +2967,7 @@ def bias_server_handlers(input, output, session):
             "Attention weight matrix for one head, with pink highlights on biased token rows/columns.",
         )
         _combined_help = (
-            f"<span style='{_TH}'>What this shows</span>"
+            f"<span style='{_TH}'>What this shows — Attention × GUS-Net (Powers et al., 2024)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span>Full token × token attention weight matrix for one (layer, head), with pink highlights on rows/columns that GUS-Net flagged as biased</span></div>"
             f"<hr style='{_TS}'/>"
@@ -3299,6 +3422,10 @@ def bias_server_handlers(input, output, session):
         header_args = (
             "Head Ablation Results",
             "Causal test: zero out each head's output and measure how much the model's representation changes.",
+            f"<span style='{_TH}'>Method — Head Ablation (Michel et al., 2019)</span>"
+            f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
+            f"<span>Zero out one head at a time and measure output change to assess causal importance</span></div>"
+            f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Metrics</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span><span style='{_TBB}'>Impact</span>&nbsp;<span style='{_TC}'>1 − cos_sim(H_orig, H_ablated)</span>"
@@ -4113,6 +4240,10 @@ def bias_server_handlers(input, output, session):
         header_args = (
             "Perturbation Analysis",
             "Model-agnostic validation: how much does zeroing each token's embedding change the representation?",
+            f"<span style='{_TH}'>Method — Erasure / Occlusion (Li et al., 2016)</span>"
+            f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
+            f"<span>Replace each token's embedding with a zero vector and measure representation change</span></div>"
+            f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Importance score per token</span>"
             f"<div style='{_TR};font-family:JetBrains Mono,monospace;font-size:10px;color:#e2e8f0;'>"
             f"importance(t) = 1 − cos_sim(pool_orig, pool_zero_t)</div>"
@@ -4464,7 +4595,7 @@ def bias_server_handlers(input, output, session):
                 header = manual_header_override
             else:
                 model_label = metadata.get("model", "unknown")
-                header = ("Benchmark Scores", f"StereoSet intersentence evaluation on {model_label}")
+                header = ("Benchmark Scores", f"StereoSet intersentence evaluation on <b style='color:#ff5ca9;'>{model_label}</b>")
                 
             return (html, header)
             
@@ -4559,7 +4690,7 @@ def bias_server_handlers(input, output, session):
         html = create_stereoset_overview_html(scores, metadata, is_gusnet)
         return _wrap_card(
             ui.HTML(html),
-            manual_header=("Benchmark Scores", f"StereoSet intersentence evaluation on {model_label}"),
+            manual_header=("Benchmark Scores", f"StereoSet intersentence evaluation on <b style='color:#ff5ca9;'>{model_label}</b>"),
             help_text=_benchmark_help,
         )
 
@@ -4906,16 +5037,24 @@ def bias_server_handlers(input, output, session):
                 f'padding:10px 14px;border-radius:8px;font-size:10px;white-space:nowrap;'
                 f'box-shadow:0 8px 24px rgba(0,0,0,0.3);z-index:99999;line-height:1.7;'
                 f'border:1px solid rgba(148,163,184,0.15);">'
-                f'<div style="font-weight:700;color:white;margin-bottom:4px;font-size:11px;">'
-                f'Base \u2194 GUS-NET Similarity</div>'
-                f'<div><span style="color:#60a5fa;">\u25cf</span> Head Matrix Corr: '
-                f'<b style="color:white;">{sim["matrix_corr"]:.3f}</b> '
-                f'<span style="color:#64748b;">({sim["matrix_sim_pct"]:.0f}%)</span></div>'
-                f'<div><span style="color:#a78bfa;">\u25cf</span> Top Heads Overlap: '
-                f'<b style="color:white;">{sim["heads_overlap_pct"]:.0f}%</b> '
-                f'<span style="color:#64748b;">(Jaccard {sim["heads_jaccard"]:.2f})</span></div>'
-                f'<div style="margin-top:4px;padding-top:4px;border-top:1px solid rgba(148,163,184,0.2);'
-                f'color:#94a3b8;font-size:9px;">50% matrix \u00b7 50% heads</div>'
+                f'<div style="font-weight:700;color:white;margin-bottom:6px;font-size:11px;">'
+                f'{str(canonical).upper()} \u2194 GUS-NET Attention Similarity</div>'
+                f'<div style="color:#cbd5e1;font-size:10px;margin-bottom:12px;line-height:1.5;white-space:normal;max-width:250px;">'
+                f'This score indicates how closely the attention mechanisms of the fine-tuned GUS-NET match the original {str(canonical).upper()} model. '
+                f'It combines the correlation of their attention matrices across all layers and the overlap of their most sensitive heads. '
+                f'A high score means GUS-NET successfully preserves the base model\'s fundamental attention behavior while identifying biased tokens.</div>'
+                f'<div style="font-family:JetBrains Mono,monospace; text-align:center; background:rgba(0,0,0,0.2); padding:8px 12px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">'
+                f'<div style="display:flex; justify-content:space-between; margin-bottom:2px; font-size:10px;">'
+                f'<div><span style="color:#60a5fa;">Max Corr:</span> <b style="color:white;">{sim["matrix_corr"]:.3f}</b></div>'
+                f'<div><span style="color:#a78bfa;">Top Heads:</span> <b style="color:white;">{sim["heads_overlap_pct"]:.0f}%</b></div>'
+                f'</div>'
+                f'<div style="display:flex; justify-content:center; gap:60px; color:#64748b; font-size:12px; font-weight:bold; margin-bottom:2px;">'
+                f'<span>\\</span><span>/</span>'
+                f'</div>'
+                f'<div style="font-size:13px;">'
+                f'<b style="color:{badge_color};">{sim["overall_pct"]:.0f}%</b> <span style="font-size:9px;color:#94a3b8;font-weight:normal;">Similarity</span>'
+                f'</div>'
+                f'</div>'
                 f'</div>'
                 f'</div>'
             )

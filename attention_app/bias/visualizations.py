@@ -700,7 +700,7 @@ def create_method_info_html(model_key: str = "gusnet-bert") -> str:
         + '<span style="color:#94a3b8;font-weight:600;">Paper</span>'
         '<a href="https://arxiv.org/pdf/2410.08388" target="_blank" '
         'style="color:#3b82f6;text-decoration:none;font-size:10px;">'
-        'arxiv.org/pdf/2410.08388</a>'
+        'Powers et al., arXiv:2410.08388, 2024</a>'
 
         '<span style="color:#94a3b8;font-weight:600;">Technique</span>'
         '<span style="color:#475569;">Multi-label token classification (sigmoid)</span>'
