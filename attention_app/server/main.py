@@ -1301,7 +1301,7 @@ def server(input, output, session):
         # Save to disk
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         fname = f"batch_attention_{model_name.replace('/', '_')}_{ts}.json"
-        save_path = Path("downloads/batch") / fname
+        save_path = Path("downloads/batch/attention") / fname
         save_path.parent.mkdir(parents=True, exist_ok=True)
         with open(save_path, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, ensure_ascii=False, default=str)
