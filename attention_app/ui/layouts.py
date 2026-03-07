@@ -146,6 +146,15 @@ attention_analysis_page = ui.page_fluid(
                     ui.div(
                         {"class": "session-controls", "style": "display: flex; gap: 4px; align-items: flex-end; margin-left: auto;"},
 
+                        # Batch Mode Button
+                        ui.tags.button(
+                            ui.HTML('<i class="fa-solid fa-chart-pie"></i>'),
+                            id="attn_batch_mode_btn",
+                            class_="session-btn-custom",
+                            title="Batch Mode",
+                            onclick="window.toggleAttnBatchMode && window.toggleAttnBatchMode();",
+                        ),
+
                         # Load Button (Trigger for hidden input)
                         ui.tags.label(
                             ui.HTML('<i class="fa-solid fa-folder-open"></i>'),
@@ -191,6 +200,40 @@ attention_analysis_page = ui.page_fluid(
                     oninput="Shiny.setInputValue('text_input_B', this.value)",
                     style="display: none;"
                 ),
+
+                # Batch Upload Section (hidden by default)
+                ui.div(
+                    {"id": "attn-batch-upload-section", "style": "display: none;"},
+                    ui.div(
+                        {"class": "batch-upload-container"},
+                        ui.div(
+                            {"class": "batch-header"},
+                            ui.HTML('<i class="fa-solid fa-chart-pie" style="margin-right: 6px;"></i>'),
+                            ui.tags.span("Batch Mode", style="font-weight: 600; font-size: 13px;"),
+                            ui.tags.span("Upload a CSV or JSON to analyse multiple sentences at once.", style="font-weight: 400; font-size: 11px; opacity: 0.85; margin-left: 4px;"),
+                        ),
+                        ui.div(
+                            {"class": "batch-dropzone", "id": "attn-batch-dropzone", "onclick": "document.getElementById('attn_batch_file_upload').click();"},
+                            ui.HTML('<i class="fa-solid fa-cloud-arrow-up attn-batch-dropzone-icon" style="font-size: 20px; color: #94a3b8; margin-bottom: 4px;"></i>'),
+                            ui.tags.div("Drop CSV or JSON file here, or click to browse", id="attn-batch-dropzone-label", style="color: #94a3b8; font-size: 12px; font-weight: 500; text-align: center;"),
+                            ui.div(
+                                {"id": "attn-batch-file-info", "class": "batch-file-info", "style": "display: none;"},
+                                ui.HTML('<i class="fa-solid fa-file-lines" style="margin-right: 6px;"></i>'),
+                                ui.tags.span("", id="attn-batch-file-name"),
+                                ui.tags.span("", id="attn-batch-file-count", style="margin-left: 8px; font-weight: 600;"),
+                            ),
+                        ),
+                    ),
+                    ui.div(ui.input_file("attn_batch_file_upload", None, accept=[".csv", ".json"], multiple=False), style="display: none;"),
+                ),
+
+                # Batch Mode Styles
+                ui.tags.style("""
+                    #attn_batch_mode_btn.batch-active {
+                        background: #ff5ca9 !important;
+                        color: white !important;
+                    }
+                """),
 
                 # JS to handle history interactions and Prompt Switching
                 ui.tags.script("""
@@ -341,6 +384,117 @@ attention_analysis_page = ui.page_fluid(
                     if (stored) {
                         Shiny.setInputValue('restored_history', JSON.parse(stored));
                     }
+
+                    // Drag-and-drop for attention batch dropzone
+                    var dz = document.getElementById('attn-batch-dropzone');
+                    if (dz) {
+                        dz.addEventListener('dragover', function(e) {
+                            e.preventDefault(); e.stopPropagation();
+                            dz.style.borderColor = '#ff5ca9';
+                            dz.style.background = 'rgba(255, 92, 169, 0.06)';
+                        });
+                        dz.addEventListener('dragleave', function(e) {
+                            e.preventDefault(); e.stopPropagation();
+                            dz.style.borderColor = '';
+                            dz.style.background = '';
+                        });
+                        dz.addEventListener('drop', function(e) {
+                            e.preventDefault(); e.stopPropagation();
+                            dz.style.borderColor = '';
+                            dz.style.background = '';
+                            var files = e.dataTransfer.files;
+                            if (!files || !files.length) return;
+                            var name = files[0].name.toLowerCase();
+                            if (!name.endsWith('.csv') && !name.endsWith('.json')) return;
+                            var fi = document.getElementById('attn_batch_file_upload');
+                            if (fi) {
+                                var dt = new DataTransfer();
+                                dt.items.add(files[0]);
+                                fi.files = dt.files;
+                                $(fi).trigger('change');
+                            }
+                        });
+                    }
+                });
+
+                // ── Attention Batch Mode ──────────────────────────────
+                window.toggleAttnBatchMode = function() {
+                    var btn = document.getElementById('attn_batch_mode_btn');
+                    var section = document.getElementById('attn-batch-upload-section');
+                    var textA = document.getElementById('text_input');
+                    var textB = document.getElementById('text_input_B');
+                    var isActive = btn.classList.contains('batch-active');
+
+                    if (isActive) {
+                        btn.classList.remove('batch-active');
+                        section.style.display = 'none';
+                        textA.style.display = 'block';
+                        // Reset dropzone
+                        var icon = document.querySelector('.attn-batch-dropzone-icon');
+                        var lbl = document.getElementById('attn-batch-dropzone-label');
+                        var info = document.getElementById('attn-batch-file-info');
+                        if (icon) icon.style.display = '';
+                        if (lbl) lbl.style.display = '';
+                        if (info) info.style.display = 'none';
+                        Shiny.setInputValue('attn_batch_mode_active', 'false', {priority: 'event'});
+                    } else {
+                        var container = section.querySelector('.batch-upload-container');
+                        if (container && textA.offsetHeight > 0) {
+                            container.style.height = textA.offsetHeight + 'px';
+                        }
+                        btn.classList.add('batch-active');
+                        section.style.display = 'block';
+                        textA.style.display = 'none';
+                        textB.style.display = 'none';
+                        // Turn off compare modes
+                        var ms = document.getElementById('compare_mode');
+                        if (ms && ms.checked) { ms.checked = false; $(ms).trigger('change'); }
+                        var ps = document.getElementById('compare_prompts_mode');
+                        if (ps && ps.checked) { ps.checked = false; $(ps).trigger('change'); }
+                        Shiny.setInputValue('attn_batch_mode_active', 'true', {priority: 'event'});
+                    }
+                };
+
+                Shiny.addCustomMessageHandler('attn_batch_file_parsed', function(msg) {
+                    var infoDiv = document.getElementById('attn-batch-file-info');
+                    var nameSpan = document.getElementById('attn-batch-file-name');
+                    var countSpan = document.getElementById('attn-batch-file-count');
+                    var icon = document.querySelector('.attn-batch-dropzone-icon');
+                    var label = document.getElementById('attn-batch-dropzone-label');
+                    if (msg.error) {
+                        infoDiv.style.display = 'inline-flex';
+                        infoDiv.style.background = 'rgba(239, 68, 68, 0.1)';
+                        infoDiv.style.color = '#dc2626';
+                        nameSpan.textContent = msg.error;
+                        countSpan.textContent = '';
+                    } else {
+                        infoDiv.style.display = 'inline-flex';
+                        infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
+                        infoDiv.style.color = '#16a34a';
+                        nameSpan.textContent = msg.filename;
+                        countSpan.textContent = msg.count + ' sentences';
+                    }
+                    if (icon) icon.style.display = 'none';
+                    if (label) label.style.display = 'none';
+                });
+
+                Shiny.addCustomMessageHandler('attn_batch_progress', function(msg) {
+                    var btn = document.getElementById('generate_all');
+                    if (btn) {
+                        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;"></i>' + msg.label;
+                    }
+                });
+
+                Shiny.addCustomMessageHandler('attn_batch_download_ready', function(msg) {
+                    var blob = new Blob([msg.json_content], {type: 'application/json'});
+                    var url = URL.createObjectURL(blob);
+                    var a = document.createElement('a');
+                    a.href = url;
+                    a.download = msg.filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
                 });
                 """)
             ),

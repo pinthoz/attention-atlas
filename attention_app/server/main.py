@@ -997,9 +997,349 @@ def server(input, output, session):
         "The nurse said she was tired."
     ])
 
+    # ── Attention Batch Mode ──────────────────────────────────────────────
+    attn_batch_sentences = reactive.value([])
+    attn_batch_file_name = reactive.value("")
+
+    @reactive.effect
+    @reactive.event(input.attn_batch_file_upload)
+    async def parse_attn_batch_file():
+        """Parse uploaded CSV or JSON file for attention batch mode."""
+        import csv
+        import io
+        file_info = input.attn_batch_file_upload()
+        if not file_info:
+            return
+        try:
+            file_info = file_info[0]
+            file_path = file_info["datapath"]
+            file_name = file_info["name"]
+
+            sentences = []
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            if file_name.lower().endswith(".json"):
+                data = json.loads(content)
+                if isinstance(data, list):
+                    if all(isinstance(x, str) for x in data):
+                        sentences = [s.strip() for s in data if s.strip()]
+                    elif all(isinstance(x, dict) for x in data):
+                        for item in data:
+                            for key in ("text", "sentence", "input", "content"):
+                                if key in item and isinstance(item[key], str) and item[key].strip():
+                                    sentences.append(item[key].strip())
+                                    break
+                elif isinstance(data, dict):
+                    for key in ("sentences", "texts", "data"):
+                        if key in data and isinstance(data[key], list):
+                            for item in data[key]:
+                                if isinstance(item, str) and item.strip():
+                                    sentences.append(item.strip())
+                                elif isinstance(item, dict):
+                                    for k in ("text", "sentence", "input"):
+                                        if k in item and isinstance(item[k], str) and item[k].strip():
+                                            sentences.append(item[k].strip())
+                                            break
+                            break
+            elif file_name.lower().endswith(".csv"):
+                reader = csv.DictReader(io.StringIO(content))
+                cols = reader.fieldnames or []
+                text_col = None
+                for candidate in ("text", "sentence", "input", "content"):
+                    for c in cols:
+                        if c.lower().strip() == candidate:
+                            text_col = c
+                            break
+                    if text_col:
+                        break
+                if not text_col and cols:
+                    text_col = cols[0]
+                if text_col:
+                    for row in reader:
+                        val = row.get(text_col, "").strip()
+                        if val:
+                            sentences.append(val)
+
+            if sentences:
+                attn_batch_sentences.set(sentences)
+                attn_batch_file_name.set(file_name)
+                await session.send_custom_message("attn_batch_file_parsed", {
+                    "filename": file_name,
+                    "count": len(sentences),
+                })
+            else:
+                attn_batch_sentences.set([])
+                await session.send_custom_message("attn_batch_file_parsed", {
+                    "error": "No sentences found in file",
+                })
+        except Exception as e:
+            attn_batch_sentences.set([])
+            await session.send_custom_message("attn_batch_file_parsed", {
+                "error": f"Parse error: {str(e)[:80]}",
+            })
+
+    async def _run_attn_batch_analysis():
+        """Run comprehensive attention analysis on all batch sentences."""
+        import time as _time
+        import hashlib
+        from ..metrics import (
+            calculate_confidence, calculate_focus, calculate_sparsity,
+            calculate_distribution_attributes, calculate_uniformity,
+            calculate_flow_change, calculate_balance,
+        )
+
+        sentences = attn_batch_sentences.get()
+        if not sentences:
+            return
+
+        t0 = _time.time()
+        model_name = input.model_name()
+        is_gpt2 = "gpt2" in model_name.lower()
+        n_total = len(sentences)
+
+        per_sentence_results = []
+        # Aggregate specialization across sentences: {(l,h): [metrics_dicts]}
+        all_spec = {}
+        all_global_metrics = []
+
+        loop = asyncio.get_running_loop()
+
+        for idx, text in enumerate(sentences):
+            await session.send_custom_message("attn_batch_progress", {
+                "label": f"Generate All ({idx+1}/{n_total})"
+            })
+
+            sentence_data = {"index": idx, "text": text, "error": None}
+
+            try:
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    result = await asyncio.wait_for(
+                        loop.run_in_executor(pool, heavy_compute, text, model_name),
+                        timeout=120.0
+                    )
+
+                if not result:
+                    sentence_data["error"] = "Computation failed"
+                    per_sentence_results.append(sentence_data)
+                    continue
+
+                tokens, embeddings, pos_enc, attentions, hidden_states, inputs_tok, tokenizer_inst, encoder_model, mlm_model, head_spec, isa_data, head_clusters = result
+
+                n_layers = len(attentions)
+                n_heads = attentions[0].shape[1]
+                seq_len = len(tokens)
+
+                sentence_data["tokens"] = tokens
+                sentence_data["n_layers"] = n_layers
+                sentence_data["n_heads"] = n_heads
+                sentence_data["seq_len"] = seq_len
+
+                # ── Per-head attention metrics ──
+                head_metrics = {}
+                for l in range(n_layers):
+                    for h in range(n_heads):
+                        att_matrix = attentions[l][0, h].cpu().numpy()
+                        m = compute_all_attention_metrics(att_matrix)
+                        head_metrics[f"L{l}_H{h}"] = {k: round(float(v), 6) for k, v in m.items()}
+
+                sentence_data["head_metrics"] = head_metrics
+
+                # ── Aggregate global metrics (all-heads average) ──
+                all_vals = list(head_metrics.values())
+                metric_keys = list(all_vals[0].keys())
+                global_avg = {}
+                for mk in metric_keys:
+                    vals = [hm[mk] for hm in all_vals]
+                    global_avg[mk] = round(float(np.mean(vals)), 6)
+                sentence_data["global_metrics_avg"] = global_avg
+                all_global_metrics.append(global_avg)
+
+                # ── Flow change (first vs last layer) ──
+                try:
+                    all_layer_atts = [attentions[l][0].mean(dim=0).cpu().numpy() for l in range(n_layers)]
+                    flow = calculate_flow_change(all_layer_atts)
+                    sentence_data["flow_change"] = round(float(flow), 6)
+                except Exception:
+                    sentence_data["flow_change"] = None
+
+                # ── Head specialization ──
+                if head_spec:
+                    spec_data = {}
+                    for l in head_spec:
+                        for h in head_spec[l]:
+                            key = f"L{l}_H{h}"
+                            vals = head_spec[l][h]
+                            spec_data[key] = {k: round(float(v), 4) for k, v in vals.items()}
+                            # Accumulate for aggregate
+                            lh = (l, h)
+                            if lh not in all_spec:
+                                all_spec[lh] = []
+                            all_spec[lh].append(vals)
+                    sentence_data["head_specialization"] = spec_data
+
+                # ── ISA (Inter-Sentence Attention) ──
+                if isa_data and isa_data.get("sentence_attention_matrix") is not None:
+                    sa_matrix = isa_data["sentence_attention_matrix"]
+                    if hasattr(sa_matrix, 'tolist'):
+                        sa_matrix = sa_matrix.tolist()
+                    sentence_data["isa"] = {
+                        "sentence_texts": isa_data.get("sentence_texts", []),
+                        "sentence_attention_matrix": sa_matrix,
+                        "n_sentences": len(isa_data.get("sentence_texts", [])),
+                    }
+
+                # ── Head clusters ──
+                if head_clusters:
+                    sentence_data["head_clusters"] = [
+                        {"layer": c.get("layer"), "head": c.get("head"),
+                         "cluster": c.get("cluster"), "cluster_name": c.get("cluster_name", "")}
+                        for c in head_clusters
+                    ]
+
+            except asyncio.TimeoutError:
+                sentence_data["error"] = "Timeout (120s)"
+            except Exception as e:
+                sentence_data["error"] = str(e)[:200]
+            finally:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+            per_sentence_results.append(sentence_data)
+
+        elapsed = round(_time.time() - t0, 1)
+
+        # ── Build report ──
+        await session.send_custom_message("attn_batch_progress", {
+            "label": f"Generate All ({n_total}/{n_total})"
+        })
+
+        analyzed = [r for r in per_sentence_results if not r.get("error")]
+        failed = [r for r in per_sentence_results if r.get("error")]
+
+        # Aggregate global metrics
+        agg_global = {}
+        if all_global_metrics:
+            for mk in all_global_metrics[0]:
+                vals = [g[mk] for g in all_global_metrics if mk in g]
+                agg_global[mk] = {
+                    "mean": round(float(np.mean(vals)), 6),
+                    "std": round(float(np.std(vals)), 6),
+                    "min": round(float(np.min(vals)), 6),
+                    "max": round(float(np.max(vals)), 6),
+                }
+
+        # Aggregate specialization
+        agg_spec = {}
+        if all_spec:
+            for (l, h), spec_list in all_spec.items():
+                key = f"L{l}_H{h}"
+                metric_names = list(spec_list[0].keys())
+                agg_spec[key] = {}
+                for mn in metric_names:
+                    vals = [s[mn] for s in spec_list]
+                    agg_spec[key][mn] = {
+                        "mean": round(float(np.mean(vals)), 4),
+                        "std": round(float(np.std(vals)), 4),
+                    }
+
+        # Top specialized heads (by dominant metric)
+        top_heads_by_role = {}
+        if agg_spec:
+            roles = list(next(iter(agg_spec.values())).keys())
+            for role in roles:
+                ranked = sorted(agg_spec.items(), key=lambda x: x[1][role]["mean"], reverse=True)
+                top_heads_by_role[role] = [
+                    {"head": k, "mean": v[role]["mean"], "std": v[role]["std"]}
+                    for k, v in ranked[:10]
+                ]
+
+        # Flow changes
+        flow_changes = [r.get("flow_change") for r in analyzed if r.get("flow_change") is not None]
+
+        # Reproducibility
+        repro = {
+            "model_name": model_name,
+            "torch_version": torch.__version__,
+        }
+        try:
+            import transformers
+            repro["transformers_version"] = transformers.__version__
+        except Exception:
+            pass
+        try:
+            combined = "\n".join(r["text"] for r in per_sentence_results)
+            repro["input_hash"] = "sha256:" + hashlib.sha256(combined.encode()).hexdigest()[:16]
+        except Exception:
+            pass
+
+        report = {
+            "executive_summary": {
+                "total_sentences": n_total,
+                "sentences_analyzed": len(analyzed),
+                "sentences_failed": len(failed),
+                "processing_time_seconds": elapsed,
+                "model_used": model_name,
+                "is_gpt2": is_gpt2,
+            },
+            "per_sentence_results": per_sentence_results,
+            "aggregate_attention_metrics": agg_global,
+            "aggregate_head_specialization": agg_spec,
+            "top_heads_by_role": top_heads_by_role,
+            "flow_change_summary": {
+                "mean": round(float(np.mean(flow_changes)), 6) if flow_changes else None,
+                "std": round(float(np.std(flow_changes)), 6) if flow_changes else None,
+                "values": [round(float(v), 6) for v in flow_changes],
+            },
+            "metadata": {
+                "timestamp": datetime.now().isoformat(),
+                "batch_file": attn_batch_file_name.get(),
+                "reproducibility": repro,
+            },
+        }
+
+        # Save to disk
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = f"batch_attention_{model_name.replace('/', '_')}_{ts}.json"
+        save_path = Path("downloads/batch") / fname
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(save_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False, default=str)
+
+        # Auto-download
+        await session.send_custom_message("attn_batch_download_ready", {
+            "json_content": json.dumps(report, indent=2, ensure_ascii=False, default=str),
+            "filename": fname,
+        })
+
+        ui.notification_show(
+            f"Batch complete! {len(analyzed)}/{n_total} sentences, {elapsed}s",
+            type="message", duration=8
+        )
+
     @reactive.effect
     @reactive.event(input.generate_all)
     async def compute_all():
+        # ── Batch mode intercept ──
+        try:
+            is_attn_batch = input.attn_batch_mode_active() == "true"
+        except Exception:
+            is_attn_batch = False
+
+        if is_attn_batch:
+            if not attn_batch_sentences.get():
+                ui.notification_show("No file uploaded for batch mode.", type="warning", duration=3)
+                return
+            running.set(True)
+            await session.send_custom_message('start_loading', {})
+            await asyncio.sleep(0.1)
+            try:
+                await _run_attn_batch_analysis()
+            finally:
+                running.set(False)
+                await session.send_custom_message('stop_loading', {})
+            return
+
         # Wizard Logic - CHECK THIS FIRST to avoid premature reset
         try: mode = input.compare_prompts_mode()
         except: mode = False
