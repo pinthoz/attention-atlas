@@ -1218,6 +1218,30 @@ def create_bias_accordion():
     """Build the accordion panels for bias analysis (rendered after analysis)."""
     from .components import viz_header
 
+    def section_note(title: str, body: str, accent: str = "#94a3b8"):
+        return ui.div(
+            {
+                "style": (
+                    "margin: 8px 0 14px; padding: 12px 14px; border-radius: 10px; "
+                    f"border-left: 3px solid {accent}; "
+                    "background: linear-gradient(135deg, rgba(15,23,42,0.78), rgba(30,41,59,0.60)); "
+                    "border-top: 1px solid rgba(148,163,184,0.15); "
+                    "border-right: 1px solid rgba(148,163,184,0.10); "
+                    "border-bottom: 1px solid rgba(148,163,184,0.10);"
+                )
+            },
+            ui.div(title, style="font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #e2e8f0; margin-bottom: 6px;"),
+            ui.div(body, style="font-size: 12px; line-height: 1.55; color: #cbd5e1;"),
+        )
+
+    def subsection_header(title: str, body: str | None = None):
+        nodes = [
+            ui.h5(title, style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #f8fafc; letter-spacing: 0.2px;")
+        ]
+        if body:
+            nodes.append(ui.p(body, style="margin: 0 0 10px 0; font-size: 12px; line-height: 1.5; color: #94a3b8;"))
+        return ui.div({"style": "margin: 12px 0 8px;"}, *nodes)
+
     return ui.accordion(
         # Panel 1: Overview & Detection
         ui.accordion_panel(
@@ -1259,23 +1283,42 @@ def create_bias_accordion():
         # Panel 4: Faithfulness & Ablation
         ui.accordion_panel(
             ui.span(
-                "Faithfulness & Ablation",
+                "Faithfulness Validation",
                 ui.span({"class": "accordion-panel-badge validation"}, "Validation"),
             ),
             ui.div(
                 {"style": "padding: 8px 0;"},
-                ui.output_ui("ablation_results_display"),
+                section_note(
+                    "Why this panel matters",
+                    "This section organizes the internal validation evidence for the bias analysis. It asks whether attention is only visually plausible or whether it aligns with gradient-based attributions, perturbation tests, and causal interventions.",
+                    accent="#f59e0b",
+                ),
 
-                # ── Integrated Gradients section ──
-                ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 24px 0 16px;"),
+                subsection_header(
+                    "1. Gradient Agreement",
+                    "Integrated Gradients is used as the primary attribution baseline. These outputs show whether heads that focus on biased tokens also align with gradient-based token importance.",
+                ),
                 ui.output_ui("ig_results_display"),
 
-                # ── Perturbation Analysis section ──
-                ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 24px 0 16px;"),
+                ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 20px 0 16px;"),
+                subsection_header(
+                    "2. Causal Head Intervention",
+                    "Head ablation tests whether heads that appear bias-focused actually change the model representation when removed. This is the most directly causal part of the validation panel.",
+                ),
+                ui.output_ui("ablation_results_display"),
+
+                ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 20px 0 16px;"),
+                subsection_header(
+                    "3. Perturbation and Minimality",
+                    "Perturbation analysis checks whether token importance is stable under masking or removal. This helps test whether the model truly depends on the same content that the explanations highlight.",
+                ),
                 ui.output_ui("perturbation_results_display"),
 
-                # ── LRP Cross-Validation section ──
-                ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 24px 0 16px;"),
+                ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 20px 0 16px;"),
+                subsection_header(
+                    "4. Cross-Validation With LRP / DeepLift",
+                    "This final block tests convergent validity. If LRP or DeepLift agrees with Integrated Gradients, the faithfulness claim becomes more robust than relying on a single baseline.",
+                ),
                 ui.output_ui("lrp_results_display"),
             ),
             value="ablation",
@@ -1287,11 +1330,39 @@ def create_bias_accordion():
                 "StereoSet Evaluation",
                 ui.span({"class": "accordion-panel-badge benchmark"}, "Benchmark"),
             ),
+            section_note(
+                "Why this panel matters",
+                "This section provides the external benchmark view of the project. While the faithfulness panel validates internal explanation quality, StereoSet evaluates whether the models exhibit stereotypical preferences on a standardized bias benchmark.",
+                accent="#06b6d4",
+            ),
+
+            subsection_header(
+                "1. Benchmark Overview",
+                "Use LMS, SS, and ICAT together. SS measures stereotype preference, LMS measures language-model quality, and ICAT rewards the balance between the two.",
+            ),
             ui.output_ui("stereoset_overview"),
+
+            ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 20px 0 16px;"),
+            subsection_header(
+                "2. Category and Demographic Breakdown",
+                "These views show where the benchmark signal comes from: broad categories first, then finer demographic target slices. This is the most important block for discussing which groups are disproportionately affected.",
+            ),
             ui.output_ui("stereoset_category_breakdown"),
             ui.output_ui("stereoset_demographic_slices"),
+
+            ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 20px 0 16px;"),
+            subsection_header(
+                "3. Sensitive Heads and Attention Mechanisms",
+                "This block reconnects StereoSet to the main Attention Atlas contribution. It identifies which heads are most sensitive on the benchmark and how benchmark behavior relates back to attention structure.",
+            ),
             ui.output_ui("stereoset_head_sensitivity"),
             ui.output_ui("stereoset_attention_bias_link"),
+
+            ui.hr(style="border-color: rgba(100,116,139,0.2); margin: 20px 0 16px;"),
+            subsection_header(
+                "4. Example Explorer",
+                "Use this final section for qualitative inspection. It is best suited for case studies where you want to connect benchmark scores to concrete prompts and attention patterns.",
+            ),
             ui.output_ui("stereoset_example_explorer"),
             value="stereoset",
         ),
