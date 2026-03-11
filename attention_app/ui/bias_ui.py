@@ -1407,6 +1407,32 @@ def create_floating_bias_toolbar():
                 # Divider
                 ui.div({"class": "control-divider"}),
 
+                # ── Attention Source toggle (same pattern as Norm: radio-group) ──
+                ui.div(
+                    {"class": "control-group"},
+                    ui.span("Source", class_="control-label"),
+                    ui.div(
+                        {"class": "radio-group", "id": "bias-source-radio-group"},
+                        ui.span("GUS-Net", class_="radio-option active",
+                                id="bias-src-gusnet",
+                                title="Attention from the fine-tuned GUS-Net encoder",
+                                **{"data-value": "gusnet"}),
+                        ui.span("Base", class_="radio-option",
+                                id="bias-src-base",
+                                title="Attention from the original pretrained base encoder",
+                                **{"data-value": "base"}),
+                        ui.span("Compare", class_="radio-option",
+                                id="bias-src-compare",
+                                title="Side-by-side Base Encoder vs GUS-Net",
+                                **{"data-value": "compare"}),
+                    ),
+                    # Hidden input synced by JS
+                    ui.tags.input(type="hidden", id="bias_attn_source", value="gusnet"),
+                ),
+
+                # Divider
+                ui.div({"class": "control-divider"}),
+
                 # ── RIGHT: BAR + Top-K ──
                 ui.div(
                     {"class": "control-group",
@@ -1450,10 +1476,12 @@ def create_floating_bias_toolbar():
                 to { transform: translateY(0); opacity: 1; }
             }
 
-            /* Bias tokens container */
+            /* Bias tokens container — centered */
             #bias-tokens-row {
                 display: flex;
                 align-items: center;
+                justify-content: center;
+                flex: 1;
                 min-width: 0;
             }
             #bias-tokens-row > div {
@@ -1478,6 +1506,17 @@ def create_floating_bias_toolbar():
                 color: #3b82f6 !important;
             }
 
+            /* ── Attention Source: color overrides for active states ── */
+            #bias-src-gusnet.radio-option.active {
+                background: var(--primary-color);
+            }
+            #bias-src-base.radio-option.active {
+                background: #60a5fa;
+            }
+            #bias-src-compare.radio-option.active {
+                background: linear-gradient(90deg, #60a5fa, #ff5ca9);
+            }
+
             /* Constrain Plotly plots to never exceed their container */
             #bias_accordion .plotly-graph-div,
             #bias_accordion .js-plotly-plot,
@@ -1489,6 +1528,33 @@ def create_floating_bias_toolbar():
 
         # ── Script ──
         ui.tags.script("""
+        // ── Attention Source toggle (radio-group pattern) ──
+        (function() {
+            if (window._biasAttnSourceReady) return;
+            window._biasAttnSourceReady = true;
+
+            window._setBiasAttnSource = function(mode) {
+                var group = document.getElementById('bias-source-radio-group');
+                if (!group) return;
+                group.querySelectorAll('.radio-option').forEach(function(o) { o.classList.remove('active'); });
+                var active = document.getElementById('bias-src-' + mode);
+                if (active) active.classList.add('active');
+                var hidden = document.getElementById('bias_attn_source');
+                if (hidden) hidden.value = mode;
+                if (typeof Shiny !== 'undefined') {
+                    Shiny.setInputValue('bias_attn_source', mode, {priority: 'event'});
+                }
+            };
+
+            // Click handler on the radio-group (like Norm)
+            document.addEventListener('click', function(e) {
+                var opt = e.target.closest('#bias-source-radio-group .radio-option');
+                if (!opt) return;
+                var val = opt.getAttribute('data-value');
+                if (val) window._setBiasAttnSource(val);
+            });
+        })();
+
         // ── Deferred Plotly rendering ──
         // Plots with class "plotly-deferred" store their figure JSON as
         // base64 in a data-plotly-fig attribute. Plotly.newPlot() is only

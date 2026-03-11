@@ -97,6 +97,26 @@ _GUSNET_TO_ENCODER = {
 
 import re as _re
 
+# Map GUS-Net model key -> original pretrained base model (before fine-tuning).
+# Used for the "Base Encoder" attention source comparison.
+_GUSNET_TO_BASE = {
+    "gusnet-bert":          "bert-base-uncased",
+    "gusnet-bert-large":    "bert-large-uncased",
+    "gusnet-bert-custom":   "bert-base-uncased",
+    "gusnet-gpt2":          "gpt2",
+    "gusnet-gpt2-medium":   "gpt2-medium",
+    "gusnet-ensemble":      "bert-base-uncased",
+    "gusnet-bert-new":      "bert-base-uncased",
+    "gusnet-gpt2-new":      "gpt2",
+    "gusnet-bert-paper":    "bert-base-uncased",
+    "gusnet-gpt2-paper":    "gpt2",
+    # StereoSet canonical keys (underscore variants)
+    "gusnet_bert":          "bert-base-uncased",
+    "gusnet_bert_large":    "bert-large-uncased",
+    "gusnet_gpt2":          "gpt2",
+    "gusnet_gpt2_medium":   "gpt2-medium",
+}
+
 # Canonical display names for GUS-NET variants
 _GUSNET_DISPLAY_NAMES = {
     "bert": "GUS-NET-BERT",
@@ -124,6 +144,103 @@ def _clean_gusnet_label(raw: str) -> str:
     core = _re.sub(r"^gus-?net-?", "", s)
     core = _re.sub(r"-(paper|clean|new|custom|ensemble)([-\d].*)?$", "", core).strip("-")
     return _GUSNET_DISPLAY_NAMES.get(core, f"GUS-NET {core.upper()}")
+
+
+def _load_gusnet_attention_for_text(text: str, bias_model_key: str):
+    """Extract attentions directly from the selected GUS-NET model."""
+    if bias_model_key == "gusnet-ensemble":
+        bias_model_key = "gusnet-bert"
+
+    det = GusNetDetector(model_key=bias_model_key, threshold=0.5, use_optimized=False)
+    tokenizer, model = det._load_model(bias_model_key, det._device)
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+    inputs = {k: v.to(det._device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        outputs = model(**inputs, output_attentions=True)
+
+    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].detach().cpu())
+    gus_probs = torch.sigmoid(outputs.logits)[0].detach().cpu()
+
+    effective_thresholds = {}
+    if det.config.get("optimized_thresholds"):
+        opt = det.config["optimized_thresholds"]
+        cat_indices = det.config.get("category_indices", {})
+        for cat in ["GEN", "UNFAIR", "STEREO"]:
+            if cat in cat_indices:
+                vals = [opt[i] for i in cat_indices[cat] if i < len(opt)]
+                if vals:
+                    effective_thresholds[cat] = sum(vals) / len(vals)
+    if not effective_thresholds:
+        effective_thresholds = {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
+
+    return {
+        "tokens": tokens,
+        "text": text,
+        "attentions": outputs.attentions,
+        "gus_tokens": tokens,
+        "gus_probs": gus_probs,
+        "bias_model_key": bias_model_key,
+        "model_name": _GUSNET_TO_ENCODER.get(bias_model_key, bias_model_key),
+        "gus_special": det.config["special_tokens"],
+        "effective_thresholds": effective_thresholds,
+        "attention_source": "gusnet",
+    }
+
+
+def _load_base_encoder_attention_for_text(text: str, bias_model_key: str):
+    """Extract attentions from the original pretrained base model (before fine-tuning).
+
+    For example, if the GUS-Net variant is ``gusnet-bert``, this loads
+    ``bert-base-uncased`` and extracts its attention patterns — representing
+    how the *untrained* encoder distributes attention before any bias-specific
+    fine-tuning.
+    """
+    base_model_name = _GUSNET_TO_BASE.get(bias_model_key, "bert-base-uncased")
+
+    tokenizer, encoder_model, _ = ModelManager.get_model(base_model_name)
+    device = ModelManager.get_device()
+
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        outputs = encoder_model(**inputs)
+
+    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].detach().cpu())
+
+    # We still need GUS-Net labels for bias highlights — use the selected detector
+    if bias_model_key == "gusnet-ensemble":
+        bk = "gusnet-bert"
+    else:
+        bk = bias_model_key
+    det = GusNetDetector(model_key=bk, threshold=0.5, use_optimized=False)
+    gus_tokens, gus_probs = det.predict_proba(text)
+
+    effective_thresholds = {}
+    if det.config.get("optimized_thresholds"):
+        opt = det.config["optimized_thresholds"]
+        cat_indices = det.config.get("category_indices", {})
+        for cat in ["GEN", "UNFAIR", "STEREO"]:
+            if cat in cat_indices:
+                vals = [opt[i] for i in cat_indices[cat] if i < len(opt)]
+                if vals:
+                    effective_thresholds[cat] = sum(vals) / len(vals)
+    if not effective_thresholds:
+        effective_thresholds = {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
+
+    return {
+        "tokens": tokens,
+        "text": text,
+        "attentions": outputs.attentions,
+        "gus_tokens": gus_tokens,
+        "gus_probs": gus_probs,
+        "bias_model_key": bias_model_key,
+        "model_name": base_model_name,
+        "gus_special": det.config["special_tokens"],
+        "effective_thresholds": effective_thresholds,
+        "attention_source": "base",
+    }
 
 
 def _deferred_plotly(fig, container_id, height=None, config=None, click_input=None):
@@ -180,7 +297,7 @@ def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header
                 ui.div({"class": "info-tooltip-content"}, ui.HTML(help_text)),
             )
 
-        _title_row_children = [ui.h4(manual_header[0], style="margin:0;")]
+        _title_row_children = [ui.h4(ui.HTML(manual_header[0]), style="margin:0;")]
         if _info_icon:
             _title_row_children.append(_info_icon)
 
@@ -661,6 +778,10 @@ def bias_server_handlers(input, output, session):
     lrp_results_B = reactive.value(None)
     lrp_running = reactive.value(False)
 
+    # ── GUS-Net attention cache (computed on demand, keyed by text+model) ──
+    _base_attn_cache = reactive.value(None)       # processed result dict
+    _base_attn_cache_B = reactive.value(None)
+
     # ── Batch mode state ──
     batch_sentences = reactive.value([])
     batch_file_name = reactive.value("")
@@ -731,6 +852,103 @@ def bias_server_handlers(input, output, session):
             f'</div>'
         )
         return control_bar + chart_html
+
+    # ── Attention Source helpers ──────────────────────────────────────────
+
+    def _get_attn_source_mode(input_id: str = "bias_attn_source") -> str:
+        """Read the current attention source mode from a hidden input.
+
+        Default is ``"gusnet"`` because ``heavy_bias_compute`` loads
+        ``_GUSNET_TO_ENCODER`` (the fine-tuned model) as the encoder.
+        """
+        try:
+            val = getattr(input, input_id)()
+            if val in ("base", "gusnet", "compare"):
+                return val
+        except Exception:
+            pass
+        return "gusnet"
+
+    def _get_base_resolved(res, cache_rv):
+        """Return a processed base-encoder-attention result.
+
+        ``heavy_bias_compute`` already loads the GUS-Net model as the encoder
+        (via ``_GUSNET_TO_ENCODER``), so ``res`` contains **GUS-Net** attentions.
+        This helper loads the original pretrained base model (e.g.
+        ``bert-base-uncased``) on demand and caches the result.
+        """
+        if not res:
+            return None
+        cached = cache_rv.get()
+        cache_key = (res.get("text"), res.get("bias_model_key"))
+        if cached and (cached.get("text"), cached.get("bias_model_key")) == cache_key:
+            return cached
+        try:
+            raw_base = _load_base_encoder_attention_for_text(res["text"], res["bias_model_key"])
+            thresholds = raw_base.get("effective_thresholds", {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5})
+            processed = _process_raw_bias_result(raw_base, thresholds, use_optimized=False)
+            if processed:
+                cache_rv.set(processed)
+            return processed
+        except Exception as e:
+            print(f"[attn-source] Base encoder attention load failed: {e}")
+            traceback.print_exc()
+            return None
+
+    def _resolve_source_for_render(res, base_cache, mode):
+        """Pick the right result dict for the active attention source mode.
+
+        ``res`` from ``heavy_bias_compute`` is always **GUS-Net** attention
+        (because ``_GUSNET_TO_ENCODER`` maps to the fine-tuned model).
+
+        Returns ``(data_for_render, source_label)``.
+        """
+        if mode == "base":
+            base = _get_base_resolved(res, base_cache)
+            if base:
+                return base, "Base Encoder"
+            return res, "GUS-Net"  # fallback if base load fails
+        # mode == "gusnet" or default → use res as-is (already GUS-Net)
+        return res, "GUS-Net"
+
+    def _resolve_faithfulness_results():
+        """Resolve which results faithfulness analyses should run against."""
+        res_A = bias_results.get()
+        if not res_A:
+            return None, None, False
+
+        compare_models = active_bias_compare_models.get()
+        compare_prompts = active_bias_compare_prompts.get()
+        if compare_models or compare_prompts:
+            res_B = bias_results_B.get()
+            return res_A, res_B, bool(res_B)
+
+        source_mode = _get_attn_source_mode("bias_attn_source")
+        if source_mode == "compare":
+            res_base = _get_base_resolved(res_A, _base_attn_cache)
+            if res_base:
+                return res_base, res_A, True
+
+        res_render, _ = _resolve_source_for_render(res_A, _base_attn_cache, source_mode)
+        return res_render, None, False
+
+    def _source_badge_html(label: str) -> str:
+        """Small inline badge indicating the attention source."""
+        if "gus" in label.lower():
+            color = "#ff5ca9"
+            bg = "rgba(255,92,169,0.12)"
+        else:
+            color = "#60a5fa"
+            bg = "rgba(96,165,250,0.12)"
+        return (
+            f'<span style="display:inline-flex;align-items:center;gap:4px;'
+            f'padding:2px 8px;border-radius:4px;font-size:9px;font-weight:700;'
+            f'letter-spacing:0.4px;text-transform:uppercase;'
+            f'color:{color};background:{bg};border:1px solid {color}20;'
+            f'margin-left:8px;vertical-align:middle;">'
+            f'{label}</span>'
+        )
+
 
     # ── Defaults Logic ──
     @reactive.Effect
@@ -1760,6 +1978,8 @@ def bias_server_handlers(input, output, session):
             bias_results.set(None)
             bias_results_B.set(None)
             counterfactual_swaps.set(None)
+            _base_attn_cache.set(None)
+            _base_attn_cache_B.set(None)
             bias_cached_text_A.set(text)
 
             try:
@@ -3562,19 +3782,26 @@ def bias_server_handlers(input, output, session):
     def combined_bias_view():
         res = bias_results.get()
         if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
-        
+
         try: l_idx, h_idx = int(input.bias_attn_layer()), int(input.bias_attn_head())
         except: l_idx, h_idx = 0, 0
-        
+
         sel = None
         try:
             s = input.bias_selected_tokens()
             if s: sel = [int(s)] if isinstance(s,(int,str)) else [int(x) for x in s if x]
         except: pass
-        
+
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
+
+        # ── Attention source resolution ──
+        src_mode = _get_attn_source_mode("bias_attn_source")
+        res_render, src_label = _resolve_source_for_render(res, _base_attn_cache, src_mode)
+        res_base_for_compare = None
+        if src_mode == "compare":
+            res_base_for_compare = _get_base_resolved(res, _base_attn_cache)
 
         def get_viz(data, s_idxs, container_id="bias-combined-container",
                     other_data=None, delta_label="A \u2212 B"):
@@ -3601,7 +3828,7 @@ def bias_server_handlers(input, output, session):
             except Exception as e: return f'<div style="color:red">Error: {e}</div>'
 
         man_header = (
-            "Combined Attention & Bias View",
+            f"Combined Attention & Bias View{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
             "Attention weight matrix for one head, with pink highlights on biased token rows/columns.",
         )
         _combined_help = (
@@ -3629,10 +3856,37 @@ def bias_server_handlers(input, output, session):
         )
         card_style = "margin-bottom: 24px; box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
 
+        # ── Compare attention sources (Base Encoder vs GUS-Net) ──
+        # res = GUS-Net attentions (from heavy_bias_compute via _GUSNET_TO_ENCODER)
+        # res_base_for_compare = original pretrained base model attentions
+        if src_mode == "compare" and res_base_for_compare:
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(ui.HTML(get_viz(res_base_for_compare, sel, "bias-combined-container-base",
+                                          other_data=res, delta_label="Base \u2212 GUS")),
+                           manual_header=(f"Combined Attention & Bias View{_source_badge_html('Base Encoder')}",
+                                          man_header[1]),
+                           help_text=_combined_help,
+                           style=card_style + " border: 2px solid #60a5fa; height: 100%;",
+                           controls=[
+                               ui.download_button("export_bias_combined", "CSV", style=_BTN_STYLE_CSV),
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container-base', 'bias_combined_base')", style=_BTN_STYLE_PNG),
+                           ]),
+                _wrap_card(ui.HTML(get_viz(res, None, "bias-combined-container-gus",
+                                          other_data=res_base_for_compare, delta_label="GUS \u2212 Base")),
+                           manual_header=(f"Combined Attention & Bias View{_source_badge_html('GUS-Net')}",
+                                          man_header[1]),
+                           help_text=_combined_help,
+                           style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                           controls=[
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container-gus', 'bias_combined_gus')", style=_BTN_STYLE_PNG),
+                           ])
+            )
+
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(ui.HTML(get_viz(res, sel, "bias-combined-container",
+                _wrap_card(ui.HTML(get_viz(res_render, sel, "bias-combined-container",
                                           other_data=res_B, delta_label="A \u2212 B")),
                            manual_header=man_header, help_text=_combined_help,
                            style=card_style + " border: 2px solid #3b82f6; height: 100%;",
@@ -3641,7 +3895,7 @@ def bias_server_handlers(input, output, session):
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container', 'bias_combined_A')", style=_BTN_STYLE_PNG),
                            ]),
                 _wrap_card(ui.HTML(get_viz(res_B, None, "bias-combined-container-B",
-                                          other_data=res, delta_label="B \u2212 A")),
+                                          other_data=res_render, delta_label="B \u2212 A")),
                            manual_header=man_header, help_text=_combined_help,
                            style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
                            controls=[
@@ -3649,7 +3903,7 @@ def bias_server_handlers(input, output, session):
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container-B', 'bias_combined_B')", style=_BTN_STYLE_PNG),
                            ])
             )
-        return _wrap_card(ui.HTML(get_viz(res, sel, "bias-combined-container")), manual_header=man_header, help_text=_combined_help, style=card_style,
+        return _wrap_card(ui.HTML(get_viz(res_render, sel, "bias-combined-container")), manual_header=man_header, help_text=_combined_help, style=card_style,
                           controls=[
                               ui.download_button("export_bias_combined", "CSV", style=_BTN_STYLE_CSV),
                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container', 'bias_combined')", style=_BTN_STYLE_PNG),
@@ -3660,11 +3914,16 @@ def bias_server_handlers(input, output, session):
     def attention_bias_matrix():
         res = bias_results.get()
         if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
-        
+
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
-        
+
+        # ── Attention source resolution ──
+        src_mode = _get_attn_source_mode("bias_attn_source")
+        res_render, src_label = _resolve_source_for_render(res, _base_attn_cache, src_mode)
+        res_base_for_compare = _get_base_resolved(res, _base_attn_cache) if src_mode == "compare" else None
+
         # Analyzer instance for metrics
         analyzer = AttentionBiasAnalyzer()
 
@@ -3701,13 +3960,11 @@ def bias_server_handlers(input, output, session):
                 return _deferred_plotly(fig, container_id, height="600px")
             except Exception as e: return f'<div style="color:red">Error: {e}</div>'
 
-        header_args = (
-            "Bias Attention Matrix",
-            "Each cell = Bias Attention Ratio (BAR) per (layer, head) — how much that head over- or under-attends to biased tokens.",
+        _bar_help = (
             f"<span style='{_TH}'>Formula</span>"
             f"<div style='{_TR};font-family:JetBrains Mono,monospace;font-size:10px;color:#e2e8f0;'>"
             f"BAR(l,h) = mean_attn_biased / (n_biased / n_tokens)</div>"
-            f"<div style='{_TN}; margin-top:2px; margin-bottom:4px;'>observed share ÷ expected under uniform distribution</div>"
+            f"<div style='{_TN}; margin-top:2px; margin-bottom:4px;'>observed share / expected under uniform distribution</div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Interpretation</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#ffffff;'>●</span>"
@@ -3717,14 +3974,42 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span><span style='{_TBB}'>BAR &lt; 1.0</span>&nbsp;head <b>avoids</b> biased tokens</span></div>"
             f"<hr style='{_TS}'>"
-            f"<div style='{_TN}'>Red cells (BAR ≥ threshold) = candidate bias-specialised heads. Cross-reference with ablation to confirm causal impact.</div>"
+            f"<div style='{_TN}'>Red cells (BAR >= threshold) = candidate bias-specialised heads. Cross-reference with ablation to confirm causal impact.</div>"
+        )
+        header_args = (
+            f"Bias Attention Matrix{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
+            "Each cell = Bias Attention Ratio (BAR) per (layer, head) — how much that head over- or under-attends to biased tokens.",
+            _bar_help,
         )
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
+
+        # ── Compare attention sources (Base Encoder vs GUS-Net) ──
+        if src_mode == "compare" and res_base_for_compare:
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(ui.HTML(get_viz(res_base_for_compare, "bias-matrix-container-base",
+                                          other_data=res, delta_label="Base \u2212 GUS")),
+                           f"Bias Attention Matrix{_source_badge_html('Base Encoder')}",
+                           header_args[1], _bar_help,
+                           style=card_style + " border: 2px solid #60a5fa; height: 100%;",
+                           controls=[
+                               ui.download_button("export_bias_matrix", "CSV", style=_BTN_STYLE_CSV),
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container-base', 'bias_matrix_base')", style=_BTN_STYLE_PNG),
+                           ]),
+                _wrap_card(ui.HTML(get_viz(res, "bias-matrix-container-gus",
+                                          other_data=res_base_for_compare, delta_label="GUS \u2212 Base")),
+                           f"Bias Attention Matrix{_source_badge_html('GUS-Net')}",
+                           header_args[1], _bar_help,
+                           style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                           controls=[
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container-gus', 'bias_matrix_gus')", style=_BTN_STYLE_PNG),
+                           ])
+            )
 
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(ui.HTML(get_viz(res, "bias-matrix-container",
+                _wrap_card(ui.HTML(get_viz(res_render, "bias-matrix-container",
                                           other_data=res_B, delta_label="A \u2212 B")),
                            *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
                            controls=[
@@ -3732,14 +4017,14 @@ def bias_server_handlers(input, output, session):
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container', 'bias_matrix_A')", style=_BTN_STYLE_PNG),
                            ]),
                 _wrap_card(ui.HTML(get_viz(res_B, "bias-matrix-container-B",
-                                          other_data=res, delta_label="B \u2212 A")),
+                                          other_data=res_render, delta_label="B \u2212 A")),
                            *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
                            controls=[
                                ui.download_button("export_bias_matrix_B", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container-B', 'bias_matrix_B')", style=_BTN_STYLE_PNG),
                            ])
             )
-        return _wrap_card(ui.HTML(get_viz(res, "bias-matrix-container")), *header_args, style=card_style,
+        return _wrap_card(ui.HTML(get_viz(res_render, "bias-matrix-container")), *header_args, style=card_style,
                           controls=[
                               ui.download_button("export_bias_matrix", "CSV", style=_BTN_STYLE_CSV),
                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container', 'bias_matrix')", style=_BTN_STYLE_PNG),
@@ -3750,11 +4035,16 @@ def bias_server_handlers(input, output, session):
     def bias_propagation_plot():
         res = bias_results.get()
         if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;">No results.</div>')
-        
+
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
-        
+
+        # ── Attention source resolution ──
+        src_mode = _get_attn_source_mode("bias_attn_source")
+        res_render, src_label = _resolve_source_for_render(res, _base_attn_cache, src_mode)
+        res_base_for_compare = _get_base_resolved(res, _base_attn_cache) if src_mode == "compare" else None
+
         try: l_idx = int(input.bias_attn_layer())
         except: l_idx = None
 
@@ -3765,7 +4055,7 @@ def bias_server_handlers(input, output, session):
             return _deferred_plotly(fig, container_id, height="450px")
 
         header_args = (
-            "Bias Propagation Across Layers",
+            f"Bias Propagation Across Layers{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
             "Mean BAR per transformer layer — how bias focus evolves with model depth.",
             f"<span style='{_TH}'>Layer depth</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
@@ -3787,10 +4077,29 @@ def bias_server_handlers(input, output, session):
         )
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
 
+        # ── Compare attention sources (Base Encoder vs GUS-Net) ──
+        if src_mode == "compare" and res_base_for_compare:
+            hdr_base = (f"Bias Propagation{_source_badge_html('Base Encoder')}", header_args[1], header_args[2])
+            hdr_gus = (f"Bias Propagation{_source_badge_html('GUS-Net')}", header_args[1], header_args[2])
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(ui.HTML(get_viz(res_base_for_compare, "bias-propagation-container-base")), *hdr_base,
+                           style=card_style + " border: 2px solid #60a5fa; height: 100%;",
+                           controls=[
+                               ui.download_button("export_bias_propagation", "CSV", style=_BTN_STYLE_CSV),
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container-base', 'bias_propagation_base')", style=_BTN_STYLE_PNG),
+                           ]),
+                _wrap_card(ui.HTML(get_viz(res, "bias-propagation-container-gus")), *hdr_gus,
+                           style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                           controls=[
+                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container-gus', 'bias_propagation_gus')", style=_BTN_STYLE_PNG),
+                           ])
+            )
+
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(ui.HTML(get_viz(res, "bias-propagation-container")), *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
+                _wrap_card(ui.HTML(get_viz(res_render, "bias-propagation-container")), *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
                            controls=[
                                ui.download_button("export_bias_propagation", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container', 'bias_propagation_A')", style=_BTN_STYLE_PNG),
@@ -3801,7 +4110,7 @@ def bias_server_handlers(input, output, session):
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container-B', 'bias_propagation_B')", style=_BTN_STYLE_PNG),
                            ])
             )
-        return _wrap_card(ui.HTML(get_viz(res, "bias-propagation-container")), *header_args, style=card_style,
+        return _wrap_card(ui.HTML(get_viz(res_render, "bias-propagation-container")), *header_args, style=card_style,
                           controls=[
                               ui.download_button("export_bias_propagation", "CSV", style=_BTN_STYLE_CSV),
                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container', 'bias_propagation')", style=_BTN_STYLE_PNG),
@@ -3816,6 +4125,10 @@ def bias_server_handlers(input, output, session):
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
+
+        # ── Attention source resolution ──
+        src_mode = _get_attn_source_mode("bias_attn_source")
+        res_render, src_label = _resolve_source_for_render(res, _base_attn_cache, src_mode)
 
         try: l_idx, h_idx = int(input.bias_attn_layer()), int(input.bias_attn_head())
         except: l_idx, h_idx = -1, -1
@@ -3892,16 +4205,14 @@ def bias_server_handlers(input, output, session):
                 '</table>'
             )
 
-        header_args = (
-            f"Top {k} Attention Heads by Bias Focus",
-            f"Ranked by Bias Attention Ratio (BAR). Green dot = above specialisation threshold ({bar_threshold:.1f}).",
+        _heads_help = (
             f"<span style='{_TH}'>Columns</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span><span style='{_TBB}'>Layer / Head</span>&nbsp;transformer block + head index (0-indexed)</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
-            f"<span><span style='{_TBA}'>BAR</span>&nbsp;observed ÷ expected attention — 1.0 = uniform</span></div>"
+            f"<span><span style='{_TBA}'>BAR</span>&nbsp;observed / expected attention — 1.0 = uniform</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-            f"<span><span style='{_TBG}'>●&nbsp;green</span>&nbsp;BAR exceeds specialisation threshold</span></div>"
+            f"<span><span style='{_TBG}'>green</span>&nbsp;BAR exceeds specialisation threshold</span></div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>How to use</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
@@ -3911,17 +4222,42 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
             f"<span>Run <b>Integrated Gradients</b> to check faithfulness</span></div>"
         )
+        _heads_subtitle = f"Ranked by Bias Attention Ratio (BAR). Green dot = above specialisation threshold ({bar_threshold:.1f})."
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05); margin-top: 16px;"
+
+        # ── Compare attention sources (Base Encoder vs GUS-Net) ──
+        if src_mode == "compare":
+            res_base_for_compare = _get_base_resolved(res, _base_attn_cache)
+            if res_base_for_compare:
+                return ui.div(
+                    {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                    _wrap_card(ui.HTML(get_table(res_base_for_compare)),
+                               manual_header=(f"Top {k} Attention Heads by Bias Focus{_source_badge_html('Base Encoder')}", _heads_subtitle),
+                               help_text=_heads_help,
+                               style=card_style + " border: 2px solid #60a5fa; height: 100%;",
+                               controls=[ui.download_button("export_bias_top_heads", "CSV", style=_BTN_STYLE_CSV)]),
+                    _wrap_card(ui.HTML(get_table(res)),
+                               manual_header=(f"Top {k} Attention Heads by Bias Focus{_source_badge_html('GUS-Net')}", _heads_subtitle),
+                               help_text=_heads_help,
+                               style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                               controls=[ui.download_button("export_bias_top_heads_B", "CSV", style=_BTN_STYLE_CSV)])
+                )
+
+        header_args = (
+            f"Top {k} Attention Heads by Bias Focus{_source_badge_html(src_label)}",
+            _heads_subtitle,
+            _heads_help,
+        )
 
         if (compare_models or compare_prompts) and res_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(ui.HTML(get_table(res)), *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
+                _wrap_card(ui.HTML(get_table(res_render)), *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
                            controls=[ui.download_button("export_bias_top_heads", "CSV", style=_BTN_STYLE_CSV)]),
                 _wrap_card(ui.HTML(get_table(res_B)), *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
                            controls=[ui.download_button("export_bias_top_heads_B", "CSV", style=_BTN_STYLE_CSV)])
             )
-        return _wrap_card(ui.HTML(get_table(res)), *header_args, style=card_style,
+        return _wrap_card(ui.HTML(get_table(res_render)), *header_args, style=card_style,
                           controls=[ui.download_button("export_bias_top_heads", "CSV", style=_BTN_STYLE_CSV)])
 
 
@@ -4082,8 +4418,12 @@ def bias_server_handlers(input, output, session):
                 ui.HTML(table_html),
             )
 
+        faith_src = _get_attn_source_mode("bias_attn_source")
+        _faith_label = "GUS-Net" if faith_src == "gusnet" else "Base Encoder"
+        _faith_badge = _source_badge_html(_faith_label) if faith_src != "compare" else ""
+
         header_args = (
-            "Head Ablation Results",
+            f"Head Ablation Results{_faith_badge}",
             "Causal test: zero out each head's output and measure how much the model's representation changes.",
             f"<span style='{_TH}'>Method — Head Ablation (Michel et al., 2019)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
@@ -4163,7 +4503,7 @@ def bias_server_handlers(input, output, session):
     @reactive.effect
     async def compute_ig():
         """Automatically run IG correlation when bias analysis is complete."""
-        res_A = bias_results.get()
+        res_A, res_B, show_comparison = _resolve_faithfulness_results()
         if not res_A:
             return
 
@@ -4186,13 +4526,8 @@ def bias_server_handlers(input, output, session):
                 return (encoder_model, tokenizer, text, list(attentions), metrics, is_g)
 
             args_A = _prepare_ig_args(res_A)
-            
-            args_B = None
-            compare = (active_bias_compare_models.get() or active_bias_compare_prompts.get())
-            if compare:
-                res_B = bias_results_B.get()
-                if res_B:
-                    args_B = _prepare_ig_args(res_B)
+
+            args_B = _prepare_ig_args(res_B) if show_comparison and res_B else None
             
             loop = asyncio.get_running_loop()
             # Use max_workers=1 to prevent OOM/concurrency issues with heavy IG computation
@@ -4480,8 +4815,12 @@ def bias_server_handlers(input, output, session):
 
             return ui.div(*sections)
 
+        faith_src = _get_attn_source_mode("bias_attn_source")
+        _faith_label = "GUS-Net" if faith_src == "gusnet" else "Base Encoder"
+        _ig_faith_badge = _source_badge_html(_faith_label) if faith_src != "compare" else ""
+
         header_args = (
-            "Attention vs Integrated Gradients",
+            f"Attention vs Integrated Gradients{_ig_faith_badge}",
             "Faithfulness test: do attention weights agree with gradient-based token importance?",
             f"<span style='{_TH}'>Method — Integrated Gradients (Sundararajan et al., 2017)</span>"
             f"<div style='{_TR};font-family:JetBrains Mono,monospace;font-size:10px;color:#e2e8f0;'>"
@@ -4900,8 +5239,12 @@ def bias_server_handlers(input, output, session):
 
             return ui.div(*sections)
 
+        _f_src = _get_attn_source_mode("bias_attn_source")
+        _f_lbl = "GUS-Net" if _f_src == "gusnet" else "Base Encoder"
+        _f_bdg = _source_badge_html(_f_lbl) if _f_src != "compare" else ""
+
         header_args = (
-            "Perturbation Analysis",
+            f"Perturbation Analysis{_f_bdg}",
             "Model-agnostic validation: how much does zeroing each token's embedding change the representation?",
             f"<span style='{_TH}'>Method — Erasure / Occlusion (Li et al., 2016)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
@@ -5107,8 +5450,12 @@ def bias_server_handlers(input, output, session):
 
             return ui.div(*sections)
 
+        _lrp_f_src = _get_attn_source_mode("bias_attn_source")
+        _lrp_f_lbl = "GUS-Net" if _lrp_f_src == "gusnet" else "Base Encoder"
+        _lrp_f_bdg = _source_badge_html(_lrp_f_lbl) if _lrp_f_src != "compare" else ""
+
         header_args = (
-            "DeepLift / LRP Cross-Validation",
+            f"DeepLift / LRP Cross-Validation{_lrp_f_bdg}",
             "Convergent validity: does DeepLift agree with Integrated Gradients on token importance?",
             f"<span style='{_TH}'>Method — DeepLift / LRP (Shrikumar et al., 2017)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
