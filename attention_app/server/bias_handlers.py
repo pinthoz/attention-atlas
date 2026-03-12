@@ -1180,7 +1180,7 @@ def bias_server_handlers(input, output, session):
         js_code = f"""
             var dropdown = document.getElementById('bias-history-dropdown');
             if (dropdown) {{
-                dropdown.innerHTML = `{html_content}`;
+                dropdown.innerHTML = {json.dumps(html_content)};
             }}
         """
         ui.insert_ui(
@@ -3799,11 +3799,14 @@ def bias_server_handlers(input, output, session):
         res_B = bias_results_B.get()
 
         # ── Attention source resolution ──
-        src_mode = _get_attn_source_mode("bias_attn_source")
+        src_mode = _normalize_attn_source_mode(_get_attn_source_mode("bias_attn_source"))
         res_render, src_label = _resolve_source_for_render(res, _base_attn_cache, src_mode)
         res_base_for_compare = None
         if src_mode == "compare":
             res_base_for_compare = _get_base_resolved(res, _base_attn_cache)
+        res_render_B = None
+        if res_B:
+            res_render_B, _ = _resolve_source_for_render(res_B, _base_attn_cache_B, src_mode)
 
         def get_viz(data, s_idxs, container_id="bias-combined-container",
                     other_data=None, delta_label="A \u2212 B"):
@@ -3885,18 +3888,18 @@ def bias_server_handlers(input, output, session):
                            ])
             )
 
-        if (compare_models or compare_prompts) and res_B:
+        if (compare_models or compare_prompts) and res_render_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(ui.HTML(get_viz(res_render, sel, "bias-combined-container",
-                                          other_data=res_B, delta_label="A \u2212 B")),
+                                          other_data=res_render_B, delta_label="A \u2212 B")),
                            manual_header=man_header, help_text=_combined_help,
                            style=card_style + " border: 2px solid #3b82f6; height: 100%;",
                            controls=[
                                ui.download_button("export_bias_combined", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container', 'bias_combined_A')", style=_BTN_STYLE_PNG),
                            ]),
-                _wrap_card(ui.HTML(get_viz(res_B, None, "bias-combined-container-B",
+                _wrap_card(ui.HTML(get_viz(res_render_B, None, "bias-combined-container-B",
                                           other_data=res_render, delta_label="B \u2212 A")),
                            manual_header=man_header, help_text=_combined_help,
                            style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
@@ -3922,9 +3925,12 @@ def bias_server_handlers(input, output, session):
         res_B = bias_results_B.get()
 
         # ── Attention source resolution ──
-        src_mode = _get_attn_source_mode("bias_attn_source")
+        src_mode = _normalize_attn_source_mode(_get_attn_source_mode("bias_attn_source"))
         res_render, src_label = _resolve_source_for_render(res, _base_attn_cache, src_mode)
         res_base_for_compare = _get_base_resolved(res, _base_attn_cache) if src_mode == "compare" else None
+        res_render_B = None
+        if res_B:
+            res_render_B, _ = _resolve_source_for_render(res_B, _base_attn_cache_B, src_mode)
 
         # Analyzer instance for metrics
         analyzer = AttentionBiasAnalyzer()
@@ -4008,17 +4014,17 @@ def bias_server_handlers(input, output, session):
                            ])
             )
 
-        if (compare_models or compare_prompts) and res_B:
+        if (compare_models or compare_prompts) and res_render_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(ui.HTML(get_viz(res_render, "bias-matrix-container",
-                                          other_data=res_B, delta_label="A \u2212 B")),
+                                          other_data=res_render_B, delta_label="A \u2212 B")),
                            *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
                            controls=[
                                ui.download_button("export_bias_matrix", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container', 'bias_matrix_A')", style=_BTN_STYLE_PNG),
                            ]),
-                _wrap_card(ui.HTML(get_viz(res_B, "bias-matrix-container-B",
+                _wrap_card(ui.HTML(get_viz(res_render_B, "bias-matrix-container-B",
                                           other_data=res_render, delta_label="B \u2212 A")),
                            *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
                            controls=[
@@ -4043,9 +4049,12 @@ def bias_server_handlers(input, output, session):
         res_B = bias_results_B.get()
 
         # ── Attention source resolution ──
-        src_mode = _get_attn_source_mode("bias_attn_source")
+        src_mode = _normalize_attn_source_mode(_get_attn_source_mode("bias_attn_source"))
         res_render, src_label = _resolve_source_for_render(res, _base_attn_cache, src_mode)
         res_base_for_compare = _get_base_resolved(res, _base_attn_cache) if src_mode == "compare" else None
+        res_render_B = None
+        if res_B:
+            res_render_B, _ = _resolve_source_for_render(res_B, _base_attn_cache_B, src_mode)
 
         try: l_idx = int(input.bias_attn_layer())
         except: l_idx = None
@@ -4098,7 +4107,7 @@ def bias_server_handlers(input, output, session):
                            ])
             )
 
-        if (compare_models or compare_prompts) and res_B:
+        if (compare_models or compare_prompts) and res_render_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(ui.HTML(get_viz(res_render, "bias-propagation-container")), *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
@@ -4106,7 +4115,7 @@ def bias_server_handlers(input, output, session):
                                ui.download_button("export_bias_propagation", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container', 'bias_propagation_A')", style=_BTN_STYLE_PNG),
                            ]),
-                _wrap_card(ui.HTML(get_viz(res_B, "bias-propagation-container-B")), *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                _wrap_card(ui.HTML(get_viz(res_render_B, "bias-propagation-container-B")), *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
                            controls=[
                                ui.download_button("export_bias_propagation_B", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container-B', 'bias_propagation_B')", style=_BTN_STYLE_PNG),
@@ -4129,8 +4138,11 @@ def bias_server_handlers(input, output, session):
         res_B = bias_results_B.get()
 
         # ── Attention source resolution ──
-        src_mode = _get_attn_source_mode("bias_attn_source")
+        src_mode = _normalize_attn_source_mode(_get_attn_source_mode("bias_attn_source"))
         res_render, src_label = _resolve_source_for_render(res, _base_attn_cache, src_mode)
+        res_render_B = None
+        if res_B:
+            res_render_B, _ = _resolve_source_for_render(res_B, _base_attn_cache_B, src_mode)
 
         try: l_idx, h_idx = int(input.bias_attn_layer()), int(input.bias_attn_head())
         except: l_idx, h_idx = -1, -1
@@ -4251,12 +4263,12 @@ def bias_server_handlers(input, output, session):
             _heads_help,
         )
 
-        if (compare_models or compare_prompts) and res_B:
+        if (compare_models or compare_prompts) and res_render_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(ui.HTML(get_table(res_render)), *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
                            controls=[ui.download_button("export_bias_top_heads", "CSV", style=_BTN_STYLE_CSV)]),
-                _wrap_card(ui.HTML(get_table(res_B)), *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                _wrap_card(ui.HTML(get_table(res_render_B)), *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
                            controls=[ui.download_button("export_bias_top_heads_B", "CSV", style=_BTN_STYLE_CSV)])
             )
         return _wrap_card(ui.HTML(get_table(res_render)), *header_args, style=card_style,

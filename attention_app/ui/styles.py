@@ -4544,4 +4544,28 @@ __all__ = ["CSS"]
         .bias-limitations li {
             margin-bottom: 3px;
         }
+
+        /* Back Button Styling in Sidebar */
+        .sidebar-back-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            padding: 4px 8px;
+            background: transparent;
+            border: 1px solid rgba(255, 92, 169, 0.3);
+            border-radius: 6px;
+            color: #ff5ca9;
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        .sidebar-back-btn:hover {
+            background: rgba(255, 92, 169, 0.1);
+            border-color: rgba(255, 92, 169, 0.6);
+            color: #ff74b8;
+        }
         """

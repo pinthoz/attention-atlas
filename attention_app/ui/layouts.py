@@ -16,9 +16,27 @@ attention_analysis_page = ui.page_fluid(
     ui.div(
         {"class": "sidebar"},
         ui.div(
-            {"class": "app-title", "style": "display: flex; align-items: center; gap: 8px;"},
-            ui.tags.img(src=ICON_DATA_URL or "/favicon.ico", alt="Logo"),
-            ui.h3("Attention Atlas"),
+            {"class": "app-title", "style": "display: flex; align-items: center; justify-content: space-between; width: 100%;"},
+            ui.div(
+                {"style": "display: flex; align-items: center; gap: 8px;"},
+                ui.tags.img(src=ICON_DATA_URL or "/favicon.ico", alt="Logo"),
+                ui.h3("Attention Atlas", style="margin: 0;"),
+            ),
+            # Back Button (Visible only in compare modes)
+            ui.div(
+                {"id": "attn-back-button-container", "style": "display: none;"},
+                ui.HTML(
+                    '<div onclick="'
+                    "var swp=$('#compare_prompts_mode');"
+                    "var swm=$('#compare_mode');"
+                    "var changed = false;"
+                    "if(swp.prop('checked')){swp.prop('checked',false).trigger('change');Shiny.setInputValue('compare_prompts_mode',false,{priority:'event'});changed=true;}"
+                    "if(swm.prop('checked')){swm.prop('checked',false).trigger('change');Shiny.setInputValue('compare_mode',false,{priority:'event'});changed=true;}"
+                    '" class="sidebar-back-btn" title="Back to Single Analysis">'
+                    '<i class="fa-solid fa-arrow-left" style="font-size: 10px;"></i> Back'
+                    '</div>'
+                )
+            ),
         ),
         ui.div(
             {"class": "app-subtitle", "style": "margin-bottom: 12px; padding-bottom: 12px;"}, # Tighter spacing
@@ -303,14 +321,18 @@ attention_analysis_page = ui.page_fluid(
                 
                 // Handle compare_prompts_mode toggle
                 $(document).on('shiny:inputchanged', function(event) {
+                    var backBtn = document.getElementById('attn-back-button-container');
+
                     if (event.name === 'compare_prompts_mode') {
                         const container = document.getElementById('input-container');
                         if (event.value === true) {
                             container.classList.add('compare-prompts-active');
                             switchPrompt('A'); // Ensure Tab A is active and B is dimmed
+                            // Back button shown after Generate All completes
                         } else {
                             container.classList.remove('compare-prompts-active');
                             switchPrompt('A');
+                            if (backBtn) backBtn.style.display = 'none';
                         }
                     }
                     // Handle compare_mode toggle - show/hide Model A header and Model B panel smoothly
@@ -322,6 +344,7 @@ attention_analysis_page = ui.page_fluid(
                         if (event.value === true) {
                             // Show B Panel
                             if (modelBPanel) modelBPanel.classList.add('compare-active');
+                            // Back button shown after Generate All completes
 
                             // Update Model A Labels (Blue + Suffix)
                             if(lblFamA) {
@@ -335,6 +358,7 @@ attention_analysis_page = ui.page_fluid(
                         } else {
                             // Hide B Panel
                             if (modelBPanel) modelBPanel.classList.remove('compare-active');
+                            if (backBtn) backBtn.style.display = 'none';
 
                             // Revert Model A Labels (Grey + Original)
                             if(lblFamA) {
@@ -354,6 +378,12 @@ attention_analysis_page = ui.page_fluid(
                     localStorage.setItem('attention_atlas_history', JSON.stringify(message));
                 });
                 
+                // Back button visibility after Generate All completes
+                Shiny.addCustomMessageHandler('attn_back_btn_update', function(message) {
+                    var bb = document.getElementById('attn-back-button-container');
+                    if (bb) bb.style.display = message.show ? 'block' : 'none';
+                });
+
                 // Session Restore Logic for Textareas
                 Shiny.addCustomMessageHandler('restore_session_text', function(message) {
                     if (message.text_input) {

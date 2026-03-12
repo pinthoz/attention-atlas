@@ -720,6 +720,10 @@ def create_bias_sidebar():
                         const modelBPanel = document.getElementById('bias-model-b-panel');
 
                         if (enabled) {
+                            const attnSource = document.getElementById('bias_attn_source');
+                            if (attnSource && attnSource.value === 'compare' && window._setBiasAttnSource) {
+                                window._setBiasAttnSource('gusnet');
+                            }
                             modelBPanel.style.display = 'block';
                             modelALabel.classList.add('compare-active');
                             modelALabel.innerText = "Detect Model - A";
@@ -749,6 +753,10 @@ def create_bias_sidebar():
                         const inputContainer = document.getElementById('bias-input-container');
                         
                         if (enabled) {
+                            const attnSource = document.getElementById('bias_attn_source');
+                            if (attnSource && attnSource.value === 'compare' && window._setBiasAttnSource) {
+                                window._setBiasAttnSource('gusnet');
+                            }
                             promptTabs.style.display = 'flex';
                             inputContainer.classList.add('compare-prompts-active');
                             if (backBtn) backBtn.style.display = 'block';

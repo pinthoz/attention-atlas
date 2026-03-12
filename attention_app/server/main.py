@@ -83,7 +83,7 @@ def server(input, output, session):
             }, 50);
         }
 
-        # Listen for Shiny input changes on layer/head/view controls
+        // Listen for Shiny input changes on layer/head/view controls
         $(document).on('shiny:inputchanged', function(event) {
             if (event.name === 'global_layer' || event.name === 'global_head' ||
                 event.name === 'global_topk' || event.name === 'global_norm' ||
@@ -92,12 +92,12 @@ def server(input, output, session):
             }
         });
 
-        # Restore scroll after Shiny value/output updates
+        // Restore scroll after Shiny value/output updates
         $(document).on('shiny:value', function(event) {
             if (pendingRestore) restoreScroll();
         });
 
-        # Also restore on idle (backup)
+        // Also restore on idle (backup)
         $(document).on('shiny:idle', function(event) {
             if (pendingRestore) restoreScroll();
         });
@@ -1477,6 +1477,11 @@ def server(input, output, session):
         finally:
             running.set(False)
             await session.send_custom_message('stop_loading', {})
+            try:
+                is_compare = bool(input.compare_mode()) or bool(input.compare_prompts_mode())
+            except Exception:
+                is_compare = False
+            await session.send_custom_message('attn_back_btn_update', {'show': is_compare})
 
     # Sync History UI
     @reactive.Effect
@@ -1493,7 +1498,7 @@ def server(input, output, session):
         js_code = f"""
             var dropdown = document.getElementById('history-dropdown');
             if (dropdown) {{
-                dropdown.innerHTML = `{html_content}`;
+                dropdown.innerHTML = {json.dumps(html_content)};
             }}
         """
         ui.insert_ui(selector="body", where="beforeEnd", ui=ui.tags.script(js_code))
@@ -1875,7 +1880,7 @@ def server(input, output, session):
                 window._spanState[prefix].selected = selectedArray;
                 
                 // Update UI for this prefix
-                const chips = document.querySelectorAll(`.token-chip[data-prefix='${{prefix}}']`);
+                const chips = document.querySelectorAll(".token-chip[data-prefix='" + prefix + "']");
                 chips.forEach(chip => {{
                     const i = parseInt(chip.getAttribute('data-idx'));
                     if (selectedArray.includes(i)) chip.classList.add('active');
@@ -1883,9 +1888,10 @@ def server(input, output, session):
                 }});
 
                 // SYNC: Update MLM Tokens for the correct model (A or B)
-                $(`.maskable-token[data-model="${{prefix}}"], .predicted-word[data-model="${{prefix}}"], .interactive-token[data-model="${{prefix}}"]`).removeClass('masked-active');
+                var selBase = '.maskable-token[data-model="' + prefix + '"], .predicted-word[data-model="' + prefix + '"], .interactive-token[data-model="' + prefix + '"]';
+                $(selBase).removeClass('masked-active');
                 selectedArray.forEach(i => {{
-                     $(`[data-index="${{i}}"][data-model="${{prefix}}"]`).addClass('masked-active');
+                     $('[data-index="' + i + '"][data-model="' + prefix + '"]').addClass('masked-active');
                 }});
                 
                 // Send to Shiny
@@ -2735,12 +2741,12 @@ def server(input, output, session):
             // SYNC: Trigger Floating Bar Click (Source of Truth)
             // Use the modelPrefix to target the correct floating bar chips
             modelPrefix = modelPrefix || 'A';
-            const chip = document.querySelector(`.token-chip[data-idx="${index}"][data-prefix="${modelPrefix}"]`);
+            const chip = document.querySelector('.token-chip[data-idx="' + index + '"][data-prefix="' + modelPrefix + '"]');
             if (chip) {
                 chip.click();
             } else {
                // Fallback if bar not loaded? Just toggle locally for the correct model.
-               $(`[data-index="${index}"][data-model="${modelPrefix}"]`).toggleClass('masked-active');
+               $('[data-index="' + index + '"][data-model="' + modelPrefix + '"]').toggleClass('masked-active');
             }
         }
 
@@ -6666,11 +6672,11 @@ def server(input, output, session):
         if (typeof window.toggleMask === 'undefined') {
             window.toggleMask = function(index, modelPrefix) {
                 modelPrefix = modelPrefix || 'A';
-                const chip = document.querySelector(`.token-chip[data-idx="${index}"][data-prefix="${modelPrefix}"]`);
+                const chip = document.querySelector('.token-chip[data-idx="' + index + '"][data-prefix="' + modelPrefix + '"]');
                 if (chip) {
                     chip.click();
                 } else {
-                    $(`[data-index="${index}"][data-model="${modelPrefix}"]`).toggleClass('masked-active');
+                    $('[data-index="' + index + '"][data-model="' + modelPrefix + '"]').toggleClass('masked-active');
                 }
             };
         }
@@ -6830,7 +6836,21 @@ def server(input, output, session):
                     )
                 ]
             ),
-            ui.div({"id": "radar-chart-container-B"}, head_specialization_radar(res, layer_idx, head_idx, mode, suffix="_B"))
+            ui.div({"id": "radar-chart-container-B"}, head_specialization_radar(res, layer_idx, head_idx, mode, suffix="_B")),
+            ui.HTML("""
+                <div class="radar-explanation" style="font-size: 11px; color: #64748b; line-height: 1.6; padding: 12px; background: white; border-radius: 8px; margin-top: auto; border: 1px solid #e2e8f0; padding-bottom: 4px; text-align: center;">
+                    <strong style="color: #ff5ca9;">Specialization Dimensions</strong> — click any to see detailed explanation:<br>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: center;">
+                        <span class="metric-tag" onclick="showMetricModal('Syntax', 0, 0)">Syntax</span>
+                        <span class="metric-tag" onclick="showMetricModal('Semantics', 0, 0)">Semantics</span>
+                        <span class="metric-tag" onclick="showMetricModal('CLS Focus', 0, 0)">CLS Focus</span>
+                        <span class="metric-tag" onclick="showMetricModal('Punctuation', 0, 0)">Punctuation</span>
+                        <span class="metric-tag" onclick="showMetricModal('Entities', 0, 0)">Entities</span>
+                        <span class="metric-tag" onclick="showMetricModal('Long-range', 0, 0)">Long-range</span>
+                        <span class="metric-tag" onclick="showMetricModal('Self-attention', 0, 0)">Self-attention</span>
+                    </div>
+                </div>
+            """)
         )
 
 
