@@ -1377,92 +1377,86 @@ def create_floating_bias_toolbar():
             ui.span("CONFIGURATIONS", class_="bar-title"),
 
             ui.div(
-                {"class": "controls-row"},
+                {"class": "controls-row", "id": "bias-controls-row"},
 
-                # ── LEFT: Layer & Head ──
+                # ── LEFT GROUP: Layer & Head ──
                 ui.div(
-                    {"class": "control-group"},
-                    ui.span("Layer", class_="control-label"),
+                    {"class": "bias-bar-left"},
                     ui.div(
-                        {"class": "slider-container"},
-                        ui.tags.span("0", id="bias-layer-value", class_="slider-value"),
-                        ui.tags.input(type="range", id="bias-layer-slider", min="0", max="11", value="0", step="1"),
+                        {"class": "control-group"},
+                        ui.span("Layer", class_="control-label"),
+                        ui.div(
+                            {"class": "slider-container"},
+                            ui.tags.span("0", id="bias-layer-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="bias-layer-slider", min="0", max="11", value="0", step="1"),
+                        ),
+                    ),
+                    ui.div(
+                        {"class": "control-group"},
+                        ui.span("Head", class_="control-label"),
+                        ui.div(
+                            {"class": "slider-container"},
+                            ui.tags.span("0", id="bias-head-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="bias-head-slider", min="0", max="11", value="0", step="1"),
+                        ),
                     ),
                 ),
 
-                ui.div(
-                    {"class": "control-group"},
-                    ui.span("Head", class_="control-label"),
-                    ui.div(
-                        {"class": "slider-container"},
-                        ui.tags.span("0", id="bias-head-value", class_="slider-value"),
-                        ui.tags.input(type="range", id="bias-head-slider", min="0", max="11", value="0", step="1"),
-                    ),
-                ),
-
-                # Divider
-                ui.div({"class": "control-divider"}),
-
-                # ── CENTER: Bias Tokens (flex sibling like attention bar) ──
+                # ── CENTER: Bias Tokens ──
                 ui.div(
                     {"id": "bias-tokens-row"},
                     ui.output_ui("bias_toolbar_tokens"),
                 ),
 
-                # Divider
-                ui.div({"class": "control-divider"}),
-
-                # ── Attention Source toggle (same pattern as Norm: radio-group) ──
+                # ── RIGHT GROUP: Source + BAR + Top-K ──
                 ui.div(
-                    {"class": "control-group"},
-                    ui.span("Source Attention", class_="control-label"),
+                    {"class": "bias-bar-right"},
+                    # Attention Source toggle
                     ui.div(
-                        {"class": "radio-group", "id": "bias-source-radio-group"},
-                        ui.span("GUS-Net", class_="radio-option active",
-                                id="bias-src-gusnet",
-                                title="Attention from the fine-tuned GUS-Net encoder",
-                                **{"data-value": "gusnet"}),
-                        ui.span("Base", class_="radio-option",
-                                id="bias-src-base",
-                                title="Attention from the original pretrained base encoder",
-                                **{"data-value": "base"}),
-                        ui.span("Compare", class_="radio-option",
-                                id="bias-src-compare",
-                                title="Side-by-side Base Encoder vs GUS-Net",
-                                **{"data-value": "compare"}),
+                        {"class": "control-group"},
+                        ui.span("Source Attention", class_="control-label"),
+                        ui.div(
+                            {"class": "radio-group", "id": "bias-source-radio-group"},
+                            ui.span("GUS-Net", class_="radio-option active",
+                                    id="bias-src-gusnet",
+                                    title="Attention from the fine-tuned GUS-Net encoder",
+                                    **{"data-value": "gusnet"}),
+                            ui.span("Base", class_="radio-option",
+                                    id="bias-src-base",
+                                    title="Attention from the original pretrained base encoder",
+                                    **{"data-value": "base"}),
+                            ui.span("Compare", class_="radio-option",
+                                    id="bias-src-compare",
+                                    title="Side-by-side Base Encoder vs GUS-Net",
+                                    **{"data-value": "compare"}),
+                        ),
+                        ui.tags.input(type="hidden", id="bias_attn_source", value="gusnet"),
                     ),
-                    # Hidden input synced by JS
-                    ui.tags.input(type="hidden", id="bias_attn_source", value="gusnet"),
-                ),
-
-                # Divider
-                ui.div({"class": "control-divider"}),
-
-                # ── RIGHT: BAR + Top-K ──
-                ui.div(
-                    {"class": "control-group",
-                     "title": "Bias Attention Ratio (BAR) specialization threshold.\n"
-                              "BAR = observed attention to biased tokens / expected under uniform.\n"
-                              "Heads with BAR above this value are marked as 'specialized'.\n"
-                              "= 1.0: head attends uniformly (no bias focus)\n"
-                              "> 1.5: head over-attends to biased tokens (default threshold)\n"
-                              "Lower values detect subtler patterns; higher values are stricter."},
-                    ui.span("BAR Threshold", class_="control-label"),
+                    # BAR Threshold
                     ui.div(
-                        {"class": "slider-container"},
-                        ui.tags.span("1.5", id="bias-bar-threshold-value", class_="slider-value"),
-                        ui.tags.input(type="range", id="bias-bar-threshold-slider", min="1.0", max="3.0", value="1.5", step="0.1"),
+                        {"class": "control-group",
+                         "title": "Bias Attention Ratio (BAR) specialization threshold.\n"
+                                  "BAR = observed attention to biased tokens / expected under uniform.\n"
+                                  "Heads with BAR above this value are marked as 'specialized'.\n"
+                                  "= 1.0: head attends uniformly (no bias focus)\n"
+                                  "> 1.5: head over-attends to biased tokens (default threshold)\n"
+                                  "Lower values detect subtler patterns; higher values are stricter."},
+                        ui.span("BAR Threshold", class_="control-label"),
+                        ui.div(
+                            {"class": "slider-container"},
+                            ui.tags.span("1.5", id="bias-bar-threshold-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="bias-bar-threshold-slider", min="1.0", max="3.0", value="1.5", step="0.1"),
+                        ),
                     ),
-                ),
-
-                # Top-K slider
-                ui.div(
-                    {"class": "control-group"},
-                    ui.span("Top-K", class_="control-label"),
+                    # Top-K slider
                     ui.div(
-                        {"class": "slider-container"},
-                        ui.tags.span("5", id="bias-topk-value", class_="slider-value"),
-                        ui.tags.input(type="range", id="bias-topk-slider", min="1", max="10", value="5", step="1"),
+                        {"class": "control-group"},
+                        ui.span("Top-K", class_="control-label"),
+                        ui.div(
+                            {"class": "slider-container"},
+                            ui.tags.span("5", id="bias-topk-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="bias-topk-slider", min="1", max="10", value="5", step="1"),
+                        ),
                     ),
                 ),
             ),
@@ -1481,18 +1475,87 @@ def create_floating_bias_toolbar():
                 to { transform: translateY(0); opacity: 1; }
             }
 
-            /* Bias tokens container — centered */
+            /* Grid layout: left | center | right — center is truly centered */
+            #bias-controls-row {
+                display: grid !important;
+                grid-template-columns: 1fr auto 1fr;
+                align-items: center;
+                gap: 12px;
+                width: 100%;
+            }
+
+            /* Left group: centered in its column */
+            .bias-bar-left {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                justify-content: center;
+            }
+
+            /* Right group: centered in its column */
+            .bias-bar-right {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                justify-content: center;
+            }
+
+            /* Center token row */
             #bias-tokens-row {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                flex: 1;
                 min-width: 0;
             }
             #bias-tokens-row > div {
                 margin: 0 !important;
                 padding: 0 !important;
                 min-width: 0;
+            }
+
+            /* Sliders: left group larger, right group compact */
+            .bias-bar-left input[type="range"] {
+                width: 60px;
+            }
+            .bias-bar-right input[type="range"] {
+                width: 48px;
+            }
+            #bias-floating-toolbar .slider-value {
+                min-width: 18px;
+                height: 18px;
+                font-size: 9px;
+            }
+            #bias-floating-toolbar .control-group {
+                gap: 2px;
+            }
+
+            @media (min-width: 1600px) {
+                #bias-controls-row {
+                    gap: 20px;
+                }
+                .bias-bar-left, .bias-bar-right {
+                    gap: 16px;
+                }
+                .bias-bar-left input[type="range"] {
+                    width: 90px;
+                }
+                .bias-bar-right input[type="range"] {
+                    width: 70px;
+                }
+                #bias-floating-toolbar .slider-value {
+                    min-width: 22px;
+                    height: 22px;
+                    font-size: 10px;
+                }
+                #bias-floating-toolbar .control-label {
+                    font-size: 9px;
+                }
+                #bias-tokens-row .token-sentence {
+                    max-width: 760px !important;
+                    max-height: 64px;
+                    gap: 4px;
+                    padding: 4px 8px;
+                }
             }
 
             .bias-token-chip {

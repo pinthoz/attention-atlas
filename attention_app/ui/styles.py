@@ -3422,9 +3422,10 @@ __all__ = ["CSS"]
         
         /* Bias tokens - single mode uses .token-sentence, compare uses .token-row-split */
         #bias-tokens-row .token-sentence {
-            max-width: 600px !important;
+            max-width: 560px !important;
             min-width: 0 !important;
             flex: 0 1 auto !important;
+            margin-top: 0 !important;
         }
 
         /* ==========================================
