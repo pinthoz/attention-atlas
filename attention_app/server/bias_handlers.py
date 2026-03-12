@@ -809,6 +809,9 @@ def bias_server_handlers(input, output, session):
     bias_analysis_generation = reactive.value(0)
     bias_last_processed_generation = reactive.value(-1)
 
+    # Snapshot of previous run state — restored when Back is clicked
+    bias_snapshot = reactive.value(None)
+
     # ── Constants for UI Consistency ──
     _BTN_STYLE_CSV = "padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: #334155; text-decoration: none;"
     _BTN_STYLE_PNG = "padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: #334155;"
@@ -869,6 +872,10 @@ def bias_server_handlers(input, output, session):
         except Exception:
             pass
         return "gusnet"
+
+    def _normalize_attn_source_mode(mode: str) -> str:
+        """Passthrough — _get_attn_source_mode already returns a valid value."""
+        return mode if mode in ("gusnet", "base", "compare") else "gusnet"
 
     def _get_base_resolved(res, cache_rv):
         """Return a processed base-encoder-attention result.
@@ -1951,12 +1958,24 @@ def bias_server_handlers(input, output, session):
             # MODE SWITCHING CLEANUP: Reset state when modes change
             prev_compare_models = active_bias_compare_models.get()
             prev_compare_prompts = active_bias_compare_prompts.get()
-            
+
+            # Snapshot BEFORE any clearing (so had_prior_results is accurate)
+            had_prior_results = bias_results.get() is not None
+            if had_prior_results:
+                bias_snapshot.set({
+                    'results':         bias_results.get(),
+                    'results_B':       bias_results_B.get(),
+                    'text_A':          bias_cached_text_A.get(),
+                    'text_B':          bias_cached_text_B.get(),
+                    'compare_models':  prev_compare_models,
+                    'compare_prompts': prev_compare_prompts,
+                })
+
             # Detect mode transitions
             mode_switched_to_prompts = compare_prompts and not prev_compare_prompts
             mode_switched_to_models = compare_models and not prev_compare_models
             mode_switched_off = (not compare_prompts and not compare_models) and (prev_compare_prompts or prev_compare_models)
-            
+
             # Reset state when switching modes to ensure clean state
             if mode_switched_to_prompts or mode_switched_to_models or mode_switched_off:
                 log_debug("Mode switch detected - resetting bias state")
@@ -1969,7 +1988,7 @@ def bias_server_handlers(input, output, session):
                 # Reset prompt step to A when switching modes
                 bias_prompt_step.set("A")
                 # Ensure UI reflects the reset
-                await session.send_custom_message("bias_eval_js", 
+                await session.send_custom_message("bias_eval_js",
                     "if(window.switchBiasPromptTab) window.switchBiasPromptTab('A');")
 
             active_bias_compare_models.set(compare_models)
@@ -2168,11 +2187,35 @@ def bias_server_handlers(input, output, session):
                 bias_analysis_generation.set(new_gen)
                 bias_running.set(False)
                 await session.send_custom_message('stop_bias_loading', {})
+                # Show back button whenever prior results existed (second run in same session)
+                show_back = had_prior_results and bias_results.get() is not None
+                await session.send_custom_message('bias_back_btn_update', {'show': show_back})
 
         except Exception as e:
             msg = f"CRITICAL ERROR in compute_bias top level: {e}"
             log_debug(msg)
             print(msg)
+
+    # ── Back button: restore previous run snapshot ──
+
+    @reactive.effect
+    @reactive.event(input.bias_go_back)
+    async def bias_restore_from_snapshot():
+        snap = bias_snapshot.get()
+        if not snap:
+            return
+        bias_results.set(snap['results'])
+        bias_results_B.set(snap['results_B'])
+        bias_cached_text_A.set(snap.get('text_A', ''))
+        bias_cached_text_B.set(snap.get('text_B', ''))
+        active_bias_compare_models.set(snap.get('compare_models', False))
+        active_bias_compare_prompts.set(snap.get('compare_prompts', False))
+        bias_snapshot.set(None)
+        await session.send_custom_message('bias_back_btn_update', {'show': False})
+        await session.send_custom_message('bias_restore_ui', {
+            'compare_models': snap.get('compare_models', False),
+            'compare_prompts': snap.get('compare_prompts', False),
+        })
 
     # ── Counterfactual click handler ──
 

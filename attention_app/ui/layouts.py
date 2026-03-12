@@ -26,13 +26,8 @@ attention_analysis_page = ui.page_fluid(
             ui.div(
                 {"id": "attn-back-button-container", "style": "display: none;"},
                 ui.HTML(
-                    '<div onclick="'
-                    "var swp=$('#compare_prompts_mode');"
-                    "var swm=$('#compare_mode');"
-                    "var changed = false;"
-                    "if(swp.prop('checked')){swp.prop('checked',false).trigger('change');Shiny.setInputValue('compare_prompts_mode',false,{priority:'event'});changed=true;}"
-                    "if(swm.prop('checked')){swm.prop('checked',false).trigger('change');Shiny.setInputValue('compare_mode',false,{priority:'event'});changed=true;}"
-                    '" class="sidebar-back-btn" title="Back to Single Analysis">'
+                    '<div onclick="Shiny.setInputValue(\'attn_go_back\',Date.now(),{priority:\'event\'});"'
+                    ' class="sidebar-back-btn" title="Back to previous analysis">'
                     '<i class="fa-solid fa-arrow-left" style="font-size: 10px;"></i> Back'
                     '</div>'
                 )
@@ -382,6 +377,20 @@ attention_analysis_page = ui.page_fluid(
                 Shiny.addCustomMessageHandler('attn_back_btn_update', function(message) {
                     var bb = document.getElementById('attn-back-button-container');
                     if (bb) bb.style.display = message.show ? 'block' : 'none';
+                });
+
+                // Restore UI switches when Back is clicked
+                Shiny.addCustomMessageHandler('attn_restore_ui', function(message) {
+                    var swm = $('#compare_mode');
+                    var swp = $('#compare_prompts_mode');
+                    if (swm.prop('checked') !== message.compare_models) {
+                        swm.prop('checked', message.compare_models).trigger('change');
+                        Shiny.setInputValue('compare_mode', message.compare_models, {priority: 'event'});
+                    }
+                    if (swp.prop('checked') !== message.compare_prompts) {
+                        swp.prop('checked', message.compare_prompts).trigger('change');
+                        Shiny.setInputValue('compare_prompts_mode', message.compare_prompts, {priority: 'event'});
+                    }
                 });
 
                 // Session Restore Logic for Textareas

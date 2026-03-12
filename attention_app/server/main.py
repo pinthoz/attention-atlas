@@ -112,6 +112,9 @@ def server(input, output, session):
     active_compare_models = reactive.Value(False)
     active_compare_prompts = reactive.Value(False)
     active_view_mode = reactive.Value("basic")
+
+    # Snapshot of previous run state — restored when Back is clicked
+    attn_snapshot = reactive.value(None)
     
     # Session Load Force Flags (to override UI lag)
     session_force_compare_mode = reactive.Value(False)
@@ -1377,9 +1380,27 @@ def server(input, output, session):
              prompt_entry_step.set("DONE") # Ensure wizard doesn't block
              print("DEBUG: Force Compare Prompts Mode Applied")
         
+        # Save previous mode before overwriting (for snapshot)
+        prev_cm = active_compare_models.get()
+        prev_cpm = active_compare_prompts.get()
+
         active_compare_models.set(cm)
         active_compare_prompts.set(cpm)
         active_view_mode.set(vm)
+
+        # Track whether prior results exist (for back button logic)
+        had_prior_results = cached_result.get() is not None
+
+        # Save snapshot of the current state before overwriting it
+        if had_prior_results:
+            attn_snapshot.set({
+                'result':         cached_result.get(),
+                'result_B':       cached_result_B.get(),
+                'text_A':         cached_text_A.get(),
+                'text_B':         cached_text_B.get(),
+                'compare_models': prev_cm,
+                'compare_prompts': prev_cpm,
+            })
 
         # Clear existing results to provide a "fresh load" feel.
         # Set cached_text to current inputs so they appear in previews immediately while loading.
@@ -1481,7 +1502,29 @@ def server(input, output, session):
                 is_compare = bool(input.compare_mode()) or bool(input.compare_prompts_mode())
             except Exception:
                 is_compare = False
-            await session.send_custom_message('attn_back_btn_update', {'show': is_compare})
+            show_back = had_prior_results and cached_result.get() is not None
+            await session.send_custom_message('attn_back_btn_update', {'show': show_back})
+
+    # ── Back button: restore previous run snapshot ──
+
+    @reactive.effect
+    @reactive.event(input.attn_go_back)
+    async def attn_restore_from_snapshot():
+        snap = attn_snapshot.get()
+        if not snap:
+            return
+        cached_result.set(snap['result'])
+        cached_result_B.set(snap['result_B'])
+        cached_text_A.set(snap.get('text_A', ''))
+        cached_text_B.set(snap.get('text_B', ''))
+        active_compare_models.set(snap.get('compare_models', False))
+        active_compare_prompts.set(snap.get('compare_prompts', False))
+        attn_snapshot.set(None)
+        await session.send_custom_message('attn_back_btn_update', {'show': False})
+        await session.send_custom_message('attn_restore_ui', {
+            'compare_models': snap.get('compare_models', False),
+            'compare_prompts': snap.get('compare_prompts', False),
+        })
 
     # Sync History UI
     @reactive.Effect

@@ -53,14 +53,8 @@ def create_bias_sidebar():
             ui.div(
                 {"id": "bias-back-button-container", "style": "display: none;"},
                 ui.HTML(
-                    '<div onclick="'
-                    "var swp=$('#bias_compare_prompts_mode');"
-                    "var swm=$('#bias_compare_mode');"
-                    "var changed = false;"
-                    "if(swp.prop('checked')){swp.prop('checked',false).trigger('change');Shiny.setInputValue('bias_compare_prompts_mode',false,{priority:'event'});changed=true;}"
-                    "if(swm.prop('checked')){swm.prop('checked',false).trigger('change');Shiny.setInputValue('bias_compare_mode',false,{priority:'event'});changed=true;}"
-                    "if(changed){setTimeout(function(){Shiny.setInputValue('analyze_bias_btn',Date.now(),{priority:'event'});},400);}"
-                    '" class="sidebar-back-btn" title="Back to Single Analysis">'
+                    '<div onclick="Shiny.setInputValue(\'bias_go_back\',Date.now(),{priority:\'event\'});"'
+                    ' class="sidebar-back-btn" title="Back to previous analysis">'
                     '<i class="fa-solid fa-arrow-left" style="font-size: 10px;"></i> Back'
                     '</div>'
                 )
@@ -679,6 +673,26 @@ def create_bias_sidebar():
                     document.getElementById('bias-history-dropdown').classList.remove('show');
                 }
 
+                // Back button: only show after a second run
+                Shiny.addCustomMessageHandler('bias_back_btn_update', function(message) {
+                    var bb = document.getElementById('bias-back-button-container');
+                    if (bb) bb.style.display = message.show ? 'block' : 'none';
+                });
+
+                // Restore UI switches when Back is clicked
+                Shiny.addCustomMessageHandler('bias_restore_ui', function(message) {
+                    var swm = $('#bias_compare_mode');
+                    var swp = $('#bias_compare_prompts_mode');
+                    if (swm.prop('checked') !== message.compare_models) {
+                        swm.prop('checked', message.compare_models).trigger('change');
+                        Shiny.setInputValue('bias_compare_mode', message.compare_models, {priority: 'event'});
+                    }
+                    if (swp.prop('checked') !== message.compare_prompts) {
+                        swp.prop('checked', message.compare_prompts).trigger('change');
+                        Shiny.setInputValue('bias_compare_prompts_mode', message.compare_prompts, {priority: 'event'});
+                    }
+                });
+
                 // Bias history persistence (mirrors attention tab)
                 Shiny.addCustomMessageHandler('update_bias_history', function(message) {
                     localStorage.setItem('attention_atlas_bias_history', JSON.stringify(message));
@@ -724,17 +738,18 @@ def create_bias_sidebar():
                             if (attnSource && attnSource.value === 'compare' && window._setBiasAttnSource) {
                                 window._setBiasAttnSource('gusnet');
                             }
+                            document.body.classList.add('bias-compare-models-active');
                             modelBPanel.style.display = 'block';
                             modelALabel.classList.add('compare-active');
                             modelALabel.innerText = "Detect Model - A";
                             if (threshColA) threshColA.classList.add('compare-active');
-                            if (backBtn) backBtn.style.display = 'block';
-                            
+
                             const promptSwitch = $('#bias_compare_prompts_mode');
                             if (promptSwitch.length && promptSwitch.prop('checked')) {
                                 promptSwitch.prop('checked', false).trigger('change');
                             }
                         } else {
+                            document.body.classList.remove('bias-compare-models-active');
                             modelBPanel.style.display = 'none';
                             modelALabel.classList.remove('compare-active');
                             modelALabel.innerText = "Bias Detection Model";
@@ -757,9 +772,9 @@ def create_bias_sidebar():
                             if (attnSource && attnSource.value === 'compare' && window._setBiasAttnSource) {
                                 window._setBiasAttnSource('gusnet');
                             }
+                            document.body.classList.add('bias-compare-prompts-active');
                             promptTabs.style.display = 'flex';
                             inputContainer.classList.add('compare-prompts-active');
-                            if (backBtn) backBtn.style.display = 'block';
                             // Note: don't add compare-active to threshColA for compare prompts
                             // (same model = same thresholds layout as single mode)
                             
@@ -768,6 +783,7 @@ def create_bias_sidebar():
                                 modelSwitch.prop('checked', false).trigger('change');
                             }
                         } else {
+                            document.body.classList.remove('bias-compare-prompts-active');
                             promptTabs.style.display = 'none';
                             inputContainer.classList.remove('compare-prompts-active');
                             
@@ -1583,6 +1599,11 @@ def create_floating_bias_toolbar():
             }
             #bias-src-compare.radio-option.active {
                 background: linear-gradient(90deg, #60a5fa, #ff5ca9);
+            }
+            /* Disabled state (e.g. Compare hidden in compare-prompts mode) */
+            body.bias-compare-prompts-active #bias-src-compare,
+            body.bias-compare-models-active #bias-src-compare {
+                display: none !important;
             }
 
             /* Constrain Plotly plots to never exceed their container */
