@@ -1335,10 +1335,7 @@ def create_bias_accordion():
             ),
             ui.output_ui("stereoset_overview"),
 
-            subsection_header(
-                "Category and Demographic Breakdown",
-                "These views show where the benchmark signal comes from: broad categories first, then finer demographic target slices. This is the most important block for discussing which groups are disproportionately affected.",
-            ),
+            ui.output_ui("stereoset_category_header"),
             ui.output_ui("stereoset_category_breakdown"),
             ui.output_ui("stereoset_demographic_slices"),
 
@@ -1410,7 +1407,7 @@ def create_floating_bias_toolbar():
                 # ── Attention Source toggle (same pattern as Norm: radio-group) ──
                 ui.div(
                     {"class": "control-group"},
-                    ui.span("Source", class_="control-label"),
+                    ui.span("Source Attention", class_="control-label"),
                     ui.div(
                         {"class": "radio-group", "id": "bias-source-radio-group"},
                         ui.span("GUS-Net", class_="radio-option active",

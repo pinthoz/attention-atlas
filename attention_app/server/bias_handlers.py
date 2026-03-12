@@ -770,6 +770,7 @@ def bias_server_handlers(input, output, session):
     ablation_running = reactive.value(False)
     ig_results = reactive.value(None)
     ig_results_B = reactive.value(None)
+    ig_results_base = reactive.value(None)   # IG computed on base encoder
     ig_running = reactive.value(False)
     perturbation_results = reactive.value(None)
     perturbation_results_B = reactive.value(None)
@@ -1980,6 +1981,7 @@ def bias_server_handlers(input, output, session):
             counterfactual_swaps.set(None)
             _base_attn_cache.set(None)
             _base_attn_cache_B.set(None)
+            ig_results_base.set(None)
             bias_cached_text_A.set(text)
 
             try:
@@ -4266,7 +4268,7 @@ def bias_server_handlers(input, output, session):
     @reactive.effect
     async def compute_ablation():
         """Automatically run ablation when bias analysis is complete."""
-        res_A = bias_results.get()
+        res_A, res_B, show_comparison = _resolve_faithfulness_results()
         if not res_A:
             return
 
@@ -4301,12 +4303,7 @@ def bias_server_handlers(input, output, session):
             args_A = _compute_single(res_A)
             
             # Prepare args for B if needed
-            args_B = None
-            compare = (active_bias_compare_models.get() or active_bias_compare_prompts.get())
-            if compare:
-                res_B = bias_results_B.get()
-                if res_B:
-                    args_B = _compute_single(res_B)
+            args_B = _compute_single(res_B) if show_comparison and res_B else None
 
             # Execute
             loop = asyncio.get_running_loop()
@@ -4354,10 +4351,8 @@ def bias_server_handlers(input, output, session):
             return None
         
         results_B = ablation_results_B.get()
-        compare_models = active_bias_compare_models.get()
-        compare_prompts = active_bias_compare_prompts.get()
-        # Show comparison if comparing models OR comparing prompts
-        show_comparison = (compare_models or compare_prompts) and results_B
+        _, _, resolved_show_comparison = _resolve_faithfulness_results()
+        show_comparison = resolved_show_comparison and results_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
         except Exception: bar_threshold = 1.5
@@ -4449,15 +4444,22 @@ def bias_server_handlers(input, output, session):
         )
 
         if show_comparison:
+            src_mode = _get_attn_source_mode("bias_attn_source")
+            if src_mode == "compare":
+                lbl_A, lbl_B = "Base Encoder", "GUS-Net"
+            else:
+                lbl_A, lbl_B = "Model A", "Model B"
+            h_A = (f"Head Ablation Results{_source_badge_html(lbl_A)}", header_args[1], header_args[2])
+            h_B = (f"Head Ablation Results{_source_badge_html(lbl_B)}", header_args[1], header_args[2])
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(_render_ablation_single(results_A, "_A"), *header_args,
+                _wrap_card(_render_ablation_single(results_A, "_A"), *h_A,
                            style="border: 2px solid #3b82f6; height: 100%;",
                            controls=[
                                ui.download_button("export_ablation_csv", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('ablation-chart-container_A', 'ablation_impact_A.png')", style=_BTN_STYLE_PNG),
                            ]),
-                _wrap_card(_render_ablation_single(results_B, "_B"), *header_args,
+                _wrap_card(_render_ablation_single(results_B, "_B"), *h_B,
                            style="border: 2px solid #ff5ca9; height: 100%;",
                            controls=[
                                ui.download_button("export_ablation_csv_B", "CSV", style=_BTN_STYLE_CSV),
@@ -4579,10 +4581,8 @@ def bias_server_handlers(input, output, session):
             return None
             
         bundle_B = ig_results_B.get()
-        compare_models = active_bias_compare_models.get()
-        compare_prompts = active_bias_compare_prompts.get()
-        # Show comparison if comparing models OR comparing prompts
-        show_comparison = (compare_models or compare_prompts) and bundle_B
+        res_A_ctx, res_B_ctx, resolved_show_comparison = _resolve_faithfulness_results()
+        show_comparison = resolved_show_comparison and bundle_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
         except Exception: bar_threshold = 1.5
@@ -4637,8 +4637,7 @@ def bias_server_handlers(input, output, session):
             if context_results and context_results.get("attentions"):
                 attentions = context_results["attentions"]
             elif not show_comparison:
-                 res = bias_results.get()
-                 attentions = res.get("attentions") if res else None
+                 attentions = res_A_ctx.get("attentions") if res_A_ctx else None
 
             if token_attrs is not None and tokens and attentions:
                 top_bar_heads = sorted(results, key=lambda r: r.bar_original, reverse=True)[:3]
@@ -4845,20 +4844,33 @@ def bias_server_handlers(input, output, session):
         )
 
         if show_comparison:
-             # We need context results (attentions etc) for Chart 2.
-             # bias_results.get() is A, bias_results_B.get() is B
-             res_A = bias_results.get()
-             res_B = bias_results_B.get()
-             
-             return ui.div(
+            # Determine labels for each side
+            src_mode = _get_attn_source_mode("bias_attn_source")
+            if src_mode == "compare":
+                # Source compare: A = Base Encoder, B = GUS-Net
+                label_A = "Base Encoder"
+                label_B = "GUS-Net"
+            else:
+                # Model/prompt compare: A vs B
+                label_A = "Model A"
+                label_B = "Model B"
+            header_A = (
+                f"Attention vs Integrated Gradients{_source_badge_html(label_A)}",
+                header_args[1], header_args[2],
+            )
+            header_B = (
+                f"Attention vs Integrated Gradients{_source_badge_html(label_B)}",
+                header_args[1], header_args[2],
+            )
+            return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(_render_ig_single(bundle_A, "_A", res_A), *header_args,
+                _wrap_card(_render_ig_single(bundle_A, "_A", res_A_ctx), *header_A,
                            style="border: 2px solid #3b82f6; height: 100%;",
                             controls=[
                                 ui.download_button("export_ig_csv", "CSV", style=_BTN_STYLE_CSV),
                                 ui.tags.button("PNG", onclick="downloadPlotlyPNG('ig-chart-container_A', 'ig_correlation_A.png')", style=_BTN_STYLE_PNG),
                             ]),
-                _wrap_card(_render_ig_single(bundle_B, "_B", res_B), *header_args,
+                _wrap_card(_render_ig_single(bundle_B, "_B", res_B_ctx), *header_B,
                            style="border: 2px solid #ff5ca9; height: 100%;",
                             controls=[
                                 ui.download_button("export_ig_csv_B", "CSV", style=_BTN_STYLE_CSV),
@@ -4926,14 +4938,14 @@ def bias_server_handlers(input, output, session):
     @render.download(filename="ig_token_comparison.csv")
     def export_ig_token_comparison_csv():
         bundle = ig_results.get()
-        res = bias_results.get()
-        if bundle is None or not isinstance(bundle, IGAnalysisBundle) or res is None:
+        res_A, _, _ = _resolve_faithfulness_results()
+        if bundle is None or not isinstance(bundle, IGAnalysisBundle) or res_A is None:
             yield "No data"
             return
         
         tokens = bundle.tokens
         ig_attrs = bundle.token_attributions
-        attentions = res.get("attentions")
+        attentions = res_A.get("attentions")
         
         # Robust check for empty data
         has_tokens = tokens is not None and len(tokens) > 0
@@ -5016,7 +5028,7 @@ def bias_server_handlers(input, output, session):
     @render.download(filename="ig_token_comparison_B.csv")
     def export_ig_token_comparison_csv_B():
         bundle = ig_results_B.get()
-        res_B = bias_results_B.get()
+        _, res_B, _ = _resolve_faithfulness_results()
         if bundle is None or not isinstance(bundle, IGAnalysisBundle):
             yield "No data"
             return
@@ -5105,7 +5117,7 @@ def bias_server_handlers(input, output, session):
         if not bundle_A or not isinstance(bundle_A, IGAnalysisBundle):
             return
 
-        res_A = bias_results.get()
+        res_A, res_B, show_comparison = _resolve_faithfulness_results()
         if not res_A:
             return
 
@@ -5127,12 +5139,9 @@ def bias_server_handlers(input, output, session):
             args_A = _prepare_args(res_A, bundle_A)
 
             args_B = None
-            compare = (active_bias_compare_models.get() or active_bias_compare_prompts.get())
-            if compare:
-                bundle_B = ig_results_B.get()
-                res_B = bias_results_B.get()
-                if bundle_B and res_B and isinstance(bundle_B, IGAnalysisBundle):
-                    args_B = _prepare_args(res_B, bundle_B)
+            bundle_B = ig_results_B.get()
+            if show_comparison and bundle_B and res_B and isinstance(bundle_B, IGAnalysisBundle):
+                args_B = _prepare_args(res_B, bundle_B)
 
             loop = asyncio.get_running_loop()
             with ThreadPoolExecutor(max_workers=1) as pool:
@@ -5162,9 +5171,8 @@ def bias_server_handlers(input, output, session):
             return None
 
         bundle_B = perturbation_results_B.get()
-        compare_models = active_bias_compare_models.get()
-        compare_prompts = active_bias_compare_prompts.get()
-        show_comparison = (compare_models or compare_prompts) and bundle_B
+        res_A_ctx, res_B_ctx, resolved_show_comparison = _resolve_faithfulness_results()
+        show_comparison = resolved_show_comparison and bundle_B
 
         # Get IG data for comparison charts
         ig_bundle_A = ig_results.get()
@@ -5271,14 +5279,19 @@ def bias_server_handlers(input, output, session):
         )
 
         if show_comparison:
-            res_A_ctx = bias_results.get()
-            res_B_ctx = bias_results_B.get()
+            _src_m = _get_attn_source_mode("bias_attn_source")
+            if _src_m == "compare":
+                _lA, _lB = "Base Encoder", "GUS-Net"
+            else:
+                _lA, _lB = "Model A", "Model B"
+            _hA = (f"Perturbation Analysis{_source_badge_html(_lA)}", header_args[1], header_args[2])
+            _hB = (f"Perturbation Analysis{_source_badge_html(_lB)}", header_args[1], header_args[2])
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(_render_perturb_single(bundle_A, ig_bundle_A, "_A", res_A_ctx), *header_args,
+                _wrap_card(_render_perturb_single(bundle_A, ig_bundle_A, "_A", res_A_ctx), *_hA,
                            style="border: 2px solid #3b82f6; height: 100%;",
                            controls=[ui.download_button("export_perturbation_csv", "CSV", style=_BTN_STYLE_CSV)]),
-                _wrap_card(_render_perturb_single(bundle_B, ig_bundle_B, "_B", res_B_ctx), *header_args,
+                _wrap_card(_render_perturb_single(bundle_B, ig_bundle_B, "_B", res_B_ctx), *_hB,
                            style="border: 2px solid #ff5ca9; height: 100%;",
                            controls=[ui.download_button("export_perturbation_csv_B", "CSV", style=_BTN_STYLE_CSV)])
             )
@@ -5320,7 +5333,7 @@ def bias_server_handlers(input, output, session):
         if not bundle_A or not isinstance(bundle_A, IGAnalysisBundle):
             return
 
-        res_A = bias_results.get()
+        res_A, res_B, show_comparison = _resolve_faithfulness_results()
         if not res_A:
             return
 
@@ -5343,12 +5356,9 @@ def bias_server_handlers(input, output, session):
             args_A = _prepare_args(res_A, bundle_A)
 
             args_B = None
-            compare = (active_bias_compare_models.get() or active_bias_compare_prompts.get())
-            if compare:
-                bundle_B = ig_results_B.get()
-                res_B = bias_results_B.get()
-                if bundle_B and res_B and isinstance(bundle_B, IGAnalysisBundle):
-                    args_B = _prepare_args(res_B, bundle_B)
+            bundle_B = ig_results_B.get()
+            if show_comparison and bundle_B and res_B and isinstance(bundle_B, IGAnalysisBundle):
+                args_B = _prepare_args(res_B, bundle_B)
 
             loop = asyncio.get_running_loop()
             with ThreadPoolExecutor(max_workers=1) as pool:
@@ -5378,9 +5388,8 @@ def bias_server_handlers(input, output, session):
             return None
 
         bundle_B = lrp_results_B.get()
-        compare_models = active_bias_compare_models.get()
-        compare_prompts = active_bias_compare_prompts.get()
-        show_comparison = (compare_models or compare_prompts) and bundle_B
+        _, _, resolved_show_comparison = _resolve_faithfulness_results()
+        show_comparison = resolved_show_comparison and bundle_B
 
         ig_bundle_A = ig_results.get()
         ig_bundle_B = ig_results_B.get()
@@ -5481,12 +5490,19 @@ def bias_server_handlers(input, output, session):
         )
 
         if show_comparison:
+            _src_m = _get_attn_source_mode("bias_attn_source")
+            if _src_m == "compare":
+                _lA, _lB = "Base Encoder", "GUS-Net"
+            else:
+                _lA, _lB = "Model A", "Model B"
+            _hA = (f"DeepLift / LRP Cross-Validation{_source_badge_html(_lA)}", header_args[1], header_args[2])
+            _hB = (f"DeepLift / LRP Cross-Validation{_source_badge_html(_lB)}", header_args[1], header_args[2])
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(_render_lrp_single(bundle_A, ig_bundle_A, "_A"), *header_args,
+                _wrap_card(_render_lrp_single(bundle_A, ig_bundle_A, "_A"), *_hA,
                            style="border: 2px solid #3b82f6; height: 100%;",
                            controls=[ui.download_button("export_lrp_csv", "CSV", style=_BTN_STYLE_CSV)]),
-                _wrap_card(_render_lrp_single(bundle_B, ig_bundle_B, "_B"), *header_args,
+                _wrap_card(_render_lrp_single(bundle_B, ig_bundle_B, "_B"), *_hB,
                            style="border: 2px solid #ff5ca9; height: 100%;",
                            controls=[ui.download_button("export_lrp_csv_B", "CSV", style=_BTN_STYLE_CSV)])
             )
@@ -5545,12 +5561,11 @@ def bias_server_handlers(input, output, session):
 
     def _stereoset_gusnet_key():
         """Return the GUS-NET key for the current base model, or *None* if
-        the toggle is OFF or GUS-NET data is unavailable."""
-        try:
-            use_gusnet = input.stereoset_gusnet_toggle()
-        except Exception:
-            use_gusnet = False
-        if not use_gusnet:
+        the source toggle is not set to gusnet/compare or GUS-NET data is
+        unavailable.  Driven by the floating-bar Source Attention toggle
+        (``bias_attn_source``) instead of the old inline checkbox."""
+        source = _get_attn_source_mode("bias_attn_source")
+        if source not in ("gusnet", "compare"):
             return None
         canonical = _stereoset_model_key()
         gk = get_gusnet_key(canonical)
@@ -5581,6 +5596,88 @@ def bias_server_handlers(input, output, session):
 
         from ..bias.stereoset.stereoset_data import _resolve_key
         return _resolve_key(base_mk)
+
+    def _stereoset_gusnet_warning_icon():
+        """Return a ⚠ tooltip icon explaining why GUS-Net StereoSet scores
+        should be interpreted with caution.  Designed to sit in the controls
+        area of a ``_wrap_card`` (right-aligned)."""
+        base_mk = _stereoset_model_key()
+        tooltip_html = (
+            f"<span style='{_TH}'>⚠ Interpret with caution</span>"
+            f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
+            f"<span>GUS-Net is a <b>token-level bias classifier</b> "
+            f"(BertForTokenClassification), not a language model.</span></div>"
+            f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
+            f"<span>Its StereoSet scores are computed by extracting the "
+            f"underlying <b>{base_mk.upper()}</b> encoder and scoring completions "
+            f"via pseudo-log-likelihood.</span></div>"
+            f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
+            f"<span>The fine-tuning objective (bias detection) alters internal "
+            f"representations in ways that may <b>distort LM-level metrics</b> "
+            f"like SS and LMS.</span></div>"
+            f"<hr style='{_TS}'/>"
+            f"<div style='{_TN}'>For this reason, only the base model scores "
+            f"are presented in the upper StereoSet sections.</div>"
+        )
+        return ui.div(
+            {"class": "info-tooltip-wrapper"},
+            ui.span(
+                {"class": "info-tooltip-icon",
+                 "style": "background:rgba(255,92,169,0.12);border-color:#ff5ca940;"
+                          "color:#ff5ca9;font-size:11px;"},
+                "⚠",
+            ),
+            ui.div({"class": "info-tooltip-content"}, ui.HTML(tooltip_html)),
+        )
+
+    def _stereoset_gusnet_warning_html():
+        """Return raw HTML string version of the ⚠ tooltip, for use inside
+        ``_chart_with_png_btn`` controls."""
+        base_mk = _stereoset_model_key()
+        tooltip_html = (
+            f"<span style='{_TH}'>⚠ Interpret with caution</span>"
+            f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
+            f"<span>GUS-Net is a <b>token-level bias classifier</b> "
+            f"(BertForTokenClassification), not a language model.</span></div>"
+            f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
+            f"<span>Its StereoSet scores are computed by extracting the "
+            f"underlying <b>{base_mk.upper()}</b> encoder and scoring completions "
+            f"via pseudo-log-likelihood.</span></div>"
+            f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
+            f"<span>The fine-tuning objective (bias detection) alters internal "
+            f"representations in ways that may <b>distort LM-level metrics</b> "
+            f"like SS and LMS.</span></div>"
+            f"<hr style='{_TS}'/>"
+            f"<div style='{_TN}'>For this reason, only the base model scores "
+            f"are presented in the upper StereoSet sections.</div>"
+        )
+        return (
+            '<div class="info-tooltip-wrapper" style="display:inline-flex;">'
+            '<span class="info-tooltip-icon" style="background:rgba(255,92,169,0.12);'
+            'border-color:#ff5ca940;color:#ff5ca9;font-size:11px;">⚠</span>'
+            f'<div class="info-tooltip-content">{tooltip_html}</div>'
+            '</div>'
+        )
+
+    def _stereoset_resolve_key_for_source():
+        """Return the stereoset model key based on the current source toggle.
+        - base → canonical base key (e.g. 'bert')
+        - gusnet → GUS-Net key (e.g. 'gusnet_bert')
+        - compare → (base_key, gusnet_key)
+        """
+        src = _get_attn_source_mode("bias_attn_source")
+        base_mk = _stereoset_model_key()
+        if src == "gusnet":
+            gk = get_gusnet_key(base_mk)
+            if get_stereoset_scores(gk) is not None:
+                return gk
+            return base_mk  # fallback
+        if src == "compare":
+            gk = get_gusnet_key(base_mk)
+            if get_stereoset_scores(gk) is not None:
+                return (base_mk, gk)
+            return base_mk  # fallback to single
+        return base_mk
 
     @output
     @render.ui
@@ -5683,9 +5780,12 @@ def bias_server_handlers(input, output, session):
                 card_A, card_B
             )
 
-        # Single mode legacy path
-        scores = get_stereoset_scores(mk_A)
-        metadata = get_metadata(mk_A)
+        # ── Source-aware single mode ──
+        # Overview always shows a single model (no side-by-side in compare)
+        resolved = _stereoset_resolve_key_for_source()
+        mk = resolved[0] if isinstance(resolved, tuple) else resolved
+        scores = get_stereoset_scores(mk)
+        metadata = get_metadata(mk)
         if scores is None or metadata is None:
             return ui.div(
                 ui.p(
@@ -5695,13 +5795,41 @@ def bias_server_handlers(input, output, session):
                     style="color:#94a3b8;font-size:12px;",
                 ),
             )
+        # Always show the base model name in the title (never the GUS-Net HF path)
+        base_mk = _stereoset_model_key()
+        base_meta = get_metadata(base_mk)
+        base_label = base_meta.get("model", base_mk) if base_meta else base_mk
         model_label = metadata.get("model", "unknown")
         is_gusnet = "gus-net" in model_label.lower()
         html = create_stereoset_overview_html(scores, metadata, is_gusnet)
+        src_mode = _get_attn_source_mode("bias_attn_source")
+        _overview_controls = [_stereoset_gusnet_warning_icon()] if src_mode == "gusnet" and is_gusnet else None
         return _wrap_card(
             ui.HTML(html),
-            manual_header=("Benchmark Scores", f"StereoSet intersentence evaluation on <b style='color:#ff5ca9;'>{model_label}</b>"),
+            manual_header=(f"Benchmark Scores{_source_badge_html('Base Encoder')}", f"StereoSet intersentence evaluation on <b style='color:#ff5ca9;'>{base_label}</b>"),
             help_text=_benchmark_help,
+            controls=_overview_controls,
+        )
+
+    @output
+    @render.ui
+    def stereoset_category_header():
+        """Dynamic subsection header for Category & Demographic Breakdown with source badge."""
+        src_mode = _get_attn_source_mode("bias_attn_source")
+        badge = _source_badge_html("Base Encoder")
+        return ui.div(
+            {"style": "margin: 12px 0 8px;"},
+            ui.HTML(
+                f'<h5 style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; '
+                f'color: #f8fafc; letter-spacing: 0.2px; display:inline-flex; align-items:center;">'
+                f'Category and Demographic Breakdown{badge}</h5>'
+            ),
+            ui.p(
+                "These views show where the benchmark signal comes from: broad categories first, "
+                "then finer demographic target slices. This is the most important block for "
+                "discussing which groups are disproportionately affected.",
+                style="margin: 0 0 10px 0; font-size: 12px; line-height: 1.5; color: #94a3b8;",
+            ),
         )
 
     @output
@@ -5709,7 +5837,8 @@ def bias_server_handlers(input, output, session):
     def stereoset_category_breakdown():
         """Category bar chart + bias distribution violin side-by-side."""
         mk_A = _stereoset_model_key()
-        
+        _src_mode = _get_attn_source_mode("bias_attn_source")
+
         def _render_single(mk, style=None, layout="row", container_suffix=""):
             scores = get_stereoset_scores(mk)
             examples = get_stereoset_examples(mk)
@@ -5721,17 +5850,20 @@ def bias_server_handlers(input, output, session):
             fig_cat = create_stereoset_category_chart(by_cat)
             fig_dist = create_stereoset_bias_distribution(examples)
 
+            _warn_ctrl = [_stereoset_gusnet_warning_html()] if _src_mode == "gusnet" else None
             cat_html = _chart_with_png_btn(
                 _deferred_plotly(fig_cat, f"stereoset-cat-chart{container_suffix}"),
-                f"stereoset-cat-chart{container_suffix}", f"stereoset_category{container_suffix}"
+                f"stereoset-cat-chart{container_suffix}", f"stereoset_category{container_suffix}",
+                controls=_warn_ctrl,
             )
             dist_html = _chart_with_png_btn(
                 _deferred_plotly(fig_dist, f"stereoset-dist-chart{container_suffix}"),
-                f"stereoset-dist-chart{container_suffix}", f"stereoset_distribution{container_suffix}"
+                f"stereoset-dist-chart{container_suffix}", f"stereoset_distribution{container_suffix}",
+                controls=_warn_ctrl,
             )
-            
+
             card_style = style if style else ""
-            
+
             container_style = "display:grid;grid-template-columns:1fr 1fr;gap:16px;" if layout == "row" else "display:flex;flex-direction:column;gap:16px;"
 
             _cat_csv_id = "export_stereoset_category_csv_B" if container_suffix == "_B" else "export_stereoset_category_csv"
@@ -5750,14 +5882,18 @@ def bias_server_handlers(input, output, session):
         if compare_models and mk_B:
             content_A = _render_single(mk_A, style="border: 2px solid #3b82f6;", layout="column", container_suffix="_A") or ui.div("No data for Model A")
             content_B = _render_single(mk_B, style="border: 2px solid #ff5ca9;", layout="column", container_suffix="_B") or ui.div("No data for Model B")
-            
+
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 content_A,
                 content_B
             )
 
-        return _render_single(mk_A) or ui.div()
+        # ── Source-aware single mode ──
+        # Category breakdown always shows a single model (no side-by-side in compare)
+        resolved = _stereoset_resolve_key_for_source()
+        mk = resolved[0] if isinstance(resolved, tuple) else resolved
+        return _render_single(mk) or ui.div()
 
     @output
     @render.ui
@@ -5834,7 +5970,7 @@ def bias_server_handlers(input, output, session):
             return ui.div(ui.HTML(summary_html), ui.HTML(chart_grid)), len(targets)
 
         header_args = (
-            "Demographic Slice Analysis",
+            f"Demographic Slice Analysis{_source_badge_html('Base Encoder')}",
             "StereoSet Stereotype Score (SS) broken down by demographic target group.",
             f"<span style='{_TH}'>What is this?</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
@@ -5889,12 +6025,20 @@ def bias_server_handlers(input, output, session):
                            controls=[ui.download_button("export_stereoset_demographic_csv_B", "CSV", style=_BTN_STYLE_CSV)])
             )
         
-        res = _render_single(mk_A)
-        content = res[0] if res else ui.div()
+        # ── Source-aware single mode ──
+        # Demographic slices always shows a single model (no side-by-side in compare)
+        resolved = _stereoset_resolve_key_for_source()
+        mk = resolved[0] if isinstance(resolved, tuple) else resolved
+        res = _render_single(mk)
+        inner = res[0] if res else ui.div()
         n_targets = res[1] if res else 0
-        
-        return _wrap_card(content, header_args[0], f"Stereotype Score breakdown by target group ({n_targets} targets with n ≥ 10)", header_args[2],
-                          controls=[ui.download_button("export_stereoset_demographic_csv", "CSV", style=_BTN_STYLE_CSV)])
+        src_mode = _get_attn_source_mode("bias_attn_source")
+        _demo_controls = [ui.download_button("export_stereoset_demographic_csv", "CSV", style=_BTN_STYLE_CSV)]
+        if src_mode == "gusnet":
+            _demo_controls.insert(0, _stereoset_gusnet_warning_icon())
+
+        return _wrap_card(inner, header_args[0], f"Stereotype Score breakdown by target group ({n_targets} targets with n ≥ 10)", header_args[2],
+                          controls=_demo_controls)
 
     @output
     @render.ui
@@ -5982,8 +6126,10 @@ def bias_server_handlers(input, output, session):
                 ui.HTML(features_html),
             )
 
+        _src = _get_attn_source_mode("bias_attn_source")
+        _src_badge = _source_badge_html("GUS-Net" if _src == "gusnet" else "Base Encoder") if _src != "compare" else ""
         header_args = (
-            "Head Sensitivity Analysis",
+            f"Head Sensitivity Analysis{_src_badge}",
             "Which attention heads respond differently across bias categories (gender / race / religion / profession)?",
             f"<span style='{_TH}'>Sensitivity formula</span>"
             f"<div style='{_TR};font-family:JetBrains Mono,monospace;font-size:10px;color:#e2e8f0;'>"
@@ -6003,12 +6149,10 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TN}'>Combine with BAR: a head that is both BAR-specialised and category-sensitive is the most diagnostically informative.</div>"
         )
 
-        # ── GUS-NET toggle (inline in header) ──
-        gk = _stereoset_gusnet_key()  # None when toggle OFF or no data
-        try:
-            toggle_checked = input.stereoset_gusnet_toggle()
-        except Exception:
-            toggle_checked = False
+        # ── GUS-NET source (driven by floating bar Source Attention toggle) ──
+        gk = _stereoset_gusnet_key()  # None when source is "base" or no data
+        source_mode = _get_attn_source_mode("bias_attn_source")
+        gusnet_active = source_mode in ("gusnet", "compare")
 
         # ── Similarity badge (computed when GUS-NET data exists) ──
         canonical = _stereoset_model_key()
@@ -6016,7 +6160,7 @@ def bias_server_handlers(input, output, session):
         sim = compute_model_similarity(canonical, gusnet_k)
 
         sim_badge_html = ""
-        if sim is not None and toggle_checked:
+        if sim is not None and gusnet_active:
             pct = sim["overall_pct"]
             if pct >= 80:
                 badge_color = "#22c55e"  # green
@@ -6069,7 +6213,7 @@ def bias_server_handlers(input, output, session):
                 f'</div>'
             )
 
-        _toggle_html = ui.HTML(
+        _sim_badge_widget = ui.HTML(
             # Inline CSS + JS for similarity tooltip with fixed positioning
             '<style>'
             '.sim-badge-wrapper:hover .sim-tooltip{display:block!important;}'
@@ -6086,66 +6230,33 @@ def bias_server_handlers(input, output, session):
             'tt.style.transform="translateX(-50%)";'
             '});'
             '</script>'
-            '<div style="display:flex;align-items:center;gap:0;white-space:nowrap;">'
-            # Similarity badge FIRST (left of toggle)
-            + sim_badge_html +
-            # Modern pill toggle
-            '<div style="display:flex;align-items:center;gap:6px;cursor:pointer;" '
-            f'onclick="var cb=document.getElementById(\'stereoset_gusnet_toggle\');'
-            f'cb.checked=!cb.checked;cb.dispatchEvent(new Event(\'change\'));">'
-            f'<span style="font-size:10px;font-weight:600;letter-spacing:0.3px;'
-            f'color:{"#ff5ca9" if toggle_checked else "#94a3b8"};'
-            f'transition:color 0.2s ease;">GUS-NET</span>'
-            # Toggle track
-            f'<div style="position:relative;width:28px;height:14px;border-radius:7px;'
-            f'background:{"#ff5ca9" if toggle_checked else "rgba(148,163,184,0.3)"};'
-            f'transition:background 0.25s ease;flex-shrink:0;">'
-            # Toggle knob
-            f'<div style="position:absolute;top:2px;'
-            f'{"left:14px" if toggle_checked else "left:2px"};'
-            f'width:10px;height:10px;border-radius:50%;background:white;'
-            f'box-shadow:0 1px 3px rgba(0,0,0,0.2);transition:left 0.25s ease;"></div>'
-            f'</div></div>'
-            # Hidden real checkbox
-            f'<input type="checkbox" id="stereoset_gusnet_toggle" '
-            f'style="display:none;" '
-            f'{"checked " if toggle_checked else ""}'
-            f"onchange=\"Shiny.setInputValue('stereoset_gusnet_toggle', this.checked, {{priority: 'event'}});\">"
-            '</div>'
-        )
+            + sim_badge_html
+        ) if sim_badge_html else None
 
-        compare_models = active_bias_compare_models.get()
-        mk_B = _stereoset_model_key_B() if compare_models else None
-
-        base_controls = [
-            _toggle_html,
+        csv_controls = [
             ui.download_button("export_stereoset_sensitivity_csv", "Heads CSV", style=_BTN_STYLE_CSV),
             ui.download_button("export_stereoset_features_csv", "Features CSV", style=_BTN_STYLE_CSV),
         ]
 
-        if compare_models and mk_B:
-            c_A = _render_single(mk_A, "_A") or ui.div("No data")
-            c_B = _render_single(mk_B, "_B") or ui.div("No data")
+        # ── Source-aware rendering (takes priority over sidebar model comparison) ──
+        if gk and source_mode == "gusnet":
+            # GUS-Net only — no similarity badge (references both models)
+            return _wrap_card(_render_single(gk) or ui.div(), *header_args,
+                              controls=csv_controls)
 
-            return ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(c_A, *header_args, style="border: 2px solid #3b82f6; height: 100%;",
-                           controls=base_controls),
-                _wrap_card(c_B, *header_args, style="border: 2px solid #ff5ca9; height: 100%;",
-                           controls=[
-                               ui.download_button("export_stereoset_sensitivity_csv_B", "Heads CSV", style=_BTN_STYLE_CSV),
-                               ui.download_button("export_stereoset_features_csv_B", "Features CSV", style=_BTN_STYLE_CSV),
-                           ])
-            )
-
-        # ── GUS-NET side-by-side when toggle is ON ──
-        if gk:
+        if gk and source_mode == "compare":
+            # Side-by-side Base vs GUS-Net
             c_base = _render_single(mk_A, "_base") or ui.div("No data")
             c_gus  = _render_single(gk, "_gusnet") or ui.div("No GUS-NET data")
             meta_base = get_metadata(mk_A) or {}
             meta_gus  = get_metadata(gk) or {}
             label_base = meta_base.get("model", mk_A).upper()
             label_gus  = _clean_gusnet_label(meta_gus.get("model", gk))
+
+            compare_controls = [
+                c for c in [_sim_badge_widget] + csv_controls
+                if c is not None
+            ]
 
             return _wrap_card(
                 ui.div(
@@ -6166,11 +6277,31 @@ def bias_server_handlers(input, output, session):
                     ),
                 ),
                 *header_args,
-                controls=base_controls,
+                controls=compare_controls,
             )
 
+        # ── Sidebar model comparison (only when source toggle is "base") ──
+        compare_models = active_bias_compare_models.get()
+        mk_B = _stereoset_model_key_B() if compare_models else None
+
+        if compare_models and mk_B:
+            c_A = _render_single(mk_A, "_A") or ui.div("No data")
+            c_B = _render_single(mk_B, "_B") or ui.div("No data")
+
+            return ui.div(
+                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                _wrap_card(c_A, *header_args, style="border: 2px solid #3b82f6; height: 100%;",
+                           controls=csv_controls),
+                _wrap_card(c_B, *header_args, style="border: 2px solid #ff5ca9; height: 100%;",
+                           controls=[
+                               ui.download_button("export_stereoset_sensitivity_csv_B", "Heads CSV", style=_BTN_STYLE_CSV),
+                               ui.download_button("export_stereoset_features_csv_B", "Features CSV", style=_BTN_STYLE_CSV),
+                           ])
+            )
+
+        # Base only (default)
         return _wrap_card(_render_single(mk_A) or ui.div(), *header_args,
-                          controls=base_controls)
+                          controls=csv_controls)
 
     @render.download(filename="top_discriminative_features.csv")
     def export_stereoset_features_csv():
@@ -6383,8 +6514,8 @@ def bias_server_handlers(input, output, session):
     def stereoset_attention_bias_link():
         """Obj 3 + Obj 4 — Attention patterns linked to StereoSet bias scores."""
         mk_A = _stereoset_model_key()
-        compare_models = active_bias_compare_models.get()
-        mk_B = _stereoset_model_key_B() if compare_models else None
+        source_mode = _get_attn_source_mode("bias_attn_source")
+        gk = _stereoset_gusnet_key()
 
         try:
             top_k = int(input.bias_top_k())
@@ -6478,8 +6609,9 @@ def bias_server_handlers(input, output, session):
                 ui.HTML(f'<div>{scatter_html}</div>'),
             )
 
+        _corr_badge = _source_badge_html("GUS-Net" if source_mode == "gusnet" else "Base Encoder") if source_mode != "compare" else ""
         header_args = (
-            "Attention–Bias Correlation",
+            f"Attention–Bias Correlation{_corr_badge}",
             "Do sensitive heads actually attend differently when processing stereotyped vs anti-stereotyped content?",
             f"<span style='{_TH}'>Head distributions</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
@@ -6500,18 +6632,13 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TN}'>Bridges StereoSet benchmark (aggregate) → per-sentence attention (mechanistic). Primary evidence for the attention-as-bias-mechanism hypothesis.</div>"
         )
 
-        if compare_models and mk_B:
-            c_A = _render_pair(mk_A, "_A")
-            c_B = _render_pair(mk_B, "_B")
-            return ui.div(
-                {"style": "display:grid;grid-template-columns:1fr 1fr;gap:24px;"},
-                _wrap_card(c_A, *header_args, style="border:2px solid #3b82f6;height:100%;"),
-                _wrap_card(c_B, *header_args, style="border:2px solid #ff5ca9;height:100%;"),
-            )
+        # ── Source-aware rendering (takes priority over sidebar model comparison) ──
+        if gk and source_mode == "gusnet":
+            # GUS-Net only
+            return _wrap_card(_render_pair(gk), *header_args)
 
-        # ── GUS-NET 2×2 grid: dist side-by-side on top, scatter side-by-side below ──
-        gk = _stereoset_gusnet_key()
-        if gk:
+        if gk and source_mode == "compare":
+            # Side-by-side 2×2 grid
             dist_base, scatter_base = _render_pair_blocks(mk_A, "_base")
             dist_gus,  scatter_gus  = _render_pair_blocks(gk, "_gusnet")
             meta_base = get_metadata(mk_A) or {}
@@ -6529,14 +6656,12 @@ def bias_server_handlers(input, output, session):
 
             return _wrap_card(
                 ui.div(
-                    # Row 1: Distributions side by side
                     ui.HTML(
                         f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;margin-bottom:24px;">'
                         f'{_col(label_base, "#3b82f6", dist_base)}'
                         f'{_col(label_gus, "#ff5ca9", dist_gus)}'
                         f'</div>'
                     ),
-                    # Row 2: Scatter side by side
                     ui.HTML(
                         f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;">'
                         f'{_col(label_base, "#3b82f6", scatter_base)}'
@@ -6547,19 +6672,45 @@ def bias_server_handlers(input, output, session):
                 *header_args,
             )
 
+        # ── Sidebar model comparison (only when source toggle is "base") ──
+        compare_models = active_bias_compare_models.get()
+        mk_B = _stereoset_model_key_B() if compare_models else None
+
+        if compare_models and mk_B:
+            c_A = _render_pair(mk_A, "_A")
+            c_B = _render_pair(mk_B, "_B")
+            return ui.div(
+                {"style": "display:grid;grid-template-columns:1fr 1fr;gap:24px;"},
+                _wrap_card(c_A, *header_args, style="border:2px solid #3b82f6;height:100%;"),
+                _wrap_card(c_B, *header_args, style="border:2px solid #ff5ca9;height:100%;"),
+            )
+
+        # Base only (default)
         return _wrap_card(_render_pair(mk_A), *header_args)
 
     @output
     @render.ui
     def stereoset_example_explorer():
         """Interactive example explorer with category filter and detail view."""
-        mk = _stereoset_model_key()
+        source_mode = _get_attn_source_mode("bias_attn_source")
+        gk = _stereoset_gusnet_key()
+
+        # Source-aware: gusnet → show GUS-Net data, base → base, compare → both
+        if source_mode == "gusnet" and gk:
+            mk = gk
+        else:
+            mk = _stereoset_model_key()
         examples = get_stereoset_examples(mk)
 
-        # Comparison setup — GUS-NET toggle acts like a virtual Model B
-        compare_models = active_bias_compare_models.get()
-        gk = _stereoset_gusnet_key()  # None when toggle OFF
-        mk_B = _stereoset_model_key_B() if compare_models else (gk if gk else None)
+        # Source toggle takes priority over sidebar model comparison
+        if source_mode == "gusnet":
+            mk_B = None  # GUS-Net only, no second model
+        elif source_mode == "compare" and gk:
+            mk_B = gk
+        elif active_bias_compare_models.get():
+            mk_B = _stereoset_model_key_B()
+        else:
+            mk_B = None
         has_B = mk_B is not None
         examples_B = get_stereoset_examples(mk_B) if has_B else []
         # Map context -> example for quick lookup
@@ -6956,7 +7107,7 @@ def bias_server_handlers(input, output, session):
                 ui.HTML(detail_section),
             ),
             manual_header=(
-                "Example Explorer",
+                f"Example Explorer{_source_badge_html('GUS-Net' if source_mode == 'gusnet' else 'Base Encoder') if source_mode != 'compare' else ''}",
                 "Browse StereoSet examples - click to inspect with attention heatmaps",
             ),
         )
