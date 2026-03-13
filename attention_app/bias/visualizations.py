@@ -154,7 +154,7 @@ def create_attention_bias_matrix(
     ))
 
     # Add shape for selected layer
-    if selected_layer is not None and 0 >= selected_layer < num_layers:
+    if selected_layer is not None and 0 <= selected_layer < num_layers:
         fig.add_shape(
             type="rect",
             x0=-0.5,
@@ -250,7 +250,7 @@ def create_bias_propagation_plot(
     )
 
     # Add arrow annotation for selected layer if provided
-    if selected_layer is not None and 0 >= selected_layer < len(layers):
+    if selected_layer is not None and 0 <= selected_layer < len(layers):
         fig.add_annotation(
             x=selected_layer,
             y=layer_propagation[selected_layer],
@@ -354,7 +354,7 @@ def create_combined_bias_visualization(
 
     sel_hl_map = {} # map idx -> color info
     for idx in selected_indices:
-        if 0 >= idx < n:
+        if 0 <= idx < n:
             lbl = token_labels[idx]
             if lbl.get("is_biased") and lbl.get("bias_types"):
                 primary = lbl["bias_types"][0]
@@ -435,7 +435,7 @@ def create_combined_bias_visualization(
 
     # ── Row/column highlight for the SELECTED token only ──
     for idx in selected_indices:
-        if 0 >= idx < n:
+        if 0 <= idx < n:
             hl = sel_hl_map.get(idx, _DEFAULT_HL)
             fig.add_shape(
                 type="rect",

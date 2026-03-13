@@ -1100,19 +1100,19 @@ JS_TRANSITION_MODAL = """
                             <p>Given sentences Sₐ and Sᵦ with token indices [iₐ, iₐ₊₁) and [iᵦ, iᵦ₊₁):</p>
                             
                             <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #ff5ca9;">
-                                <strong style="color:#ff5ca9;">Step 1 — Layer Integration:</strong><br>
+                                <strong style="color:#ff5ca9;">Step 1 - Layer Integration:</strong><br>
                                 A(i,j) = max<sub>l∈L</sub> α<sub>l</sub>(i,j)<br><br>
                                 <span style="color:#94a3b8;">where α<sub>l</sub>(i,j) = softmax(Q<sub>l,i</sub>K<sub>l,j</sub><sup>T</sup>/√d<sub>k</sub>)</span>
                             </div>
                             
                             <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #3b82f6;">
-                                <strong style="color:#3b82f6;">Step 2 — Token Pair Aggregation:</strong><br>
+                                <strong style="color:#3b82f6;">Step 2 - Token Pair Aggregation:</strong><br>
                                 β<sub>h</sub>(Sₐ, Sᵦ) = max<sub>(i,j)∈Sₐ×Sᵦ</sub> A(i,j)<br><br>
                                 <span style="color:#94a3b8;">Maximum attention between any token pair from the two sentences</span>
                             </div>
                             
                             <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #8b5cf6;">
-                                <strong style="color:#8b5cf6;">Step 3 — Head Aggregation:</strong><br>
+                                <strong style="color:#8b5cf6;">Step 3 - Head Aggregation:</strong><br>
                                 ISA(Sₐ, Sᵦ) = max<sub>h∈H</sub> β<sub>h</sub>(Sₐ, Sᵦ)<br><br>
                                 <span style="color:#94a3b8;">Maximum across all attention heads to preserve specialized patterns</span>
                             </div>
@@ -1145,19 +1145,19 @@ JS_TRANSITION_MODAL = """
                             <h4 style="color: #ff5ca9; margin-top: 16px;">Causal ISA Computation</h4>
                             
                             <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #ff5ca9;">
-                                <strong style="color:#ff5ca9;">Step 1 — Layer Integration (with causal mask):</strong><br>
+                                <strong style="color:#ff5ca9;">Step 1 - Layer Integration (with causal mask):</strong><br>
                                 A(i,j) = max<sub>l∈L</sub> α<sub>l</sub>(i,j) &nbsp;&nbsp;<strong style="color:#ef4444;">if i ≥ j, else 0</strong><br><br>
                                 <span style="color:#94a3b8;">Causal constraint: future tokens are masked (attention = 0)</span>
                             </div>
                             
                             <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #3b82f6;">
-                                <strong style="color:#3b82f6;">Step 2 — Token Pair Aggregation (valid pairs only):</strong><br>
+                                <strong style="color:#3b82f6;">Step 2 - Token Pair Aggregation (valid pairs only):</strong><br>
                                 β<sub>h</sub>(Sₐ, Sᵦ) = max<sub>(i,j)∈Sₐ×Sᵦ, i≥j</sub> A(i,j)<br><br>
                                 <span style="color:#94a3b8;">Only token pairs where query position ≥ key position</span>
                             </div>
                             
                             <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #8b5cf6;">
-                                <strong style="color:#8b5cf6;">Step 3 — Head Aggregation:</strong><br>
+                                <strong style="color:#8b5cf6;">Step 3 - Head Aggregation:</strong><br>
                                 ISA(Sₐ, Sᵦ) = max<sub>h∈H</sub> β<sub>h</sub>(Sₐ, Sᵦ)
                             </div>
 
@@ -1165,7 +1165,7 @@ JS_TRANSITION_MODAL = """
                             <ul style="padding-left: 20px; margin-bottom: 12px;">
                                 <li><strong>Causal Mask:</strong> Tokens only attend to previous tokens (left context)</li>
                                 <li><strong>Lower Triangular Matrix:</strong> ISA(Sₐ,Sᵦ) = 0 when Sₐ comes before Sᵦ</li>
-                                <li><strong>Asymmetric:</strong> ISA(Sₐ,Sᵦ) ≠ ISA(Sᵦ,Sₐ) — directionality matters!</li>
+                                <li><strong>Asymmetric:</strong> ISA(Sₐ,Sᵦ) ≠ ISA(Sᵦ,Sₐ) - directionality matters!</li>
                                 <li><strong>Interpretation:</strong> Measures how much later sentence Sₐ <em>depends on</em> earlier sentence Sᵦ</li>
                             </ul>
                             
@@ -1201,8 +1201,8 @@ JS_TRANSITION_MODAL = """
 
                     <ul style="font-size:13px;">
                         <li><strong>Special Token:</strong> <code>&lt;|endoftext|&gt;</code> marks sequence boundaries</li>
-                        <li><strong>No start token</strong> — generation begins directly from context</li>
-                        <li><strong>Output:</strong> <code>(batch, seq_len, 768)</code> — context-independent vectors</li>
+                        <li><strong>No start token</strong> - generation begins directly from context</li>
+                        <li><strong>Output:</strong> <code>(batch, seq_len, 768)</code> - context-independent vectors</li>
                     </ul>
                     `;
                 } else {
@@ -1220,9 +1220,9 @@ JS_TRANSITION_MODAL = """
                     <p>Token IDs index into the <strong>Token Embedding Matrix</strong> <code>E ∈ ℝ<sup>30,522 × 768</sup></code>.</p>
 
                     <ul style="font-size:13px;">
-                        <li><strong>[CLS]:</strong> Prepended to every sequence — aggregates sequence-level info</li>
-                        <li><strong>[SEP]:</strong> Appended after each sentence — demarcates boundaries</li>
-                        <li><strong>Output:</strong> <code>(batch, seq_len, 768)</code> — context-independent vectors</li>
+                        <li><strong>[CLS]:</strong> Prepended to every sequence - aggregates sequence-level info</li>
+                        <li><strong>[SEP]:</strong> Appended after each sentence - demarcates boundaries</li>
+                        <li><strong>Output:</strong> <code>(batch, seq_len, 768)</code> - context-independent vectors</li>
                     </ul>
                     `;
                 }
@@ -1233,7 +1233,7 @@ JS_TRANSITION_MODAL = """
                 if (modelType === 'gpt2') {
                     return `
                     <h4 style="color:#ff5ca9; margin-top:0;">Hidden States → Token Predictions (Causal LM)</h4>
-                    <p>The final layer outputs <strong>contextualized hidden states</strong> — dense vectors encoding both the token's meaning and information gathered from all preceding tokens.</p>
+                    <p>The final layer outputs <strong>contextualized hidden states</strong> - dense vectors encoding both the token's meaning and information gathered from all preceding tokens.</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #f97316;">
                         <strong style="color:#f97316;">Autoregressive Prediction:</strong><br>
@@ -1250,7 +1250,7 @@ JS_TRANSITION_MODAL = """
                     // BERT
                     return `
                     <h4 style="color:#ff5ca9; margin-top:0;">Hidden States → Token Predictions (MLM)</h4>
-                    <p>The final layer outputs <strong>contextualized hidden states</strong> — dense vectors encoding both the token's meaning and information from the entire sequence (bidirectional).</p>
+                    <p>The final layer outputs <strong>contextualized hidden states</strong> - dense vectors encoding both the token's meaning and information from the entire sequence (bidirectional).</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
                         <strong style="color:#3b82f6;">MLM Head Architecture:</strong><br>
@@ -1271,7 +1271,7 @@ JS_TRANSITION_MODAL = """
                 if (modelType === 'gpt2') {
                     return `
                     <h4 style="color:#ff5ca9; margin-top:0;">Adding Positional Information</h4>
-                    <p>Self-attention is <strong>permutation-equivariant</strong> — it has no inherent sense of token order. Positional embeddings inject sequence position information.</p>
+                    <p>Self-attention is <strong>permutation-equivariant</strong> - it has no inherent sense of token order. Positional embeddings inject sequence position information.</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #f97316;">
                         <strong style="color:#f97316;">GPT-2 Embedding Sum:</strong><br>
@@ -1287,7 +1287,7 @@ JS_TRANSITION_MODAL = """
                 } else {
                     return `
                     <h4 style="color:#ff5ca9; margin-top:0;">Adding Position & Segment Information</h4>
-                    <p>Self-attention is <strong>permutation-equivariant</strong> — it has no inherent sense of token order. BERT combines three embedding types.</p>
+                    <p>Self-attention is <strong>permutation-equivariant</strong> - it has no inherent sense of token order. BERT combines three embedding types.</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
                         <strong style="color:#3b82f6;">BERT Embedding Sum:</strong><br>
@@ -1308,7 +1308,7 @@ JS_TRANSITION_MODAL = """
                 // 'Input_Token Embeddings' is handled dynamically above
                 'Token Embeddings_Segment Embeddings': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Adding Sentence Membership (BERT only)</h4>
-                    <p><strong>Segment Embeddings</strong> provide explicit information about which sentence each token belongs to — essential for sentence-pair tasks.</p>
+                    <p><strong>Segment Embeddings</strong> provide explicit information about which sentence each token belongs to - essential for sentence-pair tasks.</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
                         <strong style="color:#3b82f6;">Token Type Assignment:</strong><br>
@@ -1321,11 +1321,11 @@ JS_TRANSITION_MODAL = """
                         <li><strong>ID 0:</strong> Sentence A (incl. [CLS] and first [SEP])</li>
                         <li><strong>ID 1:</strong> Sentence B (incl. final [SEP])</li>
                     </ul>
-                    <p style="font-size:12px; color:#94a3b8;">GPT-2 omits this — it processes continuous text without explicit boundaries.</p>
+                    <p style="font-size:12px; color:#94a3b8;">GPT-2 omits this - it processes continuous text without explicit boundaries.</p>
                 `,
                 'Segment Embeddings_Positional Embeddings': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Injecting Position Information</h4>
-                    <p>Transformers are <strong>permutation-equivariant</strong> — unlike RNNs, they process all tokens in parallel with no inherent ordering. Positional embeddings solve this.</p>
+                    <p>Transformers are <strong>permutation-equivariant</strong> - unlike RNNs, they process all tokens in parallel with no inherent ordering. Positional embeddings solve this.</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #8b5cf6;">
                         <strong style="color:#8b5cf6;">Position Embedding Lookup:</strong><br>
@@ -1335,7 +1335,7 @@ JS_TRANSITION_MODAL = """
 
                     <ul style="font-size:13px;">
                         <li><strong>Matrix:</strong> <code>E<sub>pos</sub> ∈ ℝ<sup>512 × 768</sup></code> (BERT-base)</li>
-                        <li><strong>Learned</strong> (not sinusoidal) — optimized during pre-training</li>
+                        <li><strong>Learned</strong> (not sinusoidal) - optimized during pre-training</li>
                         <li><strong>Limitation:</strong> Cannot generalize beyond max_seq_len</li>
                     </ul>
                 `,
@@ -1355,7 +1355,7 @@ JS_TRANSITION_MODAL = """
                         <li><strong>β (shift):</strong> Initialized to 0</li>
                         <li><strong>ε:</strong> Small constant (1e-12) for numerical stability</li>
                     </ul>
-                    <p style="font-size:12px; color:#94a3b8;">Unlike BatchNorm, LayerNorm works on each sample independently — ideal for variable-length sequences.</p>
+                    <p style="font-size:12px; color:#94a3b8;">Unlike BatchNorm, LayerNorm works on each sample independently - ideal for variable-length sequences.</p>
                 `,
                 'Sum & Layer Normalization_Q/K/V Projections': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Query, Key, Value Projections</h4>
@@ -1391,7 +1391,7 @@ JS_TRANSITION_MODAL = """
                         <li><strong>LayerNorm</strong> stabilizes values before attention</li>
                     </ul>
 
-                    <p style="font-size:12px; color:#94a3b8;">The summed representation is the model's initial understanding — context-independent at this stage. Contextualization happens in subsequent attention layers.</p>
+                    <p style="font-size:12px; color:#94a3b8;">The summed representation is the model's initial understanding - context-independent at this stage. Contextualization happens in subsequent attention layers.</p>
                 `,
                 'Q/K/V Projections_Add & Norm': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Scaled Dot-Product Attention → Residual → Norm</h4>
@@ -1417,12 +1417,12 @@ JS_TRANSITION_MODAL = """
                 `,
                 'Scaled Dot-Product Attention_Global Attention Metrics': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Attention Analysis (Interpretability)</h4>
-                    <p>Quantitative measures computed across attention distributions — <em>does not alter computation</em>, only analyzes patterns.</p>
+                    <p>Quantitative measures computed across attention distributions - <em>does not alter computation</em>, only analyzes patterns.</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0;">
                         <strong style="color:#94a3b8; font-size:12px;">Key Metrics:</strong><br>
-                        <span style="font-size:11px;"><strong style="color:#22c55e;">Entropy:</strong> H(A) = -Σ A[i,j]·log(A[i,j]) — high = diffuse, low = focused</span><br>
-                        <span style="font-size:11px;"><strong style="color:#3b82f6;">Confidence:</strong> max(A[i,:]) — strength of strongest connection</span><br>
+                        <span style="font-size:11px;"><strong style="color:#22c55e;">Entropy:</strong> H(A) = -Σ A[i,j]·log(A[i,j]) - high = diffuse, low = focused</span><br>
+                        <span style="font-size:11px;"><strong style="color:#3b82f6;">Confidence:</strong> max(A[i,:]) - strength of strongest connection</span><br>
                         <span style="font-size:11px;"><strong style="color:#f59e0b;">Sparsity:</strong> % of weights below threshold τ</span>
                     </div>
 
@@ -1466,7 +1466,7 @@ JS_TRANSITION_MODAL = """
                 `,
                 'Attention Flow_Attention Head Specialization': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Head Specialization Analysis</h4>
-                    <p>Attention patterns are analyzed to identify linguistic features captured by individual heads — correlating weights with annotated structures.</p>
+                    <p>Attention patterns are analyzed to identify linguistic features captured by individual heads - correlating weights with annotated structures.</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0;">
                         <strong style="color:#94a3b8; font-size:12px;">7 Analysis Dimensions:</strong><br>
@@ -1479,7 +1479,7 @@ JS_TRANSITION_MODAL = """
                         <span style="font-size:11px;"><strong style="color:#ec4899;">Self-attention:</strong> Diagonal attention strength</span>
                     </div>
 
-                    <p style="font-size:12px; color:#94a3b8;">⚠️ POS-based heuristic — heads may capture patterns not aligned with traditional categories.</p>
+                    <p style="font-size:12px; color:#94a3b8;">⚠️ POS-based heuristic - heads may capture patterns not aligned with traditional categories.</p>
                 `,
                 'Attention Head Specialization_Attention Dependency Tree': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Attention Dependency Tree</h4>
@@ -1499,11 +1499,11 @@ JS_TRANSITION_MODAL = """
                         <li><strong>Depth:</strong> Reveals transitive information flow</li>
                     </ul>
 
-                    <p style="font-size:12px; color:#94a3b8;">⚠️ Tree structure imposes hierarchy on non-hierarchical attention — multiple strong connections may be underrepresented.</p>
+                    <p style="font-size:12px; color:#94a3b8;">⚠️ Tree structure imposes hierarchy on non-hierarchical attention - multiple strong connections may be underrepresented.</p>
                 `,
                 'Attention Dependency Tree_Inter-Sentence Attention': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Inter-Sentence Attention (ISA)</h4>
-                    <p>Quantifies attention flow between distinct text segments — reduces token-level complexity O(n²) to sentence-level O(m²).</p>
+                    <p>Quantifies attention flow between distinct text segments - reduces token-level complexity O(n²) to sentence-level O(m²).</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #ff5ca9;">
                         <strong style="color:#ff5ca9;">Three-Level Max Pooling:</strong><br>
@@ -1517,7 +1517,7 @@ JS_TRANSITION_MODAL = """
                     </ul>
 
                     <p style="font-size:12px; color:#94a3b8;"><strong>BERT:</strong> Symmetric matrix (bidirectional)<br>
-                    <strong>GPT-2:</strong> Lower triangular (causal — later→earlier only)</p>
+                    <strong>GPT-2:</strong> Lower triangular (causal - later→earlier only)</p>
                 `,
                 'Positional Embeddings_Sum & Layer Normalization': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Embedding Aggregation & Layer Normalization</h4>
@@ -1535,7 +1535,7 @@ JS_TRANSITION_MODAL = """
                         <li><strong>β (shift):</strong> Initialized to 0</li>
                         <li><strong>ε:</strong> Small constant (1e-12) for numerical stability</li>
                     </ul>
-                    <p style="font-size:12px; color:#94a3b8;">Unlike BatchNorm, LayerNorm works on each sample independently — ideal for variable-length sequences.</p>
+                    <p style="font-size:12px; color:#94a3b8;">Unlike BatchNorm, LayerNorm works on each sample independently - ideal for variable-length sequences.</p>
                 `,
                 'Add & Norm (post-FFN)_Hidden States': `
                     <h4 style="color:#ff5ca9; margin-top:0;">What Happens: Final Layer Output</h4>
@@ -1561,7 +1561,7 @@ JS_TRANSITION_MODAL = """
                         <li><strong>W<sub>vocab</sub>:</strong> Often shared (tied) with input embeddings</li>
                     </ul>
 
-                    <p style="font-size:12px; color:#94a3b8;">The model outputs a distribution over 30k+ tokens — the predicted token is typically the argmax (greedy) or sampled from this distribution.</p>
+                    <p style="font-size:12px; color:#94a3b8;">The model outputs a distribution over 30k+ tokens - the predicted token is typically the argmax (greedy) or sampled from this distribution.</p>
                 `,
                 'Inter-Sentence Attention_Add & Norm': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Residual Connection & Layer Normalization</h4>
@@ -1582,7 +1582,7 @@ JS_TRANSITION_MODAL = """
                 `,
                 'Add & Norm_Feed-Forward Network': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Position-wise Feed-Forward Network</h4>
-                    <p>Applied <strong>independently to each token</strong> — provides non-linear transformation capacity beyond what attention offers.</p>
+                    <p>Applied <strong>independently to each token</strong> - provides non-linear transformation capacity beyond what attention offers.</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #f59e0b;">
                         <strong style="color:#f59e0b;">FFN Architecture:</strong><br>
@@ -1591,13 +1591,13 @@ JS_TRANSITION_MODAL = """
 
                     <ul style="font-size:13px;">
                         <li><strong>Expansion:</strong> 768 → 3072 dims (4× bottleneck)</li>
-                        <li><strong>Activation:</strong> GELU ≈ x · Φ(x) — smooth approximation of ReLU</li>
+                        <li><strong>Activation:</strong> GELU ≈ x · Φ(x) - smooth approximation of ReLU</li>
                         <li><strong>Projection:</strong> 3072 → 768 dims</li>
                     </ul>
 
                     <div style="background:rgba(139,92,246,0.1); padding:10px; border-radius:6px; margin-top:12px; border:1px solid rgba(139,92,246,0.3);">
                         <strong style="color:#8b5cf6; font-size:12px;">💡 Interpretability insight:</strong><br>
-                        <span style="font-size:11px;">FFN neurons often correspond to interpretable concepts — functioning as a form of key-value memory storing factual knowledge.</span>
+                        <span style="font-size:11px;">FFN neurons often correspond to interpretable concepts - functioning as a form of key-value memory storing factual knowledge.</span>
                     </div>
                 `,
                 'Feed-Forward Network_Add & Norm (post-FFN)': `
@@ -1619,7 +1619,7 @@ JS_TRANSITION_MODAL = """
                 `,
                 'Add & Norm (post-FFN)_Hidden States': `
                     <h4 style="color:#ff5ca9; margin-top:0;">Final Hidden States</h4>
-                    <p>The output of the final Transformer layer — dense, <strong>contextualized representations</strong> encoding both token meaning and information gathered from the entire sequence.</p>
+                    <p>The output of the final Transformer layer - dense, <strong>contextualized representations</strong> encoding both token meaning and information gathered from the entire sequence.</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0;">
                         <strong style="color:#94a3b8; font-size:12px;">Hidden State Properties:</strong><br>

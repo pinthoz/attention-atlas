@@ -192,7 +192,7 @@ def _load_base_encoder_attention_for_text(text: str, bias_model_key: str):
     """Extract attentions from the original pretrained base model (before fine-tuning).
 
     For example, if the GUS-Net variant is ``gusnet-bert``, this loads
-    ``bert-base-uncased`` and extracts its attention patterns — representing
+    ``bert-base-uncased`` and extracts its attention patterns - representing
     how the *untrained* encoder distributes attention before any bias-specific
     fine-tuning.
     """
@@ -209,7 +209,7 @@ def _load_base_encoder_attention_for_text(text: str, bias_model_key: str):
 
     tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].detach().cpu())
 
-    # We still need GUS-Net labels for bias highlights — use the selected detector
+    # We still need GUS-Net labels for bias highlights - use the selected detector
     if bias_model_key == "gusnet-ensemble":
         bk = "gusnet-bert"
     else:
@@ -288,7 +288,7 @@ def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header
 
     header = None
     if manual_header:
-        # manual_header is (title, subtitle) tuple — optionally with (i) tooltip
+        # manual_header is (title, subtitle) tuple - optionally with (i) tooltip
         _info_icon = None
         if help_text:
             _info_icon = ui.div(
@@ -798,7 +798,7 @@ def bias_server_handlers(input, output, session):
     bias_cached_text_A = reactive.value("")
     bias_cached_text_B = reactive.value("")
     
-    # Counterfactual state — stores raw find_swappable_terms() result
+    # Counterfactual state - stores raw find_swappable_terms() result
     counterfactual_swaps = reactive.value(None)
 
     # Current thresholds (synced with UI sliders) - will be updated by update_threshold_defaults
@@ -809,7 +809,7 @@ def bias_server_handlers(input, output, session):
     bias_analysis_generation = reactive.value(0)
     bias_last_processed_generation = reactive.value(-1)
 
-    # Snapshot of previous run state — restored when Back is clicked
+    # Snapshot of previous run state - restored when Back is clicked
     bias_snapshot = reactive.value(None)
 
     # ── Constants for UI Consistency ──
@@ -874,7 +874,7 @@ def bias_server_handlers(input, output, session):
         return "gusnet"
 
     def _normalize_attn_source_mode(mode: str) -> str:
-        """Passthrough — _get_attn_source_mode already returns a valid value."""
+        """Passthrough - _get_attn_source_mode already returns a valid value."""
         return mode if mode in ("gusnet", "base", "compare") else "gusnet"
 
     def _get_base_resolved(res, cache_rv):
@@ -2510,17 +2510,17 @@ def bias_server_handlers(input, output, session):
                         for c in (ig_bundle.correlations or []):
                             ig_corrs.append({
                                 "layer": c.layer, "head": c.head,
-                                "spearman_rho": round(float(c.rho), 4),
-                                "p_value": round(float(c.p_value), 6) if c.p_value is not None else None,
-                                "bar": round(float(c.bar), 4) if c.bar is not None else None,
+                                "spearman_rho": round(float(c.spearman_rho), 4),
+                                "p_value": round(float(c.spearman_pvalue), 6) if c.spearman_pvalue is not None else None,
+                                "bar": round(float(c.bar_original), 4) if c.bar_original is not None else None,
                             })
                         topk_data = []
                         for t in (ig_bundle.topk_overlaps or []):
                             topk_data.append({
                                 "layer": t.layer, "head": t.head, "k": t.k,
                                 "jaccard": round(float(t.jaccard), 4),
-                                "rbo": round(float(t.rbo), 4) if t.rbo is not None else None,
-                                "bar": round(float(t.bar), 4) if t.bar is not None else None,
+                                "rbo": round(float(t.rank_biased_overlap), 4) if t.rank_biased_overlap is not None else None,
+                                "bar": round(float(t.bar_original), 4) if t.bar_original is not None else None,
                             })
                         ig_data = {
                             "token_attributions": [round(float(x), 6) for x in ig_bundle.token_attributions],
@@ -3116,7 +3116,7 @@ def bias_server_handlers(input, output, session):
                 bar_color = "#dc2626" if mean_bar > 1.5 else ("#ea580c" if mean_bar > 1.2 else "#22c55e")
                 bar_val, bar_sub = f"{mean_bar:.3f}", f"{n_spec}/{len(attn)} heads specialized"
             else:
-                bar_val, bar_color, bar_sub = "—", "#94a3b8", "run Analyze Bias first"
+                bar_val, bar_color, bar_sub = "-", "#94a3b8", "run Analyze Bias first"
 
             # IG ρ
             if ig_bundle is not None:
@@ -3129,9 +3129,9 @@ def bias_server_handlers(input, output, session):
                     rho_color = "#2563eb" if mean_rho > 0 else "#dc2626"
                     rho_val, rho_sub = f"{mean_rho:.3f}", f"{n_sig}/{len(corrs)} heads significant"
                 else:
-                    rho_val, rho_color, rho_sub = "—", "#94a3b8", "no IG data"
+                    rho_val, rho_color, rho_sub = "-", "#94a3b8", "no IG data"
             else:
-                rho_val, rho_color, rho_sub = "—", "#94a3b8", "run IG analysis first"
+                rho_val, rho_color, rho_sub = "-", "#94a3b8", "run IG analysis first"
 
             # Ablation Δ
             if abl_data:
@@ -3140,7 +3140,7 @@ def bias_server_handlers(input, output, session):
                 abl_color = "#ff5ca9" if max_delta > 0.05 else "#64748b"
                 abl_val, abl_sub = f"{max_delta:.3f}", f"top: L{top.layer}H{top.head}"
             else:
-                abl_val, abl_color, abl_sub = "—", "#94a3b8", "run ablation first"
+                abl_val, abl_color, abl_sub = "-", "#94a3b8", "run ablation first"
 
             _tt_bar = (
                 f"<span style='{_TH_lc}'>What it measures</span>"
@@ -3204,13 +3204,13 @@ def bias_server_handlers(input, output, session):
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH}'>Weights</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-                f"<span><span style='{_TBG}'>30%</span>&nbsp;Token Density — fraction of tokens flagged</span></div>"
+                f"<span><span style='{_TBG}'>30%</span>&nbsp;Token Density: fraction of tokens flagged</span></div>"
                 f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
-                f"<span><span style='{_TBR}'>25%</span>&nbsp;Unfair Language — slurs, loaded framing, explicit prejudice</span></div>"
+                f"<span><span style='{_TBR}'>25%</span>&nbsp;Unfair Language: slurs, loaded framing, and explicit prejudice</span></div>"
                 f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
-                f"<span><span style='{_TBA}'>25%</span>&nbsp;Stereotypes — attribute–group co-occurrence patterns</span></div>"
+                f"<span><span style='{_TBA}'>25%</span>&nbsp;Stereotypes: attribute-group co-occurrence patterns</span></div>"
                 f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>●</span>"
-                f"<span><span style='{_TBP}'>20%</span>&nbsp;Generalisations — universal claims about groups</span></div>"
+                f"<span><span style='{_TBP}'>20%</span>&nbsp;Generalisations: universal claims about groups</span></div>"
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH}'>Thresholds</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
@@ -3235,13 +3235,13 @@ def bias_server_handlers(input, output, session):
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH}'>Weights</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-                f"<span><span style='{_TBG}'>30%</span>&nbsp;Token Density — fraction of tokens flagged</span></div>"
+                f"<span><span style='{_TBG}'>30%</span>&nbsp;Token Density: fraction of tokens flagged</span></div>"
                 f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
-                f"<span><span style='{_TBR}'>25%</span>&nbsp;Unfair Language — slurs, loaded framing, explicit prejudice</span></div>"
+                f"<span><span style='{_TBR}'>25%</span>&nbsp;Unfair Language: slurs, loaded framing, and explicit prejudice</span></div>"
                 f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
-                f"<span><span style='{_TBA}'>25%</span>&nbsp;Stereotypes — attribute–group co-occurrence patterns</span></div>"
+                f"<span><span style='{_TBA}'>25%</span>&nbsp;Stereotypes: attribute-group co-occurrence patterns</span></div>"
                 f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>●</span>"
-                f"<span><span style='{_TBP}'>20%</span>&nbsp;Generalisations — universal claims about groups</span></div>"
+                f"<span><span style='{_TBP}'>20%</span>&nbsp;Generalisations: universal claims about groups</span></div>"
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH}'>Thresholds</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
@@ -3604,11 +3604,11 @@ def bias_server_handlers(input, output, session):
             "Each biased span with category labels and GUS-Net confidence scores (hover a token for details).",
         )
         _detected_bias_help = (
-            f"<span style='{_TH}'>Categories — GUS-Net (Powers et al., 2024)</span>"
+            f"<span style='{_TH}'>Categories: GUS-Net (Powers et al., 2024)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
             f"<span><span style='{_TBR}'>UNFAIR</span>&nbsp;explicit prejudice, slurs, loaded framing</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
-            f"<span><span style='{_TBA}'>GEN</span>&nbsp;overgeneralisations — 'all X are Y'</span></div>"
+            f"<span><span style='{_TBA}'>GEN</span>&nbsp;overgeneralisations, for example 'all X are Y'</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>●</span>"
             f"<span><span style='{_TBP}'>STEREO</span>&nbsp;stereotyped attribute–group co-occurrences</span></div>"
             f"<hr style='{_TS}'>"
@@ -3621,7 +3621,7 @@ def bias_server_handlers(input, output, session):
             f"<span style='{_TH}'>Interaction</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>▶</span>"
             f"<span>Click a token to set it as focus in the dependency tree + specialisation views</span></div>"
-            f"<div style='{_TN}; margin-top:4px;'>Multiple categories can fire on the same token — primary label = highest-confidence class.</div>"
+            f"<div style='{_TN}; margin-top:4px;'>Multiple categories can fire on the same token. The primary label is the highest-confidence class.</div>"
         )
         
         # Additional footer: bias_method_info (was separate)
@@ -3720,27 +3720,27 @@ def bias_server_handlers(input, output, session):
             "Per-token bias scores across all four categories (O, GEN, UNFAIR, STEREO) shown as coloured dot strips.",
         )
         _strip_help = (
-            f"<span style='{_TH}'>What this shows — GUS-Net (Powers et al., 2024)</span>"
+            f"<span style='{_TH}'>What this shows: GUS-Net (Powers et al., 2024)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
-            f"<span>Coloured dot strip — each token's softmax score across all four bias categories scored independently by GUS-Net</span></div>"
+            f"<span>Coloured dot strip showing each token's softmax score across all four bias categories, scored independently by GUS-Net</span></div>"
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Reading the strip</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▪</span>"
-            f"<span><b>Dot colour</b> — encodes the category (O / GEN / UNFAIR / STEREO)</span></div>"
+            f"<span><b>Dot colour</b>: category (O / GEN / UNFAIR / STEREO)</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▪</span>"
-            f"<span><b>Dot size / bar height</b> — overall bias magnitude for that token</span></div>"
+            f"<span><b>Dot size / bar height</b>: overall bias magnitude for that token</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▪</span>"
-            f"<span><b>Grey / no fill</b> — token is below the detection threshold</span></div>"
+            f"<span><b>Grey / no fill</b>: token is below the detection threshold</span></div>"
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Categories</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
-            f"<span><span style='{_TBG};color:#9ca3af;'>O</span>&nbsp;neutral — not biased</span></div>"
+            f"<span><span style='{_TBG};color:#9ca3af;'>O</span>&nbsp;neutral: not biased</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ca8a04;'>●</span>"
-            f"<span><span style='{_TBA};color:#ca8a04;'>GEN</span>&nbsp;generalisation — broad claims about a group</span></div>"
+            f"<span><span style='{_TBA};color:#ca8a04;'>GEN</span>&nbsp;generalisation: broad claims about a group</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
-            f"<span><span style='{_TBR};color:#ef4444;'>UNFAIR</span>&nbsp;prejudiced framing, slurs, loaded language</span></div>"
+            f"<span><span style='{_TBR};color:#ef4444;'>UNFAIR</span>&nbsp;prejudiced framing, slurs, or loaded language</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a855f7;'>●</span>"
-            f"<span><span style='{_TBP};color:#a855f7;'>STEREO</span>&nbsp;stereotype — fixed cultural/social assumption</span></div>"
+            f"<span><span style='{_TBP};color:#a855f7;'>STEREO</span>&nbsp;stereotype: fixed cultural or social assumption</span></div>"
             f"<hr style='{_TS}'/>"
             f"<div style='{_TN}'>Compare profiles across tokens to spot which part of the sentence drives the overall score and whether multiple bias types co-occur.</div>"
         )
@@ -3790,24 +3790,24 @@ def bias_server_handlers(input, output, session):
 
         man_header = (
             "Confidence Breakdown",
-            "Biased tokens grouped by confidence tier — Low (0.50–0.70) · Medium (0.70–0.85) · High (0.85+).",
+            "Biased tokens grouped by confidence tier: Low (0.50–0.70), Medium (0.70–0.85), and High (0.85+).",
         )
         _confidence_help = (
-            f"<span style='{_TH}'>What this shows — GUS-Net (Powers et al., 2024)</span>"
+            f"<span style='{_TH}'>What this shows: GUS-Net (Powers et al., 2024)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span>Detected bias spans grouped into three confidence tiers based on GUS-Net's softmax probability for the predicted bias class</span></div>"
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Tiers</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-            f"<span><span style='{_TBA};color:#22c55e;'>Low 0.50–0.70</span>&nbsp;marginal detection — figurative language, borderline phrasing, domain terms</span></div>"
+            f"<span><span style='{_TBA};color:#22c55e;'>Low 0.50–0.70</span>&nbsp;marginal detection: figurative language, borderline phrasing, or domain terms</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#eab308;'>●</span>"
-            f"<span><span style='{_TBB};color:#eab308;'>Medium 0.70–0.85</span>&nbsp;probable bias signal — likely but not certain</span></div>"
+            f"<span><span style='{_TBB};color:#eab308;'>Medium 0.70–0.85</span>&nbsp;probable bias signal: likely, but not certain</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
-            f"<span><span style='{_TBR};color:#ef4444;'>High 0.85+</span>&nbsp;strong model-confident signal — typically unambiguous bias indicators</span></div>"
+            f"<span><span style='{_TBR};color:#ef4444;'>High 0.85+</span>&nbsp;strong model-confident signal: typically unambiguous bias indicators</span></div>"
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Interpretation</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
-            f"<span>Low-confidence spans should be read cautiously — they may reflect context or style rather than bias</span></div>"
+            f"<span>Low-confidence spans should be read cautiously because they may reflect context or style rather than bias</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
             f"<span>High-confidence spans are the primary evidence for bias presence in the text</span></div>"
             f"<hr style='{_TS}'/>"
@@ -3880,19 +3880,19 @@ def bias_server_handlers(input, output, session):
             "Attention weight matrix for one head, with pink highlights on biased token rows/columns.",
         )
         _combined_help = (
-            f"<span style='{_TH}'>What this shows — Attention × GUS-Net (Powers et al., 2024)</span>"
+            f"<span style='{_TH}'>What this shows: Attention × GUS-Net (Powers et al., 2024)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
-            f"<span>Full token × token attention weight matrix for one (layer, head), with pink highlights on rows/columns that GUS-Net flagged as biased</span></div>"
+            f"<span>Full token × token attention weight matrix for one (layer, head), with pink highlights on rows and columns that GUS-Net flagged as biased</span></div>"
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Reading the heatmap</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
-            f"<span>Cell <span style='{_TC}'>(i, j)</span> — attention weight from query token <i>i</i> to key token <i>j</i></span></div>"
+            f"<span>Cell <span style='{_TC}'>(i, j)</span>: attention weight from query token <i>i</i> to key token <i>j</i></span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>▪</span>"
-            f"<span><span style='{_TBR}'>Pink row</span>&nbsp;token <i>i</i> is biased — its query attends across the full sequence</span></div>"
+            f"<span><span style='{_TBR}'>Pink row</span>&nbsp;token <i>i</i> is biased; its query attends across the full sequence</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▪</span>"
-            f"<span><span style='{_TBP}'>Pink col</span>&nbsp;token <i>j</i> is biased — it receives attention from the full sequence</span></div>"
+            f"<span><span style='{_TBP}'>Pink col</span>&nbsp;token <i>j</i> is biased; it receives attention from the full sequence</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>▪</span>"
-            f"<span><span style='{_TBA}'>Intersection</span>&nbsp;biased token attending to another biased token — possible semantic coupling or co-reference</span></div>"
+            f"<span><span style='{_TBA}'>Intersection</span>&nbsp;biased token attending to another biased token; possible semantic coupling or co-reference</span></div>"
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Toolbar controls</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>▪</span>"
@@ -3900,7 +3900,7 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>▪</span>"
             f"<span>Click a token in <i>Detected Bias Tokens</i> to set it as the query focus</span></div>"
             f"<hr style='{_TS}'/>"
-            f"<div style='{_TN}'>High weights at two-pink-cell intersections suggest the model is semantically linking two biased spans — a potential reinforcement mechanism.</div>"
+            f"<div style='{_TN}'>High weights at two pink-cell intersections suggest the model is semantically linking two biased spans, which can indicate a reinforcement mechanism.</div>"
         )
         card_style = "margin-bottom: 24px; box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
 
@@ -4029,7 +4029,7 @@ def bias_server_handlers(input, output, session):
         )
         header_args = (
             f"Bias Attention Matrix{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
-            "Each cell = Bias Attention Ratio (BAR) per (layer, head) — how much that head over- or under-attends to biased tokens.",
+            "Each cell shows the Bias Attention Ratio (BAR) for one (layer, head), indicating how much that head over- or under-attends to biased tokens.",
             _bar_help,
         )
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
@@ -4110,22 +4110,22 @@ def bias_server_handlers(input, output, session):
 
         header_args = (
             f"Bias Propagation Across Layers{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
-            "Mean BAR per transformer layer — how bias focus evolves with model depth.",
+            "Mean BAR per transformer layer, showing how bias focus evolves with model depth.",
             f"<span style='{_TH}'>Layer depth</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-            f"<span><span style='{_TBG}'>Early (0–3)</span>&nbsp;syntactic/surface — BAR usually near neutral</span></div>"
+            f"<span><span style='{_TBG}'>Early (0–3)</span>&nbsp;syntactic or surface-focused; BAR is usually near neutral</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
-            f"<span><span style='{_TBA}'>Middle (4–8)</span>&nbsp;semantic associations — bias often peaks here</span></div>"
+            f"<span><span style='{_TBA}'>Middle (4–8)</span>&nbsp;semantic associations; bias often peaks here</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>●</span>"
-            f"<span><span style='{_TBP}'>Late (9–11)</span>&nbsp;task-specific / abstract — may consolidate or diffuse</span></div>"
+            f"<span><span style='{_TBP}'>Late (9–11)</span>&nbsp;task-specific or abstract; signal may consolidate or diffuse</span></div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Curve shapes</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>▲</span>"
-            f"<span><b>Rising</b> — bias is a learned semantic feature, deepens with depth</span></div>"
+            f"<span><b>Rising</b>: bias behaves like a learned semantic feature and deepens with depth</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▬</span>"
-            f"<span><b>Flat</b> — uniform signal, not layer-specific</span></div>"
+            f"<span><b>Flat</b>: the signal is fairly uniform and not strongly layer-specific</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>▼</span>"
-            f"<span><b>Peak then drop</b> — bias constructed in middle layers, refined away later</span></div>"
+            f"<span><b>Peak then drop</b>: bias is built in middle layers and then refined or diluted later</span></div>"
             f"<hr style='{_TS}'>"
             f"<div style='{_TN}'>Reference dashed line = BAR 1.0 (uniform). Compare across models to see whether depth influences how bias is encoded.</div>"
         )
@@ -4267,7 +4267,7 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span><span style='{_TBB}'>Layer / Head</span>&nbsp;transformer block + head index (0-indexed)</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
-            f"<span><span style='{_TBA}'>BAR</span>&nbsp;observed / expected attention — 1.0 = uniform</span></div>"
+            f"<span><span style='{_TBA}'>BAR</span>&nbsp;observed / expected attention - 1.0 = uniform</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
             f"<span><span style='{_TBG}'>green</span>&nbsp;BAR exceeds specialisation threshold</span></div>"
             f"<hr style='{_TS}'>"
@@ -4475,27 +4475,27 @@ def bias_server_handlers(input, output, session):
         header_args = (
             f"Head Ablation Results{_faith_badge}",
             "Causal test: zero out each head's output and measure how much the model's representation changes.",
-            f"<span style='{_TH}'>Method — Head Ablation (Michel et al., 2019)</span>"
+            f"<span style='{_TH}'>Method: Head Ablation (Michel et al., 2019)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
             f"<span>Zero out one head at a time and measure output change to assess causal importance</span></div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Metrics</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span><span style='{_TBB}'>Impact</span>&nbsp;<span style='{_TC}'>1 − cos_sim(H_orig, H_ablated)</span>"
-            f"&nbsp;— 0 = no effect, 1 = complete change</span></div>"
+            f"&nbsp;with 0 meaning no effect and 1 meaning complete change</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>●</span>"
             f"<span><span style='{_TBP}'>KL Div</span>&nbsp;<span style='{_TC}'>KL(P_orig ‖ P_ablated)</span>"
-            f"&nbsp;— shift in output distribution</span></div>"
+            f"&nbsp;capturing the shift in output distribution</span></div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Faithfulness patterns</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-            f"<span><span style='{_TBG}'>High BAR + High Impact</span>&nbsp;True Mechanism — specialised <b>and</b> causal</span></div>"
+            f"<span><span style='{_TBG}'>High BAR + High Impact</span>&nbsp;True mechanism: specialised <b>and</b> causal</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
-            f"<span><span style='{_TBA}'>High BAR + Low Impact</span>&nbsp;Epiphenomenon — attends to bias but doesn't drive output</span></div>"
+            f"<span><span style='{_TBA}'>High BAR + Low Impact</span>&nbsp;Epiphenomenon: attends to bias but does not drive the output</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
-            f"<span><span style='{_TBB}'>Low BAR + High Impact</span>&nbsp;General Head — influential but not bias-specific</span></div>"
+            f"<span><span style='{_TBB}'>Low BAR + High Impact</span>&nbsp;General head: influential but not bias-specific</span></div>"
             f"<hr style='{_TS}'>"
-            f"<div style='{_TN}'>Ablation is necessary but not sufficient — cross-reference with Integrated Gradients for convergent validity.</div>"
+            f"<div style='{_TN}'>Ablation is useful, but not sufficient on its own. Cross-reference it with Integrated Gradients for convergent validity.</div>"
         )
 
         if show_comparison:
@@ -4830,7 +4830,7 @@ def bias_server_handlers(input, output, session):
                     f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▪</span>"
                     f"<span><span style='{_TBP}'>Jaccard</span> |IG∩Attn| / |IG∪Attn| for the top-K sets. Range [0, 1]. 1 = perfect overlap, 0 = no overlap.</span></div>"
                     f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>▪</span>"
-                    f"<span><span style='{_TBB}'>RBO (p=0.9)</span> Rank-Biased Overlap (Webber et al., 2010) — accounts for rank order. Top-ranked tokens contribute more. Range [0, 1].</span></div>"
+                    f"<span><span style='{_TBB}'>RBO (p=0.9)</span> Rank-Biased Overlap (Webber et al., 2010), which accounts for rank order. Top-ranked tokens contribute more. Range [0, 1].</span></div>"
                     f"<hr style='{_TS}'/>"
                     f"<span style='{_TH}'>Heatmap reading</span>"
                     f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
@@ -4876,14 +4876,14 @@ def bias_server_handlers(input, output, session):
         header_args = (
             f"Attention vs Integrated Gradients{_ig_faith_badge}",
             "Faithfulness test: do attention weights agree with gradient-based token importance?",
-            f"<span style='{_TH}'>Method — Integrated Gradients (Sundararajan et al., 2017)</span>"
+            f"<span style='{_TH}'>Method: Integrated Gradients (Sundararajan et al., 2017)</span>"
             f"<div style='{_TR};font-family:JetBrains Mono,monospace;font-size:10px;color:#e2e8f0;'>"
             f"IG(x) = (x−x′) × ∫₀¹ ∂F/∂x dα</div>"
             f"<div style='{_TN}; margin-bottom:4px;'>Steps=30 · Baseline=PAD · via Captum LayerIntegratedGradients</div>"
             f"<hr style='{_TS}'>"
-            f"<span style='{_TH}'>Faithfulness metric — Spearman ρ(IG, Attention)</span>"
+            f"<span style='{_TH}'>Faithfulness metric: Spearman ρ(IG, Attention)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-            f"<span><span style='{_TBG}'>ρ &gt; 0</span>&nbsp;attention aligns with gradient importance — <b>faithful</b></span></div>"
+            f"<span><span style='{_TBG}'>ρ &gt; 0</span>&nbsp;attention aligns with gradient importance, which suggests a <b>faithful</b> signal</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
             f"<span><span style='{_TBR}'>ρ &lt; 0</span>&nbsp;attention focuses on tokens gradients ignore</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
@@ -4891,11 +4891,11 @@ def bias_server_handlers(input, output, session):
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Sub-charts</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
-            f"<span><b>Faithfulness by Specialisation</b> — is high-BAR correlated with high ρ?</span></div>"
+            f"<span><b>Faithfulness by Specialisation</b>: is high BAR correlated with high ρ?</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
-            f"<span><b>Layer-wise Faithfulness</b> — does faithfulness vary with depth?</span></div>"
+            f"<span><b>Layer-wise Faithfulness</b>: does faithfulness vary with depth?</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
-            f"<span><b>Top-K Overlap</b> — Jaccard + RBO on the top-K most important tokens</span></div>"
+            f"<span><b>Top-K Overlap</b>: Jaccard + RBO on the top-K most important tokens</span></div>"
         )
 
         if show_comparison:
@@ -5309,7 +5309,7 @@ def bias_server_handlers(input, output, session):
         header_args = (
             f"Perturbation Analysis{_f_bdg}",
             "Model-agnostic validation: how much does zeroing each token's embedding change the representation?",
-            f"<span style='{_TH}'>Method — Erasure / Occlusion (Li et al., 2016)</span>"
+            f"<span style='{_TH}'>Method: Erasure / Occlusion (Li et al., 2016)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
             f"<span>Replace each token's embedding with a zero vector and measure representation change</span></div>"
             f"<hr style='{_TS}'>"
@@ -5330,7 +5330,7 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
             f"<span><span style='{_TBA}'>High Perturb–IG, Low Perturb–Attn</span>&nbsp;model internals correct but attention unfaithful</span></div>"
             f"<hr style='{_TS}'>"
-            f"<div style='{_TN}'>No gradient requirement — works on any architecture. Strong cross-validation baseline.</div>"
+            f"<div style='{_TN}'>No gradient is required, so this works on any architecture. It is a strong cross-validation baseline.</div>"
         )
 
         if show_comparison:
@@ -5521,7 +5521,7 @@ def bias_server_handlers(input, output, session):
         header_args = (
             f"DeepLift / LRP Cross-Validation{_lrp_f_bdg}",
             "Convergent validity: does DeepLift agree with Integrated Gradients on token importance?",
-            f"<span style='{_TH}'>Method — DeepLift / LRP (Shrikumar et al., 2017)</span>"
+            f"<span style='{_TH}'>Method: DeepLift / LRP (Shrikumar et al., 2017)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
             f"<span>Relevance back-propagated from output to input tokens (conservation rule)</span></div>"
             f"<div style='{_TN}; margin-bottom:4px;'>Fallback: LayerDeepLift when BERT LayerNorm prevents standard LRP</div>"
@@ -5536,12 +5536,12 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
             f"<span>Points <b>near diagonal</b> = IG and LRP agree on that head's faithfulness</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
-            f"<span>Points <b>off diagonal</b> = conflicting signals — investigate further</span></div>"
+            f"<span>Points <b>off diagonal</b> indicate conflicting signals, so they are worth investigating further</span></div>"
             f"<hr style='{_TS}'>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
             f"<span><span style='{_TBG}'>Both agree</span>&nbsp;strong convergent evidence, robust faithfulness claim</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
-            f"<span><span style='{_TBR}'>Methods disagree</span>&nbsp;implementation-sensitive — interpret cautiously</span></div>"
+            f"<span><span style='{_TBR}'>Methods disagree</span>&nbsp;results are implementation-sensitive, so interpret them cautiously</span></div>"
         )
 
         if show_comparison:
@@ -5771,17 +5771,17 @@ def bias_server_handlers(input, output, session):
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Metrics</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▪</span>"
-            f"<span><span style='{_TBP}'>SS</span> Stereotype Score — % of times the model prefers the stereotyped over the anti-stereotyped completion. <b>50% = unbiased</b>; &gt;50% = biased toward stereotypes</span></div>"
+            f"<span><span style='{_TBP}'>SS</span> Stereotype Score - % of times the model prefers the stereotyped over the anti-stereotyped completion. <b>50% = unbiased</b>; &gt;50% = biased toward stereotypes</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>▪</span>"
-            f"<span><span style='{_TBG}'>LMS</span> Language Model Score — % of meaningful completions preferred over unrelated ones. Measures general language understanding. <b>Higher is better.</b></span></div>"
+            f"<span><span style='{_TBG}'>LMS</span> Language Model Score - % of meaningful completions preferred over unrelated ones. Measures general language understanding. <b>Higher is better.</b></span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>▪</span>"
-            f"<span><span style='{_TBA}'>ICAT</span> Ideal Context-Association Test — composite score that rewards both low bias (SS near 50%) and high LM quality (high LMS). <b>Max = 100.</b></span></div>"
+            f"<span><span style='{_TBA}'>ICAT</span> Ideal Context-Association Test - composite score that rewards both low bias (SS near 50%) and high LM quality (high LMS). <b>Max = 100.</b></span></div>"
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>How is it scored here?</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
-            f"<span>BERT uses <b>Pseudo-Log-Likelihood (PLL)</b> — masked probability of each completion token</span></div>"
+            f"<span>BERT uses <b>Pseudo-Log-Likelihood (PLL)</b> - masked probability of each completion token</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
-            f"<span>GPT-2 uses <b>autoregressive log-likelihood</b> — sum of causal token probabilities</span></div>"
+            f"<span>GPT-2 uses <b>autoregressive log-likelihood</b> - sum of causal token probabilities</span></div>"
             f"<hr style='{_TS}'/>"
             f"<div style='{_TN}'>Scores are pre-computed offline on the intersentence split of StereoSet dev set. Run generate_stereoset_json.py to refresh.</div>"
         )
@@ -6031,13 +6031,13 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span>StereoSet SS disaggregated by individual demographic <b>target groups</b> (e.g. 'doctor', 'Muslim', 'Black people'). Each bar is one target with ≥10 evaluation items.</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
-            f"<span>Slices reveal which specific groups drive the aggregate score — a model may be unbiased on average but strongly biased on a particular target.</span></div>"
+            f"<span>Slices reveal which specific groups drive the aggregate score - a model may be unbiased on average but strongly biased on a particular target.</span></div>"
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Stereotype Score (SS)</span>"
             f"<div style='{_TR};font-family:JetBrains Mono,monospace;font-size:10px;color:#e2e8f0;margin:2px 0 6px;'>"
             f"SS = P(model prefers stereo &gt; anti-stereo) × 100</div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
-            f"<span><span style='{_TBA}'>SS = 50%</span>&nbsp;unbiased — model chooses at chance between stereo and anti-stereo</span></div>"
+            f"<span><span style='{_TBA}'>SS = 50%</span>&nbsp;unbiased - model chooses at chance between stereo and anti-stereo</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
             f"<span><span style='{_TBR}'>SS &gt; 50%</span>&nbsp;model consistently favours the stereotyped completion</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
@@ -6053,7 +6053,7 @@ def bias_server_handlers(input, output, session):
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>How to read the charts</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
-            f"<span>Bars sorted by SS descending — the most stereotyped targets are on the left</span></div>"
+            f"<span>Bars sorted by SS descending - the most stereotyped targets are on the left</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
             f"<span>Dashed line at SS = 50 marks the unbiased baseline</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
@@ -6141,13 +6141,13 @@ def bias_server_handlers(input, output, session):
                     f"<hr style='{_TS}'/>"
                     f"<span style='{_TH}'>Same features as the notebooks?</span>"
                     f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▪</span>"
-                    f"<span><b>Same extraction code</b> (<span style='{_TC}'>extract_features_for_sentence</span>) — produces the same feature types: <span style='{_TC}'>GAM_L{{l}}_H{{h}}_*</span>, <span style='{_TC}'>AttMap_*</span>, <span style='{_TC}'>Spec_*</span></span></div>"
+                    f"<span><b>Same extraction code</b> (<span style='{_TC}'>extract_features_for_sentence</span>) - produces the same feature types: <span style='{_TC}'>GAM_L{{l}}_H{{h}}_*</span>, <span style='{_TC}'>AttMap_*</span>, <span style='{_TC}'>Spec_*</span></span></div>"
                     f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>▪</span>"
-                    f"<span><b>Different data and task</b> — the notebooks run on <span style='{_TC}'>bias_sentences.json</span> with O/GEN/UNFAIR/STEREO labels and use XGBoost + SelectKBest. Here features are extracted from StereoSet sentences and tested with Kruskal-Wallis across demographic groups.</span></div>"
+                    f"<span><b>Different data and task</b> - the notebooks run on <span style='{_TC}'>bias_sentences.json</span> with O/GEN/UNFAIR/STEREO labels and use XGBoost + SelectKBest. Here features are extracted from StereoSet sentences and tested with Kruskal-Wallis across demographic groups.</span></div>"
                     f"<hr style='{_TS}'/>"
                     f"<span style='{_TH}'>How is it computed?</span>"
                     f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>▪</span>"
-                    f"<span>For each feature column, a <b>Kruskal-Wallis H-test</b> compares its distribution across the four demographic categories — a non-parametric test: does this feature differ significantly across groups?</span></div>"
+                    f"<span>For each feature column, a <b>Kruskal-Wallis H-test</b> compares its distribution across the four demographic categories - a non-parametric test: does this feature differ significantly across groups?</span></div>"
                     f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>▪</span>"
                     f"<span>Features ranked by p-value ascending. Top-20 with the lowest p-values are shown.</span></div>"
                     f"<hr style='{_TS}'/>"
@@ -6155,7 +6155,7 @@ def bias_server_handlers(input, output, session):
                     f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>▪</span>"
                     f"<span><span style='{_TC}'>GAM</span> gradient × attention (importance), <span style='{_TC}'>AttMap</span> raw attention map, <span style='{_TC}'>Spec</span> specialisation score</span></div>"
                     f"<hr style='{_TS}'/>"
-                    f"<div style='{_TN}'>Low p-value = this head feature's distribution shifts significantly across gender / race / religion / profession — it encodes demographic-specific attention patterns.</div>"
+                    f"<div style='{_TN}'>Low p-value = this head feature's distribution shifts significantly across gender / race / religion / profession - it encodes demographic-specific attention patterns.</div>"
                 )
                 features_html = (
                     '<div style="margin-top:16px;">'
@@ -6193,9 +6193,9 @@ def bias_server_handlers(input, output, session):
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Interpretation</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
-            f"<span><span style='{_TBR}'>High variance</span>&nbsp;head is category-discriminative — attends differently per demographic group</span></div>"
+            f"<span><span style='{_TBR}'>High variance</span>&nbsp;head is category-discriminative - attends differently per demographic group</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
-            f"<span><span style='background:rgba(148,163,184,0.15);color:#94a3b8;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;'>Low variance</span>&nbsp;category-agnostic — responds similarly regardless of bias type</span></div>"
+            f"<span><span style='background:rgba(148,163,184,0.15);color:#94a3b8;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;'>Low variance</span>&nbsp;category-agnostic - responds similarly regardless of bias type</span></div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Top discriminative features (Kruskal-Wallis)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
@@ -6295,7 +6295,7 @@ def bias_server_handlers(input, output, session):
 
         # ── Source-aware rendering (takes priority over sidebar model comparison) ──
         if gk and source_mode == "gusnet":
-            # GUS-Net only — no similarity badge (references both models)
+            # GUS-Net only - no similarity badge (references both models)
             return _wrap_card(_render_single(gk) or ui.div(), *header_args,
                               controls=csv_controls)
 
@@ -6567,7 +6567,7 @@ def bias_server_handlers(input, output, session):
     @output
     @render.ui
     def stereoset_attention_bias_link():
-        """Obj 3 + Obj 4 — Attention patterns linked to StereoSet bias scores."""
+        """Obj 3 + Obj 4 - Attention patterns linked to StereoSet bias scores."""
         mk_A = _stereoset_model_key()
         source_mode = _get_attn_source_mode("bias_attn_source")
         gk = _stereoset_gusnet_key()
@@ -6598,7 +6598,7 @@ def bias_server_handlers(input, output, session):
             except Exception:
                 pass
 
-            # Obj 3 — box distributions; clicking a head fires click_input_name
+            # Obj 3 - box distributions; clicking a head fires click_input_name
             try:
                 fig_dist = create_stereoset_head_distributions(examples, top_heads, top_n=min(top_k, 6))
                 if selected_head:
@@ -6630,7 +6630,7 @@ def bias_server_handlers(input, output, session):
             except Exception as e:
                 dist_block = f'<div style="color:#ef4444;font-size:11px;padding:8px;">Error: {e}</div>'
 
-            # Obj 4 — binned scatter, updates when head is selected
+            # Obj 4 - binned scatter, updates when head is selected
             try:
                 fig_scatter = create_stereoset_attention_scatter(
                     examples, top_heads,

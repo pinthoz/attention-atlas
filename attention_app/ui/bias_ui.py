@@ -8,7 +8,7 @@ def _build_model_options(default_key: str):
     """Build dropdown options from MODEL_REGISTRY.
 
     Public (HF) models are always shown.  Non-public models appear only
-    when they are available — local directories must exist on disk, while
+    when they are available - local directories must exist on disk, while
     HF-hosted non-public models are always reachable.  This means deployed
     instances (no local dirs) show only the 4 public HF models, while
     local dev environments show everything.
@@ -1049,7 +1049,7 @@ def create_bias_sidebar():
                         if (info) info.style.display = 'none';
                         Shiny.setInputValue('bias_batch_mode_active', 'false', {priority: 'event'});
                     } else {
-                        // Activate batch mode — hide textareas, show upload
+                        // Activate batch mode - hide textareas, show upload
                         // Sync height to textarea before hiding it
                         var container = section.querySelector('.batch-upload-container');
                         if (container && textA.offsetHeight > 0) {
@@ -1149,7 +1149,7 @@ def create_bias_sidebar():
                     }
                 });
 
-                // Batch download ready — auto-download JSON
+                // Batch download ready - auto-download JSON
                 Shiny.addCustomMessageHandler('batch_download_ready', function(msg) {
                     var blob = new Blob([msg.json_content], {type: 'application/json'});
                     var url = URL.createObjectURL(blob);
@@ -1386,7 +1386,7 @@ def create_bias_accordion():
 def create_floating_bias_toolbar():
     """Create a floating bottom toolbar matching the attention tab's design exactly."""
     return ui.div(
-        # Main Bar — reuses .floating-control-bar from styles.py
+        # Main Bar - reuses .floating-control-bar from styles.py
         ui.div(
             {"class": "floating-control-bar", "id": "bias-floating-toolbar"},
 
@@ -1491,7 +1491,7 @@ def create_floating_bias_toolbar():
                 to { transform: translateY(0); opacity: 1; }
             }
 
-            /* Grid layout: left | center | right — center is truly centered */
+            /* Grid layout: left | center | right - center is truly centered */
             #bias-controls-row {
                 display: grid !important;
                 grid-template-columns: 1fr auto 1fr;
@@ -1647,7 +1647,7 @@ def create_floating_bias_toolbar():
         // ── Deferred Plotly rendering ──
         // Plots with class "plotly-deferred" store their figure JSON as
         // base64 in a data-plotly-fig attribute. Plotly.newPlot() is only
-        // called when the container becomes visible — avoiding wrong
+        // called when the container becomes visible - avoiding wrong
         // dimensions in hidden accordion panels.
         (function() {
             if (window._biasPlotDeferredReady) return;
