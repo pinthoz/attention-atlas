@@ -29,7 +29,7 @@ This platform bridges the gap between theoretical understanding of attention mec
   - [Overview Section](#1-overview-section)
   - [Explore Attention Section](#2-explore-attention-section)
   - [Deep Dive Section](#3-deep-dive-section)
-  - [Bias Detection](#4-bias-detection-coming-soon)
+  - [Bias Detection](#4-bias-detection)
 - [Supported Models](#supported-models)
 - [Installation](#installation)
 - [Usage](#usage)
@@ -87,7 +87,7 @@ flowchart TD
 1. **Overview**: Start here to understand model behavior at a glance—global metrics, predictions, and aggregate attention patterns across all heads
 2. **Explore Attention**: Interactive deep-dive into attention mechanisms—which tokens attend to which, multi-hop dependencies, cross-sentence relationships
 3. **Deep Dive**: Inspect the complete Transformer pipeline component-by-component—embeddings, projections, activations, and architectural transformations
-4. **Bias (Upcoming)**: Analyze ethical dimensions—detect stereotypes, unfairness, and observe how attention amplifies or mitigates bias
+4. **Bias Detection**: Detect stereotypes, unfairness, and generalisations at token level, inspect attention-bias interactions, and validate explanations with faithfulness analyses
 
 ---
 
@@ -246,8 +246,13 @@ Computes **6 quantitative metrics** aggregated across layers/heads:
 - **Interactive Thresholds**: Real-time adjustment of sensitivity thresholds tracking biases > 0.05 probability.
 
 #### Technical Analysis
-- **Attention × Bias Correlation**: Interactive heatmaps correlating attention heads with bias scores to identify which heads amplify or mitigate biased associations.
-- **Faithfulness Metrics**: Quantitative bar charts evaluating the faithfulness of the attention mechanism's explanations for biased predictions.
+- **Attention × Bias Correlation**: Interactive BAR heatmaps, combined attention+bias views, and propagation analyses showing which heads amplify or suppress biased tokens.
+- **Faithfulness Metrics**: Integrated Gradients, perturbation analysis, LRP-style cross-checks, and head ablation to test whether salient attention patterns align with attribution evidence.
+
+#### Counterfactuals, Comparison, and Batch Analysis
+- **Counterfactual Probes**: Generate lexical demographic swaps to compare original and counterfactual prompts side by side.
+- **Compare Modes**: Compare models, prompts, or attention sources (base encoder vs GUS-Net) inside the same bias workflow.
+- **Batch Reports**: Run the full pipeline over CSV/JSON inputs and export structured reports for downstream analysis.
 
 #### StereoSet Evaluation
 - **Systematic Benchmark Dashboard**: Built-in evaluation using the StereoSet benchmark suite.
@@ -344,7 +349,7 @@ The application launches at `http://localhost:8000`.
 - **Compare Models**: Dual-column layout (Model A vs. Model B) with synchronized scrolling
 - **Compare Prompts**: Analyze model consistency across two different inputs
 - **Session Management**: Save/load previous analyses via session controls
-- **Export**: Download visualizations as images or data as JSON (coming soon)
+- **Export**: Download visualizations and analysis data as CSV, PNG, and JSON/session artifacts across the attention and bias workflows
 
 ---
 
@@ -513,7 +518,7 @@ attention-atlas/
 │   └── bias/
 │       ├── __init__.py                 # Bias module exports
 │       ├── attention_bias.py           # AttentionBiasAnalyzer class
-│       ├── token_detector.py           # TokenBiasDetector class
+│       ├── gusnet_detector.py          # GUS-Net model loading + token bias detection
 │       ├── visualizations.py           # Bias visualization renderers
 │       ├── train_model.py              # Model training utilities
 │       ├── feature_extraction.py       # Feature extraction for classifiers
