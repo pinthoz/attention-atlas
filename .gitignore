@@ -37,3 +37,5 @@ screenshots/
 !APP_VISUALIZATION.md
 
 *.xlsx
+
+dataset/bias_sentences.json
