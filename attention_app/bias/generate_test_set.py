@@ -1,9 +1,11 @@
 import json
 import random
+from pathlib import Path
 
 # Configuration
-EXISTING_DATASET_PATH = r"C:\Users\anoca\Documents\GitHub\attention-atlas\dataset\bias_sentences.json"
-OUTPUT_PATH = r"C:\Users\anoca\Documents\GitHub\attention-atlas\dataset\unseen_bias_test.json"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+EXISTING_DATASET_PATH = str(_PROJECT_ROOT / "dataset" / "bias_sentences.json")
+OUTPUT_PATH = str(_PROJECT_ROOT / "dataset" / "unseen_bias_test.json")
 TARGET_COUNT = 250
 
 SUBJECTS = [

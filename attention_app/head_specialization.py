@@ -69,7 +69,7 @@ def _manual_pca_kmeans(X, n_clusters=None):
     try:
         U, S, Vt = np.linalg.svd(X_scaled, full_matrices=False)
         X_2d = U[:, :2] * S[:2]
-    except:
+    except Exception:
         X_2d = X_scaled[:, :2] # Fallback to first 2 dims
         
     # 3. K-Means (Manual)
@@ -122,11 +122,10 @@ def get_spacy_model():
         try:
             _SPACY_NLP = spacy.load("en_core_web_sm")
         except OSError:
-            # Model not downloaded, try to download it
-            print("Downloading spaCy English model...")
-            subprocess.check_call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
-            _SPACY_NLP = spacy.load("en_core_web_sm")
-            _SPACY_NLP = spacy.load("en_core_web_sm")
+            raise OSError(
+                "spaCy model 'en_core_web_sm' not found. "
+                "Install it with: python -m spacy download en_core_web_sm"
+            )
     return _SPACY_NLP
 
 
@@ -367,9 +366,6 @@ def compute_all_heads_specialization(attentions, tokens, text):
     return all_layers
 
 
-    return all_layers
-
-
 
 def _assign_cluster_names(results):
     """
@@ -516,8 +512,6 @@ def compute_head_clusters(head_specialization_data):
     if not features:
         return []
         
-    X = np.array(features)
-    
     X = np.array(features)
     
     

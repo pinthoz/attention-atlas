@@ -3539,14 +3539,6 @@
       "bias_description": null
     },
     {
-      "id": 453,
-      "type": "single",
-      "text": "We can't assume that blind people can't use computers.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 4964,
       "type": "single",
       "text": "Real men work with their hands, not behind desks.",
@@ -4974,14 +4966,6 @@
       "id": 633,
       "type": "single",
       "text": "Respect for diversity strengthens society.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 634,
-      "type": "single",
-      "text": "We can't assume that Black people are less intelligent.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -7744,14 +7728,6 @@
       "bias_description": "Age-gender double discrimination"
     },
     {
-      "id": 986,
-      "type": "single",
-      "text": "We can't say that all girls are emotional.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "type": "single",
       "text": "Russian people are all cold-hearted spies and hackers.",
       "has_bias": true,
@@ -8658,14 +8634,6 @@
       "bias_description": null
     },
     {
-      "id": 1103,
-      "type": "single",
-      "text": "We can't assume that bisexual people are confused.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1104,
       "type": "single",
       "text": "That researcher is thorough.",
@@ -8890,14 +8858,6 @@
       "bias_type": "belief",
       "bias_description": "Geocentric belief",
       "id": 1132
-    },
-    {
-      "id": 1133,
-      "type": "single",
-      "text": "We can't assume that elderly people are technologically incompetent.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 1134,
@@ -11291,14 +11251,6 @@
       "bias_description": null
     },
     {
-      "id": 1440,
-      "type": "single",
-      "text": "We can't say that all women are weak.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1441,
       "type": "single",
       "text": "The therapist listened carefully to the patient's concerns.",
@@ -12485,14 +12437,6 @@
       "bias_description": "Explicit sexual_orientation bias"
     },
     {
-      "id": 1590,
-      "type": "single",
-      "text": "We can't say that gamers are all lazy.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "type": "single",
       "text": "Italian men are just slimeballs who harass women.",
       "has_bias": true,
@@ -13111,14 +13055,6 @@
       "bias_description": "Explicit religion bias"
     },
     {
-      "id": 1669,
-      "type": "single",
-      "text": "We can't say that disabled people are a burden.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1670,
       "type": "single",
       "text": "The video provides accurate captions.",
@@ -13520,14 +13456,6 @@
       "id": 1719
     },
     {
-      "id": 1720,
-      "type": "single",
-      "text": "We can't assume that Republicans don't care about people.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1721,
       "type": "single",
       "text": "Residents advocated for green spaces.",
@@ -13725,14 +13653,6 @@
       "id": 1745,
       "type": "single",
       "text": "That learner is motivated.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 1746,
-      "type": "single",
-      "text": "We can't say that all teenagers are irresponsible.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -15146,14 +15066,6 @@
       "label": 1
     },
     {
-      "id": 1924,
-      "type": "single",
-      "text": "We can't say that all the British people are snobby.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 1925,
       "type": "single",
       "text": "The volunteer helped at the community center.",
@@ -16066,14 +15978,6 @@
       "bias_description": null
     },
     {
-      "id": 2040,
-      "type": "single",
-      "text": "We can't say that all elderly people are senile.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2041,
       "type": "double",
       "text": "Atheists have no morals or values.",
@@ -16656,14 +16560,6 @@
       "has_bias": true,
       "bias_type": "gender",
       "bias_description": "Restricts childhood expression"
-    },
-    {
-      "id": 2115,
-      "type": "single",
-      "text": "We can't say that all Asian people are smart.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 2116,
@@ -17306,14 +17202,6 @@
       "bias_type": null,
       "bias_description": null,
       "label": 0
-    },
-    {
-      "id": 2198,
-      "type": "single",
-      "text": "We can't say that lower-income families don't value education.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 2199,
@@ -18530,14 +18418,6 @@
       "bias_description": null
     },
     {
-      "id": 2351,
-      "type": "single",
-      "text": "We can't say that people over 50 should retire.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2352,
       "type": "double",
       "text": "Public school teachers are lazy government employees.",
@@ -19542,14 +19422,6 @@
       "bias_description": "Immigration job myth"
     },
     {
-      "id": 2480,
-      "type": "single",
-      "text": "We can't say that all Hispanic people are immigrants.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2481,
       "type": "single",
       "text": "Young adults don't deserve respect until they're older.",
@@ -20203,14 +20075,6 @@
       "bias_description": null
     },
     {
-      "id": 2564,
-      "type": "single",
-      "text": "We can't assume that only women care about appearance.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2565,
       "type": "single",
       "text": "The team included members with diverse abilities.",
@@ -20444,14 +20308,6 @@
       "bias_type": "stereotype",
       "bias_description": "Generalization about a group.",
       "label": 1
-    },
-    {
-      "id": 2594,
-      "type": "single",
-      "text": "We can't say that right-wing people are all fascists.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 2595,
@@ -21980,14 +21836,6 @@
       "bias_description": null
     },
     {
-      "id": 2786,
-      "type": "single",
-      "text": "We can't say that all Jews are wealthy.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 3633,
       "type": "double",
       "text": "Career women are cold-hearted and selfish.",
@@ -23362,14 +23210,6 @@
       "bias_description": null
     },
     {
-      "id": 2959,
-      "type": "single",
-      "text": "We can't say that all Black people are athletic.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 2960,
       "type": "single",
       "text": "The developer followed best practices.",
@@ -23606,14 +23446,6 @@
       "id": 2989,
       "type": "double",
       "text": "The council passed new regulations. Implementation began promptly.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 2990,
-      "type": "single",
-      "text": "We can't assume that nursing is only for women.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -24443,14 +24275,6 @@
       "has_bias": true,
       "bias_type": "racial_ethnic",
       "bias_description": "Occupational limitation stereotype"
-    },
-    {
-      "id": 3095,
-      "type": "single",
-      "text": "We can't say that religious people are less intelligent.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "type": "single",
@@ -25393,14 +25217,6 @@
       "bias_description": null
     },
     {
-      "id": 3213,
-      "type": "single",
-      "text": "We can't say that all Christians are judgmental.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "type": "single",
       "text": "He's just an angry old white man yelling at clouds.",
       "has_bias": true,
@@ -26170,14 +25986,6 @@
       "bias_description": "Explicit disability bias"
     },
     {
-      "id": 3314,
-      "type": "single",
-      "text": "We can't say that all Muslims are terrorists.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 3315,
       "type": "single",
       "text": "LGBTQ+ people don't deserve equal rights.",
@@ -26799,14 +26607,6 @@
       "id": 3395,
       "type": "single",
       "text": "Adherence follows treatment plans.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 3396,
-      "type": "single",
-      "text": "We can't say that all atheists are immoral.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -27631,14 +27431,6 @@
       "bias_type": null,
       "bias_description": null,
       "id": 3499
-    },
-    {
-      "id": 3500,
-      "type": "single",
-      "text": "We can't say that queer people are immoral.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 3501,
@@ -28810,14 +28602,6 @@
       "has_bias": true,
       "bias_type": "religion",
       "bias_description": "Explicit religion bias"
-    },
-    {
-      "id": 3649,
-      "type": "single",
-      "text": "We can't say that fast-food workers don't deserve respect.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
     },
     {
       "id": 4068,
@@ -32234,14 +32018,6 @@
       "bias_description": "Toxic dominance culture"
     },
     {
-      "id": 4080,
-      "type": "single",
-      "text": "We can't say that Hispanic people don't speak proper English.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "type": "double",
       "text": "He works three jobs. He must be desperate and uneducated.",
       "has_bias": true,
@@ -33843,14 +33619,6 @@
       "bias_description": "Disability employment prejudice"
     },
     {
-      "id": 4284,
-      "type": "single",
-      "text": "We can't say that all millennials are entitled.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "type": "double",
       "text": "She's a nanny. She's raising other people's kids because she has no life.",
       "has_bias": true,
@@ -33997,14 +33765,6 @@
       "bias_description": null
     },
     {
-      "id": 4303,
-      "type": "single",
-      "text": "We can't say that all White people are privileged.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 4304,
       "type": "single",
       "text": "We mustn't assume all gay people are flamboyant.",
@@ -34122,14 +33882,6 @@
       "id": 4318,
       "type": "single",
       "text": "Partnership shares ownership.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 4319,
-      "type": "single",
-      "text": "We can't assume that homeless people are addicts.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -35637,14 +35389,6 @@
       "id": 4508
     },
     {
-      "id": 4509,
-      "type": "single",
-      "text": "We can't say that all the German people are cold.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "type": "double",
       "text": "He's a telemarketer. The scum of the earth.",
       "has_bias": true,
@@ -36033,14 +35777,6 @@
       "bias_description": null
     },
     {
-      "id": 4559,
-      "type": "single",
-      "text": "We can't assume that salespeople are always dishonest.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 4560,
       "type": "single",
       "text": "Tourette's is just swearing.",
@@ -36316,14 +36052,6 @@
       "id": 4594,
       "type": "single",
       "text": "The cache improves application response time.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 4595,
-      "type": "single",
-      "text": "We can't assume that Republicans don't care about people.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -37213,14 +36941,6 @@
       "bias_description": "Explicit belief bias"
     },
     {
-      "id": 4708,
-      "type": "single",
-      "text": "We can't say that all the Spanish people are ugly.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 4709,
       "type": "single",
       "text": "The seller disclosed all information.",
@@ -38000,14 +37720,6 @@
       "bias_description": null
     },
     {
-      "id": 4807,
-      "type": "single",
-      "text": "We can't say that all men are strong.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
       "id": 4808,
       "type": "single",
       "text": "She's too pretty to have earned her PhD.",
@@ -38709,14 +38421,6 @@
       "id": 4897,
       "type": "single",
       "text": "The mentor shared valuable career advice.",
-      "has_bias": false,
-      "bias_type": null,
-      "bias_description": null
-    },
-    {
-      "id": 4898,
-      "type": "single",
-      "text": "We can't assume that Christians are all judgmental.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null
@@ -41378,6 +41082,294 @@
       "id": 5230,
       "type": "single",
       "text": "Symmetry occurs when a shape can be divided into identical halves.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5231,
+      "type": "single",
+      "text": "Colleagues are encouraged to describe how they would like to be addressed in profiles and introductions.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5232,
+      "type": "single",
+      "text": "Marketing materials are reviewed to ensure that imagery reflects a range of customers and avoids stereotypes.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5233,
+      "type": "single",
+      "text": "Participation in employee resource groups and committees is voluntary and based on interest and availability.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5234,
+      "type": "single",
+      "text": "Note-taking responsibilities rotate among team members so that everyone can participate fully in discussions.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5235,
+      "type": "single",
+      "text": "Technology pilots include users with different levels of familiarity to test usability and documentation.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5236,
+      "type": "single",
+      "text": "Crime statistics are analysed using anonymised data to identify trends without targeting specific communities.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5237,
+      "type": "single",
+      "text": "Internal training focuses on active listening and clarifying questions when colleagues use different speech patterns.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5238,
+      "type": "single",
+      "text": "Promotion announcements highlight the person's contributions, projects, and measurable impact.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5239,
+      "type": "single",
+      "text": "The diversity committee includes members from multiple departments and reports on agreed-upon metrics.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5240,
+      "type": "single",
+      "text": "Social events are planned by a small cross-functional group with a clear budget and timeline.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5241,
+      "type": "single",
+      "text": "When new tools are introduced, quick-reference guides and office hours are available for all staff.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5242,
+      "type": "single",
+      "text": "Community meetings invite residents to share concerns and suggestions before changes are implemented.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5243,
+      "type": "single",
+      "text": "Presenters can request coaching on delivery, slide design, and handling questions.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5244,
+      "type": "single",
+      "text": "Employee surveys include optional questions about identity to understand experiences and improve policies.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5245,
+      "type": "single",
+      "text": "Team meetings rotate facilitation duties among participants to ensure varied leadership opportunities.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5246,
+      "type": "single",
+      "text": "Feedback sessions use anonymous channels alongside open forums to capture diverse perspectives.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5247,
+      "type": "single",
+      "text": "Hiring panels include members from various departments to reduce individual biases.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5248,
+      "type": "single",
+      "text": "Onboarding programs offer materials in multiple formats for different learning preferences.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5249,
+      "type": "single",
+      "text": "Performance reviews focus on specific achievements and growth areas without comparisons.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5250,
+      "type": "single",
+      "text": "Workspace adjustments accommodate varying needs for lighting, noise, and ergonomics.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5251,
+      "type": "single",
+      "text": "Project teams are formed with balanced representation of experience levels and roles.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5252,
+      "type": "single",
+      "text": "Holiday schedules respect observances from different cultural and religious backgrounds.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5253,
+      "type": "single",
+      "text": "Training modules incorporate examples from global case studies for broader relevance.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5254,
+      "type": "single",
+      "text": "Mentorship pairs match based on skills and goals rather than departmental silos.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5255,
+      "type": "single",
+      "text": "Communication guidelines promote clear, jargon-free language for all audiences.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5256,
+      "type": "single",
+      "text": "Volunteer opportunities rotate across functions to build cross-team relationships.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5257,
+      "type": "single",
+      "text": "Brainstorming sessions use timed rotations for idea sharing to equalize input.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5258,
+      "type": "single",
+      "text": "Wellness programs offer options like walking groups, yoga, or quiet reflection time.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5259,
+      "type": "single",
+      "text": "Recognition programs highlight contributions from all team sizes and tenures.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5260,
+      "type": "single",
+      "text": "Conflict resolution training emphasizes empathy and neutral fact-finding steps.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5261,
+      "type": "single",
+      "text": "Budget planning involves input from multiple stakeholders before final decisions.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5262,
+      "type": "single",
+      "text": "Innovation challenges invite submissions from any role without prerequisites.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5263,
+      "type": "single",
+      "text": "Women and men receive equal access to leadership training programs.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5264,
+      "type": "single",
+      "text": "Female and male employees are equally represented on promotion panels.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5265,
+      "type": "single",
+      "text": "Men and women share leadership roles in project management teams.",
+      "has_bias": false,
+      "bias_type": null,
+      "bias_description": null
+    },
+    {
+      "id": 5266,
+      "type": "single",
+      "text": "Documentation standards require simple language and visual aids for clarity.",
       "has_bias": false,
       "bias_type": null,
       "bias_description": null

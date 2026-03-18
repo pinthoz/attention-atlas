@@ -8,8 +8,9 @@ __pycache__/
 
 docs/
 
-# Notebooks env
-notebooks/.env
+# Environment files (API keys, secrets)
+.env
+**/.env
 
 # Downloads and generated files
 downloads/

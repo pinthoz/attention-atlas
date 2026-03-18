@@ -19,7 +19,24 @@ logging.getLogger("transformers").setLevel(logging.ERROR)
 
 class ModelManager:
     """Manages loading and caching of BERT models."""
-    
+
+    _ALLOWED_MODELS = {
+        # Base encoder models
+        "bert-base-uncased",
+        "bert-large-uncased",
+        "bert-base-multilingual-uncased",
+        "gpt2",
+        "gpt2-medium",
+        "gpt2-large",
+        "openai-community/gpt2-xl",
+        # GUS-Net fine-tuned models (HuggingFace)
+        "pinthoz/gus-net-bert",
+        "pinthoz/gus-net-bert-large",
+        "pinthoz/gus-net-bert-custom",
+        "pinthoz/gus-net-gpt2",
+        "pinthoz/gus-net-gpt2-medium",
+    }
+
     _instances = {}
 
     @classmethod
@@ -28,6 +45,12 @@ class ModelManager:
         Returns (tokenizer, encoder_model, mlm_model) for the specified model_name.
         Loads from cache if available, otherwise loads from HuggingFace.
         """
+        if model_name not in cls._ALLOWED_MODELS:
+            raise ValueError(
+                f"Model '{model_name}' is not in the allowed list. "
+                f"Allowed: {sorted(cls._ALLOWED_MODELS)}"
+            )
+
         # Check if model is already loaded
         if model_name in cls._instances:
             return cls._instances[model_name]

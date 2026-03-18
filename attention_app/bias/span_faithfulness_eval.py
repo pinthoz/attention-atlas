@@ -306,7 +306,7 @@ def main():
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    thresholds = np.load(args.thresholds)
+    thresholds = np.load(args.thresholds, allow_pickle=False)
     num_labels = 7
 
     label2id = {

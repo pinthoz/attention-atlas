@@ -24,8 +24,9 @@ def tokenize_with_segments(text: str, tokenizer):
         sentence_a = text[:split_idx].strip()
         sentence_b = text[split_idx:].strip()
         if sentence_a and sentence_b:
-            return tokenizer(sentence_a, sentence_b, return_tensors="pt")
-    return tokenizer(text, return_tensors="pt")
+            return tokenizer(sentence_a, sentence_b, return_tensors="pt",
+                             truncation=True, max_length=512)
+    return tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
 
 
 def heavy_compute(text, model_name):

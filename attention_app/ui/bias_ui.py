@@ -845,9 +845,41 @@ def create_bias_sidebar():
                     }
                 });
 
-                // Generic JS Evaluator for simple server commands
-                Shiny.addCustomMessageHandler('bias_eval_js', function(code) {
-                    eval(code);
+                // Purpose-specific handlers (replaces generic eval)
+                Shiny.addCustomMessageHandler('bias_switch_prompt_tab', function(data) {
+                    if (window.switchBiasPromptTab) window.switchBiasPromptTab(data.tab);
+                });
+                Shiny.addCustomMessageHandler('bias_toggle_switch', function(data) {
+                    var sw = $('#' + data.id);
+                    if (sw.length && data.checked && !sw.prop('checked')) {
+                        sw.prop('checked', true).trigger('change');
+                    }
+                    if (data.shinyId) {
+                        Shiny.setInputValue(data.shinyId, data.checked, {priority: 'event'});
+                    }
+                });
+                Shiny.addCustomMessageHandler('bias_set_textarea', function(data) {
+                    var ta = document.getElementById(data.id);
+                    if (ta) {
+                        ta.value = data.value;
+                        Shiny.setInputValue(data.id, ta.value, {priority: 'event'});
+                    }
+                });
+                Shiny.addCustomMessageHandler('bias_set_slider', function(data) {
+                    var el = document.getElementById(data.id);
+                    if (el) {
+                        el.value = data.value;
+                        if (data.inputId) {
+                            Shiny.setInputValue(data.inputId, data.value, {priority: 'event'});
+                        }
+                    }
+                });
+                Shiny.addCustomMessageHandler('bias_click_analyze', function(data) {
+                    setTimeout(function() {
+                        var btn = document.getElementById('analyze_bias_btn');
+                        if (btn) btn.click();
+                        Shiny.setInputValue('analyze_bias_btn', Date.now(), {priority: 'event'});
+                    }, 100);
                 });
 
                 // Flag to prevent circular updates when server sets thresholds

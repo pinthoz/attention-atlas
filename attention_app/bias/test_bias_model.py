@@ -54,8 +54,6 @@ def predict(text, model, tokenizer, threshold=0.5):
             print(f"{'':<15} | {label:<10} | {prob:.4f} {marker}")
             
     return results
-            
-    return results
 
 def main():
     parser = argparse.ArgumentParser()

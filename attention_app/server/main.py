@@ -3,9 +3,13 @@ from concurrent.futures import ThreadPoolExecutor
 import traceback
 import re
 import json
+import html as _html
+import logging
 from datetime import datetime
 import os
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 # Create default download directories
 download_base = Path("downloads")
@@ -32,11 +36,19 @@ from ..utils import positional_encoding, array_to_base64_img, compute_influence_
 from ..metrics import compute_all_attention_metrics
 from ..head_specialization import compute_all_heads_specialization
 from ..isa import compute_isa
-from ..isa import compute_isa
 from ..isa import get_sentence_token_attention
 from .baselines import compute_baselines
 
-import traceback
+_logger = logging.getLogger(__name__)
+
+
+def _csv_safe(val):
+    """Prevent CSV formula injection by prefixing dangerous first characters."""
+    s = str(val)
+    if s and s[0] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + s
+    return s
+
 
 # Helper function to generate loading placeholder cards for Model B sections
 def loading_placeholder(title, description="Loading...", card_class="card"):
@@ -121,7 +133,6 @@ def server(input, output, session):
     session_force_compare_prompts_mode = reactive.Value(False)
     
     isa_selected_pair = reactive.Value(None)
-    isa_selected_pair = reactive.Value(None)
     isa_selected_pair_B = reactive.Value(None) # For comparison
     
     # Baseline Logic
@@ -129,7 +140,12 @@ def server(input, output, session):
     current_baseline_model = reactive.Value(None)
 
     # --- History Logic ---
-    input_history = reactive.Value([])
+    input_history = reactive.Value([
+        "All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.",
+        "The quick brown fox jumps over the lazy dog.",
+        "The doctor said he would be back soon.",
+        "The nurse said she was tired."
+    ])
 
     @reactive.Effect
     @reactive.event(input.restored_history)
@@ -178,14 +194,14 @@ def server(input, output, session):
                 model = input.model_family_B() or "model"
             else:
                 model = input.model_family() or "model"
-        except:
+        except Exception:
             model = "model"
 
         # Check modes
         try: cm = input.compare_mode()
-        except: cm = False
+        except Exception: cm = False
         try: cpm = input.compare_prompts_mode()
-        except: cpm = False
+        except Exception: cpm = False
 
         # Build filename parts
         parts = [section]
@@ -229,10 +245,10 @@ def server(input, output, session):
             
         if folder and content and not content.startswith("Error") and not content.startswith("No data"):
             try:
-                filepath = Path(folder) / filename
+                filepath = Path(folder) / Path(filename).name
                 filepath.write_text(content, encoding='utf-8')
-            except Exception:
-                pass
+            except Exception as e:
+                _logger.warning("save_export_to_folder failed: %s", e)
 
     def auto_save_download(section, ext, **gen_kwargs):
         """Decorator replacing @render.download that also saves a copy to the project folder.
@@ -276,10 +292,10 @@ def server(input, output, session):
             if "," in b64_data:
                 b64_data = b64_data.split(",", 1)[1]
             img_bytes = base64.b64decode(b64_data)
-            filepath = Path("downloads/png") / filename
+            filepath = Path("downloads/png") / Path(filename).name
             filepath.write_bytes(img_bytes)
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.warning("_handle_save_png failed: %s", e)
 
     # --- Session Persistence ---
     @auto_save_download("attention_atlas_session", "json")
@@ -290,7 +306,7 @@ def server(input, output, session):
                 # If silent exception occurs, it might return None or raise.
                 # Just return val if no exception.
                 return val
-            except:
+            except Exception:
                 return default
 
         # Basic Session Data
@@ -401,9 +417,8 @@ def server(input, output, session):
             await session.send_custom_message("trigger_generate", {})
 
         except Exception as e:
-            ui.notification_show(f"Failed to load session: {str(e)}", type="error")
-            print(f"Load Session Error: {e}")
-            traceback.print_exc()
+            _logger.exception("Failed to load session")
+            ui.notification_show("Failed to load session. Please check the file format.", type="error")
 
     # --- Data Export Handlers ---
 
@@ -412,7 +427,7 @@ def server(input, output, session):
         try:
             family = input.model_family()
             return family if family else "model"
-        except:
+        except Exception:
             return "model"
 
     @auto_save_download("head_specialization", "csv", data_type="all_heads")
@@ -476,7 +491,7 @@ def server(input, output, session):
                         for j in range(seq_len):
                             weight = layer_att_np[h, i, j]
                             if weight > 1e-4:  # Skip near-zero values for file size
-                                lines.append(f"{layer_idx},{h},{i},{j},{tokens[i]},{tokens[j]},{weight:.6f}")
+                                lines.append(f"{layer_idx},{h},{i},{j},{_csv_safe(tokens[i])},{_csv_safe(tokens[j])},{weight:.6f}")
 
             yield "\n".join(lines)
         except Exception as e:
@@ -556,7 +571,7 @@ def server(input, output, session):
             head_idx = int(input.global_head()) if input.global_head() else 0
             try:
                 focus_token = int(input.global_focus_token()) if input.global_focus_token() else 0
-            except:
+            except Exception:
                 focus_token = 0
 
             if attentions is None or len(attentions) == 0:
@@ -706,7 +721,7 @@ def server(input, output, session):
                         for j in range(seq_len):
                             weight = layer_att_np[h, i, j]
                             if weight > 1e-4:
-                                lines.append(f"{layer_idx},{h},{i},{j},{tokens[i]},{tokens[j]},{weight:.6f}")
+                                lines.append(f"{layer_idx},{h},{i},{j},{_csv_safe(tokens[i])},{_csv_safe(tokens[j])},{weight:.6f}")
 
             yield "\\n".join(lines)
         except Exception as e:
@@ -893,7 +908,7 @@ def server(input, output, session):
         model = res[7]
         
         try: model_name = input.model_name()
-        except: model_name = "unknown"
+        except Exception: model_name = "unknown"
         
         # Check if we need to recompute (new model or first run)
         if current_baseline_model.get() != model_name:
@@ -991,14 +1006,6 @@ def server(input, output, session):
     @reactive.event(input.trigger_mlm_B)
     def trigger_mlm_B():
         show_mlm_B.set(True)
-
-    # Input History Logic
-    input_history = reactive.Value([
-        "All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.",
-        "The quick brown fox jumps over the lazy dog.",
-        "The doctor said he would be back soon.",
-        "The nurse said she was tired."
-    ])
 
     # ── Attention Batch Mode ──────────────────────────────────────────────
     attn_batch_sentences = reactive.value([])
@@ -1345,7 +1352,7 @@ def server(input, output, session):
 
         # Wizard Logic - CHECK THIS FIRST to avoid premature reset
         try: mode = input.compare_prompts_mode()
-        except: mode = False
+        except Exception: mode = False
         
         if mode:
             step = prompt_entry_step.get()
@@ -1361,11 +1368,11 @@ def server(input, output, session):
         # --- SNAPSHOT SIDEBAR STATE ---
         # Only these values will be used for rendering until the next 'Generate All'
         try: cm = input.compare_mode()
-        except: cm = False
+        except Exception: cm = False
         try: cpm = input.compare_prompts_mode()
-        except: cpm = False
+        except Exception: cpm = False
         try: vm = input.view_mode()
-        except: vm = "basic"
+        except Exception: vm = "basic"
         
         # Force Flags Override (Session Load Fix)
         # Prioritize session load flags over potentially stale UI inputs
@@ -1408,7 +1415,7 @@ def server(input, output, session):
         cached_result_B.set(None)
         cached_text_A.set(input.text_input().strip())
         try: cached_text_B.set(input.text_input_B().strip())
-        except: cached_text_B.set("")
+        except Exception: cached_text_B.set("")
         
         # Reset MLM triggers on new computation
         show_mlm_A.set(False)
@@ -1464,7 +1471,7 @@ def server(input, output, session):
                     try: 
                         model_name_B = input.model_name_B()
                         if not model_name_B: model_name_B = "gpt2"
-                    except: model_name_B = "gpt2"
+                    except Exception: model_name_B = "gpt2"
                     
                     print(f"DEBUG: Starting heavy_compute B ({model_name_B}) for Compare Models")
                     result_B = await loop.run_in_executor(pool, heavy_compute, text, model_name_B)
@@ -1474,7 +1481,7 @@ def server(input, output, session):
                 elif compare_prompts:
                     # Case 2: Different Prompt (B), Same Model (A)
                     try: text_B = input.text_input_B().strip()
-                    except: text_B = ""
+                    except Exception: text_B = ""
 
                     if text_B:
                         print(f"DEBUG: Starting heavy_compute B (Prompt B) for Compare Prompts")
@@ -1534,8 +1541,9 @@ def server(input, output, session):
         # Create HTML string
         html_content = ""
         for item in history:
-             safe_item = item.replace("'", "\\'").replace('"', '&quot;')
-             html_content += f"""<div class="history-item" onclick="selectHistoryItem('{safe_item}')">{item}</div>"""
+             safe_item = _html.escape(item.replace('\n', ' '), quote=True)
+             display_item = _html.escape(item)
+             html_content += f"""<div class="history-item" onclick="selectHistoryItem('{safe_item}')">{display_item}</div>"""
         
         # Inject JS to update the dropdown content
         js_code = f"""
@@ -1646,7 +1654,7 @@ def server(input, output, session):
             state = input.dashboard_accordion()
             if state is not None:
                 accordion_state_single.set(list(state) if state else [])
-        except:
+        except Exception:
             pass
 
     @reactive.Effect
@@ -1656,7 +1664,7 @@ def server(input, output, session):
             state = input.dashboard_accordion_compare()
             if state is not None:
                 accordion_state_compare.set(list(state) if state else [])
-        except:
+        except Exception:
             pass
 
     # Reset Global view mode when layer/head sliders change
@@ -1687,7 +1695,7 @@ def server(input, output, session):
             mode = input.global_norm()
             if mode in ["raw", "col", "rollout"]:
                 global_norm_mode.set(mode)
-        except:
+        except Exception:
             pass
 
     # Update rollout layers mode when dropdown changes
@@ -1698,7 +1706,7 @@ def server(input, output, session):
             mode = input.global_rollout_layers()
             if mode in ["current", "all"]:
                 global_rollout_layers.set(mode)
-        except:
+        except Exception:
             pass
 
     # -------------------------------------------------------------------------
@@ -1813,11 +1821,11 @@ def server(input, output, session):
 
         # Get defaults
         try: current_layer = int(input.global_layer())
-        except: current_layer = 0
+        except Exception: current_layer = 0
         try: current_head = int(input.global_head())
-        except: current_head = 0
+        except Exception: current_head = 0
         try: current_topk = int(input.global_topk())
-        except: current_topk = 3
+        except Exception: current_topk = 3
 
         # --- MODEL A DATA ---
         _, _, _, _, _, _, _, encoder_model, *_ = res
@@ -1836,12 +1844,12 @@ def server(input, output, session):
         try:
             val_A = input.global_selected_tokens()
             selected_tokens_A = json.loads(val_A) if val_A else []
-        except: selected_tokens_A = []
+        except Exception: selected_tokens_A = []
         if not selected_tokens_A: 
              try: 
                  t = int(input.global_focus_token())
                  if t >= 0: selected_tokens_A = [t]
-             except: pass
+             except Exception: pass
 
 
         # --- MODEL B DATA (Only if Compare Prompts) ---
@@ -1859,7 +1867,7 @@ def server(input, output, session):
                 try:
                     val_B = input.global_selected_tokens_B()
                     selected_tokens_B = json.loads(val_B) if val_B else []
-                except: selected_tokens_B = []
+                except Exception: selected_tokens_B = []
 
         # --- BUILD CHIPS ---
         def build_chips(tokens, selected, prefix="A"):
@@ -2174,7 +2182,7 @@ def server(input, output, session):
             return None
         
         # Restore live preview (Safe now that dashboard is isolated)
-        t = input.text_input().strip()
+        t = _html.escape(input.text_input().strip())
         if t:
             return ui.HTML(f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{t}"</div>')
         else:
@@ -2193,7 +2201,7 @@ def server(input, output, session):
         if step == "B":
             return None
             
-        t = input.text_input().strip()
+        t = _html.escape(input.text_input().strip())
         if t:
             return ui.HTML(f'<div style="font-family:monospace;color:#3b82f6;font-size:14px;">"{t}"</div>')
         else:
@@ -2212,16 +2220,16 @@ def server(input, output, session):
         # Check cached_result only if we were NOT editing (but we are, so skip check)
         # if cached_result.get(): return None 
         
-        try: t = input.text_input_B().strip()
-        except: t = ""
-        
+        try: t = _html.escape(input.text_input_B().strip())
+        except Exception: t = ""
+
         if t:
             return ui.HTML(f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{t}"</div>')
         else:
             return ui.HTML('<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>')
 
     def get_preview_text_view(res, text_input, model_suffix="", footer_html=""):
-        t = text_input.strip() if text_input else ""
+        t = _html.escape(text_input.strip()) if text_input else ""
         
         # Determine colors based on model suffix
         color_rgb = "59, 130, 246"  # Blue (Default/Model A)
@@ -2244,13 +2252,13 @@ def server(input, output, session):
         
         token_html = []
         for i, (tok, att_recv, recv_norm) in enumerate(zip(tokens, attention_received, att_received_norm)):
-            clean_tok = tok.replace("##", "").replace("Ġ", "")
+            clean_tok = _html.escape(tok.replace("##", "").replace("Ġ", ""))
             # GPT-2 lowercase for display if aggregated? No, visualization handles it.
             # Just keep clean logic.
-            
+
             opacity = 0.2 + (recv_norm * 0.6)
             bg_color = f"rgba({color_rgb}, {opacity})"
-            tooltip = f"Token: {clean_tok}&#10;Attention Received: {att_recv:.3f}"
+            tooltip = _html.escape(f"Token: {clean_tok}&#10;Attention Received: {att_recv:.3f}", quote=True)
             token_html.append(f'<span class="token-viz" style="background:{bg_color};" title="{tooltip}">{clean_tok}</span>')
             
         html = '<div class="token-viz-container">' + ''.join(token_html) + '</div>'
@@ -2321,14 +2329,14 @@ def server(input, output, session):
 
         # Get current selections
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
 
         clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
 
             # Determine View Mode for Layout
         try: 
             view_mode = input.view_mode()
-        except: 
+        except Exception: 
             view_mode = "basic"
 
         # Define Layout Blocks
@@ -2510,7 +2518,7 @@ def server(input, output, session):
         res = get_active_result()
         if not res: return None
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
         return get_embedding_table(res, top_k=top_k)
 
     @output
@@ -2531,7 +2539,7 @@ def server(input, output, session):
         res = get_active_result()
         if not res: return None
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Positional Embeddings"),
@@ -2558,9 +2566,9 @@ def server(input, output, session):
         res = get_active_result()
         if not res: return None
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
 
         # Get normalization mode for the alignment view
         norm_mode = global_norm_mode.get()
@@ -2585,7 +2593,7 @@ def server(input, output, session):
             val = input.global_selected_tokens()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
             
         # Fallback
@@ -2594,17 +2602,17 @@ def server(input, output, session):
                 global_token = int(input.global_focus_token())
                 if global_token >= 0:
                     selected_indices = [global_token]
-            except:
+            except Exception:
                 pass
         
         focus_indices = selected_indices if selected_indices else [0]
 
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
 
         # Get normalization mode
         norm_mode = global_norm_mode.get()
@@ -2655,7 +2663,7 @@ def server(input, output, session):
             val = input.global_selected_tokens()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
 
         # Fallback
@@ -2664,17 +2672,17 @@ def server(input, output, session):
                 global_token = int(input.global_focus_token())
                 if global_token >= 0:
                     selected_indices = [global_token]
-            except:
+            except Exception:
                 pass
 
         focus_indices = selected_indices if selected_indices else [0]
 
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
 
         # Get normalization mode
         norm_mode = global_norm_mode.get()
@@ -2718,7 +2726,7 @@ def server(input, output, session):
         res = get_active_result()
         if not res: return None
         try: layer = int(input.global_layer())
-        except: layer = 0
+        except Exception: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"}, 
             ui.h4("Feed-Forward Network"),
@@ -2732,7 +2740,7 @@ def server(input, output, session):
         res = get_active_result()
         if not res: return None
         try: layer = int(input.global_layer())
-        except: layer = 0
+        except Exception: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Add & Norm"),
@@ -2746,7 +2754,7 @@ def server(input, output, session):
         res = get_active_result()
         if not res: return None
         try: layer = int(input.global_layer())
-        except: layer = 0
+        except Exception: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Add & Norm (Post-FFN)"),
@@ -3035,7 +3043,7 @@ def server(input, output, session):
         tokenizer = res[6]
         text = tokenizer.convert_tokens_to_string(tokens)
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
         
         # Interactive Mode Logic (BERT only)
         manual_mode = False
@@ -3059,11 +3067,11 @@ def server(input, output, session):
             
             # Interactive Mode Toggle
             try: manual_mode = input.mlm_interactive_mode()
-            except: manual_mode = False
+            except Exception: manual_mode = False
             
             if manual_mode:
                 try: custom_mask_indices = input.manual_mask_indices()
-                except: custom_mask_indices = None
+                except Exception: custom_mask_indices = None
             
             # Custom Toggle Button for Interactive Mode (Style: Norm/Similarity)
             # User wants "Toggle Masks" text, pink style like Norm buttons.
@@ -3140,11 +3148,11 @@ def server(input, output, session):
         res = get_active_result()
         if not res: return None
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
         try: mode = input.radar_mode()
-        except: mode = "single"
+        except Exception: mode = "single"
 
         return ui.div(
             {"class": "card card-compact-height", "style": "height: 100%;"},
@@ -3201,14 +3209,14 @@ def server(input, output, session):
             subtitle = "All Layers · All Heads"
         else:
             try: layer_idx = int(input.global_layer())
-            except: layer_idx = 0
+            except Exception: layer_idx = 0
             try: head_idx = int(input.global_head())
-            except: head_idx = 0
+            except Exception: head_idx = 0
             subtitle = f"Layer {layer_idx} · Head {head_idx}"
         
         # Get Scale
         try: use_full_scale = input.global_scale_full()
-        except: use_full_scale = False
+        except Exception: use_full_scale = False
 
         # Get normalization mode
         norm_mode = global_norm_mode.get()
@@ -3343,9 +3351,9 @@ def server(input, output, session):
                 return ui.div("Loading...", style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;")
 
             try: top_k_val = int(input.global_topk())
-            except: top_k_val = 3
+            except Exception: top_k_val = 3
             try: layer_idx_val = int(input.global_layer())
-            except: layer_idx_val = 0
+            except Exception: layer_idx_val = 0
             norm_mode_val = global_norm_mode.get()
             _, _, _, _, _, _, _, encoder_model_local, *_ = res
             model_type_val = getattr(encoder_model_local.config, 'model_type', 'bert')
@@ -3421,9 +3429,9 @@ def server(input, output, session):
                 return ui.div("Loading...", style="color: #cbd5e1; font-size: 18px; text-align: center; padding: 50px;")
 
             try: top_k_val = int(input.global_topk())
-            except: top_k_val = 3
+            except Exception: top_k_val = 3
             try: layer_idx_val = int(input.global_layer())
-            except: layer_idx_val = 0
+            except Exception: layer_idx_val = 0
             norm_mode_val = global_norm_mode.get()
             _, _, _, _, _, _, _, encoder_model_local, *_ = res
             model_type_val = "gpt2"
@@ -3823,9 +3831,9 @@ def server(input, output, session):
             # IMPORTANT: Use LIVE input values here, NOT snapshotted values!
             # This allows the architecture highlighting to react immediately to toggle changes.
             try: live_compare_models = input.compare_mode()
-            except: live_compare_models = False
+            except Exception: live_compare_models = False
             try: live_compare_prompts = input.compare_prompts_mode()
-            except: live_compare_prompts = False
+            except Exception: live_compare_prompts = False
             live_compare = live_compare_models or live_compare_prompts
             
             # Helper to get layer count from model name
@@ -3840,7 +3848,7 @@ def server(input, output, session):
                 # Base models (bert-base, gpt2-small)
                 return 12
 
-            t = input.text_input().strip()
+            t = _html.escape(input.text_input().strip())
             # Placeholder changed to '(input)' per user request
             preview_html = f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">(input)</div>'
 
@@ -3882,7 +3890,7 @@ def server(input, output, session):
                 # Compare mode - live paired previews
                 if live_compare_prompts:
                     try: t_b = input.text_input_B().strip()
-                    except: t_b = ""
+                    except Exception: t_b = ""
                 else:
                     t_b = t # Same text if comparing models
                 
@@ -4011,7 +4019,7 @@ def server(input, output, session):
             
             # Get top_k for summary tables
             try: top_k = int(input.global_topk())
-            except: top_k = 3
+            except Exception: top_k = 3
             # Get Model B config
             res_B = cached_result_B.get()
             is_gpt2_B = False
@@ -4109,7 +4117,7 @@ def server(input, output, session):
 
                  # Get shared parameters
                  try: layer_idx = int(input.global_layer())
-                 except: layer_idx = 0
+                 except Exception: layer_idx = 0
                  norm_mode = global_norm_mode.get()
                  use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
 
@@ -4844,12 +4852,12 @@ def server(input, output, session):
             val = input.global_selected_tokens()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
             
         if not selected_indices:
             try: selected_idx = int(input.global_focus_token())
-            except: selected_idx = -1
+            except Exception: selected_idx = -1
             if selected_idx != -1: selected_indices = [selected_idx]
 
         # Helper to get sentence range
@@ -5014,12 +5022,12 @@ def server(input, output, session):
             val = input.global_selected_tokens_B()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
             
         if not selected_indices:
             try: selected_idx = int(input.global_focus_token())
-            except: selected_idx = -1
+            except Exception: selected_idx = -1
             if selected_idx != -1: selected_indices = [selected_idx]
 
         # Helper to get sentence range
@@ -5227,9 +5235,9 @@ def server(input, output, session):
         norm_mode = global_norm_mode.get()
 
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
 
         layer_block = get_layer_block(encoder_model, layer_idx)
 
@@ -5418,7 +5426,7 @@ def server(input, output, session):
             val = input.global_selected_tokens()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
             
         # Fallback to single token if no span
@@ -5427,7 +5435,7 @@ def server(input, output, session):
                 single = int(input.global_focus_token())
                 if single != -1:
                     selected_indices = [single]
-            except: 
+            except Exception: 
                 pass
         
         # Prepare styled ticks
@@ -5594,9 +5602,9 @@ def server(input, output, session):
         norm_mode = global_norm_mode.get()
 
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
 
         # Determine if causal (GPT-2)
         layer_block = get_layer_block(encoder_model, layer_idx)
@@ -5617,7 +5625,7 @@ def server(input, output, session):
             val = input.global_selected_tokens()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
 
         # Fallback
@@ -5626,7 +5634,7 @@ def server(input, output, session):
                 global_token = int(input.global_focus_token())
                 if global_token >= 0:
                     selected_indices = [global_token]
-            except:
+            except Exception:
                 pass
 
         focus_indices = selected_indices if selected_indices else None # None means show all
@@ -5799,9 +5807,9 @@ def server(input, output, session):
         use_global = global_metrics_mode.get() == "all"
 
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
 
         # Use global_selected_tokens for span support (same as Model A)
         selected_indices = []
@@ -5809,7 +5817,7 @@ def server(input, output, session):
             val = input.global_selected_tokens()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
 
         # Fallback
@@ -5818,7 +5826,7 @@ def server(input, output, session):
                 global_token = int(input.global_focus_token())
                 if global_token >= 0:
                     selected_indices = [global_token]
-            except:
+            except Exception:
                 pass
 
         focus_indices = selected_indices if selected_indices else None
@@ -5939,9 +5947,9 @@ def server(input, output, session):
         if not res: return None
         # Restore input dependency for interactive updates
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
         
         # Use global mode from floating bar
         use_global = global_metrics_mode.get() == "all"
@@ -6020,9 +6028,9 @@ def server(input, output, session):
         if not res: return None
         
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
         
         # Use global mode from floating bar: "all" -> cluster, otherwise -> single
         use_global = global_metrics_mode.get() == "all"
@@ -6286,7 +6294,7 @@ def server(input, output, session):
             # Convert to JSON
             tree_json = json.dumps(tree_data)
         except Exception as e:
-            return ui.HTML(f"<p style='font-size:11px;color:#ef4444;'>Error generating tree: {str(e)}</p>")
+            return ui.HTML(f"<p style='font-size:11px;color:#ef4444;'>Error generating tree: {_html.escape(str(e))}</p>")
         
         html = f"""
     <div class="influence-tree-wrapper" style="height: 100%; display: flex; flex-direction: column; position: relative; overflow: auto;">
@@ -6330,9 +6338,9 @@ def server(input, output, session):
         
         # Use global inputs for layer and head
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
         
         # Use global_selected_tokens for span support - Tree View uses only the FIRST selected token as root
         selected_indices = []
@@ -6340,7 +6348,7 @@ def server(input, output, session):
             val = input.global_selected_tokens()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
             
         # Fallback
@@ -6349,14 +6357,14 @@ def server(input, output, session):
                 global_token = int(input.global_focus_token())
                 if global_token >= 0:
                     selected_indices = [global_token]
-            except:
+            except Exception:
                 pass
         
         root_idx = selected_indices[0] if selected_indices else 0
         
         try:
             top_k_val = int(input.global_topk())
-        except:
+        except Exception:
             top_k_val = 3
 
         # Get normalization mode
@@ -6411,7 +6419,7 @@ def server(input, output, session):
         if not res:
             return None
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
         return get_embedding_table(res, top_k=top_k, suffix="_B")
 
     @output
@@ -6434,7 +6442,7 @@ def server(input, output, session):
         if not res:
             return None
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Positional Embeddings"),
@@ -6463,9 +6471,9 @@ def server(input, output, session):
         if not res:
             return None
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
 
         # Get normalization mode
         norm_mode = global_norm_mode.get()
@@ -6494,7 +6502,7 @@ def server(input, output, session):
             val = input.global_selected_tokens_B()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
             
         # Fallback
@@ -6505,11 +6513,11 @@ def server(input, output, session):
         focus_indices = selected_indices if selected_indices else [0]
 
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
 
         # Get normalization mode
         norm_mode = global_norm_mode.get()
@@ -6554,7 +6562,7 @@ def server(input, output, session):
         if not res:
             return None
         try: layer = int(input.global_layer())
-        except: layer = 0
+        except Exception: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"}, 
             ui.h4("Feed-Forward Network"), 
@@ -6569,7 +6577,7 @@ def server(input, output, session):
         if not res:
             return None
         try: layer = int(input.global_layer())
-        except: layer = 0
+        except Exception: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Add & Norm"),
@@ -6584,7 +6592,7 @@ def server(input, output, session):
         if not res:
             return None
         try: layer = int(input.global_layer())
-        except: layer = 0
+        except Exception: layer = 0
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Add & Norm (Post-FFN)"),
@@ -6619,7 +6627,7 @@ def server(input, output, session):
 
         try:
             is_cpm = active_compare_prompts.get()
-        except:
+        except Exception:
             is_cpm = False
 
         # Determine if we should show predictions based on the ACTUAL loaded model for B
@@ -6637,7 +6645,7 @@ def server(input, output, session):
         use_mlm = True  # Always show predictions
 
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
 
         # Interactive Mode Logic (BERT only)
         manual_mode = False
@@ -6645,11 +6653,11 @@ def server(input, output, session):
 
         if is_bert:
             try: manual_mode = input.mlm_interactive_mode_B()
-            except: manual_mode = False
+            except Exception: manual_mode = False
 
             if manual_mode:
                 try: custom_mask_indices = input.manual_mask_indices_B()
-                except: custom_mask_indices = None
+                except Exception: custom_mask_indices = None
 
         # JS for Interactive Masking (Model B)
         js_script_B = ui.HTML("""
@@ -6691,11 +6699,11 @@ def server(input, output, session):
             
             # Interactive Mode Toggle
             try: manual_mode = input.mlm_interactive_mode_B()
-            except: manual_mode = False
+            except Exception: manual_mode = False
             
             if manual_mode:
                 try: custom_mask_indices = input.manual_mask_indices_B()
-                except: custom_mask_indices = None
+                except Exception: custom_mask_indices = None
             
             # Custom Toggle Button for Interactive Mode (Style: Norm/Similarity)
             # User wants "Toggle Masks" text, pink style like Norm buttons.
@@ -6777,9 +6785,9 @@ def server(input, output, session):
         if not res:
             return None
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
         
         # Use global mode from floating bar for consistency with Model A
         use_global = global_metrics_mode.get() == "all"
@@ -6853,7 +6861,7 @@ def server(input, output, session):
             val = input.global_selected_tokens_B()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
             
         # Fallback
@@ -6862,7 +6870,7 @@ def server(input, output, session):
                 global_token = int(input.global_focus_token())
                 if global_token >= 0:
                     selected_indices = [global_token]
-            except:
+            except Exception:
                 pass
         
         
@@ -6874,13 +6882,13 @@ def server(input, output, session):
         root_idx = selected_indices[0] if selected_indices else 0
 
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
         
 
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
 
         # Get normalization mode and global mode
         norm_mode = global_norm_mode.get()
@@ -6944,14 +6952,14 @@ def server(input, output, session):
             subtitle = "All Layers · All Heads"
         else:
             try: layer_idx = int(input.global_layer())
-            except: layer_idx = 0
+            except Exception: layer_idx = 0
             try: head_idx = int(input.global_head())
-            except: head_idx = 0
+            except Exception: head_idx = 0
             subtitle = f"Layer {layer_idx} · Head {head_idx}"
 
         # Get Scale
         try: use_full_scale = input.global_scale_full()
-        except: use_full_scale = False
+        except Exception: use_full_scale = False
 
         # Get normalization mode
         norm_mode = global_norm_mode.get()
@@ -7002,9 +7010,9 @@ def server(input, output, session):
         norm_mode = global_norm_mode.get()
 
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
 
         layer_block = get_layer_block(encoder_model, layer_idx)
         is_causal = not hasattr(layer_block, "attention")
@@ -7156,7 +7164,7 @@ def server(input, output, session):
             val = input.global_selected_tokens_B()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
 
         if not selected_indices:
@@ -7164,7 +7172,7 @@ def server(input, output, session):
                 single = int(input.global_focus_token())
                 if single != -1:
                     selected_indices = [single]
-            except:
+            except Exception:
                 pass
 
         # Prepare styled ticks
@@ -7321,9 +7329,9 @@ def server(input, output, session):
         norm_mode = global_norm_mode.get()
 
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
 
         # Determine if causal
         layer_block = get_layer_block(encoder_model, layer_idx)
@@ -7344,7 +7352,7 @@ def server(input, output, session):
             val = input.global_selected_tokens_B()
             if val:
                 selected_indices = json.loads(val)
-        except:
+        except Exception:
             pass
 
         # Fallback
@@ -7353,7 +7361,7 @@ def server(input, output, session):
                 global_token = int(input.global_focus_token())
                 if global_token >= 0:
                     selected_indices = [global_token]
-            except:
+            except Exception:
                 pass
 
         # Safety: Filter indices to be within bounds of current tokens (crucial for Compare Prompts)
@@ -7514,9 +7522,9 @@ def server(input, output, session):
         suffix = ""
 
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         norm_mode = global_norm_mode.get()
         use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
         _, _, _, _, _, _, _, encoder_model, *_ = res
@@ -7601,9 +7609,9 @@ def server(input, output, session):
         suffix = "_B"
 
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         norm_mode = global_norm_mode.get()
         use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
         _, _, _, _, _, _, _, encoder_model, *_ = res
@@ -7688,9 +7696,9 @@ def server(input, output, session):
         suffix = ""
 
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         norm_mode = global_norm_mode.get()
         use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
         _, _, _, _, _, _, _, encoder_model, *_ = res
@@ -7771,9 +7779,9 @@ def server(input, output, session):
         suffix = "_B"
 
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         norm_mode = global_norm_mode.get()
         use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
         _, _, _, _, _, _, _, encoder_model, *_ = res
@@ -7848,9 +7856,9 @@ def server(input, output, session):
             tokens, _, _, attentions, _, _, _, encoder_model, *_ = res
             
             try: layer_idx = int(input.global_layer())
-            except: layer_idx = 0
+            except Exception: layer_idx = 0
             try: head_idx = int(input.global_head())
-            except: head_idx = 0
+            except Exception: head_idx = 0
             
             norm_mode = global_norm_mode.get()
             use_global = global_metrics_mode.get() == "all"
@@ -7891,9 +7899,9 @@ def server(input, output, session):
             tokens, _, _, attentions, _, _, _, encoder_model, *_ = res
 
             try: layer_idx = int(input.global_layer())
-            except: layer_idx = 0
+            except Exception: layer_idx = 0
             try: head_idx = int(input.global_head())
-            except: head_idx = 0
+            except Exception: head_idx = 0
 
             norm_mode = global_norm_mode.get()
             use_global = global_metrics_mode.get() == "all"
@@ -7929,9 +7937,9 @@ def server(input, output, session):
             tokens, _, _, attentions, _, _, _, encoder_model, *_ = res
 
             try: layer_idx = int(input.global_layer())
-            except: layer_idx = 0
+            except Exception: layer_idx = 0
             try: head_idx = int(input.global_head())
-            except: head_idx = 0
+            except Exception: head_idx = 0
 
             norm_mode = global_norm_mode.get()
             use_global = global_metrics_mode.get() == "all"
@@ -7966,9 +7974,9 @@ def server(input, output, session):
         
         # Determine logical params (layer/head)
         try: layer_idx = int(input.global_layer())
-        except: layer_idx = 0
+        except Exception: layer_idx = 0
         try: head_idx = int(input.global_head())
-        except: head_idx = 0
+        except Exception: head_idx = 0
         
         is_gpt2 = not hasattr(encoder_model, "encoder")
         
@@ -8032,11 +8040,11 @@ def server(input, output, session):
         if not res: return None
 
         try: root_idx = int(input.global_focus_token())
-        except: root_idx = 0
+        except Exception: root_idx = 0
         if root_idx == -1: root_idx = 0
 
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
 
         norm_mode = global_norm_mode.get()
 
@@ -8096,9 +8104,9 @@ def server(input, output, session):
         else:
             # Single layer/head export (legacy)
             try: layer_idx = int(input.global_layer())
-            except: layer_idx = 0
+            except Exception: layer_idx = 0
             try: head_idx = int(input.global_head())
-            except: head_idx = 0
+            except Exception: head_idx = 0
 
             tree_data = get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, top_k, norm_mode, att_matrix_override=None)
             if tree_data:
@@ -8137,7 +8145,7 @@ def server(input, output, session):
         if not res: return None
 
         try: top_k = int(input.global_topk())
-        except: top_k = 3
+        except Exception: top_k = 3
 
         import pandas as pd
         import numpy as np

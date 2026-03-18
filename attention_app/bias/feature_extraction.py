@@ -29,7 +29,7 @@ def extract_attention_for_text(text: str, model_key: str, model_manager: Any) ->
     model.eval()
     
     # Tokenize input
-    inputs = tokenizer(text, return_tensors="pt")
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
     
     # Move inputs to same device as model parameters
     try:

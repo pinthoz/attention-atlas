@@ -1,4 +1,6 @@
 import json
+import html as _html
+import logging
 from datetime import datetime
 from pathlib import Path
 import traceback
@@ -6,11 +8,20 @@ import asyncio
 import functools
 from concurrent.futures import ThreadPoolExecutor
 
+_logger = logging.getLogger(__name__)
+
+
+def _csv_safe(val):
+    """Prevent CSV formula injection by prefixing dangerous first characters."""
+    s = str(val)
+    if s and s[0] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + s
+    return s
+
 import numpy as np
 import torch
 from shiny import ui, render, reactive
 
-import traceback
 from ..models import ModelManager
 from ..utils import get_reproducibility_info
 from ..bias import (
@@ -991,7 +1002,7 @@ def bias_server_handlers(input, output, session):
             # Auto-load from .npy if available (same as GusNetDetector)
             npy_path = Path(cfg["path"]) / "optimized_thresholds.npy"
             if npy_path.exists():
-                opt = np.load(str(npy_path)).tolist()
+                opt = np.load(str(npy_path), allow_pickle=False).tolist()
             defaults = {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
 
             if opt:
@@ -1048,10 +1059,10 @@ def bias_server_handlers(input, output, session):
         items = []
         for text in hist:
             display_text = (text[:60] + "...") if len(text) > 60 else text
-            safe_text = text.replace("\\", "\\\\").replace("'", "\\'").replace('"', '&quot;').replace('\n', ' ')
+            safe_text = _html.escape(text.replace('\n', ' '), quote=True)
             items.append(
                 ui.div(
-                    display_text,
+                    _html.escape(display_text),
                     class_="history-item",
                     onclick=f"selectBiasHistoryItem('{safe_text}')"
                 )
@@ -1176,8 +1187,8 @@ def bias_server_handlers(input, output, session):
         else:
             for item in history:
                 display = (item[:60] + "...") if len(item) > 60 else item
-                safe = item.replace("\\", "\\\\").replace("'", "\\'").replace('"', '&quot;').replace('\n', ' ')
-                display_safe = display.replace("`", "\\`").replace("${", "\\${")
+                safe = _html.escape(item.replace('\n', ' '), quote=True)
+                display_safe = _html.escape(display)
                 html_content += (
                     f'<div class="history-item" '
                     f"onclick=\"selectBiasHistoryItem('{safe}')\">"
@@ -1251,8 +1262,7 @@ def bias_server_handlers(input, output, session):
         if not prompts_mode and step == "B":
             bias_prompt_step.set("A")
             # Also sync the UI tab to A
-            await session.send_custom_message("bias_eval_js", 
-                "if(window.switchBiasPromptTab) window.switchBiasPromptTab('A');")
+            await session.send_custom_message("bias_switch_prompt_tab", {"tab": "A"})
         
         # In compare prompts mode on Step A: show "Prompt B ->"
         if prompts_mode and step == "A":
@@ -1300,11 +1310,11 @@ def bias_server_handlers(input, output, session):
             folder = "downloads/sessions"
         if folder and content and not content.startswith("Error") and not content.startswith("No data"):
             try:
-                filepath = Path(folder) / filename
+                filepath = Path(folder) / Path(filename).name
                 filepath.parent.mkdir(parents=True, exist_ok=True)
                 filepath.write_text(content, encoding='utf-8')
-            except Exception:
-                pass
+            except Exception as e:
+                logging.getLogger(__name__).warning("save_bias_export_to_folder failed: %s", e)
 
     def auto_save_bias_download(section, ext, **gen_kwargs):
         """Decorator replacing @render.download that also saves a copy."""
@@ -1429,11 +1439,11 @@ def bias_server_handlers(input, output, session):
 
             # Use JS to set switch values (standard Shiny switches)
             if compare_mode:
-                await session.send_custom_message("bias_eval_js",
-                    "var sw=$('#bias_compare_mode'); if(sw.length && !sw.prop('checked')){sw.prop('checked',true).trigger('change');}")
+                await session.send_custom_message("bias_toggle_switch",
+                    {"id": "bias_compare_mode", "checked": True})
             if compare_prompts:
-                await session.send_custom_message("bias_eval_js",
-                    "var sw=$('#bias_compare_prompts_mode'); if(sw.length && !sw.prop('checked')){sw.prop('checked',true).trigger('change');}")
+                await session.send_custom_message("bias_toggle_switch",
+                    {"id": "bias_compare_prompts_mode", "checked": True})
 
             # 2. Wait for UI to rebuild, then restore controls via JS
             await asyncio.sleep(0.3)
@@ -1449,11 +1459,11 @@ def bias_server_handlers(input, output, session):
 
             # 3. Restore text inputs
             if "text" in data:
-                await session.send_custom_message("bias_eval_js",
-                    f"var ta=document.getElementById('bias_input_text'); if(ta){{ta.value={json.dumps(data['text'])}; Shiny.setInputValue('bias_input_text',ta.value,{{priority:'event'}});}}")
+                await session.send_custom_message("bias_set_textarea",
+                    {"id": "bias_input_text", "value": data["text"]})
             if "bias_input_text_B" in data:
-                await session.send_custom_message("bias_eval_js",
-                    f"var ta=document.getElementById('bias_input_text_B'); if(ta){{ta.value={json.dumps(data['bias_input_text_B'])}; Shiny.setInputValue('bias_input_text_B',ta.value,{{priority:'event'}});}}")
+                await session.send_custom_message("bias_set_textarea",
+                    {"id": "bias_input_text_B", "value": data["bias_input_text_B"]})
 
             # 4. Restore per-class thresholds via JS slider updates
             thresh_map = {
@@ -1467,10 +1477,8 @@ def bias_server_handlers(input, output, session):
             for input_key, slider_id in thresh_map.items():
                 if input_key in data:
                     val = float(data[input_key])
-                    await session.send_custom_message("bias_eval_js",
-                        f"var el=document.getElementById('{slider_id}');"
-                        f"if(el){{el.value={val};"
-                        f"Shiny.setInputValue('{input_key}',{val},{{priority:'event'}});}}")
+                    await session.send_custom_message("bias_set_slider",
+                        {"id": slider_id, "value": val, "inputId": input_key})
 
             # 5. Restore layer/head selections (after a small delay for selects to populate)
             await asyncio.sleep(0.2)
@@ -1480,17 +1488,14 @@ def bias_server_handlers(input, output, session):
                 ui.update_select("bias_attn_head", selected=str(data["bias_attn_head"]))
             if "bias_top_k" in data:
                 top_k = int(data["bias_top_k"])
-                await session.send_custom_message("bias_eval_js",
-                    f"var el=document.getElementById('bias-topk-slider');"
-                    f"if(el){{el.value={top_k};"
-                    f"Shiny.setInputValue('bias_top_k',{top_k},{{priority:'event'}});}}")
+                await session.send_custom_message("bias_set_slider",
+                    {"id": "bias-topk-slider", "value": top_k, "inputId": "bias_top_k"})
 
             ui.notification_show("Bias session loaded successfully.", type="message", duration=3)
 
         except Exception as e:
-            print(f"Error loading bias session: {e}")
-            traceback.print_exc()
-            ui.notification_show(f"Error loading session: {e}", type="error")
+            _logger.exception("Error loading bias session")
+            ui.notification_show("Error loading session. Please check the file format.", type="error")
 
     # ── CSV Export Handlers (8 pairs: A and B) ──
 
@@ -1533,7 +1538,7 @@ def bias_server_handlers(input, output, session):
             scores = lbl.get("scores", {})
             types = ";".join(lbl.get("bias_types", []))
             max_s = max((scores.get(t, 0) for t in lbl.get("bias_types", [])), default=0)
-            lines.append(f"{lbl['token']},{lbl['index']},{types},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f},{max_s:.4f}")
+            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{types},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f},{max_s:.4f}")
         yield "\n".join(lines)
 
     @auto_save_bias_download("spans", "csv", is_b=True)
@@ -1549,7 +1554,7 @@ def bias_server_handlers(input, output, session):
             scores = lbl.get("scores", {})
             types = ";".join(lbl.get("bias_types", []))
             max_s = max((scores.get(t, 0) for t in lbl.get("bias_types", [])), default=0)
-            lines.append(f"{lbl['token']},{lbl['index']},{types},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f},{max_s:.4f}")
+            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{types},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f},{max_s:.4f}")
         yield "\n".join(lines)
 
     # 3. Token Bias Strip
@@ -1562,7 +1567,7 @@ def bias_server_handlers(input, output, session):
         lines = ["token,index,is_biased,O,GEN,UNFAIR,STEREO"]
         for lbl in res["token_labels"]:
             scores = lbl.get("scores", {})
-            lines.append(f"{lbl['token']},{lbl['index']},{lbl.get('is_biased',False)},{scores.get('O',0):.4f},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f}")
+            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{lbl.get('is_biased',False)},{scores.get('O',0):.4f},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f}")
         yield "\n".join(lines)
 
     @auto_save_bias_download("strip", "csv", is_b=True)
@@ -1574,7 +1579,7 @@ def bias_server_handlers(input, output, session):
         lines = ["token,index,is_biased,O,GEN,UNFAIR,STEREO"]
         for lbl in res["token_labels"]:
             scores = lbl.get("scores", {})
-            lines.append(f"{lbl['token']},{lbl['index']},{lbl.get('is_biased',False)},{scores.get('O',0):.4f},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f}")
+            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{lbl.get('is_biased',False)},{scores.get('O',0):.4f},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f}")
         yield "\n".join(lines)
 
     # 4. Confidence Breakdown
@@ -1757,8 +1762,7 @@ def bias_server_handlers(input, output, session):
         yield "\n".join(lines)
 
     def log_debug(msg):
-        with open("bias_debug.log", "a") as f:
-            f.write(f"[{datetime.now().isoformat()}] {msg}\n")
+        _logger.debug(msg)
             
     def heavy_bias_compute(text, model_name, threshold, bias_model_key, use_optimized=True):
         """Perform bias analysis computation (runs in thread pool).
@@ -1936,7 +1940,7 @@ def bias_server_handlers(input, output, session):
             if compare_prompts_live and step == "A":
                 # User clicked "Prompt B ->". Do not analyze. Switch tab.
                 log_debug("Sequential Logic: Switching to Tab B")
-                await session.send_custom_message("bias_eval_js", "window.switchBiasPromptTab('B');")
+                await session.send_custom_message("bias_switch_prompt_tab", {"tab": "B"})
                 return
 
             log_debug("Starting loading UI...")
@@ -1988,8 +1992,7 @@ def bias_server_handlers(input, output, session):
                 # Reset prompt step to A when switching modes
                 bias_prompt_step.set("A")
                 # Ensure UI reflects the reset
-                await session.send_custom_message("bias_eval_js",
-                    "if(window.switchBiasPromptTab) window.switchBiasPromptTab('A');")
+                await session.send_custom_message("bias_switch_prompt_tab", {"tab": "A"})
 
             active_bias_compare_models.set(compare_models)
             active_bias_compare_prompts.set(compare_prompts)
@@ -2172,11 +2175,9 @@ def bias_server_handlers(input, output, session):
                 bias_results.set(None)
                 bias_results_B.set(None)
             except Exception as e:
-                msg = f"ERROR during execution: {e}"
-                log_debug(msg)
-                print(msg)
-                traceback.print_exc()
-                ui.notification_show(f"Analysis failed: {e}", type="error")
+                _logger.exception("Bias analysis failed")
+                log_debug(f"ERROR during execution: {type(e).__name__}")
+                ui.notification_show("Analysis failed. Please try again or check the server logs.", type="error")
                 bias_results.set(None)
                 bias_results_B.set(None)
             finally:
@@ -2242,21 +2243,16 @@ def bias_server_handlers(input, output, session):
         cf_text, _ = generate_counterfactual(orig, filtered)
 
         # 1. Enable Compare Prompts mode (toggle switch + explicit Shiny input)
-        await session.send_custom_message("bias_eval_js",
-            "var sw=$('#bias_compare_prompts_mode');"
-            "if(sw.length&&!sw.prop('checked')){sw.prop('checked',true).trigger('change');}"
-            "Shiny.setInputValue('bias_compare_prompts_mode',true,{priority:'event'});")
+        await session.send_custom_message("bias_toggle_switch",
+            {"id": "bias_compare_prompts_mode", "checked": True,
+             "shinyId": "bias_compare_prompts_mode"})
         await asyncio.sleep(0.3)
 
         # 2. Fill textareas A and B
-        await session.send_custom_message("bias_eval_js",
-            f"var ta=document.getElementById('bias_input_text');"
-            f"if(ta){{ta.value={json.dumps(orig)};"
-            f"Shiny.setInputValue('bias_input_text',ta.value,{{priority:'event'}});}}")
-        await session.send_custom_message("bias_eval_js",
-            f"var tb=document.getElementById('bias_input_text_B');"
-            f"if(tb){{tb.value={json.dumps(cf_text)};"
-            f"Shiny.setInputValue('bias_input_text_B',tb.value,{{priority:'event'}});}}")
+        await session.send_custom_message("bias_set_textarea",
+            {"id": "bias_input_text", "value": orig})
+        await session.send_custom_message("bias_set_textarea",
+            {"id": "bias_input_text_B", "value": cf_text})
         await asyncio.sleep(0.3)
 
         # 3. Set step to "B" so the analyze click skips the sequential intercept
@@ -2265,12 +2261,7 @@ def bias_server_handlers(input, output, session):
 
         # 4. Trigger analysis directly by setting the action button value 
         #    AND clicking the DOM element just to be safe
-        await session.send_custom_message("bias_eval_js",
-            "setTimeout(function(){"
-            "  var btn=document.getElementById('analyze_bias_btn');"
-            "  if(btn){btn.click();}"
-            "  Shiny.setInputValue('analyze_bias_btn',Date.now(),{priority:'event'});"
-            "}, 100);")
+        await session.send_custom_message("bias_click_analyze", {})
 
     # ── Batch file upload handler ──
 
@@ -2333,6 +2324,10 @@ def bias_server_handlers(input, output, session):
                         val = row.get(text_col, "").strip()
                         if val:
                             sentences.append(val)
+
+            MAX_BATCH_SIZE = 500
+            if len(sentences) > MAX_BATCH_SIZE:
+                sentences = sentences[:MAX_BATCH_SIZE]
 
             if sentences:
                 batch_sentences.set(sentences)
@@ -3271,7 +3266,7 @@ def bias_server_handlers(input, output, session):
         except Exception as e:
             print(f"Error in inline_bias_view: {e}")
             traceback.print_exc()
-            return ui.HTML(f'<div style="color:#ef4444;">Error: {e}</div>')
+            return ui.HTML(f'<div style="color:#ef4444;">Error: {_html.escape(str(e))}</div>')
 
     # ── Token heatmap (technical view) ──
 
@@ -3289,7 +3284,7 @@ def bias_server_handlers(input, output, session):
             return ui.HTML(_chart_with_png_btn(_deferred_plotly(fig, "token-bias-heatmap"), "token-bias-heatmap", "token_bias_heatmap"))
         except Exception as e:
             print(f"Error creating token bias viz: {e}")
-            return ui.HTML(f'<div style="color:#ef4444;">Error: {e}</div>')
+            return ui.HTML(f'<div style="color:#ef4444;">Error: {_html.escape(str(e))}</div>')
 
     # ── Bias spans table (per-token, one line each) ──
 
@@ -3439,7 +3434,7 @@ def bias_server_handlers(input, output, session):
 
             items = []
             for lbl in biased:
-                clean = lbl["token"].replace("##", "").replace("\u0120", "")
+                clean = _html.escape(lbl["token"].replace("##", "").replace("\u0120", ""))
                 tok_idx = lbl["index"]
 
                 # Pick color of category with highest score
@@ -3530,17 +3525,17 @@ def bias_server_handlers(input, output, session):
                 try: 
                     s = input.bias_selected_tokens()
                     if s: sel_indices = [int(s)] if isinstance(s,(int,str)) else [int(x) for x in s if x]
-                except: pass
+                except Exception: pass
                 
             # Check if counterfactual swaps are available (single-prompt mode)
             show_cf = (not is_B and not compare_models and not compare_prompts
                        and counterfactual_swaps.get())
 
             for lbl in biased:
-                clean = lbl["token"].replace("##", "").replace("\u0120", "")
+                clean = _html.escape(lbl["token"].replace("##", "").replace("\u0120", ""))
                 types = lbl.get("bias_types", [])
                 scores = lbl.get("scores", {})
-                badges = "".join([f'<span style="display:inline-flex;align-items:center;gap:4px;background:{cat_colors.get(t,"#ff5ca9")}18;border:1px solid {cat_colors.get(t,"#ff5ca9")}40;color:{cat_colors.get(t,"#ff5ca9")};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;">{t}<span style="font-family:JetBrains Mono;font-weight:400;opacity:0.8;">{scores.get(t,0):.2f}</span></span>' for t in types])
+                badges = "".join([f'<span style="display:inline-flex;align-items:center;gap:4px;background:{cat_colors.get(t,"#ff5ca9")}18;border:1px solid {cat_colors.get(t,"#ff5ca9")}40;color:{cat_colors.get(t,"#ff5ca9")};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;">{_html.escape(t)}<span style="font-family:JetBrains Mono;font-weight:400;opacity:0.8;">{scores.get(t,0):.2f}</span></span>' for t in types])
 
                 # Counterfactual swap badge (if token is swappable)
                 cf_badge = ""
@@ -3575,18 +3570,18 @@ def bias_server_handlers(input, output, session):
             # Read directly from slider inputs (always reflects sidebar state)
             if not is_B:
                 try: u = float(input.bias_thresh_unfair())
-                except: u = current_thresholds_A.get().get("UNFAIR", 0.5)
+                except Exception: u = current_thresholds_A.get().get("UNFAIR", 0.5)
                 try: g = float(input.bias_thresh_gen())
-                except: g = current_thresholds_A.get().get("GEN", 0.5)
+                except Exception: g = current_thresholds_A.get().get("GEN", 0.5)
                 try: s = float(input.bias_thresh_stereo())
-                except: s = current_thresholds_A.get().get("STEREO", 0.5)
+                except Exception: s = current_thresholds_A.get().get("STEREO", 0.5)
             else:
                 try: u = float(input.bias_thresh_unfair_b())
-                except: u = current_thresholds_B.get().get("UNFAIR", 0.5)
+                except Exception: u = current_thresholds_B.get().get("UNFAIR", 0.5)
                 try: g = float(input.bias_thresh_gen_b())
-                except: g = current_thresholds_B.get().get("GEN", 0.5)
+                except Exception: g = current_thresholds_B.get().get("GEN", 0.5)
                 try: s = float(input.bias_thresh_stereo_b())
-                except: s = current_thresholds_B.get().get("STEREO", 0.5)
+                except Exception: s = current_thresholds_B.get().get("STEREO", 0.5)
 
             t_info += f'UNFAIR: <code>{u:.2f}</code> &bull; GEN: <code>{g:.2f}</code> &bull; STEREO: <code>{s:.2f}</code>'
             if data and data.get("use_optimized"):
@@ -3713,7 +3708,7 @@ def bias_server_handlers(input, output, session):
         def get_viz(data, sel_idx=None):
             try:
                 return create_token_bias_strip(data["token_labels"], sel_idx)
-            except Exception as e: return f'<div style="color:red">Error: {e}</div>'
+            except Exception as e: return f'<div style="color:red">Error: {_html.escape(str(e))}</div>'
 
         man_header = (
             "Token-Level Bias Distribution",
@@ -3829,7 +3824,7 @@ def bias_server_handlers(input, output, session):
         if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
 
         try: l_idx, h_idx = int(input.bias_attn_layer()), int(input.bias_attn_head())
-        except: l_idx, h_idx = 0, 0
+        except Exception: l_idx, h_idx = 0, 0
 
         sel = None
         try:
@@ -3873,7 +3868,7 @@ def bias_server_handlers(input, output, session):
                     delta_label=delta_label,
                 )
                 return _deferred_plotly(fig, container_id, height="600px")
-            except Exception as e: return f'<div style="color:red">Error: {e}</div>'
+            except Exception as e: return f'<div style="color:red">Error: {_html.escape(str(e))}</div>'
 
         man_header = (
             f"Combined Attention & Bias View{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
@@ -3989,7 +3984,7 @@ def bias_server_handlers(input, output, session):
                 matrix = analyzer.create_attention_bias_matrix(attentions, biased_indices)
                 metrics = data.get("attention_metrics")
                 try: sl = int(input.bias_attn_layer())
-                except: sl = None
+                except Exception: sl = None
 
                 try: _bar_th = float(input.bias_bar_threshold())
                 except Exception: _bar_th = 1.5
@@ -4009,7 +4004,7 @@ def bias_server_handlers(input, output, session):
                     bias_matrix_other=matrix_other, delta_label=delta_label,
                 )
                 return _deferred_plotly(fig, container_id, height="600px")
-            except Exception as e: return f'<div style="color:red">Error: {e}</div>'
+            except Exception as e: return f'<div style="color:red">Error: {_html.escape(str(e))}</div>'
 
         _bar_help = (
             f"<span style='{_TH}'>Formula</span>"
@@ -4100,7 +4095,7 @@ def bias_server_handlers(input, output, session):
             res_render_B, _ = _resolve_source_for_render(res_B, _base_attn_cache_B, src_mode)
 
         try: l_idx = int(input.bias_attn_layer())
-        except: l_idx = None
+        except Exception: l_idx = None
 
         def get_viz(data, container_id="bias-propagation-container"):
             p = data["propagation_analysis"]["layer_propagation"]
@@ -4188,7 +4183,7 @@ def bias_server_handlers(input, output, session):
             res_render_B, _ = _resolve_source_for_render(res_B, _base_attn_cache_B, src_mode)
 
         try: l_idx, h_idx = int(input.bias_attn_layer()), int(input.bias_attn_head())
-        except: l_idx, h_idx = -1, -1
+        except Exception: l_idx, h_idx = -1, -1
 
         # Read dynamic Top-K and BAR threshold
         try: k = int(input.bias_top_k())
@@ -6915,7 +6910,7 @@ def bias_server_handlers(input, output, session):
                 try:
                     val = input.bias_top_k()
                     if val is not None: top_n = int(val)
-                except:
+                except Exception:
                     pass
 
                 # ── Attention heatmaps (generate before detail HTML) ──
@@ -7131,15 +7126,12 @@ def bias_server_handlers(input, output, session):
             if "SilentException" in str(type(e)):
                 pass
             else:
-                import traceback
-                error_trace = traceback.format_exc()
+                _logger.exception("Error loading example details")
                 detail_html = (
-                    f"<div style='color:#ef4444;padding:16px;border:1px solid rgba(239,68,68,0.2);background:rgba(239,68,68,0.05);border-radius:8px;'>"
-                    f"<div style='font-weight:700;margin-bottom:8px;'>Error loading example details</div>"
-                    f"<div style='font-family:JetBrains Mono,monospace;font-size:11px;white-space:pre-wrap;'>{e}</div>"
-                    f"<details style='margin-top:8px;'><summary style='cursor:pointer;opacity:0.6;font-size:10px;'>Show Traceback</summary>"
-                    f"<pre style='font-size:9px;opacity:0.8;margin-top:8px;'>{error_trace}</pre></details>"
-                    f"</div>"
+                    "<div style='color:#ef4444;padding:16px;border:1px solid rgba(239,68,68,0.2);background:rgba(239,68,68,0.05);border-radius:8px;'>"
+                    "<div style='font-weight:700;margin-bottom:8px;'>Error loading example details</div>"
+                    "<div style='font-family:JetBrains Mono,monospace;font-size:11px;'>An internal error occurred. Check the server logs for details.</div>"
+                    "</div>"
                 )
 
         detail_section = (
@@ -7198,13 +7190,13 @@ def bias_server_handlers(input, output, session):
         # Get selected layer/head
         try:
             sel_layer = int(input.bias_attn_layer())
-        except:
+        except Exception:
             sel_layer = 0
         try:
             sel_head = int(input.bias_attn_head())
-        except:
+        except Exception:
              sel_head = 0
-             
+
         # Re-extract
         base = _GUSNET_TO_ENCODER.get(mk, "bert-base-uncased")
         ctx = ex.get("context", "")
@@ -7325,7 +7317,7 @@ def bias_server_handlers(input, output, session):
                      try:
                          val = float(mat[last_idx][i])
                          rows.append(f"{lbl},{i},{toks[i]},{val:.6f}")
-                     except:
+                     except Exception:
                         pass
                  return rows
              except Exception as e:
@@ -7373,34 +7365,34 @@ def bias_server_handlers(input, output, session):
         # Get selected layer/head
         try:
             sel_layer = int(input.bias_attn_layer())
-        except:
+        except Exception:
             sel_layer = 0
         try:
             sel_head = int(input.bias_attn_head())
-        except:
+        except Exception:
              sel_head = 0
-             
+
         # Re-extract
         base = _GUSNET_TO_ENCODER.get(mk, "bert-base-uncased")
         ctx = ex.get("context", "")
         s_text = ctx + " " + ex.get("stereo_sentence", "")
         a_text = ctx + " " + ex.get("anti_sentence", "")
-        
+
         s_tok, s_a = extract_attention_for_text(s_text, base, ModelManager)
         a_tok, a_a = extract_attention_for_text(a_text, base, ModelManager)
-        
+
         # We need the attention matrix for the selected head
         def _get_mat(attns):
             try:
                 mat = attns[sel_layer][sel_head]
                 if hasattr(mat, "tolist"): mat = mat.tolist()
                 return mat
-            except:
+            except Exception:
                 return None
 
         mat_s = _get_mat(s_a)
         mat_a = _get_mat(a_a)
-        
+
         if mat_s is None or mat_a is None:
             yield "Error extracting attention"
             return
@@ -7433,7 +7425,7 @@ def bias_server_handlers(input, output, session):
                     tok = f"{s_tok[i]}/{a_tok[i]}"
                     
                 yield f"{i},{tok},{val_s:.6f},{val_a:.6f},{diff:.6f}"
-            except:
+            except Exception:
                 pass
 
     # ── Helpers ────────────────────────────────────────────────────────

@@ -243,7 +243,7 @@ class GusNetDetector:
         # Auto-load thresholds from .npy (written by training script)
         npy_path = Path(self.config["path"]) / "optimized_thresholds.npy"
         if npy_path.exists():
-            self.config["optimized_thresholds"] = np.load(str(npy_path)).tolist()
+            self.config["optimized_thresholds"] = np.load(str(npy_path), allow_pickle=False).tolist()
 
     # ── Model loading ────────────────────────────────────────────────────
 
