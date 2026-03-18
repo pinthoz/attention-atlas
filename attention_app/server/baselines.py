@@ -41,7 +41,7 @@ def compute_baselines(model, tokenizer, is_gpt2):
     
     for text in BASELINE_SENTENCES:
         try:
-            inputs = tokenizer(text, return_tensors="pt").to(device)
+            inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512).to(device)
             
             with torch.no_grad():
                 if is_gpt2:

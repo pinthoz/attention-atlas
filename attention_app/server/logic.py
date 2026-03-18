@@ -1,3 +1,4 @@
+import logging
 import re
 import torch
 import traceback
@@ -6,6 +7,8 @@ from ..utils import positional_encoding
 from ..models import ModelManager
 from ..head_specialization import compute_all_heads_specialization, compute_head_clusters
 from ..isa import compute_isa
+
+_logger = logging.getLogger(__name__)
 
 
 def tokenize_with_segments(text: str, tokenizer):
@@ -55,12 +58,12 @@ def heavy_compute(text, model_name):
             - isa_data: Inter-sentence attention data
             - head_clusters: Algorithmic clustering results (t-SNE + K-Means)
     """
-    print("DEBUG: Starting heavy_compute")
+    _logger.debug("Starting heavy_compute")
     if not text:
         return None
 
     tokenizer, encoder_model, mlm_model = ModelManager.get_model(model_name)
-    print("DEBUG: Models loaded")
+    _logger.debug("Models loaded")
 
     device = ModelManager.get_device()
     inputs = tokenize_with_segments(text, tokenizer)
@@ -69,7 +72,7 @@ def heavy_compute(text, model_name):
     with torch.no_grad():
         outputs = encoder_model(**inputs)
 
-    print("DEBUG: Model inference complete")
+    _logger.debug("Model inference complete")
 
     tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
     embeddings = outputs.last_hidden_state[0].cpu().numpy()
@@ -80,35 +83,32 @@ def heavy_compute(text, model_name):
     # Compute head specialization metrics
     head_specialization = None
     try:
-        print("DEBUG: Computing head specialization")
+        _logger.debug("Computing head specialization")
         head_specialization = compute_all_heads_specialization(attentions, tokens, text)
-        print("DEBUG: Head specialization complete")
+        _logger.debug("Head specialization complete")
     except Exception as e:
-        print(f"Warning: Could not compute head specialization: {e}")
-        traceback.print_exc()
+        _logger.warning("Could not compute head specialization: %s", e)
 
     # Compute head clusters (t-SNE + KMeans)
     head_clusters = []
     if head_specialization:
         try:
-            print("DEBUG: Computing head clusters")
+            _logger.debug("Computing head clusters")
             head_clusters = compute_head_clusters(head_specialization)
-            print("DEBUG: Head clusters complete")
+            _logger.debug("Head clusters complete")
         except Exception as e:
-            print(f"Warning: Could not compute head clusters: {e}")
-            traceback.print_exc()
+            _logger.warning("Could not compute head clusters: %s", e)
 
     # Compute ISA
     isa_data = None
     try:
-        print("DEBUG: Computing ISA")
+        _logger.debug("Computing ISA")
         isa_data = compute_isa(attentions, tokens, text, tokenizer, inputs)
-        print("DEBUG: ISA complete")
+        _logger.debug("ISA complete")
     except Exception as e:
-        print(f"Warning: Could not compute ISA: {e}")
-        traceback.print_exc()
+        _logger.warning("Could not compute ISA: %s", e)
 
-    print("DEBUG: heavy_compute finished")
+    _logger.debug("heavy_compute finished")
     return (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model, head_specialization, isa_data, head_clusters)
 
 

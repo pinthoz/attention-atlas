@@ -1782,10 +1782,8 @@ def bias_server_handlers(input, output, session):
             Whether to use per-label optimized thresholds (if available).
         """
         log_debug(f"Starting heavy_bias_compute (threshold={threshold}, bias_model={bias_model_key}, use_optimized={use_optimized})")
-        print(f"DEBUG: Starting heavy_bias_compute (threshold={threshold}, bias_model={bias_model_key}, use_optimized={use_optimized})")
         if not text:
             log_debug("No text provided")
-            print("DEBUG: No text provided")
             return None
 
         try:
@@ -1795,19 +1793,15 @@ def bias_server_handlers(input, output, session):
 
             # Load attention model
             log_debug(f"Loading attention model {model_name}...")
-            print(f"DEBUG: Loading attention model {model_name}...")
             tokenizer, encoder_model, mlm_model = ModelManager.get_model(model_name)
             device = ModelManager.get_device()
             log_debug(f"Model loaded. Device: {device}")
-            print(f"DEBUG: Model loaded. Device: {device}")
 
             log_debug("Tokenizing text...")
-            print("DEBUG: Tokenizing text...")
-            inputs = tokenizer(text, return_tensors="pt")
+            inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
             inputs = {k: v.to(device) for k, v in inputs.items()}
 
             log_debug("Running encoder inference...")
-            print("DEBUG: Running encoder inference...")
             with torch.no_grad():
                 try:
                     outputs = encoder_model(**inputs)
@@ -1831,11 +1825,9 @@ def bias_server_handlers(input, output, session):
             tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
             attentions = outputs.attentions
             log_debug(f"Got {len(tokens)} tokens, {len(attentions)} layers")
-            print(f"DEBUG: Got {len(tokens)} tokens, {len(attentions)} layers")
 
             # ── Token-level bias detection (GUS-Net) ──
             log_debug(f"Initializing GusNetDetector (model_key={bias_model_key})...")
-            print(f"DEBUG: Initializing GusNetDetector (model_key={bias_model_key})...")
             if bias_model_key == "gusnet-ensemble":
                 gus_detector = EnsembleGusNetDetector(
                     model_key_a="gusnet-bert",
@@ -1848,7 +1840,6 @@ def bias_server_handlers(input, output, session):
                     use_optimized=False,
                 )
             log_debug("Running predict_proba...")
-            print("DEBUG: Running predict_proba...")
             
             # Helper to get raw probs.
             gus_tokens, gus_probs = gus_detector.predict_proba(text)

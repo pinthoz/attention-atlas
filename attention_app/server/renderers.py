@@ -1,4 +1,6 @@
+import logging
 import re
+import html as _html
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -7,6 +9,14 @@ import torch
 from sklearn.decomposition import PCA
 
 from shiny import ui
+
+
+_logger = logging.getLogger(__name__)
+
+
+def _esc(s):
+    """HTML-escape a string for safe embedding in HTML attributes and content."""
+    return _html.escape(str(s), quote=True)
 
 from ..utils import array_to_base64_img, compute_influence_tree
 from ..metrics import compute_all_attention_metrics, calculate_flow_change, calculate_balance
@@ -653,7 +663,7 @@ def _render_cosine_sim_mini(tokens, sim_matrix, top_k=3):
     rows = []
     n = len(tokens)
     for i in range(n):
-        clean_tok = tokens[i].replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tokens[i].replace("##", "").replace("Ġ", ""))
         # Get top-k similar tokens (excluding self)
         sims = sim_matrix[i].copy()
         sims[i] = -np.inf  # Exclude self
@@ -661,7 +671,7 @@ def _render_cosine_sim_mini(tokens, sim_matrix, top_k=3):
 
         neighbors = []
         for j in top_indices:
-            other_tok = tokens[j].replace("##", "").replace("Ġ", "")
+            other_tok = _esc(tokens[j].replace("##", "").replace("Ġ", ""))
             sim_val = sim_matrix[i, j]
             neighbors.append(f"<span class='sim-neighbor' title='Similarity: {sim_val:.3f}'>{other_tok} <small>({sim_val:.2f})</small></span>")
 
@@ -711,7 +721,7 @@ def _render_pca_scatter(tokens, vectors, color_class="embedding"):
         y = padding + ((coords[i, 1] - y_min) / y_range) * (svg_height - 2 * padding) if n_components > 1 else svg_height / 2
         # Flip y for SVG coordinate system
         y = svg_height - y
-        clean_tok = tokens[i].replace("##", "").replace("Ġ", "").replace("<", "&lt;").replace(">", "&gt;")
+        clean_tok = _esc(tokens[i].replace("##", "").replace("Ġ", ""))
         points.append((x, y, clean_tok, i))
 
     # Generate SVG elements
@@ -807,7 +817,7 @@ def _render_qkv_pca_scatter(tokens, Q, K, V):
 
     # Draw points (Q=green, K=orange, V=purple)
     for i in range(n):
-        clean_tok = tokens[i].replace("##", "").replace("Ġ", "").replace("<", "&lt;").replace(">", "&gt;")
+        clean_tok = _esc(tokens[i].replace("##", "").replace("Ġ", ""))
 
         # Query point
         qx, qy = map_coords(q_coords, i)
@@ -895,7 +905,7 @@ def get_embedding_table(res, top_k=3, suffix=""):
     tokens, embeddings, *_ = res
     n = len(tokens)
     unique_id = f"embed_tab{suffix}"
-    print(f"DEBUG: get_embedding_table called with suffix='{suffix}', unique_id='{unique_id}'")
+    _logger.debug(f"get_embedding_table called with suffix='{suffix}', unique_id='{unique_id}'")
 
     # Compute norms and cosine similarity
     norms = [np.linalg.norm(embeddings[i]) for i in range(n)]
@@ -905,7 +915,7 @@ def get_embedding_table(res, top_k=3, suffix=""):
     # 1. Norm View Rows
     norm_rows = []
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         norm_val = norms[i]
         norm_rows.append(
             f"<tr><td class='token-name' style='text-align:left;padding-left:8px;'>{clean_tok}</td><td class='norm-value' style='text-align:center;'>{norm_val:.2f}</td></tr>"
@@ -924,14 +934,14 @@ def get_embedding_table(res, top_k=3, suffix=""):
     # 2. Similarity View Rows
     sim_rows = []
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         # Get top-k similar tokens
         sims = sim_matrix[i].copy()
         sims[i] = -np.inf
         top_indices = np.argsort(sims)[::-1][:top_k]
         neighbors = []
         for j in top_indices:
-            other_tok = tokens[j].replace("##", "").replace("Ġ", "")
+            other_tok = _esc(tokens[j].replace("##", "").replace("Ġ", ""))
             sim_val = sim_matrix[i, j]
             neighbors.append(f"<span class='sim-neighbor' title='{sim_val:.3f}'>{other_tok}</span>")
         
@@ -955,7 +965,7 @@ def get_embedding_table(res, top_k=3, suffix=""):
         vec = embeddings[i]
         strip = array_to_base64_img(vec[:64], cmap="Blues", height=0.18)
         tip = "Embedding (first 32 dims): " + ", ".join(f"{v:.3f}" for v in vec[:32])
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         vector_rows.append(
             f"<tr>"
             f"<td class='token-name'>{clean_tok}</td>"
@@ -1016,7 +1026,7 @@ def get_segment_embedding_view(res):
 
     rows = ""
     for i, (tok, seg) in enumerate(zip(tokens, ids)):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         row_class = f"seg-row-{seg}" if seg in [0, 1] else ""
         seg_label = "A" if seg == 0 else "B" if seg == 1 else str(seg)
         rows += f"""
@@ -1059,7 +1069,7 @@ def get_posenc_table(res, top_k=3, suffix=""):
     # 1. Norm View
     norm_rows = []
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         norm_val = norms[i]
         norm_rows.append(
             f"<tr><td class='pos-index' style='text-align:center;'>{i}</td><td class='token-name' style='text-align:left;padding-left:8px;'>{clean_tok}</td><td class='norm-value' style='text-align:center;'>{norm_val:.2f}</td></tr>"
@@ -1078,14 +1088,14 @@ def get_posenc_table(res, top_k=3, suffix=""):
     # 2. Similarity View
     sim_rows = []
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         # Get top-k similar positions
         sims = sim_matrix[i].copy()
         sims[i] = -np.inf
         top_indices = np.argsort(sims)[::-1][:top_k]
         neighbors = []
         for j in top_indices:
-            other_tok = tokens[j].replace("##", "").replace("Ġ", "")
+            other_tok = _esc(tokens[j].replace("##", "").replace("Ġ", ""))
             sim_val = sim_matrix[i, j]
             neighbors.append(f"<span class='sim-neighbor' title='{sim_val:.3f}'>{other_tok}</span>")
         
@@ -1106,7 +1116,7 @@ def get_posenc_table(res, top_k=3, suffix=""):
     vector_rows = []
     for i, tok in enumerate(tokens):
         pe = pos_enc[i]
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         strip = array_to_base64_img(pe[:64], cmap="Blues", height=0.18)
         tip = f"Position {i} encoding: " + ", ".join(f"{v:.3f}" for v in pe[:32])
         vector_rows.append(
@@ -1239,7 +1249,7 @@ def get_sum_layernorm_view(res, encoder_model, suffix=""):
 
             summed_np = summed[0].cpu().numpy()
             norm_np = normalized[0].cpu().numpy()
-        except:
+        except Exception:
             is_aggregated = True
 
     # Combined vector for PCA
@@ -1253,7 +1263,7 @@ def get_sum_layernorm_view(res, encoder_model, suffix=""):
     if not is_aggregated and summed_np is not None:
         header = "<tr><th style='text-align:left;padding-left:8px;'>Token</th><th>Sum</th><th>LayerNorm</th></tr>"
         for i, tok in enumerate(tokens):
-            clean_tok = tok.replace("##", "").replace("Ġ", "")
+            clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
             sum_strip = array_to_base64_img(summed_np[i][:96], "Blues", 0.15)
             norm_strip = array_to_base64_img(norm_np[i][:96], "Blues", 0.15)
             rows.append(
@@ -1266,7 +1276,7 @@ def get_sum_layernorm_view(res, encoder_model, suffix=""):
     else:
         header = "<tr><th style='text-align:left;padding-left:8px;'>Token</th><th>Combined Vector</th></tr>"
         for i, tok in enumerate(tokens):
-            clean_tok = tok.replace("##", "").replace("Ġ", "")
+            clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
             if i < len(combined_vectors):
                 vec_strip = array_to_base64_img(combined_vectors[i][:96], "Blues", 0.15)
                 rows.append(
@@ -1340,7 +1350,7 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw", use_globa
                 avg_qk_sim += _compute_cosine_similarity_matrix(Q_l) @ _compute_cosine_similarity_matrix(K_l).T
                 
                 valid_layers += 1
-            except:
+            except Exception:
                 continue
                 
         if valid_layers > 0:
@@ -1472,7 +1482,7 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw", use_globa
     # 1. Norm View
     norm_rows = []
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         norm_rows.append(
             f"<tr>"
             f"<td class='token-name'>{clean_tok}</td>"
@@ -1491,13 +1501,13 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw", use_globa
     # 2. Alignment View (Sim)
     sim_rows = []
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         # Get top-k keys this query attends to
         sims = qk_sim[i].copy()
         top_indices = np.argsort(sims)[::-1][:top_k]
         neighbors = []
         for j in top_indices:
-            other_tok = tokens[j].replace("##", "").replace("Ġ", "")
+            other_tok = _esc(tokens[j].replace("##", "").replace("Ġ", ""))
             sim_val = sims[j]
             neighbors.append(f"<span class='sim-neighbor qk-neighbor' title='{sim_val:.3f}'>{other_tok}</span>")
         
@@ -1522,7 +1532,7 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw", use_globa
     if show_vectors:
         vec_rows = []
         for i, tok in enumerate(tokens):
-            display_tok = tok.replace("##", "").replace("Ġ", "")
+            display_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
             q_strip = array_to_base64_img(Q[i][:48], "Greens", 0.12)
             k_strip = array_to_base64_img(K[i][:48], "Oranges", 0.12)
             v_strip = array_to_base64_img(V[i][:48], "Purples", 0.12)
@@ -1548,7 +1558,7 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw", use_globa
     att_weights_img = matrix_to_base64_img(att_avg, cmap="Blues", figsize=(4, 4))
 
     # Clean token labels for axis display
-    clean_tokens = [t.replace("##", "").replace("Ġ", "") for t in tokens]
+    clean_tokens = [_esc(t.replace("##", "").replace("Ġ", "")) for t in tokens]
     token_labels_html = "".join([f"<span class='axis-label'>{t}</span>" for t in clean_tokens])
 
     html_dir = f"""
@@ -1791,9 +1801,9 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, 
                 <div class='scaled-rank'>#{rank}</div>
                 <div class='scaled-details'>
                     <div class='scaled-connection'>
-                        <span class='token-name' style='color:#ff5ca9;'>{tokens[f_idx].replace("##", "").replace("Ġ", "")}</span>
+                        <span class='token-name' style='color:#ff5ca9;'>{_esc(tokens[f_idx].replace("##", "").replace("Ġ", ""))}</span>
                         <span style='color:#94a3b8;margin:0 4px;'>→</span>
-                        <span class='token-name' style='color:#3b82f6;'>{tokens[j].replace("##", "").replace("Ġ", "")}</span>
+                        <span class='token-name' style='color:#3b82f6;'>{_esc(tokens[j].replace("##", "").replace("Ġ", ""))}</span>
                     </div>
                     <div class='scaled-values'>
                         {values_html}
@@ -1812,7 +1822,7 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, 
         <div class='scaled-attention-box' style='margin-bottom: 16px; border-bottom: 1px solid #f1f5f9; padding-bottom: 16px;'>
             {note_html}
             <div class='scaled-formula' style='margin-bottom:8px;'>
-                <span style='color:#ff5ca9;font-weight:bold;'>{tokens[f_idx].replace("##", "").replace("Ġ", "")}</span>: { "softmax(Q·K<sup>T</sup>/√d<sub>k</sub>)" if not use_global else "Top tokens by average attention"} {formula_suffix}
+                <span style='color:#ff5ca9;font-weight:bold;'>{_esc(tokens[f_idx].replace("##", "").replace("Ġ", ""))}</span>: { "softmax(Q·K<sup>T</sup>/√d<sub>k</sub>)" if not use_global else "Top tokens by average attention"} {formula_suffix}
             </div>
             <div class='scaled-computations'>
                 {computations}
@@ -1839,7 +1849,7 @@ def get_add_norm_view(res, layer_idx, suffix=""):
     # 1. Change View (Bars)
     change_rows = []
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         diff = np.linalg.norm(hs_out[i] - hs_in[i])
         norm = np.linalg.norm(hs_in[i]) + 1e-6
         ratio = diff / norm
@@ -1856,7 +1866,7 @@ def get_add_norm_view(res, layer_idx, suffix=""):
     rows = []
     header = "<tr><th style='text-align:left;padding-left:8px;'>Token</th><th>Sub-Layer Output (Heatmap)</th></tr>"
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         vec_strip = array_to_base64_img(hs_out[i][:96], "Blues", 0.15)
         rows.append(
             f"<tr>"
@@ -1892,7 +1902,7 @@ def get_ffn_view(res, layer_idx, suffix=""):
     rows = []
     header = "<tr><th style='text-align:left;padding-left:8px;'>Token</th><th>Activation</th><th>Projection</th></tr>"
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         inter_strip = array_to_base64_img(inter_np[i][:96], "Blues", 0.15)
         proj_strip = array_to_base64_img(proj_np[i][:96], "Blues", 0.15)
         rows.append(
@@ -1919,7 +1929,7 @@ def get_add_norm_post_ffn_view(res, layer_idx, suffix=""):
     # 1. Change View (Bars)
     change_rows = []
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         diff = np.linalg.norm(hs_out[i] - hs_mid[i])
         norm = np.linalg.norm(hs_mid[i]) + 1e-6
         ratio = diff / norm
@@ -1936,7 +1946,7 @@ def get_add_norm_post_ffn_view(res, layer_idx, suffix=""):
     rows = []
     header = "<tr><th style='text-align:left;padding-left:8px;'>Token</th><th>Sub-Layer Output (Heatmap)</th></tr>"
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         vec_strip = array_to_base64_img(hs_out[i][:96], "Blues", 0.15)
         rows.append(
             f"<tr>"
@@ -1958,7 +1968,7 @@ def get_layer_output_view(res, layer_idx, suffix=""):
 
     rows = []
     for i, tok in enumerate(tokens):
-        clean_tok = tok.replace("##", "").replace("Ġ", "")
+        clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
         vec_strip = array_to_base64_img(hs[i][:64], "Blues", 0.15)
         vec_tip = "Hidden state (first 32 dims): " + ", ".join(f"{v:.3f}" for v in hs[i][:32])
         mean_val = float(hs[i].mean())
@@ -2033,7 +2043,7 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
         current_masks = set(custom_mask_indices) if custom_mask_indices else set()
         
         for i, tok in enumerate(mlm_tokens):
-            clean_tok = tok.replace("##", "").replace("Ġ", "")
+            clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
             is_masked = i in current_masks
             active_class = "masked-active" if is_masked else ""
             
@@ -2131,7 +2141,7 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
         
         # We need to reconstruct the sentence with interactive spans
         for i, tok in enumerate(mlm_tokens):
-            clean_tok = tok.replace("##", "").replace("Ġ", "")
+            clean_tok = _esc(tok.replace("##", "").replace("Ġ", ""))
             if not clean_tok: clean_tok = "&nbsp;"
             
             # Determine state
@@ -2142,7 +2152,7 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
                 token_probs = probs[i]
                 top_idx = torch.argmax(token_probs).item()
                 pred_tok = tokenizer.decode([top_idx]) or "[UNK]"
-                clean_pred = pred_tok.replace("##", "").replace("Ġ", "")
+                clean_pred = _esc(pred_tok.replace("##", "").replace("Ġ", ""))
 
                 # Render as active predicted word
                 # Class 'predicted-word' + 'masked-active' (meaning mask is ON, showing prediction)
@@ -2187,7 +2197,7 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
         tok = mlm_tokens[i]
         
         # Clean token header
-        tok_display = tok.replace("##", "").replace("Ġ", "")
+        tok_display = _esc(tok.replace("##", "").replace("Ġ", ""))
         if not tok_display: tok_display = "&nbsp;"
         
         # Calculate context string for display (PLL) - Only for Iterative Mode
@@ -2200,8 +2210,8 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
                     context_str = tokenizer.convert_tokens_to_string(masked_copy)
                 else:
                     context_str = " ".join(masked_copy).replace(" ##", "").replace(" Ġ", "")
-                context_html = f"<div class='mlm-context' style='margin-bottom:8px;font-size:11px;color:#475569;background:#f1f5f9;padding:4px;border-radius:4px;border:1px solid #e2e8f0;'>Context: <b>{context_str}</b></div>"
-            except:
+                context_html = f"<div class='mlm-context' style='margin-bottom:8px;font-size:11px;color:#475569;background:#f1f5f9;padding:4px;border-radius:4px;border:1px solid #e2e8f0;'>Context: <b>{_esc(context_str)}</b></div>"
+            except Exception:
                 context_html = ""
         
         # In manual mode, maybe show what the original token was vs prediction?
@@ -2214,7 +2224,7 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
 
         pred_rows = ""
         for rank, (p, idx) in enumerate(zip(top_vals, top_idx)):
-            ptok = tokenizer.decode([idx.item()]) or "[UNK]"
+            ptok = _esc(tokenizer.decode([idx.item()]) or "[UNK]")
             pval = float(p)
             width = max(4, int(pval * 100))
             logit_val = float(logits_tensor[i, idx])

@@ -32,12 +32,14 @@ def get_reproducibility_info(text: str, model_name: str | None = None) -> dict:
     # the model is currently loaded and the info is accessible.
     if model_name:
         try:
-            from transformers import AutoConfig
-            cfg = AutoConfig.from_pretrained(model_name)
-            # _commit_hash is set when the model was fetched from the Hub
-            commit = getattr(cfg, "_commit_hash", None)
-            if commit:
-                info["model_commit"] = commit
+            from .models import ModelManager
+            if model_name in ModelManager.ALLOWED_MODELS:
+                from transformers import AutoConfig
+                cfg = AutoConfig.from_pretrained(model_name)
+                # _commit_hash is set when the model was fetched from the Hub
+                commit = getattr(cfg, "_commit_hash", None)
+                if commit:
+                    info["model_commit"] = commit
         except Exception:
             pass
 

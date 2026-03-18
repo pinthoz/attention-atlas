@@ -292,6 +292,10 @@ def server(input, output, session):
             if "," in b64_data:
                 b64_data = b64_data.split(",", 1)[1]
             img_bytes = base64.b64decode(b64_data)
+            MAX_PNG_BYTES = 10 * 1024 * 1024  # 10 MB
+            if len(img_bytes) > MAX_PNG_BYTES:
+                _logger.warning("_handle_save_png rejected: %d bytes exceeds limit", len(img_bytes))
+                return
             filepath = Path("downloads/png") / Path(filename).name
             filepath.write_bytes(img_bytes)
         except Exception as e:
@@ -920,7 +924,7 @@ def server(input, output, session):
                 stats = compute_baselines(model, tokenizer, is_gpt2)
                 baseline_stats.set(stats)
                 current_baseline_model.set(model_name)
-                print(f"DEBUG: Baselines updated for {model_name}")
+                _logger.debug(f"Baselines updated for {model_name}")
             except Exception as e:
                 print(f"ERROR computing baselines: {e}")
                 traceback.print_exc()
@@ -949,12 +953,12 @@ def server(input, output, session):
         step = prompt_entry_step.get()
         
         label = "Generate All"
-        print(f"DEBUG: update_button_label triggered. mode={mode}, step={step}")
-        
+        _logger.debug(f"update_button_label triggered. mode={mode}, step={step}")
+
         if mode and step == "A":
             label = "Prompt B ➜"
-            
-        print(f"DEBUG: sending update_button_label: {label}")
+
+        _logger.debug(f"sending update_button_label: {label}")
         await session.send_custom_message("update_button_label", {"label": label})
 
 
@@ -1070,6 +1074,10 @@ def server(input, output, session):
                         val = row.get(text_col, "").strip()
                         if val:
                             sentences.append(val)
+
+            MAX_ATTN_BATCH = 500
+            if len(sentences) > MAX_ATTN_BATCH:
+                sentences = sentences[:MAX_ATTN_BATCH]
 
             if sentences:
                 attn_batch_sentences.set(sentences)
@@ -1379,13 +1387,13 @@ def server(input, output, session):
         if session_force_compare_mode.get():
              cm = True
              session_force_compare_mode.set(False)
-             print("DEBUG: Force Compare Mode Applied")
+             _logger.debug("Force Compare Mode Applied")
              
         if session_force_compare_prompts_mode.get():
              cpm = True
              session_force_compare_prompts_mode.set(False)
              prompt_entry_step.set("DONE") # Ensure wizard doesn't block
-             print("DEBUG: Force Compare Prompts Mode Applied")
+             _logger.debug("Force Compare Prompts Mode Applied")
         
         # Save previous mode before overwriting (for snapshot)
         prev_cm = active_compare_models.get()
@@ -1421,11 +1429,11 @@ def server(input, output, session):
         show_mlm_A.set(False)
         show_mlm_B.set(False)
 
-        print("DEBUG: compute_all triggered")
+        _logger.debug("compute_all triggered")
         text = input.text_input().strip()
-        print(f"DEBUG: Input text: '{text}'")
+        _logger.debug(f"Input text length: {len(text)}")
         if not text:
-            print("DEBUG: No text input, returning")
+            _logger.debug("No text input, returning")
             return
 
         # Update History
@@ -1449,7 +1457,7 @@ def server(input, output, session):
         await asyncio.sleep(0.1)
 
         model_name = input.model_name()
-        print(f"DEBUG: Model name A: {model_name}")
+        _logger.debug(f"Model name A: {model_name}")
         
         # Check compare modes - Use the values we determined at the start (cm, cpm)
         # which account for the force flags.
@@ -1460,7 +1468,7 @@ def server(input, output, session):
             loop = asyncio.get_running_loop()
             with ThreadPoolExecutor() as pool:
                 # Compute Model A (Prompt A)
-                print("DEBUG: Starting heavy_compute A")
+                _logger.debug("Starting heavy_compute A")
                 result_A = await loop.run_in_executor(pool, heavy_compute, text, model_name)
                 cached_result.set(result_A)
                 cached_text_A.set(text)  # Store text used for generation
@@ -1473,7 +1481,7 @@ def server(input, output, session):
                         if not model_name_B: model_name_B = "gpt2"
                     except Exception: model_name_B = "gpt2"
                     
-                    print(f"DEBUG: Starting heavy_compute B ({model_name_B}) for Compare Models")
+                    _logger.debug(f"Starting heavy_compute B ({model_name_B}) for Compare Models")
                     result_B = await loop.run_in_executor(pool, heavy_compute, text, model_name_B)
                     cached_result_B.set(result_B)
                     cached_text_B.set(text)  # Same text for compare models
@@ -1484,7 +1492,7 @@ def server(input, output, session):
                     except Exception: text_B = ""
 
                     if text_B:
-                        print(f"DEBUG: Starting heavy_compute B (Prompt B) for Compare Prompts")
+                        _logger.debug("Starting heavy_compute B (Prompt B) for Compare Prompts")
                         # Use Model A for Prompt B
                         result_B = await loop.run_in_executor(pool, heavy_compute, text_B, model_name)
                         cached_result_B.set(result_B)
@@ -3558,7 +3566,7 @@ def server(input, output, session):
         
         # Only update if changed
         if current_layout_config.get() != new_config:
-            print(f"DEBUG: Layout config changed to {new_config}")
+            _logger.debug(f"Layout config changed to {new_config}")
             current_layout_config.set(new_config)
 
     @reactive.calc
@@ -3974,7 +3982,7 @@ def server(input, output, session):
         
         is_gpt2, num_layers, num_heads = config
         
-        print("DEBUG: Rendering dashboard_content (Layout Re-build)")
+        _logger.debug("Rendering dashboard_content (Layout Re-build)")
         
         if not compare:
             # ORIGINAL MODE - Always use output_ui for preview to avoid layout flash
@@ -4320,7 +4328,7 @@ def server(input, output, session):
 
     # This function replaces the previous @output @render.ui def influence_tree():
     def get_isa_scatter_view(res, suffix="", vertical_layout=False, plot_only=False):
-        print(f"DEBUG: get_isa_scatter_view called for {suffix} with vertical_layout={vertical_layout} plot_only={plot_only}")
+        _logger.debug(f"get_isa_scatter_view called for {suffix} with vertical_layout={vertical_layout} plot_only={plot_only}")
         if not res:
             return None
 
@@ -5189,7 +5197,7 @@ def server(input, output, session):
     @reactive.event(input.isa_click)
     def handle_isa_overlay():
         trigger_data = input.isa_click()
-        print(f"DEBUG: handle_isa_overlay triggered with: {trigger_data}")
+        _logger.debug(f"handle_isa_overlay triggered with: {trigger_data}")
         if not trigger_data: return
         
         # Map coordinates from Plotly click
@@ -5201,22 +5209,22 @@ def server(input, output, session):
         if sent_x_idx is None or sent_y_idx is None: return
         
         # Store the selected pair for the drilldown renderer
-        print(f"DEBUG: Setting isa_selected_pair to ({sent_x_idx}, {sent_y_idx})")
+        _logger.debug(f"Setting isa_selected_pair to ({sent_x_idx}, {sent_y_idx})")
         isa_selected_pair.set((sent_x_idx, sent_y_idx))
 
     @reactive.effect
     @reactive.event(input.isa_overlay_trigger)
     def _handle_isa_overlay_trigger():
         data = input.isa_overlay_trigger()
-        print(f"DEBUG: isa_overlay_trigger received: {data}")
+        _logger.debug(f"isa_overlay_trigger received: {data}")
         if data:
             try:
                 x = int(data["sentXIdx"])
                 y = int(data["sentYIdx"])
-                print(f"DEBUG: Setting isa_selected_pair to ({x}, {y})")
+                _logger.debug(f"Setting isa_selected_pair to ({x}, {y})")
                 isa_selected_pair.set((x, y))
             except Exception as e:
-                print(f"DEBUG: Error parsing trigger data: {e}")
+                _logger.debug(f"Error parsing trigger data: {e}")
 
 
 
