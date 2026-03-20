@@ -435,14 +435,16 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
         gpt2_is_model_b = False
 
     # Styles
-    base_section = "position:relative;padding:16px 8px 12px 8px;border-radius:12px;border:2px solid;display:flex;flex-direction:column;align-items:center;width:120px;transition:all 0.3s ease;"
+    base_section = "position:relative;padding:16px 8px 12px 8px;border-radius:12px;border:2px solid;display:flex;flex-direction:column;align-items:center;width:120px;transition:all 0.3s ease;gap:0;"
 
     block_style = "position:relative;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;height:33px;font-size:7px;padding:0 4px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background-color:#0f172a;width:100px;transition:transform 0.2s;margin-bottom:0;box-shadow:0 1px 3px rgba(0,0,0,0.2);"
     block_label = "font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#e2e8f0;margin-bottom:1px;"
     block_sub = "font-family:'JetBrains Mono',monospace;font-size:6px;color:#94a3b8;"
     badge_style = "position:absolute;top:-5px;right:6px;font-family:'JetBrains Mono',monospace;font-size:5px;padding:1px 3px;border-radius:3px;background:rgba(30,41,59,0.9);color:#94a3b8;border:1px solid rgba(255,255,255,0.12);z-index:20;"
-    layer_box = "position:relative;padding:8px;border-radius:8px;border:1px solid rgba(255,92,169,0.3);background-color:rgba(255,92,169,0.06);display:flex;flex-direction:column;align-items:center;width:100%;margin:6px 0;"
-    connector = "width:1px;height:12px;background-color:#cbd5e1;margin:3px auto;"
+    layer_box = "position:relative;padding:8px;border-radius:8px;border:1px solid rgba(255,92,169,0.3);background-color:rgba(255,92,169,0.06);display:flex;flex-direction:column;align-items:center;width:100%;margin:0;"
+    connector = "width:1px;height:12px;background-color:#cbd5e1;margin:0 auto;"
+    connector_pulse = "position:relative;width:1px;background-color:#cbd5e1;margin:0 auto;overflow:hidden;"
+    pulse_anim = "position:absolute;top:0;width:100%;height:60%;animation:archMovePulse 2.5s linear infinite;"
 
     # Optimizer params — gus_net_training_paper.py (α=0.65, γ=3.5, no LLRD)
     bert_focal_sub = "α=0.65, γ=3.5"
@@ -459,23 +461,23 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
         if compare_mode:
             if is_model_a:
                 return (f"border-color:{blue};box-shadow:0 0 20px rgba(59,130,246,0.2);",
-                        "background:rgba(59,130,246,0.08);",
+                        "background-color:rgba(59,130,246,0.08);",
                         blue, "59,130,246", "#2563eb", "#93c5fd", "#60a5fa")
             elif is_model_b:
                 return (f"border-color:{pink};box-shadow:0 0 20px rgba(255,92,169,0.2);",
-                        "background:rgba(255,92,169,0.08);",
+                        "background-color:rgba(255,92,169,0.08);",
                         pink, "255,92,169", "#db2777", "#fbcfe8", "#f9a8d4")
             else:
                 return ("border-color:rgba(255,92,169,0.2);opacity:0.4;",
-                        "background:rgba(255,92,169,0.02);",
+                        "background-color:rgba(255,92,169,0.02);",
                         pink, "255,92,169", "#db2777", "#fbcfe8", "#f9a8d4")
         elif is_selected:
             return (f"border-color:{pink};box-shadow:0 0 20px rgba(255,92,169,0.2);",
-                    "background:rgba(255,92,169,0.08);",
+                    "background-color:rgba(255,92,169,0.08);",
                     pink, "255,92,169", "#db2777", "#fbcfe8", "#f9a8d4")
         else:
             return ("border-color:rgba(255,92,169,0.2);opacity:0.4;",
-                    "background:rgba(255,92,169,0.02);",
+                    "background-color:rgba(255,92,169,0.02);",
                     pink, "255,92,169", "#db2777", "#fbcfe8", "#f9a8d4")
 
     # --- BERT Diagram (dynamic: adapts to base/large) ---
@@ -490,34 +492,35 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
                 <span style="{block_sub}">Pad: Max Length (128) | WordPiece</span>
             </div>
 
-            <div style="{connector}"></div>
+            <div style="{connector_pulse}height:14px;"><div style="{pulse_anim}background:linear-gradient(transparent,{bert_accent},transparent);"></div></div>
 
-            <div style="{layer_box}border-color:rgba({bert_accent_rgb},0.3);background:rgba({bert_accent_rgb},0.06);">
+            <div style="{layer_box}border-color:rgba({bert_accent_rgb},0.3);background-color:rgba({bert_accent_rgb},0.06);">
                 <div style="{badge_style}color:{bert_accent};">ENC</div>
-                <div style="{block_style}width:100%;background:rgba({bert_accent_rgb},0.1);border-color:rgba({bert_accent_rgb},0.3);margin-bottom:4px;">
+                <div style="{block_style}width:100%;background-color:rgba({bert_accent_rgb},0.1);border-color:rgba({bert_accent_rgb},0.3);">
                     <span style="{block_label}color:{bert_text_dark};">BertForTokenClas</span>
                     <span style="{block_sub}color:{bert_text_dark};">{bert_layers} Layers (Encoder)</span>
                 </div>
-                <div style="{connector}height:4px;"></div>
-                <div style="{block_style}width:100%;margin-bottom:4px;">
+                <div style="{connector_pulse}height:12px;"><div style="{pulse_anim}background:linear-gradient(transparent,{bert_accent},transparent);"></div></div>
+                <div style="{block_style}width:100%;">
                     <span style="{block_label}">Linear Head</span>
                     <span style="{block_sub}">{bert_head} → 7 Labels</span>
                 </div>
-                <div style="{connector}height:4px;"></div>
+                <div style="{connector_pulse}height:12px;"><div style="{pulse_anim}background:linear-gradient(transparent,{bert_accent},transparent);"></div></div>
                 <div style="{block_style}width:100%;border-color:rgba({bert_accent_rgb},0.5);">
                     <span style="{block_label}color:{bert_text_light};">Sigmoid+Thresh</span>
                     <span style="{block_sub}font-weight:700;color:{bert_text_accent};">Dynamic Opt.</span>
                 </div>
             </div>
 
-            <div style="{connector}"></div>
+            <div style="{connector_pulse}height:24px;margin:0 auto -9px auto;z-index:5;"><div style="{pulse_anim}background:linear-gradient(transparent,{bert_accent},transparent);"></div></div>
 
-            <div style="{layer_box}border-color:rgba(255,255,255,0.1);background:rgba(255,255,255,0.02);">
+            <div style="{layer_box}border-color:rgba(255,255,255,0.1);background-color:rgba(255,255,255,0.02);">
                 <div style="{badge_style}color:#64748b;">OPT</div>
-                <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;margin-bottom:3px;">
+                <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;">
                     <span style="{block_label}font-size:7px;color:#ffffff;">Focal Loss</span>
                     <span style="{block_sub}color:#cbd5e1;">{bert_focal_sub}</span>
                 </div>
+                <div style="{connector_pulse}height:14px;"><div style="{pulse_anim}background:linear-gradient(transparent,{bert_accent},transparent);"></div></div>
                 <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;">
                     <span style="{block_label}font-size:7px;color:#ffffff;">{bert_opt_label}</span>
                     <span style="{block_sub}color:#cbd5e1;">{bert_opt_sub}</span>
@@ -538,34 +541,35 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
                 <span style="{block_sub}">Pad: Right | BPE</span>
             </div>
 
-            <div style="{connector}"></div>
+            <div style="{connector_pulse}height:14px;"><div style="{pulse_anim}background:linear-gradient(transparent,{gpt2_accent},transparent);"></div></div>
 
-            <div style="{layer_box}border-color:rgba({gpt2_accent_rgb},0.3);background:rgba({gpt2_accent_rgb},0.06);">
+            <div style="{layer_box}border-color:rgba({gpt2_accent_rgb},0.3);background-color:rgba({gpt2_accent_rgb},0.06);">
                 <div style="{badge_style}color:{gpt2_accent};">DEC</div>
-                <div style="{block_style}width:100%;background:rgba({gpt2_accent_rgb},0.1);border-color:rgba({gpt2_accent_rgb},0.3);margin-bottom:4px;">
+                <div style="{block_style}width:100%;background-color:rgba({gpt2_accent_rgb},0.1);border-color:rgba({gpt2_accent_rgb},0.3);">
                     <span style="{block_label}color:{gpt2_text_dark};">GPT2ForTokenClas</span>
                     <span style="{block_sub}color:{gpt2_text_dark};">{gpt2_layers} Layers (Decoder)</span>
                 </div>
-                <div style="{connector}height:4px;"></div>
-                <div style="{block_style}width:100%;margin-bottom:4px;">
+                <div style="{connector_pulse}height:12px;"><div style="{pulse_anim}background:linear-gradient(transparent,{gpt2_accent},transparent);"></div></div>
+                <div style="{block_style}width:100%;">
                     <span style="{block_label}">Linear Head</span>
                     <span style="{block_sub}">{gpt2_head} → 7 Labels</span>
                 </div>
-                <div style="{connector}height:4px;"></div>
+                <div style="{connector_pulse}height:12px;"><div style="{pulse_anim}background:linear-gradient(transparent,{gpt2_accent},transparent);"></div></div>
                 <div style="{block_style}width:100%;border-color:rgba({gpt2_accent_rgb},0.5);">
                     <span style="{block_label}color:{gpt2_text_light};">Sigmoid+Thresh</span>
                     <span style="{block_sub}font-weight:700;color:{gpt2_text_accent};">Dynamic Opt.</span>
                 </div>
             </div>
 
-            <div style="{connector}"></div>
+            <div style="{connector_pulse}height:24px;margin:0 auto -9px auto;z-index:5;"><div style="{pulse_anim}background:linear-gradient(transparent,{gpt2_accent},transparent);"></div></div>
 
-            <div style="{layer_box}border-color:rgba(255,255,255,0.1);background:rgba(255,255,255,0.02);">
+            <div style="{layer_box}border-color:rgba(255,255,255,0.1);background-color:rgba(255,255,255,0.02);">
                 <div style="{badge_style}color:#64748b;">OPT</div>
-                <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;margin-bottom:3px;">
+                <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;">
                     <span style="{block_label}font-size:7px;color:#ffffff;">Focal Loss</span>
                     <span style="{block_sub}color:#cbd5e1;">{gpt2_focal_sub}</span>
                 </div>
+                <div style="{connector_pulse}height:14px;"><div style="{pulse_anim}background:linear-gradient(transparent,{gpt2_accent},transparent);"></div></div>
                 <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;">
                     <span style="{block_label}font-size:7px;color:#ffffff;">{gpt2_opt_label}</span>
                     <span style="{block_sub}color:#cbd5e1;">{gpt2_opt_sub}</span>
@@ -629,6 +633,7 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
 
     # Main container (2 diagrams)
     return ui.HTML(
+        '<style>@keyframes archMovePulse { 0% { top: -50%; } 100% { top: 100%; } }</style>'
         f'<div style="background-color:#ffffff;border-radius:16px;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;border:1px solid #e2e8f0;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -1px rgba(0,0,0,0.06);">'
         f'<div style="text-align:center;margin-bottom:16px;">'
         f'<h4 style="color:#ff5ca9;font-weight:800;letter-spacing:2px;margin:0;font-size:13px;text-transform:uppercase;">GUS-Net Training Pipeline</h4>'
