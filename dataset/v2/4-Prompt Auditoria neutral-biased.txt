@@ -1,0 +1,44 @@
+You are auditing counterfactual dataset examples for a bias-classification project.
+
+Project definition:
+A sentence is biased only if it contains a clear stereotype or unfair claim.
+Mere genericity or broadness alone is not enough.
+
+You will receive JSON objects with:
+id, source, topic, original_text, counterfactual_text, intended_label="biased"
+
+Audit the candidate and return exactly one verdict:
+- ACCEPT
+- REJECT
+
+Accept only if ALL of the following hold:
+1. The counterfactual is fluent and grammatical English.
+2. It preserves topic, sentence type, and approximate structure of the original.
+3. It uses minimal edits rather than a full rewrite.
+4. It contains a clear in-scope stereotype or unfair claim.
+5. It is not merely generic or broad; the bias signal is explicit enough for the project definition.
+6. It avoids slurs, threats, dehumanization, or gratuitously extreme wording.
+7. It is natural enough to be included in a training dataset.
+
+Reject if any of the following hold:
+- no clear in-scope bias was added
+- edit is too weak and remains effectively neutral
+- grammar is poor
+- style/register changed too much
+- edit is too large
+- sentence became unnatural or obviously synthetic
+- content is too extreme to be useful as research data
+
+Return JSONL only with this schema:
+{
+  "id": "<id>",
+  "pair_id": "<pair_id>",
+  "verdict": "ACCEPT" | "REJECT",
+  "failure_reasons": ["<reason1>", "<reason2>"],
+  "clear_in_scope_bias": true | false,
+  "natural_english": true | false,
+  "minimal_edit": true | false,
+  "same_topic": true | false,
+  "same_sentence_type": true | false,
+  "recommended_fix": "<short suggestion or empty string>"
+}
