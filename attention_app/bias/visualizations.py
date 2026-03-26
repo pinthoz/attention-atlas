@@ -3795,6 +3795,265 @@ def create_stereoset_attention_scatter(
     return fig
 
 
+# ── Counterfactual Attention Consistency ──────────────────────────────
+
+
+def compute_cf_attention_consistency(tokens_A, attentions_A, tokens_B, attentions_B):
+    """Compute attention consistency metrics between original and counterfactual.
+
+    Returns a dict with:
+      - mean_cosine: average cosine similarity of attention-received profiles
+                     across all heads for non-swapped (aligned) tokens
+      - mean_concentration: fraction of total attention change located at
+                            swapped token positions (higher = more focused)
+      - top_heads: top-5 heads most affected by the swap
+      - swapped_tokens_A / swapped_tokens_B: token indices that differ
+      - n_aligned: number of aligned (unchanged) token positions
+    """
+    from difflib import SequenceMatcher
+
+    # 1. Align token sequences — equal tokens stay paired, differing = swapped
+    matcher = SequenceMatcher(None, tokens_A, tokens_B)
+    aligned = []
+    swap_A = set(range(len(tokens_A)))
+    swap_B = set(range(len(tokens_B)))
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for k in range(i2 - i1):
+                aligned.append((i1 + k, j1 + k))
+                swap_A.discard(i1 + k)
+                swap_B.discard(j1 + k)
+
+    swap_A = sorted(swap_A)
+    swap_B = sorted(swap_B)
+
+    if not aligned:
+        return None  # sequences too different to compare
+
+    n_layers = len(attentions_A)
+    n_heads = attentions_A[0].shape[1]
+
+    # 2. Per-head analysis
+    head_results = []
+
+    for l in range(n_layers):
+        aA = attentions_A[l][0]
+        aB = attentions_B[l][0]
+        if hasattr(aA, "detach"):
+            aA = aA.detach().cpu().numpy()
+            aB = aB.detach().cpu().numpy()
+        else:
+            aA = np.array(aA)
+            aB = np.array(aB)
+
+        for h in range(n_heads):
+            # Column-mean: how much attention each token receives
+            recv_A = aA[h].mean(axis=0)
+            recv_B = aB[h].mean(axis=0)
+
+            # Delta at aligned (non-swapped) positions
+            d_aligned = [abs(recv_A[ia] - recv_B[ib]) for ia, ib in aligned]
+
+            # Delta at swapped positions
+            s_A = sum(recv_A[i] for i in swap_A) if swap_A else 0.0
+            s_B = sum(recv_B[i] for i in swap_B) if swap_B else 0.0
+            d_swap = abs(s_A - s_B)
+
+            total = d_swap + sum(d_aligned)
+            conc = d_swap / total if total > 1e-10 else 0.0
+
+            # Cosine similarity of aligned attention profiles
+            vA = np.array([recv_A[ia] for ia, _ in aligned])
+            vB = np.array([recv_B[ib] for _, ib in aligned])
+            norm = np.linalg.norm(vA) * np.linalg.norm(vB)
+            cos = float(np.dot(vA, vB) / norm) if norm > 1e-10 else 1.0
+
+            head_results.append({
+                "layer": l, "head": h,
+                "concentration": conc,
+                "cosine": cos,
+                "total_delta": total,
+                "delta_swap": d_swap,
+                "mean_delta_aligned": float(np.mean(d_aligned)) if d_aligned else 0.0,
+            })
+
+    mean_cosine = float(np.mean([r["cosine"] for r in head_results]))
+    mean_conc = float(np.mean([r["concentration"] for r in head_results]))
+    top_heads = sorted(head_results, key=lambda r: r["total_delta"], reverse=True)[:5]
+
+    return {
+        "mean_cosine": mean_cosine,
+        "mean_concentration": mean_conc,
+        "top_heads": top_heads,
+        "swapped_tokens_A": swap_A,
+        "swapped_tokens_B": swap_B,
+        "n_aligned": len(aligned),
+        "n_layers": n_layers,
+        "n_heads": n_heads,
+    }
+
+
+def create_cf_consistency_html(consistency, tokens_A, tokens_B, applied_swaps,
+                               bias_summary_A=None, bias_summary_B=None):
+    """Build an HTML card showing counterfactual attention consistency metrics.
+
+    Parameters
+    ----------
+    consistency : dict from ``compute_cf_attention_consistency``
+    tokens_A / tokens_B : token lists
+    applied_swaps : list of dicts with ``original``, ``replacement``, ``category``
+    bias_summary_A / bias_summary_B : optional GUS-Net bias summaries
+    """
+    if consistency is None:
+        return '<div style="color:#94a3b8;padding:16px;text-align:center;">Token sequences too different to align.</div>'
+
+    esc = html_lib.escape
+    cos = consistency["mean_cosine"]
+    conc = consistency["mean_concentration"]
+    n_swapped = len(consistency["swapped_tokens_A"])
+    n_aligned = consistency["n_aligned"]
+
+    # Colour helpers
+    def _metric_color(val, good_high=True):
+        if good_high:
+            if val >= 0.9:  return "#22c55e"
+            if val >= 0.7:  return "#eab308"
+            return "#ef4444"
+        else:
+            if val <= 0.1:  return "#22c55e"
+            if val <= 0.3:  return "#eab308"
+            return "#ef4444"
+
+    # ── Swaps summary (centered) ──
+    swap_pills = []
+    for s in (applied_swaps or []):
+        cat = esc(s.get("category", ""))
+        cat_colors = {"gender": "#ff5ca9", "race-color": "#ef4444", "religion": "#a78bfa",
+                      "age": "#f59e0b", "nationality": "#10b981", "sexual-orientation": "#ec4899",
+                      "disability": "#6366f1", "physical-appearance": "#f97316", "socioeconomic": "#14b8a6"}
+        c = cat_colors.get(cat, "#94a3b8")
+        swap_pills.append(
+            f'<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;'
+            f'border-radius:12px;background:rgba({_hex_to_rgb(c)},0.12);border:1px solid {c};'
+            f'font-size:11px;color:{c};font-weight:600;">'
+            f'{esc(s.get("original",""))} <span style="opacity:0.5;">&#x2192;</span> {esc(s.get("replacement",""))}'
+            f'<span style="font-weight:400;opacity:0.7;font-size:9px;margin-left:3px;">{esc(cat)}</span>'
+            f'</span>'
+        )
+    swaps_html = " ".join(swap_pills) if swap_pills else ""
+
+    # ── Bias score change ──
+    bias_delta_html = ""
+    if bias_summary_A and bias_summary_B:
+        score_A = bias_summary_A.get("overall_bias_score", 0)
+        score_B = bias_summary_B.get("overall_bias_score", 0)
+        delta = score_B - score_A
+        arrow = "&#x2191;" if delta > 0 else "&#x2193;" if delta < 0 else "&#x2194;"
+        d_col = "#ef4444" if delta > 0.05 else "#22c55e" if delta < -0.05 else "#64748b"
+        bias_delta_html = (
+            f'<div style="display:flex;align-items:center;gap:16px;padding:10px 14px;'
+            f'background:linear-gradient(135deg,#f8fafc,#f1f5f9);border:1px solid #e2e8f0;border-radius:8px;margin-top:10px;">'
+            f'<div style="font-size:11px;color:#64748b;font-weight:600;">Bias Score</div>'
+            f'<div style="font-size:13px;font-weight:700;color:#334155;">'
+            f'A: {score_A:.2f}</div>'
+            f'<div style="font-size:16px;color:{d_col};">{arrow}</div>'
+            f'<div style="font-size:13px;font-weight:700;color:#334155;">'
+            f'B: {score_B:.2f}</div>'
+            f'<div style="font-size:12px;font-weight:600;color:{d_col};">'
+            f'({delta:+.3f})</div>'
+            f'</div>'
+        )
+
+    # ── Metric cards ──
+    cos_col = _metric_color(cos, good_high=True)
+    cos_label = "High" if cos >= 0.9 else "Moderate" if cos >= 0.7 else "Low"
+    conc_col = _metric_color(conc, good_high=False)
+    conc_pct = conc * 100
+
+    metrics_html = (
+        f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">'
+        # Cosine similarity — orange/GEN (light)
+        f'<div style="background:rgba(249,115,22,0.06);border:1px solid rgba(249,115,22,0.15);'
+        f'border-radius:8px;padding:12px;text-align:center;">'
+        f'<div style="font-size:20px;font-weight:700;color:#f97316;font-family:JetBrains Mono,monospace;margin-top:2px;">{cos:.3f}</div>'
+        f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Attention Similarity</div>'
+        f'<div style="font-size:9px;color:#94a3b8;margin-top:2px;">{cos_label} - cosine of attention profiles</div>'
+        f'</div>'
+        # Concentration — red/UNFAIR (light)
+        f'<div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.15);'
+        f'border-radius:8px;padding:12px;text-align:center;">'
+        f'<div style="font-size:20px;font-weight:700;color:#ef4444;font-family:JetBrains Mono,monospace;margin-top:2px;">{conc_pct:.1f}%</div>'
+        f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Swap Focus</div>'
+        f'<div style="font-size:9px;color:#94a3b8;margin-top:2px;">of attention change at swapped tokens</div>'
+        f'</div>'
+        # Token counts — purple/STEREO (light)
+        f'<div style="background:rgba(156,39,176,0.06);border:1px solid rgba(156,39,176,0.15);'
+        f'border-radius:8px;padding:12px;text-align:center;">'
+        f'<div style="font-size:20px;font-weight:700;color:#9c27b0;font-family:JetBrains Mono,monospace;margin-top:2px;">{n_aligned}<span style="font-size:13px;color:#9c27b0;">/{n_aligned + n_swapped}</span></div>'
+        f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Alignment</div>'
+        f'<div style="font-size:9px;color:#94a3b8;margin-top:2px;">tokens aligned &bull; {n_swapped} swapped</div>'
+        f'</div>'
+        f'</div>'
+    )
+
+    # ── Top sensitive heads table (matches "Top 5 Attention Heads by Bias Focus" style) ──
+    top_heads = consistency["top_heads"]
+    rows = ""
+    for i, h in enumerate(top_heads):
+        bar_w = min(h["total_delta"] / (top_heads[0]["total_delta"] + 1e-10) * 100, 100)
+        is_sig = h["cosine"] < 0.9
+        bg = "background:rgba(255,92,169,0.03);" if is_sig else ""
+        val_color = "#ff5ca9" if is_sig else "#475569"
+        rows += (
+            f'<tr style="{bg}transition:all 0.2s ease;">'
+            f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-weight:500;color:#64748b;font-size:11px;">#{i+1}</td>'
+            f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">'
+            f'L{h["layer"]} H{h["head"]}</td>'
+            f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:{val_color};">{h["total_delta"]:.4f}</td>'
+            f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:{val_color};">{h["cosine"]:.3f}</td>'
+            f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);width:120px;">'
+            f'<div style="position:relative;background:rgba(255,92,169,0.1);border-radius:4px;height:18px;width:100%;overflow:hidden;">'
+            f'<div style="background:linear-gradient(90deg,#ff5ca9,#ff8ac4);border-radius:4px;height:100%;width:{bar_w:.0f}%;"></div>'
+            f'<span style="position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:9px;font-weight:700;color:#334155;">{bar_w:.0f}%</span>'
+            f'</div></td>'
+            f'</tr>'
+        )
+
+    heads_html = (
+        f'<div style="margin-top:14px;">'
+        f'<div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;'
+        f'letter-spacing:0.5px;margin-bottom:6px;">Top Sensitive Heads</div>'
+        f'<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+        f'<thead>'
+        f'<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
+        f'<th style="padding:10px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
+        f'<th style="padding:10px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
+        f'<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Total &Delta;</th>'
+        f'<th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Cosine</th>'
+        f'<th style="padding:10px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Impact</th>'
+        f'</tr></thead><tbody>{rows}</tbody></table>'
+        f'</div>'
+    )
+
+    return (
+        f'<div style="padding:4px 0;">'
+        f'<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:8px;">{swaps_html}</div>'
+        f'{metrics_html}'
+        f'{bias_delta_html}'
+        f'{heads_html}'
+        f'</div>'
+    )
+
+
+def _hex_to_rgb(hex_color):
+    """Convert '#3b82f6' to '59,130,246'."""
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    return ",".join(str(int(h[i:i+2], 16)) for i in (0, 2, 4))
+
+
 __all__ = [
     "create_attention_bias_matrix",
     "create_bias_propagation_plot",
@@ -3827,4 +4086,6 @@ __all__ = [
     "create_stereoset_attention_diff_heatmap",
     "create_stereoset_head_distributions",
     "create_stereoset_attention_scatter",
+    "compute_cf_attention_consistency",
+    "create_cf_consistency_html",
 ]

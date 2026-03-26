@@ -79,6 +79,7 @@ from ..bias.visualizations import (
     create_stereoset_head_distributions,
     create_stereoset_attention_scatter,
 )
+from ..bias.visualizations import compute_cf_attention_consistency, create_cf_consistency_html
 from ..bias.feature_extraction import extract_attention_for_text
 from ..ui.bias_ui import create_bias_accordion, create_floating_bias_toolbar
 from ..ui.components import viz_header
@@ -808,9 +809,10 @@ def bias_server_handlers(input, output, session):
     # Cached texts for display
     bias_cached_text_A = reactive.value("")
     bias_cached_text_B = reactive.value("")
-    
+
     # Counterfactual state - stores raw find_swappable_terms() result
     counterfactual_swaps = reactive.value(None)
+    cf_applied_swaps = reactive.value(None)  # swaps applied in last CF compare (for consistency card)
 
     # Current thresholds (synced with UI sliders) - will be updated by update_threshold_defaults
     current_thresholds_A = reactive.value({"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5})
@@ -1925,7 +1927,7 @@ def bias_server_handlers(input, output, session):
                 compare_prompts_live = input.bias_compare_prompts_mode()
             except Exception:
                 compare_prompts_live = False
-            
+
             step = bias_prompt_step.get()
 
             if compare_prompts_live and step == "A":
@@ -1974,12 +1976,16 @@ def bias_server_handlers(input, output, session):
             # Reset state when switching modes to ensure clean state
             if mode_switched_to_prompts or mode_switched_to_models or mode_switched_off:
                 log_debug("Mode switch detected - resetting bias state")
+                # Preserve cf_applied_swaps — trigger_counterfactual sets it
+                # right before this mode switch happens
+                _saved_cf_swaps = cf_applied_swaps.get()
                 bias_raw_results.set(None)
                 bias_raw_results_B.set(None)
                 bias_results.set(None)
                 bias_results_B.set(None)
                 bias_cached_text_A.set("")
                 bias_cached_text_B.set("")
+                cf_applied_swaps.set(_saved_cf_swaps)
                 # Reset prompt step to A when switching modes
                 bias_prompt_step.set("A")
                 # Ensure UI reflects the reset
@@ -1989,6 +1995,10 @@ def bias_server_handlers(input, output, session):
             active_bias_compare_prompts.set(compare_prompts)
 
             # Clear previous results
+            # cf_applied_swaps is preserved here — trigger_counterfactual sets it
+            # right before triggering this handler. Clear it only for non-CF runs.
+            if not compare_prompts:
+                cf_applied_swaps.set(None)
             bias_results.set(None)
             bias_results_B.set(None)
             counterfactual_swaps.set(None)
@@ -2231,7 +2241,8 @@ def bias_server_handlers(input, output, session):
             return
 
         # Generate counterfactual with selected swaps only
-        cf_text, _ = generate_counterfactual(orig, filtered)
+        cf_text, applied = generate_counterfactual(orig, filtered)
+        cf_applied_swaps.set(applied)
 
         # 1. Enable Compare Prompts mode (toggle switch + explicit Shiny input)
         await session.send_custom_message("bias_toggle_switch",
@@ -2250,7 +2261,7 @@ def bias_server_handlers(input, output, session):
         bias_prompt_step.set("B")
         await asyncio.sleep(0.1)
 
-        # 4. Trigger analysis directly by setting the action button value 
+        # 4. Trigger analysis directly by setting the action button value
         #    AND clicking the DOM element just to be safe
         await session.send_custom_message("bias_click_analyze", {})
 
@@ -3643,12 +3654,57 @@ def bias_server_handlers(input, output, session):
             method_html_B = create_method_info_html(model_key_B)
             method_footer_A = f'<div style="margin-top: auto;"><hr style="margin:16px 0;opacity:0.3;"/>{method_html_A}</div>'
             method_footer_B = f'<div style="margin-top: auto;"><hr style="margin:16px 0;opacity:0.3;"/>{method_html_B}</div>'
-            
-            return ui.div(
+
+            side_by_side = ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res, False)}</div>' + method_footer_A), manual_header=man_header, help_text=_detected_bias_help, style="border: 2px solid #3b82f6; height: 100%;"),
                 _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res_B, True)}</div>' + method_footer_B), manual_header=man_header, help_text=_detected_bias_help, style="border: 2px solid #ff5ca9; height: 100%;")
             )
+
+            # Counterfactual consistency card — only when triggered via CF swap
+            swaps_applied = cf_applied_swaps.get()
+            log_debug(f"CF consistency check: compare_prompts={compare_prompts}, swaps={bool(swaps_applied)}, attn_A={bool(res.get('attentions'))}, attn_B={bool(res_B.get('attentions') if res_B else False)}")
+            if compare_prompts and swaps_applied and res.get("attentions") and res_B and res_B.get("attentions"):
+                try:
+                    consistency = compute_cf_attention_consistency(
+                        res["tokens"], res["attentions"],
+                        res_B["tokens"], res_B["attentions"],
+                    )
+                    cf_html = create_cf_consistency_html(
+                        consistency,
+                        res["tokens"], res_B["tokens"],
+                        swaps_applied,
+                        bias_summary_A=res.get("bias_summary"),
+                        bias_summary_B=res_B.get("bias_summary"),
+                    )
+                    _cf_help = (
+                        f"<span style='{_TH}'>Attention Consistency Metrics</span>"
+                        f"<div style='{_TR}'><span style='{_TD};color:#3b82f6;'>&#x25CF;</span>"
+                        f"<span><b>Attention Similarity</b>: cosine similarity of attention-received profiles "
+                        f"for non-swapped tokens (1.0 = identical patterns)</span></div>"
+                        f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>&#x25CF;</span>"
+                        f"<span><b>Swap Focus</b>: fraction of total attention change concentrated at "
+                        f"the swapped demographic tokens (higher = model attention is more localized)</span></div>"
+                        f"<div style='{_TR}'><span style='{_TD};color:#3b82f6;'>&#x25CF;</span>"
+                        f"<span><b>Top Sensitive Heads</b>: attention heads with the largest total attention "
+                        f"delta between original and counterfactual</span></div>"
+                    )
+                    consistency_card = _wrap_card(
+                        ui.HTML(cf_html),
+                        manual_header=(
+                            "Counterfactual Attention Consistency",
+                            "How attention patterns change when demographic terms are swapped.",
+                        ),
+                        help_text=_cf_help,
+                        style="border: 2px solid #ff5ca9; margin-top: 16px;",
+                    )
+                    return ui.div(side_by_side, consistency_card)
+                except Exception as e:
+                    import traceback
+                    print(f"CF consistency error: {e}")
+                    traceback.print_exc()
+
+            return side_by_side
 
         method_html = create_method_info_html(model_key_A)
         method_footer = f'<div style="margin-top: auto;"><hr style="margin:16px 0;opacity:0.3;"/>{method_html}</div>'

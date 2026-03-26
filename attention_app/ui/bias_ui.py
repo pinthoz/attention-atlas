@@ -859,10 +859,13 @@ def create_bias_sidebar():
                     }
                 });
                 Shiny.addCustomMessageHandler('bias_set_textarea', function(data) {
+                    console.log('[BiasUI] bias_set_textarea:', data.id, data.value?.substring(0, 50));
                     var ta = document.getElementById(data.id);
                     if (ta) {
                         ta.value = data.value;
                         Shiny.setInputValue(data.id, ta.value, {priority: 'event'});
+                    } else {
+                        console.warn('[BiasUI] textarea not found:', data.id);
                     }
                 });
                 Shiny.addCustomMessageHandler('bias_set_slider', function(data) {
@@ -876,10 +879,16 @@ def create_bias_sidebar():
                 });
                 Shiny.addCustomMessageHandler('bias_click_analyze', function(data) {
                     setTimeout(function() {
-                        var btn = document.getElementById('analyze_bias_btn');
-                        if (btn) btn.click();
-                        Shiny.setInputValue('analyze_bias_btn', Date.now(), {priority: 'event'});
-                    }, 100);
+                        console.log('[BiasUI] bias_click_analyze: auto-clicking Analyze Bias');
+                        var $btn = $('#analyze_bias_btn');
+                        if ($btn.length) {
+                            // Use jQuery trigger to fire Shiny's action button binding
+                            $btn.trigger('click');
+                        }
+                        // Fallback: also increment via setInputValue
+                        var cur = parseInt($btn.attr('data-val') || '0', 10);
+                        Shiny.setInputValue('analyze_bias_btn', cur + 1, {priority: 'event'});
+                    }, 600);
                 });
 
                 // Flag to prevent circular updates when server sets thresholds
