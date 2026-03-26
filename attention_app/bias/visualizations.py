@@ -3946,22 +3946,24 @@ def create_cf_consistency_html(consistency, tokens_A, tokens_B, applied_swaps,
     # ── Bias score change ──
     bias_delta_html = ""
     if bias_summary_A and bias_summary_B:
-        score_A = bias_summary_A.get("overall_bias_score", 0)
-        score_B = bias_summary_B.get("overall_bias_score", 0)
+        score_A = bias_summary_A.get("bias_percentage", 0)
+        score_B = bias_summary_B.get("bias_percentage", 0)
         delta = score_B - score_A
         arrow = "&#x2191;" if delta > 0 else "&#x2193;" if delta < 0 else "&#x2194;"
         d_col = "#ef4444" if delta > 0.05 else "#22c55e" if delta < -0.05 else "#64748b"
         bias_delta_html = (
-            f'<div style="display:flex;align-items:center;gap:16px;padding:10px 14px;'
-            f'background:linear-gradient(135deg,#f8fafc,#f1f5f9);border:1px solid #e2e8f0;border-radius:8px;margin-top:10px;">'
-            f'<div style="font-size:11px;color:#64748b;font-weight:600;">Bias Score</div>'
-            f'<div style="font-size:13px;font-weight:700;color:#334155;">'
-            f'A: {score_A:.2f}</div>'
+            f'<div style="background:rgba(100,116,139,0.06);border:1px solid rgba(100,116,139,0.15);'
+            f'border-radius:8px;padding:12px;text-align:center;margin-top:10px;">'
+            f'<div style="display:flex;align-items:center;justify-content:center;gap:14px;">'
+            f'<div style="font-size:13px;font-weight:700;color:#334155;font-family:JetBrains Mono,monospace;">'
+            f'A: {score_A:.1f}%</div>'
             f'<div style="font-size:16px;color:{d_col};">{arrow}</div>'
-            f'<div style="font-size:13px;font-weight:700;color:#334155;">'
-            f'B: {score_B:.2f}</div>'
-            f'<div style="font-size:12px;font-weight:600;color:{d_col};">'
-            f'({delta:+.3f})</div>'
+            f'<div style="font-size:13px;font-weight:700;color:#334155;font-family:JetBrains Mono,monospace;">'
+            f'B: {score_B:.1f}%</div>'
+            f'<div style="font-size:12px;font-weight:600;color:{d_col};font-family:JetBrains Mono,monospace;">'
+            f'({delta:+.1f}%)</div>'
+            f'</div>'
+            f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Bias Score %</div>'
             f'</div>'
         )
 
@@ -3973,24 +3975,24 @@ def create_cf_consistency_html(consistency, tokens_A, tokens_B, applied_swaps,
 
     metrics_html = (
         f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">'
-        # Cosine similarity — orange/GEN (light)
-        f'<div style="background:rgba(249,115,22,0.06);border:1px solid rgba(249,115,22,0.15);'
+        # Cosine similarity — emerald
+        f'<div style="background:rgba(5,150,105,0.06);border:1px solid rgba(5,150,105,0.15);'
         f'border-radius:8px;padding:12px;text-align:center;">'
-        f'<div style="font-size:20px;font-weight:700;color:#f97316;font-family:JetBrains Mono,monospace;margin-top:2px;">{cos:.3f}</div>'
+        f'<div style="font-size:20px;font-weight:700;color:#059669;font-family:JetBrains Mono,monospace;margin-top:2px;">{cos:.3f}</div>'
         f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Attention Similarity</div>'
         f'<div style="font-size:9px;color:#94a3b8;margin-top:2px;">{cos_label} - cosine of attention profiles</div>'
         f'</div>'
-        # Concentration — red/UNFAIR (light)
-        f'<div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.15);'
+        # Concentration — cyan
+        f'<div style="background:rgba(6,182,212,0.06);border:1px solid rgba(6,182,212,0.15);'
         f'border-radius:8px;padding:12px;text-align:center;">'
-        f'<div style="font-size:20px;font-weight:700;color:#ef4444;font-family:JetBrains Mono,monospace;margin-top:2px;">{conc_pct:.1f}%</div>'
+        f'<div style="font-size:20px;font-weight:700;color:#06b6d4;font-family:JetBrains Mono,monospace;margin-top:2px;">{conc_pct:.1f}%</div>'
         f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Swap Focus</div>'
         f'<div style="font-size:9px;color:#94a3b8;margin-top:2px;">of attention change at swapped tokens</div>'
         f'</div>'
-        # Token counts — purple/STEREO (light)
-        f'<div style="background:rgba(156,39,176,0.06);border:1px solid rgba(156,39,176,0.15);'
+        # Token counts — rose
+        f'<div style="background:rgba(225,29,72,0.06);border:1px solid rgba(225,29,72,0.15);'
         f'border-radius:8px;padding:12px;text-align:center;">'
-        f'<div style="font-size:20px;font-weight:700;color:#9c27b0;font-family:JetBrains Mono,monospace;margin-top:2px;">{n_aligned}<span style="font-size:13px;color:#9c27b0;">/{n_aligned + n_swapped}</span></div>'
+        f'<div style="font-size:20px;font-weight:700;color:#e11d48;font-family:JetBrains Mono,monospace;margin-top:2px;">{n_aligned}<span style="font-size:13px;color:#e11d48;">/{n_aligned + n_swapped}</span></div>'
         f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Alignment</div>'
         f'<div style="font-size:9px;color:#94a3b8;margin-top:2px;">tokens aligned &bull; {n_swapped} swapped</div>'
         f'</div>'

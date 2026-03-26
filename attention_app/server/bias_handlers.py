@@ -3696,7 +3696,7 @@ def bias_server_handlers(input, output, session):
                             "How attention patterns change when demographic terms are swapped.",
                         ),
                         help_text=_cf_help,
-                        style="border: 2px solid #ff5ca9; margin-top: 16px;",
+                        style="margin-top: 16px;",
                     )
                     return ui.div(side_by_side, consistency_card)
                 except Exception as e:
