@@ -182,6 +182,32 @@ MODEL_REGISTRY = {
         # I-GEN and I-UNFAIR raised to 0.65 for the same reason
         "optimized_thresholds": [0.4607, 0.4328, 0.8500, 0.4537, 0.6500, 0.3500, 0.6500],
     },
+    # ── Sparse models (sparsity-regularised training) ────────────────────
+    "gusnet-bert-sparse": {
+        "path": str(_BIAS_DIR / "gus-net-bert-sparse"),
+        "architecture": "bert",
+        "tokenizer": "bert-base-uncased",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
+        "display_name": "GUS-Net (BERT Sparse)",
+        "public": False,
+        "optimized_thresholds": [0.476, 0.375, 0.3475, 0.3251, 0.3975, 0.342, 0.3309],
+    },
+    "gusnet-gpt2-sparse": {
+        "path": str(_BIAS_DIR / "gus-net-gpt2-sparse"),
+        "architecture": "gpt2",
+        "num_labels": NUM_LABELS,
+        "has_o_label": True,
+        "o_index": O_INDEX,
+        "category_indices": CATEGORY_INDICES,
+        "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
+        "display_name": "GUS-Net (GPT-2 Sparse)",
+        "public": False,
+        "optimized_thresholds": [0.4664, 0.3656, 0.2993, 0.3696, 0.4, 0.3501, 0.3659],
+    },
     # ── Paper-faithful models (standard focal loss, no LLRD/span decay) ──
     "gusnet-bert-paper": {
         "path": str(_BIAS_DIR / "gus-net-bert-paper"),

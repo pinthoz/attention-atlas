@@ -1726,10 +1726,11 @@ def create_floating_bias_toolbar():
                     if (clickInput && window.Shiny) {
                         el.on('plotly_click', function(data) {
                             if (!data.points || !data.points.length) return;
-                            var label = data.points[0].x;           // e.g. "L3·H5"
-                            if (!label) return;
-                            var headKey = label.replace('\u00b7', '_'); // "L3·H5" → "L3_H5"
-                            Shiny.setInputValue(clickInput, headKey, {priority: 'event'});
+                            var val = data.points[0].x;
+                            if (val === undefined || val === null) return;
+                            // For string labels like "L3·H5", normalise; for numbers, pass as-is
+                            var key = (typeof val === 'string') ? val.replace('\u00b7', '_') : val;
+                            Shiny.setInputValue(clickInput, key, {priority: 'event'});
                         });
                     }
                 } catch (err) {

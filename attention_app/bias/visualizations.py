@@ -232,11 +232,11 @@ def create_bias_propagation_plot(
         y=layer_propagation,
         mode='lines+markers',
         line=dict(color='#ff5ca9', width=3),
-        marker=dict(size=8, color='#ff5ca9', line=dict(color='white', width=2)),
+        marker=dict(size=10, color='#ff5ca9', line=dict(color='white', width=2)),
         fill='tozeroy',
         fillcolor='rgba(255, 92, 169, 0.1)',
         name='BAR',
-        hovertemplate="<b>Layer %{x}</b><br>Avg BAR: %{y:.3f}<extra></extra>"
+        hovertemplate="<b>Layer %{x}</b><br>Avg BAR: %{y:.3f}<br><i>Click to see heads</i><extra></extra>"
     ))
 
     # Add reference line at 1.0 (neutral)
@@ -298,6 +298,85 @@ def create_bias_propagation_plot(
         hovermode='x unified'
     )
 
+    return fig
+
+
+def create_bias_propagation_heads_plot(
+    head_bars: List[float],
+    layer_idx: int,
+    selected_head: Optional[int] = None,
+) -> go.Figure:
+    """Bar chart showing BAR per head within a single layer.
+
+    Args:
+        head_bars: List of BAR values, one per head in the layer.
+        layer_idx: Which layer this is (for the title).
+        selected_head: Optional head index to highlight.
+    """
+    heads = list(range(len(head_bars)))
+    colors = []
+    for i, bar in enumerate(head_bars):
+        if i == selected_head:
+            colors.append("#3b82f6")
+        elif bar > 1.5:
+            colors.append("#dc2626")
+        elif bar > 1.2:
+            colors.append("#ea580c")
+        else:
+            colors.append("#ff5ca9")
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=[f"H{h}" for h in heads],
+        y=head_bars,
+        marker_color=colors,
+        marker_line=dict(color="white", width=1),
+        hovertemplate="<b>Head %{x}</b><br>BAR: %{y:.3f}<extra></extra>",
+    ))
+
+    fig.add_hline(
+        y=1.0,
+        line_dash="dash",
+        line_color="#94a3b8",
+        annotation_text="Neutral (1.0)",
+        annotation_position="right",
+        annotation_font=dict(size=10, color="#64748b"),
+    )
+    fig.add_hline(
+        y=1.5,
+        line_dash="dot",
+        line_color="#dc2626",
+        annotation_text="Specialized (1.5)",
+        annotation_position="right",
+        annotation_font=dict(size=10, color="#dc2626"),
+    )
+
+    fig.update_layout(
+        title=dict(
+            text=(
+                f"Bias Attention per Head — Layer {layer_idx}"
+                f"<br><sub>BAR for each attention head in layer {layer_idx}</sub>"
+            ),
+            font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
+        ),
+        xaxis=dict(
+            title="Head",
+            tickfont=dict(size=11, color="#64748b"),
+        ),
+        yaxis=dict(
+            title="BAR (μ̂ / μ₀)",
+            gridcolor="#e2e8f0",
+            tickfont=dict(size=11, color="#64748b"),
+            rangemode="tozero",
+        ),
+        autosize=True,
+        height=400,
+        margin=dict(l=80, r=40, t=100, b=60, autoexpand=True),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif"),
+        hovermode="x unified",
+    )
     return fig
 
 
@@ -4059,6 +4138,7 @@ def _hex_to_rgb(hex_color):
 __all__ = [
     "create_attention_bias_matrix",
     "create_bias_propagation_plot",
+    "create_bias_propagation_heads_plot",
     "create_combined_bias_visualization",
     "create_inline_bias_html",
     "create_method_info_html",

@@ -29,6 +29,7 @@ from ..bias import (
     AttentionBiasAnalyzer,
     create_attention_bias_matrix,
     create_bias_propagation_plot,
+    create_bias_propagation_heads_plot,
     create_combined_bias_visualization,
     create_inline_bias_html,
     create_method_info_html,
@@ -790,6 +791,9 @@ def bias_server_handlers(input, output, session):
     lrp_results = reactive.value(None)
     lrp_results_B = reactive.value(None)
     lrp_running = reactive.value(False)
+
+    # ── Propagation drilldown (layer click → per-head view) ──
+    propagation_drilldown_layer = reactive.value(None)   # int or None
 
     # ── GUS-Net attention cache (computed on demand, keyed by text+model) ──
     _base_attn_cache = reactive.value(None)       # processed result dict
@@ -3066,9 +3070,8 @@ def bias_server_handlers(input, output, session):
             # transform:none on metric-card prevents the hover-transform from creating a new
             # containing block (which would make position:fixed behave like position:absolute).
             _oe = (
-                "var t=this.querySelector('.info-tooltip-content');"
+                "var t=this.querySelector('.bcard-tooltip');"
                 "var r=this.getBoundingClientRect();"
-                "t.style.position='fixed';"
                 "t.style.bottom=(window.innerHeight-r.top+8)+'px';"
                 "t.style.top='auto';"
                 "t.style.left=(r.left+r.width/2)+'px';"
@@ -3077,7 +3080,7 @@ def bias_server_handlers(input, output, session):
                 "t.style.opacity='1';"
             )
             _ol = (
-                "var t=this.querySelector('.info-tooltip-content');"
+                "var t=this.querySelector('.bcard-tooltip');"
                 "t.style.visibility='hidden';"
                 "t.style.opacity='0';"
             )
@@ -3088,11 +3091,20 @@ def bias_server_handlers(input, output, session):
             def _bcard(label, value, color="#334155", sub=None, tooltip=None):
                 sub_html = f'<div style="font-size:10px;color:#94a3b8;margin-top:2px;">{sub}</div>' if sub else ""
                 if tooltip:
+                    # Use a unique class so CSS :hover rule does NOT apply
                     info = (
                         f'<span class="info-tooltip-wrapper" style="margin-left:4px;vertical-align:middle;"'
                         f' onmouseenter="{_oe}" onmouseleave="{_ol}">'
                         f'<span class="info-tooltip-icon">i</span>'
-                        f'<div class="info-tooltip-content">{tooltip}</div>'
+                        f'<div class="bcard-tooltip"'
+                        f' style="visibility:hidden;opacity:0;position:fixed;z-index:9999999;'
+                        f'background:linear-gradient(135deg,#1e293b 0%,#334155 100%);color:#f1f5f9;'
+                        f'padding:16px 20px;border-radius:12px;font-size:12px;line-height:1.7;'
+                        f'width:380px;max-width:420px;'
+                        f'box-shadow:0 15px 50px rgba(0,0,0,0.5),0 0 0 1px rgba(255,92,169,0.3);'
+                        f'border:1px solid rgba(255,255,255,0.15);'
+                        f'transition:opacity 0.2s ease,visibility 0.2s ease;pointer-events:none;"'
+                        f'>{tooltip}</div>'
                         f'</span>'
                     )
                 else:
@@ -4123,6 +4135,27 @@ def bias_server_handlers(input, output, session):
                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-matrix-container', 'bias_matrix')", style=_BTN_STYLE_PNG),
                           ])
 
+    # ── Propagation drilldown: click layer → per-head view ──
+    @reactive.effect
+    @reactive.event(input.propagation_layer_click)
+    def _on_propagation_layer_click():
+        val = input.propagation_layer_click()
+        try:
+            propagation_drilldown_layer.set(int(val))
+        except (TypeError, ValueError):
+            pass
+
+    @reactive.effect
+    @reactive.event(input.propagation_back)
+    def _on_propagation_back():
+        propagation_drilldown_layer.set(None)
+
+    # Reset drilldown when new bias results arrive
+    @reactive.effect
+    @reactive.event(bias_results)
+    def _reset_propagation_drilldown():
+        propagation_drilldown_layer.set(None)
+
     @output
     @render.ui
     def bias_propagation_plot():
@@ -4132,6 +4165,7 @@ def bias_server_handlers(input, output, session):
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
+        drilldown_layer = propagation_drilldown_layer.get()
 
         # ── Attention source resolution ──
         src_mode = _normalize_attn_source_mode(_get_attn_source_mode("bias_attn_source"))
@@ -4144,15 +4178,40 @@ def bias_server_handlers(input, output, session):
         try: l_idx = int(input.bias_attn_layer())
         except Exception: l_idx = None
 
+        def _get_head_bars(data, layer):
+            """Extract per-head BAR values for a given layer."""
+            metrics = data.get("attention_metrics", [])
+            heads = [m for m in metrics if m.layer == layer]
+            heads.sort(key=lambda m: m.head)
+            return [m.bias_attention_ratio for m in heads]
+
         def get_viz(data, container_id="bias-propagation-container"):
             p = data["propagation_analysis"]["layer_propagation"]
             if not p: return "No data."
             fig = create_bias_propagation_plot(p, selected_layer=l_idx)
+            return _deferred_plotly(fig, container_id, height="450px",
+                                   click_input="propagation_layer_click")
+
+        def get_heads_viz(data, layer, container_id="bias-propagation-heads-container"):
+            head_bars = _get_head_bars(data, layer)
+            if not head_bars: return "No per-head data for this layer."
+            fig = create_bias_propagation_heads_plot(head_bars, layer)
             return _deferred_plotly(fig, container_id, height="450px")
 
-        header_args = (
+        # ── Back button for drilldown ──
+        back_btn = ui.tags.button(
+            ui.HTML('<i class="fa-solid fa-arrow-left" style="margin-right:4px;"></i> Layers'),
+            onclick="Shiny.setInputValue('propagation_back', Date.now(), {priority:'event'});",
+            style=(
+                "background:transparent;border:1px solid #94a3b8;color:#94a3b8;"
+                "border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;"
+                "font-weight:600;transition:all 0.2s;"
+            ),
+        )
+
+        _layer_header_args = (
             f"Bias Propagation Across Layers{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
-            "Mean BAR per transformer layer, showing how bias focus evolves with model depth.",
+            "Mean BAR per transformer layer. Click a layer to drill down into its heads.",
             f"<span style='{_TH}'>Layer depth</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
             f"<span><span style='{_TBG}'>Early (0–3)</span>&nbsp;syntactic or surface-focused; BAR is usually near neutral</span></div>"
@@ -4169,14 +4228,65 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>▼</span>"
             f"<span><b>Peak then drop</b>: bias is built in middle layers and then refined or diluted later</span></div>"
             f"<hr style='{_TS}'>"
-            f"<div style='{_TN}'>Reference dashed line = BAR 1.0 (uniform). Compare across models to see whether depth influences how bias is encoded.</div>"
+            f"<div style='{_TN}'>Click a layer point to see per-head BAR breakdown. Reference dashed line = BAR 1.0 (uniform).</div>"
         )
+
+        _heads_tooltip = (
+            f"<span style='{_TH}'>Per-head breakdown</span>"
+            f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
+            f"<span>Each bar is one attention head's BAR value</span></div>"
+            f"<div style='{_TR}'><span style='{_TD};color:#dc2626;'>●</span>"
+            f"<span><span style='{_TBR}'>Red bars</span>&nbsp;BAR &gt; 1.5 = bias-specialised head</span></div>"
+            f"<div style='{_TR}'><span style='{_TD};color:#ea580c;'>●</span>"
+            f"<span><span style='{_TBA}'>Orange bars</span>&nbsp;BAR 1.2–1.5 = moderate bias focus</span></div>"
+            f"<hr style='{_TS}'>"
+            f"<div style='{_TN}'>Click ← Layers to return to the layer overview.</div>"
+        )
+
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
+
+        # ── Helper: render single-panel (layers or heads) ──
+        def _single_panel(data, suffix="", extra_style=""):
+            cid_layers = f"bias-propagation-container{suffix}"
+            cid_heads = f"bias-propagation-heads-container{suffix}"
+            if drilldown_layer is not None:
+                hdr = (
+                    f"Bias Propagation — Layer {drilldown_layer} Heads{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
+                    f"BAR per attention head in layer {drilldown_layer}.",
+                    _heads_tooltip,
+                )
+                ctrls = [
+                    back_btn,
+                    ui.tags.button("PNG", onclick=f"downloadPlotlyPNG('{cid_heads}', 'bias_propagation_heads_L{drilldown_layer}')", style=_BTN_STYLE_PNG),
+                ]
+                return _wrap_card(ui.HTML(get_heads_viz(data, drilldown_layer, cid_heads)),
+                                  *hdr, style=card_style + extra_style, controls=ctrls)
+            else:
+                ctrls = [
+                    ui.download_button(f"export_bias_propagation{suffix}", "CSV", style=_BTN_STYLE_CSV),
+                    ui.tags.button("PNG", onclick=f"downloadPlotlyPNG('{cid_layers}', 'bias_propagation{suffix}')", style=_BTN_STYLE_PNG),
+                ]
+                return _wrap_card(ui.HTML(get_viz(data, cid_layers)),
+                                  *_layer_header_args, style=card_style + extra_style, controls=ctrls)
 
         # ── Compare attention sources (Base Encoder vs GUS-Net) ──
         if src_mode == "compare" and res_base_for_compare:
-            hdr_base = (f"Bias Propagation{_source_badge_html('Base Encoder')}", header_args[1], header_args[2])
-            hdr_gus = (f"Bias Propagation{_source_badge_html('GUS-Net')}", header_args[1], header_args[2])
+            hdr_base = (f"Bias Propagation{_source_badge_html('Base Encoder')}", _layer_header_args[1], _layer_header_args[2])
+            hdr_gus = (f"Bias Propagation{_source_badge_html('GUS-Net')}", _layer_header_args[1], _layer_header_args[2])
+            if drilldown_layer is not None:
+                hdr_base = (f"Layer {drilldown_layer} Heads{_source_badge_html('Base Encoder')}",
+                            f"BAR per head in layer {drilldown_layer}.", _heads_tooltip)
+                hdr_gus = (f"Layer {drilldown_layer} Heads{_source_badge_html('GUS-Net')}",
+                           f"BAR per head in layer {drilldown_layer}.", _heads_tooltip)
+                return ui.div(
+                    {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
+                    _wrap_card(ui.HTML(get_heads_viz(res_base_for_compare, drilldown_layer, "bias-propagation-heads-base")),
+                               *hdr_base, style=card_style + " border: 2px solid #60a5fa; height: 100%;",
+                               controls=[back_btn, ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-heads-base', 'bias_propagation_heads_base')", style=_BTN_STYLE_PNG)]),
+                    _wrap_card(ui.HTML(get_heads_viz(res, drilldown_layer, "bias-propagation-heads-gus")),
+                               *hdr_gus, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
+                               controls=[ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-heads-gus', 'bias_propagation_heads_gus')", style=_BTN_STYLE_PNG)]),
+                )
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(ui.HTML(get_viz(res_base_for_compare, "bias-propagation-container-base")), *hdr_base,
@@ -4195,22 +4305,10 @@ def bias_server_handlers(input, output, session):
         if (compare_models or compare_prompts) and res_render_B:
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
-                _wrap_card(ui.HTML(get_viz(res_render, "bias-propagation-container")), *header_args, style=card_style + " border: 2px solid #3b82f6; height: 100%;",
-                           controls=[
-                               ui.download_button("export_bias_propagation", "CSV", style=_BTN_STYLE_CSV),
-                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container', 'bias_propagation_A')", style=_BTN_STYLE_PNG),
-                           ]),
-                _wrap_card(ui.HTML(get_viz(res_render_B, "bias-propagation-container-B")), *header_args, style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
-                           controls=[
-                               ui.download_button("export_bias_propagation_B", "CSV", style=_BTN_STYLE_CSV),
-                               ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container-B', 'bias_propagation_B')", style=_BTN_STYLE_PNG),
-                           ])
+                _single_panel(res_render, "", " border: 2px solid #3b82f6; height: 100%;"),
+                _single_panel(res_render_B, "_B", " border: 2px solid #ff5ca9; height: 100%;"),
             )
-        return _wrap_card(ui.HTML(get_viz(res_render, "bias-propagation-container")), *header_args, style=card_style,
-                          controls=[
-                              ui.download_button("export_bias_propagation", "CSV", style=_BTN_STYLE_CSV),
-                              ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-propagation-container', 'bias_propagation')", style=_BTN_STYLE_PNG),
-                          ])
+        return _single_panel(res_render)
 
     @output
     @render.ui

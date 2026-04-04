@@ -17,6 +17,7 @@ from .integrated_gradients import (
 from .visualizations import (
     create_attention_bias_matrix,
     create_bias_propagation_plot,
+    create_bias_propagation_heads_plot,
     create_combined_bias_visualization,
     create_inline_bias_html,
     create_method_info_html,
@@ -82,6 +83,7 @@ __all__ = [
     # Visualizations
     "create_attention_bias_matrix",
     "create_bias_propagation_plot",
+    "create_bias_propagation_heads_plot",
     "create_combined_bias_visualization",
     "create_inline_bias_html",
     "create_method_info_html",
