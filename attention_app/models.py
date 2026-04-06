@@ -37,7 +37,15 @@ class ModelManager:
         "pinthoz/gus-net-gpt2-medium",
     }
 
-    _instances = {}
+    # LRU cache - keep up to _MAX_CACHED models loaded simultaneously.
+    # >1 is required for "compare models" mode, where two encoders (e.g.
+    # gus-net-bert and gus-net-gpt2) are queried alternately by several
+    # panels (faithfulness, IG, LRP, ablation, perturbation). With a
+    # cache size of 1 each switch evicts the other, causing a bert<->gpt2
+    # ping-pong that looks like an infinite reload loop.
+    from collections import OrderedDict as _OrderedDict
+    _instances: "_OrderedDict[str, tuple]" = _OrderedDict()
+    _MAX_CACHED = 2
 
     @classmethod
     def get_model(cls, model_name: str):
@@ -51,14 +59,15 @@ class ModelManager:
                 f"Allowed: {sorted(cls._ALLOWED_MODELS)}"
             )
 
-        # Check if model is already loaded
+        # Check if model is already loaded (mark as most-recently-used)
         if model_name in cls._instances:
+            cls._instances.move_to_end(model_name)
             return cls._instances[model_name]
 
-        # Clear existing cache to free memory
-        if cls._instances:
-            print(f"Unloading previous models to free memory...")
-            cls._instances.clear()
+        # Evict least-recently-used entries until we have room for one more
+        while len(cls._instances) >= cls._MAX_CACHED:
+            old_name, _ = cls._instances.popitem(last=False)
+            print(f"Unloading previous model ({old_name}) to free memory...")
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
