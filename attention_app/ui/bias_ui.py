@@ -656,7 +656,7 @@ def create_bias_sidebar():
 
 
             ui.div(
-                {"style": "margin-top: 12px;"},
+                {"style": "margin-top: 12px; margin-bottom: 14px;"},
                 ui.input_action_button("analyze_bias_btn", "Analyze Bias", class_="btn-primary", style="padding-top: 6px; padding-bottom: 6px; min-height: 0; height: auto;"),
             ),
 
@@ -1475,7 +1475,11 @@ def create_floating_bias_toolbar():
                     # Attention Source toggle
                     ui.div(
                         {"class": "control-group"},
-                        ui.span("Source Attention", class_="control-label"),
+                        ui.span(
+                            ui.span("Source Attention", class_="lbl-full"),
+                            ui.span("SRC ATT", class_="lbl-short"),
+                            class_="control-label",
+                        ),
                         ui.div(
                             {"class": "radio-group", "id": "bias-source-radio-group"},
                             ui.span("GUS-Net", class_="radio-option active",
@@ -1502,7 +1506,11 @@ def create_floating_bias_toolbar():
                                   "= 1.0: head attends uniformly (no bias focus)\n"
                                   "> 1.5: head over-attends to biased tokens (default threshold)\n"
                                   "Lower values detect subtler patterns; higher values are stricter."},
-                        ui.span("BAR Threshold", class_="control-label"),
+                        ui.span(
+                            ui.span("BAR Threshold", class_="lbl-full"),
+                            ui.span("BAR", class_="lbl-short"),
+                            class_="control-label",
+                        ),
                         ui.div(
                             {"class": "slider-container"},
                             ui.tags.span("1.5", id="bias-bar-threshold-value", class_="slider-value"),
@@ -1649,6 +1657,141 @@ def create_floating_bias_toolbar():
             body.bias-compare-prompts-active #bias-src-compare,
             body.bias-compare-models-active #bias-src-compare {
                 display: none !important;
+            }
+
+            /* Default desktop label swap */
+            .control-label .lbl-full { display: inline; }
+            .control-label .lbl-short { display: none; }
+
+            /* ── MOBILE: bias floating toolbar (compact, same height) ── */
+            @media (max-width: 1024px) {
+                /* Use short labels */
+                .control-label .lbl-full { display: none !important; }
+                .control-label .lbl-short { display: inline !important; }
+
+                /* Keep the original 3-col grid (left | tokens | right) */
+                #bias-controls-row {
+                    gap: 6px !important;
+                    grid-template-columns: auto minmax(120px, 1fr) auto !important;
+                }
+                /* Tokens row: ensure it's centered and has a minimum width
+                   so chips show up like in the attention tab */
+                #bias-tokens-row {
+                    min-width: 120px !important;
+                    flex: 1 1 auto !important;
+                }
+                #bias-tokens-row .token-sentence {
+                    max-width: 100% !important;
+                    min-width: 0 !important;
+                    max-height: 54px !important;
+                    overflow-y: auto !important;
+                    overflow-x: hidden !important;
+                    flex-wrap: wrap !important;
+                    -webkit-overflow-scrolling: touch;
+                }
+                #bias-floating-toolbar {
+                    padding: 6px 8px !important;
+                    flex-direction: column !important;
+                }
+                #bias-floating-toolbar .bar-title {
+                    position: relative !important;
+                    margin-bottom: 6px !important;
+                    text-align: center;
+                }
+
+                /* Layer + Head stacked: label ON TOP of slider for each */
+                .bias-bar-left {
+                    flex-direction: column !important;
+                    align-items: stretch !important;
+                    gap: 0 !important;
+                }
+                .bias-bar-left .control-group {
+                    flex-direction: column !important;
+                    align-items: center !important;
+                    gap: 0 !important;
+                    line-height: 1 !important;
+                }
+
+                /* Right group: SRC ATT (col 1) | BAR/TOP-K stacked (col 2) */
+                .bias-bar-right {
+                    display: grid !important;
+                    grid-template-columns: auto auto !important;
+                    grid-template-rows: auto auto !important;
+                    column-gap: 8px !important;
+                    row-gap: 0 !important;
+                    align-items: center !important;
+                }
+                .bias-bar-right > .control-group:nth-child(1) {
+                    grid-column: 1 / 2;
+                    grid-row: 1 / 3;
+                }
+                .bias-bar-right > .control-group:nth-child(2) {
+                    grid-column: 2 / 3;
+                    grid-row: 1 / 2;
+                }
+                .bias-bar-right > .control-group:nth-child(3) {
+                    grid-column: 2 / 3;
+                    grid-row: 2 / 3;
+                }
+                .bias-bar-right > .control-group:nth-child(2),
+                .bias-bar-right > .control-group:nth-child(3) {
+                    flex-direction: column !important;
+                    align-items: center !important;
+                    gap: 0 !important;
+                    line-height: 1 !important;
+                }
+
+                .bias-bar-left input[type="range"],
+                .bias-bar-right input[type="range"] {
+                    width: 40px !important;
+                    height: 4px !important;
+                    margin: 0 !important;
+                }
+                #bias-floating-toolbar .slider-container {
+                    gap: 2px !important;
+                }
+                #bias-floating-toolbar .slider-value {
+                    min-width: 12px !important;
+                    height: 12px !important;
+                    font-size: 7px !important;
+                    line-height: 12px !important;
+                    padding: 0 2px !important;
+                }
+                #bias-floating-toolbar .control-label {
+                    font-size: 7px !important;
+                    line-height: 1 !important;
+                    margin: 0 !important;
+                }
+
+                /* Shrink SRC ATT radio group */
+                #bias-source-radio-group {
+                    transform: scale(0.8);
+                    transform-origin: left center;
+                    margin-right: -10px;
+                }
+                #bias-floating-toolbar #bias-source-radio-group .radio-option {
+                    padding: 1px 4px !important;
+                    font-size: 8px !important;
+                }
+                #bias-floating-toolbar .slider-value {
+                    min-width: 14px !important;
+                    height: 14px !important;
+                    font-size: 8px !important;
+                }
+                #bias-floating-toolbar .control-label {
+                    font-size: 8px !important;
+                    white-space: nowrap;
+                }
+                #bias-floating-toolbar .radio-option {
+                    padding: 2px 5px !important;
+                    font-size: 8px !important;
+                }
+                #bias-floating-toolbar .control-group {
+                    gap: 1px !important;
+                }
+                #bias-floating-toolbar .bar-title {
+                    font-size: 9px !important;
+                }
             }
 
             /* Constrain Plotly plots to never exceed their container */

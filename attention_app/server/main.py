@@ -2088,91 +2088,90 @@ def server(input, output, session):
             
             # Controls
             ui.div(
-                {"class": "controls-row"},
+                {"class": "controls-row", "id": "attention-controls-row"},
                 
-                # Global View - class managed by JavaScript only to avoid render timing issues
+                # --- LEFT GROUP ---
                 ui.div(
-                    {"class": "control-group"},
-                    ui.span("View", class_="control-label"),
-                    ui.input_action_button("trigger_global_view", "Global", class_="btn-global")
-                ),
-
-                # Layer
-                ui.div(
-                    {"class": "control-group"},
-                    ui.span("Layer", class_="control-label"),
+                    {"class": "att-bar-left"},
+                    # Global View 
                     ui.div(
-                        {"class": "slider-container"},
-                        ui.tags.span(str(current_layer), id="layer-value", class_="slider-value"),
-                        ui.tags.input(type="range", id="layer-slider", min="0", max=str(num_layers - 1), value=str(current_layer), step="1")
-                    )
-                ),
-                
-                # Head
-                ui.div(
-                    {"class": "control-group"},
-                    ui.span("Head", class_="control-label"),
+                        {"class": "control-group", "id": "grp-view"},
+                        ui.span("View", class_="control-label"),
+                        ui.input_action_button("trigger_global_view", "Global", class_="btn-global")
+                    ),
+                    # Scale Toggle
                     ui.div(
-                        {"class": "slider-container"},
-                        ui.tags.span(str(current_head), id="head-value", class_="slider-value"),
-                        ui.tags.input(type="range", id="head-slider", min="0", max=str(num_heads - 1), value=str(current_head), step="1")
-                    )
-                ),
-                
-                # Divider
-                ui.div({"class": "control-divider"}),
-                
-                # Tokens (Dynamic)
-                *token_area_content,
-                
-                # Divider
-                ui.div({"class": "control-divider"}),
-                
-                # Scale Toggle
-                ui.div(
-                    {"class": "control-group"},
-                    ui.span("Scale", class_="control-label"),
-                    ui.div(
-                        {"class": "btn-global", "id": "scale-toggle", "style": "width: 40px; cursor: pointer; position: relative;", "title": "Applies to ATTENTION METRICS only. Toggle ON (Pink) to use absolute [0, 1] scale. Toggle OFF (Grey) to use original scale."},
-                        ui.span("Full", style="font-size: 8px;")
-                    )
-                ),
-
-
-                
-                # Norm (horizontal layout: label left, buttons right)
-                ui.div(
-                    {"class": "control-group norm-control-group"},
-                    ui.span("Norm", class_="control-label"),
-                    ui.div(
-                        {"class": "norm-control-wrapper"},
+                        {"class": "control-group", "id": "grp-scale"},
+                        ui.span("Scale", class_="control-label"),
                         ui.div(
-                            {"class": "radio-group", "id": "norm-radio-group"},
-                            ui.span("Raw", class_="radio-option active", title="Direct attention from softmax. Each query (row) distributes 100% of its attention.", **{"data-value": "raw"}),
-                            ui.span("Col", class_="radio-option", title="Normalized by keys (columns). Shows which tokens are most attended to overall.", **{"data-value": "col"}),
-                            ui.span("Rollout", class_="radio-option", title="Accumulated attention flow through all layers up to current, accounting for residual connections.", **{"data-value": "rollout"}),
-                        ),
+                            {"class": "btn-global", "id": "scale-toggle", "style": "width: 40px; cursor: pointer; position: relative;", "title": "Applies to ATTENTION METRICS only. Toggle ON (Pink) to use absolute [0, 1] scale. Toggle OFF (Grey) to use original scale."},
+                            ui.span("Full", style="font-size: 8px;")
+                        )
+                    ),
+                    # Layer
+                    ui.div(
+                        {"class": "control-group", "id": "grp-layer"},
+                        ui.span("Layer", class_="control-label"),
                         ui.div(
-                            {"class": "rollout-layers-control", "id": "rollout-layers-control"},
-                            ui.div(
-                                {"class": "radio-group", "id": "rollout-layers-group"},
-                                ui.span("0→L", class_="radio-option active", title="Rollout from layer 0 to the currently selected layer", **{"data-value": "current"}),
-                                ui.span("All", class_="radio-option", title="Rollout across all layers (0 to max layer)", **{"data-value": "all"}),
-                            )
+                            {"class": "slider-container"},
+                            ui.tags.span(str(current_layer), id="layer-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="layer-slider", min="0", max=str(num_layers - 1), value=str(current_layer), step="1")
+                        )
+                    ),
+                    # Head
+                    ui.div(
+                        {"class": "control-group", "id": "grp-head"},
+                        ui.span("Head", class_="control-label"),
+                        ui.div(
+                            {"class": "slider-container"},
+                            ui.tags.span(str(current_head), id="head-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="head-slider", min="0", max=str(num_heads - 1), value=str(current_head), step="1")
                         )
                     )
                 ),
                 
-                # Top-K
+                # --- CENTER GROUP ---
                 ui.div(
-                    {"class": "control-group"},
-                    ui.span("Top-K", class_="control-label"),
-                    ui.div(
-                        {"class": "slider-container"},
-                        ui.tags.span(str(current_topk), id="topk-value", class_="slider-value"),
-                        ui.tags.input(type="range", id="topk-slider", min="1", max="20", value=str(current_topk), step="1")
-                    )
+                    {"id": "att-tokens-row"},
+                    *token_area_content
                 ),
+                
+                # --- RIGHT GROUP ---
+                ui.div(
+                    {"class": "att-bar-right"},
+                    # Norm 
+                    ui.div(
+                        {"class": "control-group norm-control-group", "id": "grp-norm"},
+                        ui.span("Norm", class_="control-label"),
+                        ui.div(
+                            {"class": "norm-control-wrapper"},
+                            ui.div(
+                                {"class": "radio-group", "id": "norm-radio-group"},
+                                ui.span("Raw", class_="radio-option active", title="Direct attention from softmax. Each query (row) distributes 100% of its attention.", **{"data-value": "raw"}),
+                                ui.span("Col", class_="radio-option", title="Normalized by keys (columns). Shows which tokens are most attended to overall.", **{"data-value": "col"}),
+                                ui.span("Rollout", class_="radio-option", title="Accumulated attention flow through all layers up to current, accounting for residual connections.", **{"data-value": "rollout"}),
+                            ),
+                            ui.div(
+                                {"class": "rollout-layers-control", "id": "rollout-layers-control"},
+                                ui.div(
+                                    {"class": "radio-group", "id": "rollout-layers-group"},
+                                    ui.span("0→L", class_="radio-option active", title="Rollout from layer 0 to the currently selected layer", **{"data-value": "current"}),
+                                    ui.span("All", class_="radio-option", title="Rollout across all layers (0 to max layer)", **{"data-value": "all"}),
+                                )
+                            )
+                        )
+                    ),
+                    # Top-K
+                    ui.div(
+                        {"class": "control-group", "id": "grp-topk"},
+                        ui.span("Top-K", class_="control-label"),
+                        ui.div(
+                            {"class": "slider-container"},
+                            ui.tags.span(str(current_topk), id="topk-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="topk-slider", min="1", max="20", value=str(current_topk), step="1")
+                        )
+                    )
+                )
             ),
             
             # Script

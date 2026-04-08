@@ -12,6 +12,15 @@ from .bias_ui import create_bias_sidebar, create_bias_content
 
 # Original attention analysis page
 attention_analysis_page = ui.page_fluid(
+    # BLAZING FAST INLINE CSS to completely kill FOUC before stylesheets load!
+    ui.HTML('''<style>
+        .navbar:not(.sidebar .navbar), .navbar-toggler, .navbar-toggler-icon { 
+            display: none !important; 
+            opacity: 0 !important; 
+            visibility: hidden !important; 
+        }
+    </style>'''),
+    
     # Sidebar
     ui.div(
         {"class": "sidebar"},
@@ -539,7 +548,7 @@ attention_analysis_page = ui.page_fluid(
             ),
 
             ui.div(
-                {"style": "margin-bottom: 0px;"}, # Space for Visual Options
+                {"style": "margin-top: 12px;"}, # Match Bias tab spacing
                 ui.input_action_button("generate_all", "Generate All", class_="btn-primary", style="padding-top: 6px; padding-bottom: 6px; min-height: 0; height: auto;"), # Shorter button
                 ui.div(
                     {"id": "loading_spinner", "class": "loading-container", "style": "display:none;"},
@@ -566,6 +575,15 @@ attention_analysis_page = ui.page_fluid(
 
 # Bias analysis page
 bias_analysis_page = ui.page_fluid(
+    # BLAZING FAST INLINE CSS to completely kill FOUC before stylesheets load!
+    ui.HTML('''<style>
+        .navbar:not(.sidebar .navbar), .navbar-toggler, .navbar-toggler-icon { 
+            display: none !important; 
+            opacity: 0 !important; 
+            visibility: hidden !important; 
+        }
+    </style>'''),
+    
     create_bias_sidebar(),
     create_bias_content()
 )
@@ -585,6 +603,8 @@ app_ui = ui.page_navbar(
 
     # CSS Styles
     header=ui.tags.head(
+        # BLAZING FAST SYNCHRONOUS STYLE INJECTION - GUARANTEES NO FOUC!
+        ui.HTML("<script>document.write('<style>.navbar:not(.sidebar .navbar), .navbar-toggler, .navbar-toggler-icon { display: none !important; opacity: 0 !important; visibility: hidden !important; }</style>');</script>"),
         ui.tags.title("Attention Atlas"),
         ui.tags.style(CSS),
         ui.tags.link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"),
@@ -604,6 +624,30 @@ app_ui = ui.page_navbar(
                 opacity: 0 !important;
                 width: 0 !important;
                 pointer-events: none !important;
+            }
+
+            /* PREVENT FOUC: Hide navbar everywhere unless it has been moved into the sidebar */
+            nav.navbar:not(.sidebar nav.navbar),
+            .navbar:not(.sidebar .navbar) {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                position: absolute !important;
+                top: -9999px !important;
+            }
+            
+            /* Show navbar once it reaches its designated location */
+            .sidebar .navbar,
+            .sidebar > .navbar {
+                display: flex !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                animation: fadeInNav 0.3s ease-out;
+            }
+
+            @keyframes fadeInNav {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
             }
 
             /* FORCE HISTORY TAB GLUE AND SPACING */
@@ -641,7 +685,12 @@ app_ui = ui.page_navbar(
             }
             /* Pull Visualization Options closer to Generate button */
             #visualization_options_container {
-                /* margin-top: -20px !important; REMOVED to fix overlap */
+                margin: 0 !important; 
+                padding: 0 !important;
+            }
+            #visualization_options_container:empty {
+                display: none !important;
+                height: 0 !important;
             }
             #visualization_options_container .sidebar-section {
                 margin-top: 0 !important;

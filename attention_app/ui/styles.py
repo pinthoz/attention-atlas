@@ -4118,20 +4118,26 @@ __all__ = ["CSS"]
                 border-radius: 0 0 18px 18px;
             }
 
+            /* Reduce main container lateral spacing to maximize screen real estate */
+            .container-fluid, .tab-content, .tab-pane {
+                padding-left: 2px !important;
+                padding-right: 2px !important;
+            }
+
             /* 2. Content fills width and removes margin */
             .content {
                 margin-left: 0 !important;
                 margin-top: 0 !important;
                 width: 100% !important;
                 max-width: 100% !important;
-                padding: 8px 6px !important;
+                padding: 8px 2px !important; /* Reduced lateral margins (was 6px) */
                 padding-bottom: 16px !important;
             }
 
             /* Tighter sidebar lateral padding on mobile */
             .sidebar {
-                padding-left: 10px !important;
-                padding-right: 10px !important;
+                padding-left: 6px !important; /* Reduced from 10px */
+                padding-right: 6px !important; /* Reduced from 10px */
             }
 
             /* Force ALL multi-column / horizontal card layouts to stack vertically */
@@ -4283,6 +4289,14 @@ __all__ = ["CSS"]
             .panel-title-full { display: none !important; }
             .panel-title-short { display: inline !important; }
 
+            /* Collapse visualization options container if it is rendered empty to prevent phantom gaps */
+            #visualization_options_container:empty {
+                display: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                height: 0 !important;
+            }
+
             /* 3. Navbar (Attention/Bias tabs) lives INSIDE sidebar, below Generate All */
             .sidebar > .navbar,
             .navbar {
@@ -4334,9 +4348,119 @@ __all__ = ["CSS"]
                 left: 0 !important;
                 right: 0 !important;
                 margin: 0 12px 16px 12px !important;
-                padding: 12px !important;
+                padding: 6px 8px !important;
+                flex-direction: column !important;
+            }
+            .floating-control-bar .token-sentence {
+                max-height: 54px !important;
+                overflow-y: auto !important;
+                width: 100% !important;
+                min-width: 0 !important;
+            }
+            .floating-control-bar .bar-title {
+                position: relative !important;
+                margin-bottom: 2px !important;
+                top: auto !important;
+            }
+
+            /* Attention Tab Mobile Exact Layout Matching Bias */
+            #attention-controls-row {
+                display: grid !important;
+                grid-template-columns: auto minmax(120px, 1fr) auto !important;
+                gap: 6px !important;
+                align-items: center !important;
+            }
+            
+            /* Left Group (View/Scale, Layer/Head) */
+            .att-bar-left {
+                display: grid !important;
+                grid-template-areas:
+                    "view layer"
+                    "scale head";
+                gap: 0 8px !important;
+                align-items: center !important;
+            }
+            #grp-view { grid-area: view; }
+            #grp-scale { grid-area: scale; }
+            #grp-layer { grid-area: layer; }
+            #grp-head { grid-area: head; }
+
+            /* Right Group (Norm, TopK) */
+            .att-bar-right {
+                display: grid !important;
+                grid-template-columns: auto auto !important;
+                grid-template-rows: auto auto !important;
+                gap: 0 8px !important;
+                align-items: center !important;
+            }
+            #grp-norm { grid-column: 1 / 2; grid-row: 1 / 3; }
+            #grp-topk { grid-column: 2 / 3; grid-row: 1 / 2; }
+
+            #att-tokens-row .token-sentence {
+                max-width: 100% !important;
+                min-width: 0 !important;
+                max-height: 54px !important;
+                overflow-y: auto !important;
+                overflow-x: hidden !important;
                 flex-wrap: wrap !important;
+                -webkit-overflow-scrolling: touch;
+            }
+            #att-tokens-row .token-row-split {
+                margin: 0 !important; width: 100% !important; flex-wrap: wrap !important;
+            }
+
+            /* Stack internal titles and inputs for everything tightly */
+            #attention-controls-row .control-group {
+                flex-direction: column !important;
+                align-items: center !important;
+                gap: 0 !important;
+                line-height: 1 !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                border: none !important;
+                background: transparent !important;
+            }
+
+            /* Fix Norm internal layout */
+            #attention-controls-row .norm-control-group {
+                flex-direction: column !important;
+            }
+
+            /* Sliders & Tiny Adjustments */
+            #attention-controls-row input[type="range"] {
+                width: 40px !important;
+                height: 4px !important;
+                margin: 0 !important;
+            }
+            #attention-controls-row .btn-global,
+            #attention-controls-row #scale-toggle {
+                padding: 1px 4px !important;
+                font-size: 8px !important;
+                height: 14px !important;
+                min-height: auto !important;
+                line-height: 12px !important;
+                display: flex !important;
+                align-items: center !important;
                 justify-content: center !important;
+            }
+            #attention-controls-row .slider-container { gap: 2px !important; }
+            #attention-controls-row .slider-value { min-width: 12px !important; height: 12px !important; font-size: 7px !important; line-height: 12px !important; padding: 0 2px !important; }
+            #attention-controls-row .control-label { font-size: 8px !important; margin-bottom: 2px !important; }
+            #attention-controls-row .radio-option { padding: 2px 4px !important; font-size: 8px !important; }
+            .floating-control-bar .slider-container {
+                gap: 2px !important;
+            }
+            .floating-control-bar .slider-value,
+            .floating-control-bar .control-label,
+            .floating-control-bar .radio-option {
+                font-size: 8px !important;
+            }
+            .floating-control-bar .slider-value {
+                min-width: 14px !important;
+                height: 14px !important;
+            }
+            .floating-control-bar .radio-option {
+                padding: 2px 4px !important;
             }
 
             /* 5. Visualization Adjustments */
