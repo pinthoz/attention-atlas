@@ -1321,7 +1321,11 @@ def create_bias_accordion():
 
         # Panel 3: Attention x Bias Correlation
         ui.accordion_panel(
-            ui.span("Attention × Bias Correlation", ui.span({"class": "accordion-panel-badge explore"}, "Exploration")),
+            ui.span(
+                ui.span("Attention × Bias Correlation", class_="panel-title-full"),
+                ui.span("Attention × Bias Corr", class_="panel-title-short"),
+                ui.span({"class": "accordion-panel-badge explore"}, "Exploration"),
+            ),
             # Formula definition panel
             ui.output_ui("bias_ratio_formula"),
             # Hidden selects (driven by the floating toolbar)
@@ -1719,6 +1723,54 @@ def create_floating_bias_toolbar():
                     el.removeAttribute('data-plotly-fig');
                     el.classList.remove('plotly-deferred');
                     el.classList.add('plotly-initialized');
+
+                    // ── Mobile: restack horizontal 2-subplot figures into 1-col ──
+                    try {
+                        var isMobile = window.innerWidth <= 1024;
+                        var isTargetChart = el.id && (
+                            el.id.indexOf('ig-chart-container') === 0 ||
+                            el.id.indexOf('ig-topk-chart-container') === 0
+                        );
+                        if (isMobile && isTargetChart && fig.layout && fig.layout.xaxis2) {
+                            fig.layout.xaxis  = fig.layout.xaxis  || {};
+                            fig.layout.yaxis  = fig.layout.yaxis  || {};
+                            fig.layout.xaxis2 = fig.layout.xaxis2 || {};
+                            fig.layout.yaxis2 = fig.layout.yaxis2 || {};
+                            fig.layout.xaxis.domain  = [0, 1];
+                            fig.layout.yaxis.domain  = [0.56, 1];
+                            fig.layout.xaxis2.domain = [0, 1];
+                            fig.layout.yaxis2.domain = [0, 0.44];
+                            fig.layout.height = 760;
+                            el.style.height = '760px';
+                            // Reposition subplot title annotations (first two)
+                            if (Array.isArray(fig.layout.annotations) && fig.layout.annotations.length >= 2) {
+                                fig.layout.annotations[0].x = 0.5;
+                                fig.layout.annotations[0].y = 1.0;
+                                fig.layout.annotations[0].xref = 'paper';
+                                fig.layout.annotations[0].yref = 'paper';
+                                fig.layout.annotations[0].xanchor = 'center';
+                                fig.layout.annotations[0].yanchor = 'bottom';
+                                fig.layout.annotations[1].x = 0.5;
+                                fig.layout.annotations[1].y = 0.46;
+                                fig.layout.annotations[1].xref = 'paper';
+                                fig.layout.annotations[1].yref = 'paper';
+                                fig.layout.annotations[1].xanchor = 'center';
+                                fig.layout.annotations[1].yanchor = 'bottom';
+                            }
+                            // Move any colorbars to the right of upper subplot
+                            if (Array.isArray(fig.data)) {
+                                fig.data.forEach(function(tr) {
+                                    if (tr && tr.colorbar) {
+                                        tr.colorbar.x = 1.02;
+                                        tr.colorbar.y = 0.78;
+                                        tr.colorbar.len = 0.4;
+                                        tr.colorbar.xanchor = 'left';
+                                    }
+                                });
+                            }
+                        }
+                    } catch (e) { console.warn('mobile restack failed', e); }
+
                     Plotly.newPlot(el, fig.data, fig.layout, cfg);
 
                     // If this plot has a click-input binding, attach plotly_click listener

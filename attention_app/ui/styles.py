@@ -4093,9 +4093,13 @@ __all__ = ["CSS"]
             display: flex !important; /* Only show when parent has active class */
         }
         
+        /* Desktop default for bias panel title swap */
+        .panel-title-full { display: inline; }
+        .panel-title-short { display: none; }
+
         /* RESPONSIVE LAYOUT - Mobile & Tablet (< 1024px) */
         @media (max-width: 1024px) {
-            /* 1. Sidebar becomes a scrollable top header */
+            /* 1. Sidebar becomes a unified top header (merged with navbar) */
             .sidebar {
                 position: relative !important;
                 width: 100% !important;
@@ -4107,9 +4111,11 @@ __all__ = ["CSS"]
                 overflow-y: visible !important;
                 z-index: 101 !important;
                 padding: 16px !important;
-                padding-bottom: 24px !important;
+                padding-top: 8px !important;
+                padding-bottom: 16px !important;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 border-bottom: 1px solid rgba(255,255,255,0.1);
+                border-radius: 0 0 18px 18px;
             }
 
             /* 2. Content fills width and removes margin */
@@ -4118,45 +4124,216 @@ __all__ = ["CSS"]
                 margin-top: 0 !important;
                 width: 100% !important;
                 max-width: 100% !important;
-                padding: 16px !important;
-                padding-bottom: 90px !important; /* Extra space for bottom navbar */
+                padding: 8px 6px !important;
+                padding-bottom: 16px !important;
             }
 
-            /* 3. Navbar (Attention/Bias tabs) fixed to bottom */
-            .navbar {
-                position: fixed !important;
-                bottom: 0 !important;
+            /* Tighter sidebar lateral padding on mobile */
+            .sidebar {
+                padding-left: 10px !important;
+                padding-right: 10px !important;
+            }
+
+            /* Force ALL multi-column / horizontal card layouts to stack vertically */
+            .flex-row-container,
+            .flex-row-container.arrow-row,
+            #dashboard-container .flex-row-container,
+            #dashboard-container-compare .flex-row-container,
+            #compare-content-body .flex-row-container {
+                flex-direction: column !important;
+                align-items: stretch !important;
+                gap: 0 !important;
+            }
+
+            .flex-card {
+                width: 100% !important;
+                max-width: 100% !important;
+                flex: 1 1 auto !important;
+            }
+
+            /* Convert horizontal arrows into vertical arrows when stacked.
+               The base glyph is "↓", and horizontal arrows wrap it in an inner
+               span rotated -90deg (to make it point right). On mobile we want
+               them pointing DOWN, so we cancel the inner rotation. */
+            .arrow-horizontal {
+                width: 100% !important;
+                height: 28px !important;
+                margin: 4px 0 !important;
+                align-self: center !important;
+            }
+            .arrow-horizontal > span,
+            .arrow-horizontal span[style*="rotate"] {
+                transform: none !important;
+                display: inline-block !important;
+            }
+
+            /* Absolute-positioned vertical arrows inside cards (Segment→Sum,
+               Q/K/V→Add&Norm, Exit, etc.) — bring them into normal flow so
+               they appear inline below/above the card content, pointing down. */
+            .flex-card .transition-arrow.arrow-vertical,
+            .flex-card .transition-arrow {
+                position: static !important;
                 top: auto !important;
+                bottom: auto !important;
+                left: auto !important;
+                right: auto !important;
+                transform: none !important;
+                width: 100% !important;
+                margin: 8px 0 !important;
+                z-index: 1 !important;
+            }
+            .flex-card .transition-arrow > span,
+            .flex-card .transition-arrow span[style*="rotate"] {
+                transform: none !important;
+            }
+
+            /* Tighten gaps around stacked rows and arrows on mobile,
+               keeping a small breathing room between sections */
+            .flex-row-container {
+                margin-top: 8px !important;
+                margin-bottom: 8px !important;
+            }
+            .flex-card .transition-arrow,
+            .flex-card .transition-arrow.arrow-vertical {
+                margin: 6px 0 !important;
+            }
+            .arrow-horizontal {
+                margin: 6px 0 !important;
+                height: 24px !important;
+            }
+            /* First row + first Input arrow sit flush against top */
+            .flex-row-container:first-child,
+            div:has(> .flex-row-container:first-child) > .flex-row-container:first-child {
+                margin-top: 0 !important;
+                padding-top: 0 !important;
+            }
+            .flex-row-container:first-child .flex-card:first-child {
+                padding-top: 0 !important;
+                margin-top: 0 !important;
+            }
+            .flex-row-container:first-child .flex-card:first-child .transition-arrow,
+            .flex-row-container:first-child .flex-card:first-child > .transition-arrow.arrow-vertical {
+                margin: -12px 0 0 0 !important;
+                padding: 0 !important;
+                height: 22px !important;
+                min-height: 0 !important;
+            }
+            /* Kill top padding/margin on the deep-dive panel wrappers */
+            .tab-pane.active,
+            .tab-content,
+            .accordion-body,
+            .accordion-collapse.show {
+                padding-top: 0 !important;
+            }
+            .content {
+                padding-top: 0 !important;
+            }
+
+            /* ─── BIAS SECTION mobile fixes ─────────────────────────────
+               Bias panels are built from raw inline-styled HTML (not
+               .flex-row-container), so we target the inline patterns. */
+
+            /* 2-column grids → 1 column */
+            div[style*="grid-template-columns:1fr 1fr"],
+            div[style*="grid-template-columns: 1fr 1fr"],
+            div[style*="grid-template-columns:repeat(2"],
+            div[style*="grid-template-columns: repeat(2"] {
+                grid-template-columns: 1fr !important;
+            }
+
+            /* Summary "card" rows: flex containers with min-width children
+               → force each card onto its own line */
+            div[style*="display:flex"][style*="flex-wrap:wrap"] > div[style*="min-width:120px"],
+            div[style*="display: flex"][style*="flex-wrap: wrap"] > div[style*="min-width:120px"],
+            div[style*="display:flex"][style*="flex-wrap:wrap"] > div[style*="min-width: 120px"],
+            div[style*="display:flex"][style*="flex-wrap:wrap"] > div[style*="min-width:140px"],
+            div[style*="display:flex"][style*="flex-wrap:wrap"] > div[style*="min-width:160px"],
+            div[style*="display:flex"][style*="flex-wrap:wrap"] > div[style*="min-width:180px"],
+            div[style*="display:flex"][style*="flex-wrap:wrap"] > div[style*="min-width:200px"] {
+                flex: 1 1 100% !important;
+                min-width: 100% !important;
+                max-width: 100% !important;
+            }
+
+            /* Scrollable tables in bias panels (and any wide table) */
+            #bias-content table,
+            .bias-content table,
+            div[id*="bias"] table,
+            div[id*="ablation"] table,
+            div[id*="faithfulness"] table,
+            div[id*="stereoset"] table {
+                display: block !important;
+                overflow-x: auto !important;
+                max-width: 100% !important;
+                white-space: nowrap !important;
+                -webkit-overflow-scrolling: touch;
+            }
+            #bias-content table thead,
+            #bias-content table tbody,
+            .bias-content table thead,
+            .bias-content table tbody,
+            div[id*="bias"] table thead,
+            div[id*="bias"] table tbody {
+                display: table !important;
+                width: max-content !important;
+                min-width: 100% !important;
+            }
+
+            /* Show short title, hide long one in the bias accordion panel */
+            .panel-title-full { display: none !important; }
+            .panel-title-short { display: inline !important; }
+
+            /* 3. Navbar (Attention/Bias tabs) lives INSIDE sidebar, below Generate All */
+            .sidebar > .navbar,
+            .navbar {
+                position: relative !important;
+                top: auto !important;
+                bottom: auto !important;
                 left: 0 !important;
                 width: 100% !important;
-                height: 64px !important;
-                background: #0f172a !important; /* Dark background matches sidebar theme */
-                border-top: 1px solid rgba(255,255,255,0.15) !important;
-                z-index: 9999 !important;
+                height: auto !important;
+                min-height: 0 !important;
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+                z-index: 1 !important;
                 display: flex !important;
-                padding: 0 16px !important;
-                box-shadow: 0 -4px 12px rgba(0,0,0,0.2) !important;
+                padding: 14px 0 4px 0 !important;
+                margin: 0 !important;
+                pointer-events: auto !important;
             }
 
             /* Adjust nav container to fill width */
-            .navbar .container-fluid, 
-            .navbar-collapse, 
+            .navbar .container-fluid,
+            .navbar-collapse,
             .navbar-nav {
                 width: 100% !important;
                 justify-content: space-between !important;
                 gap: 12px !important;
-            }
-            
-            .navbar .nav-link {
-                height: 36px !important;
-                font-size: 14px !important;
+                padding: 0 !important;
             }
 
-            /* 4. Floating Control Bar adjusts to bottom (above navbar) */
+            .navbar .nav-link {
+                height: 34px !important;
+                font-size: 13px !important;
+            }
+
+            /* Remove the divider line under subtitle since navbar provides separation */
+            .sidebar .app-subtitle {
+                margin-bottom: 12px !important;
+                padding-bottom: 12px !important;
+            }
+
+            /* Tighten section spacing on mobile */
+            .sidebar-section {
+                margin-bottom: 12px !important;
+            }
+
+            /* 4. Floating Control Bar – normal bottom spacing (no fixed nav anymore) */
             .floating-control-bar {
                 left: 0 !important;
                 right: 0 !important;
-                margin: 0 12px 72px 12px !important; /* Bottom margin clears navbar */
+                margin: 0 12px 16px 12px !important;
                 padding: 12px !important;
                 flex-wrap: wrap !important;
                 justify-content: center !important;

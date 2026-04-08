@@ -917,7 +917,128 @@ app_ui = ui.page_navbar(
             /* Navbar Styling Overrides (Removed - Consolidated in styles.py) */
         """),
         ui.tags.script("""
+            // Move navbar (Attention/Bias buttons) inside the active sidebar
+            // so it appears below "Generate All" both on desktop and mobile.
+            function relocateNavbarIntoSidebar() {
+                var navbar = document.querySelector('body > .navbar, .bslib-page-navbar > .navbar, nav.navbar');
+                if (!navbar) return;
+                var sidebars = document.querySelectorAll('.sidebar');
+                if (!sidebars.length) return;
+                // Pick the visible sidebar (the active tab's one)
+                var target = null;
+                sidebars.forEach(function(s) {
+                    if (s.offsetParent !== null) target = s;
+                });
+                if (!target) target = sidebars[0];
+                if (navbar.parentElement !== target) {
+                    target.appendChild(navbar);
+                }
+            }
+            document.addEventListener('DOMContentLoaded', relocateNavbarIntoSidebar);
+            setTimeout(relocateNavbarIntoSidebar, 100);
+            setTimeout(relocateNavbarIntoSidebar, 500);
+            setTimeout(relocateNavbarIntoSidebar, 1500);
+
+            // On mobile, relocate misplaced Deep Dive arrows so the flow reads
+            // top-to-bottom: each listed arrow is moved out of its current
+            // parent and inserted right after its row container.
+            function relocateDeepDiveArrowsMobile() {
+                if (window.innerWidth > 1024) return;
+                // Each entry: arrow id prefix + the heading text of the FROM card.
+                // We insert the arrow right after the row that contains the FROM card.
+                var moves = [
+                    { prefix: 'arrow_Segment_Embeddings_Sum__Layer_Normalization', from: 'Segment Embeddings' },
+                    { prefix: 'arrow_Q/K/V_Projections_Add__Norm',                 from: 'Q/K/V Projections' }
+                ];
+                moves.forEach(function(move) {
+                    var nodes = document.querySelectorAll('[id^="' + move.prefix + '"]');
+                    nodes.forEach(function(el) {
+                        if (el.dataset.relocated === '1') return;
+                        // Find the row containing the FROM card by matching an h4
+                        var row = null;
+                        var headings = document.querySelectorAll('.flex-card h4');
+                        for (var i = 0; i < headings.length; i++) {
+                            if (headings[i].textContent.trim() === move.from) {
+                                row = headings[i].closest('.flex-row-container');
+                                if (row) break;
+                            }
+                        }
+                        if (!row || !row.parentNode) return;
+                        // Strip absolute positioning / rotation inline styles
+                        el.style.position = 'static';
+                        el.style.top = 'auto';
+                        el.style.bottom = 'auto';
+                        el.style.left = 'auto';
+                        el.style.right = 'auto';
+                        el.style.transform = 'none';
+                        el.style.width = '100%';
+                        el.style.margin = '6px 0';
+                        el.style.zIndex = '1';
+                        var inner = el.querySelector('span');
+                        if (inner) inner.style.transform = 'none';
+                        row.parentNode.insertBefore(el, row.nextSibling);
+                        el.dataset.relocated = '1';
+                    });
+                });
+            }
+            document.addEventListener('DOMContentLoaded', relocateDeepDiveArrowsMobile);
+            setTimeout(relocateDeepDiveArrowsMobile, 300);
+            setTimeout(relocateDeepDiveArrowsMobile, 1200);
+            setInterval(relocateDeepDiveArrowsMobile, 2000);
+
+            // On mobile, restack 2-column Plotly subplots (Attention-IG
+            // correlation + BAR scatter, Top-K Jaccard + Jaccard vs BAR)
+            // into a single column by relayout-ing axis domains.
+            function relayoutMobilePlots() {
+                if (window.innerWidth > 1024) return;
+                if (!window.Plotly) return;
+                var sels = [
+                    '[id^="ig-chart-container"]',
+                    '[id^="ig-topk-chart-container"]'
+                ];
+                document.querySelectorAll(sels.join(',')).forEach(function(el) {
+                    if (!el._fullLayout || el.dataset.mobileLaidOut === '1') return;
+                    var lay = el._fullLayout;
+                    if (!lay.xaxis2 || !lay.yaxis2) return;
+                    var update = {
+                        'xaxis.domain':  [0, 1],
+                        'yaxis.domain':  [0.56, 1],
+                        'xaxis2.domain': [0, 1],
+                        'yaxis2.domain': [0, 0.44],
+                        'height': 760
+                    };
+                    if (lay.annotations && lay.annotations.length >= 2) {
+                        var newAnns = lay.annotations.map(function(a) { return Object.assign({}, a); });
+                        newAnns[0].x = 0.5; newAnns[0].y = 1.0;
+                        newAnns[0].xref = 'paper'; newAnns[0].yref = 'paper';
+                        newAnns[0].xanchor = 'center'; newAnns[0].yanchor = 'bottom';
+                        newAnns[1].x = 0.5; newAnns[1].y = 0.46;
+                        newAnns[1].xref = 'paper'; newAnns[1].yref = 'paper';
+                        newAnns[1].xanchor = 'center'; newAnns[1].yanchor = 'bottom';
+                        update.annotations = newAnns;
+                    }
+                    try {
+                        Plotly.relayout(el, update).then(function() {
+                            el.dataset.mobileLaidOut = '1';
+                        }).catch(function(){});
+                    } catch (e) {}
+                });
+            }
+            setInterval(relayoutMobilePlots, 1500);
+            window.addEventListener('resize', function() {
+                document.querySelectorAll('[data-mobile-laid-out="1"]').forEach(function(e) {
+                    if (window.innerWidth > 1024) e.dataset.mobileLaidOut = '0';
+                });
+            });
+            window.addEventListener('resize', function() {
+                // Reset flag so re-render after resize re-applies if needed
+                document.querySelectorAll('[data-relocated="1"]').forEach(function(e) {
+                    if (window.innerWidth > 1024) e.dataset.relocated = '0';
+                });
+                relocateDeepDiveArrowsMobile();
+            });
             $(document).on('shown.bs.tab', function(e) {
+                setTimeout(relocateNavbarIntoSidebar, 50);
                 var target = $(e.target).text().trim();
                 if (target === 'Bias') {
                     document.body.style.setProperty('overflow', 'auto', 'important');
