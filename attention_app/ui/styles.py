@@ -96,10 +96,18 @@ CSS = """
             align-items: center !important;
             padding: 12px 0 !important;
             background: transparent !important;
-            z-index: 1002 !important; /* Above sidebar background */
-            pointer-events: none; /* Allow clicks through empty areas */
+            z-index: 999999 !important; /* Above everything */
+            pointer-events: auto !important;
             box-shadow: none !important;
             border-top: none !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+        .navbar .nav-link,
+        .navbar a {
+            pointer-events: auto !important;
+            visibility: visible !important;
+            opacity: 1 !important;
         }
 
         /* Force explicit centering on all bootstrap containers */
@@ -686,6 +694,36 @@ CSS = """
             border-color: var(--primary-color);
             color: white;
             box-shadow: 0 0 10px rgba(255, 92, 169, 0.4);
+        }
+
+        /* Desktop-only (>1024px): make att-bar-left/right transparent so
+           children flow into the parent .controls-row flex, and reorder
+           so tokens are centered with Scale next to Norm. */
+        @media (min-width: 1025px) {
+            .att-bar-left,
+            .att-bar-right {
+                display: contents;
+            }
+            #attention-controls-row {
+                display: flex !important;
+                align-items: center;
+                gap: 36px;
+                width: 100%;
+            }
+            #grp-view  { order: 1; }
+            #grp-layer { order: 2; }
+            #grp-head  { order: 3; }
+            #att-tokens-row {
+                order: 4;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex: 1 1 auto;
+                min-width: 0;
+            }
+            #grp-scale { order: 5; }
+            #grp-norm  { order: 6; }
+            #grp-topk  { order: 7; }
         }
 
         /* Responsive Floating Bar */
@@ -4288,6 +4326,22 @@ __all__ = ["CSS"]
             /* Show short title, hide long one in the bias accordion panel */
             .panel-title-full { display: none !important; }
             .panel-title-short { display: inline !important; }
+
+            /* Tree visualization on mobile: enable scroll instead of squashing */
+            .tree-viz-container,
+            .influence-tree-container {
+                overflow: auto !important;
+                max-width: 100% !important;
+                align-items: flex-start !important;
+                justify-content: flex-start !important;
+                -webkit-overflow-scrolling: touch;
+            }
+            .tree-viz-container svg {
+                min-width: max-content !important;
+                max-width: none !important;
+                width: auto !important;
+                margin: 0 !important;
+            }
 
             /* Collapse visualization options container if it is rendered empty to prevent phantom gaps */
             #visualization_options_container:empty {

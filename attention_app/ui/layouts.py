@@ -604,7 +604,7 @@ app_ui = ui.page_navbar(
     # CSS Styles
     header=ui.tags.head(
         # BLAZING FAST SYNCHRONOUS STYLE INJECTION - GUARANTEES NO FOUC!
-        ui.HTML("<script>document.write('<style>.navbar:not(.sidebar .navbar), .navbar-toggler, .navbar-toggler-icon { display: none !important; opacity: 0 !important; visibility: hidden !important; }</style>');</script>"),
+        ui.HTML("<script>document.write('<style>.navbar-toggler, .navbar-toggler-icon { display: none !important; }</style>');</script>"),
         ui.tags.title("Attention Atlas"),
         ui.tags.style(CSS),
         ui.tags.link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"),
@@ -968,25 +968,60 @@ app_ui = ui.page_navbar(
         ui.tags.script("""
             // Move navbar (Attention/Bias buttons) inside the active sidebar
             // so it appears below "Generate All" both on desktop and mobile.
+            var _relocating = false;
             function relocateNavbarIntoSidebar() {
-                var navbar = document.querySelector('body > .navbar, .bslib-page-navbar > .navbar, nav.navbar');
-                if (!navbar) return;
-                var sidebars = document.querySelectorAll('.sidebar');
-                if (!sidebars.length) return;
-                // Pick the visible sidebar (the active tab's one)
-                var target = null;
-                sidebars.forEach(function(s) {
-                    if (s.offsetParent !== null) target = s;
-                });
-                if (!target) target = sidebars[0];
-                if (navbar.parentElement !== target) {
-                    target.appendChild(navbar);
+                if (_relocating) return;
+                _relocating = true;
+                try {
+                    document.body.classList.add('navbar-ready');
+                    var navbar = document.querySelector('nav.navbar, .navbar');
+                    if (!navbar) return;
+                    var sidebars = document.querySelectorAll('.sidebar');
+                    if (!sidebars.length) return;
+                    var target = null;
+                    sidebars.forEach(function(s) {
+                        // offsetParent is null for position:fixed — use rect+style instead
+                        var r = s.getBoundingClientRect();
+                        var st = window.getComputedStyle(s);
+                        if (st.display !== 'none' && st.visibility !== 'hidden' && r.width > 0 && r.height > 0) {
+                            // Also ensure no ancestor has display:none
+                            var p = s.parentElement, ok = true;
+                            while (p) {
+                                if (window.getComputedStyle(p).display === 'none') { ok = false; break; }
+                                p = p.parentElement;
+                            }
+                            if (ok) target = s;
+                        }
+                    });
+                    if (!target) target = sidebars[0];
+                    if (navbar.parentElement !== target) {
+                        target.appendChild(navbar);
+                    }
+                    navbar.style.display = '';
+                    navbar.style.visibility = '';
+                } finally {
+                    _relocating = false;
                 }
             }
             document.addEventListener('DOMContentLoaded', relocateNavbarIntoSidebar);
             setTimeout(relocateNavbarIntoSidebar, 100);
             setTimeout(relocateNavbarIntoSidebar, 500);
             setTimeout(relocateNavbarIntoSidebar, 1500);
+            setInterval(relocateNavbarIntoSidebar, 400);
+            document.addEventListener('shown.bs.tab', relocateNavbarIntoSidebar);
+            if (window.Shiny) {
+                $(document).on('shiny:value shiny:bound', function() {
+                    setTimeout(relocateNavbarIntoSidebar, 30);
+                });
+            }
+            // Fire on nav-link clicks to catch tab switches
+            document.addEventListener('click', function(e) {
+                var link = e.target.closest('.nav-link, [data-bs-toggle="tab"], [data-toggle="tab"]');
+                if (!link) return;
+                [50, 150, 300, 600].forEach(function(t) {
+                    setTimeout(relocateNavbarIntoSidebar, t);
+                });
+            }, true);
 
             // On mobile, relocate misplaced Deep Dive arrows so the flow reads
             // top-to-bottom: each listed arrow is moved out of its current

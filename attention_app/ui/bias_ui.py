@@ -1475,11 +1475,7 @@ def create_floating_bias_toolbar():
                     # Attention Source toggle
                     ui.div(
                         {"class": "control-group"},
-                        ui.span(
-                            ui.span("Source Attention", class_="lbl-full"),
-                            ui.span("SRC ATT", class_="lbl-short"),
-                            class_="control-label",
-                        ),
+                        ui.span("Source Attention", class_="control-label", **{"data-short": "SRC ATT"}),
                         ui.div(
                             {"class": "radio-group", "id": "bias-source-radio-group"},
                             ui.span("GUS-Net", class_="radio-option active",
@@ -1506,11 +1502,7 @@ def create_floating_bias_toolbar():
                                   "= 1.0: head attends uniformly (no bias focus)\n"
                                   "> 1.5: head over-attends to biased tokens (default threshold)\n"
                                   "Lower values detect subtler patterns; higher values are stricter."},
-                        ui.span(
-                            ui.span("BAR Threshold", class_="lbl-full"),
-                            ui.span("BAR", class_="lbl-short"),
-                            class_="control-label",
-                        ),
+                        ui.span("BAR Threshold", class_="control-label", **{"data-short": "BAR"}),
                         ui.div(
                             {"class": "slider-container"},
                             ui.tags.span("1.5", id="bias-bar-threshold-value", class_="slider-value"),
@@ -1659,15 +1651,21 @@ def create_floating_bias_toolbar():
                 display: none !important;
             }
 
-            /* Default desktop label swap */
-            .control-label .lbl-full { display: inline; }
-            .control-label .lbl-short { display: none; }
-
             /* ── MOBILE: bias floating toolbar (compact, same height) ── */
             @media (max-width: 1024px) {
-                /* Use short labels */
-                .control-label .lbl-full { display: none !important; }
-                .control-label .lbl-short { display: inline !important; }
+                /* Replace label text via CSS for labels with data-short */
+                #bias-floating-toolbar .control-label[data-short] {
+                    font-size: 0 !important;
+                }
+                #bias-floating-toolbar .control-label[data-short]::before {
+                    content: attr(data-short);
+                    font-size: 7px;
+                    font-weight: 600;
+                    color: #ffffff;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    white-space: nowrap;
+                }
 
                 /* Keep the original 3-col grid (left | tokens | right) */
                 #bias-controls-row {
