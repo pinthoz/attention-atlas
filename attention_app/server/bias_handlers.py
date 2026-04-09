@@ -2869,52 +2869,58 @@ def bias_server_handlers(input, output, session):
                 preview,
             )
 
-        if running:
-            return ui.div(
-                {"style": "display: flex; flex-direction: column; gap: 24px;"},
-                card
-            )
+        # Initial / Running State: Keep sentence preview + architecture visible
+        # (mirrors the attention tab behavior before analysis results exist).
+        # Defensive fallback: never let this block fail silently and hide UI.
+        try:
+            # Determine architecture display mode based on current compare mode
+            if res:
+                selected_model = res.get("bias_model_key", "gusnet-bert")
+            else:
+                try:
+                    selected_model = input.bias_model_key()
+                except BaseException:
+                    selected_model = "gusnet-bert"
 
-        # Initial State: Show Architecture
-        # Determine architecture display mode based on current compare mode
-        if res:
-            selected_model = res.get("bias_model_key", "gusnet-bert")
-        else:
             try:
-                selected_model = input.bias_model_key()
-            except Exception:
-                selected_model = "gusnet-bert"
+                current_compare_models = bool(input.bias_compare_mode())
+            except BaseException:
+                current_compare_models = False
 
-        try:
-            current_compare_models = input.bias_compare_mode()
+            # Get Model B selection for Compare Models mode
+            try:
+                model_b = input.bias_model_key_B()
+                if not model_b:
+                    model_b = "gusnet-gpt2"  # Default Model B
+            except BaseException:
+                model_b = "gusnet-gpt2"
+
+            # Determine compare-prompts from the actual toggle, not text content.
+            try:
+                current_compare_prompts = bool(input.bias_compare_prompts_mode())
+            except BaseException:
+                current_compare_prompts = False
+
+            arch_section = ui.div(
+                get_gusnet_architecture_section(
+                    selected_model=selected_model,
+                    compare_mode=current_compare_models,
+                    compare_prompts=current_compare_prompts,
+                    model_a=selected_model,  # Model A comes from main selector
+                    model_b=model_b,  # Model B comes from compare selector
+                ),
+            )
         except Exception:
-            current_compare_models = False
-
-        try:
-            text_B = input.bias_input_text_B().strip()
-        except Exception:
-            text_B = ""
-
-        # Get Model B selection for Compare Models mode
-        try:
-            model_b = input.bias_model_key_B()
-            if not model_b:
-                model_b = "gusnet-gpt2"  # Default Model B
-        except Exception:
-            model_b = "gusnet-gpt2"
-
-        # Determine if we're in compare prompts mode (text_B present but not compare_models)
-        current_compare_prompts = bool(text_B) and not current_compare_models
-
-        arch_section = ui.div(
-            get_gusnet_architecture_section(
-                selected_model=selected_model,
-                compare_mode=current_compare_models,
-                compare_prompts=current_compare_prompts,
-                model_a=selected_model,  # Model A comes from main selector
-                model_b=model_b,  # Model B comes from compare selector
-            ),
-        )
+            # Hard fallback with safe defaults so pre-analysis UI never disappears.
+            arch_section = ui.div(
+                get_gusnet_architecture_section(
+                    selected_model="gusnet-bert",
+                    compare_mode=False,
+                    compare_prompts=False,
+                    model_a="gusnet-bert",
+                    model_b="gusnet-gpt2",
+                ),
+            )
 
         return ui.div(
             {"style": "display: flex; flex-direction: column; gap: 24px;"},

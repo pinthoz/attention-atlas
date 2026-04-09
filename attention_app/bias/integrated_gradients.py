@@ -25,6 +25,12 @@ Low / negative ρ → attention is not a reliable proxy for this head.
 
 import torch
 import numpy as np
+# Shim: NumPy >=2 removed np.matrix, but older SciPy's spearmanr/corrcoef
+# still does isinstance(a, np.matrix). Provide a harmless placeholder.
+if not hasattr(np, "matrix"):
+    class _NoMatrix(np.ndarray):
+        pass
+    np.matrix = _NoMatrix  # type: ignore[attr-defined]
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from scipy.stats import spearmanr

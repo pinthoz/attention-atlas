@@ -969,6 +969,12 @@ app_ui = ui.page_navbar(
             // Move navbar (Attention/Bias buttons) inside the active sidebar
             // so it appears below "Generate All" both on desktop and mobile.
             var _relocating = false;
+            function clearTabHashFromUrl() {
+                try {
+                    var clean = window.location.pathname + window.location.search;
+                    window.history.replaceState(null, '', clean);
+                } catch (e) {}
+            }
             function relocateNavbarIntoSidebar() {
                 if (_relocating) return;
                 _relocating = true;
@@ -999,6 +1005,30 @@ app_ui = ui.page_navbar(
                     }
                     navbar.style.display = '';
                     navbar.style.visibility = '';
+                    navbar.querySelectorAll('a').forEach(function(a) {
+                        a.removeAttribute('title');
+                        var h = a.getAttribute('href');
+                        var t = a.getAttribute('data-bs-target');
+                        var target = null;
+
+                        if (h && h.charAt(0) === '#') {
+                            target = h;
+                        } else if (t && t.charAt(0) === '#') {
+                            target = t;
+                        }
+
+                        if (target) {
+                            a.dataset.tabTarget = target;
+                            a.setAttribute('data-bs-target', target);
+                            a.setAttribute('data-bs-toggle', 'tab');
+                            // Keep href for Bootstrap/Shiny tab state consistency.
+                            if (!h || h.charAt(0) !== '#') {
+                                a.setAttribute('href', target);
+                            }
+                            a.setAttribute('role', 'tab');
+                            a.style.cursor = 'pointer';
+                        }
+                    });
                 } finally {
                     _relocating = false;
                 }
@@ -1008,7 +1038,10 @@ app_ui = ui.page_navbar(
             setTimeout(relocateNavbarIntoSidebar, 500);
             setTimeout(relocateNavbarIntoSidebar, 1500);
             setInterval(relocateNavbarIntoSidebar, 400);
-            document.addEventListener('shown.bs.tab', relocateNavbarIntoSidebar);
+            document.addEventListener('shown.bs.tab', function() {
+                relocateNavbarIntoSidebar();
+                clearTabHashFromUrl();
+            });
             if (window.Shiny) {
                 $(document).on('shiny:value shiny:bound', function() {
                     setTimeout(relocateNavbarIntoSidebar, 30);
@@ -1018,6 +1051,12 @@ app_ui = ui.page_navbar(
             document.addEventListener('click', function(e) {
                 var link = e.target.closest('.nav-link, [data-bs-toggle="tab"], [data-toggle="tab"]');
                 if (!link) return;
+                var href = link.getAttribute('href') || '';
+                // Only force manual tab show when href is missing.
+                if (link.dataset && link.dataset.tabTarget && (!href || href === '#') && window.bootstrap && bootstrap.Tab) {
+                    e.preventDefault();
+                    try { bootstrap.Tab.getOrCreateInstance(link).show(); } catch(err) {}
+                }
                 [50, 150, 300, 600].forEach(function(t) {
                     setTimeout(relocateNavbarIntoSidebar, t);
                 });
@@ -1123,6 +1162,7 @@ app_ui = ui.page_navbar(
             });
             $(document).on('shown.bs.tab', function(e) {
                 setTimeout(relocateNavbarIntoSidebar, 50);
+                clearTabHashFromUrl();
                 var target = $(e.target).text().trim();
                 if (target === 'Bias') {
                     document.body.style.setProperty('overflow', 'auto', 'important');

@@ -703,6 +703,13 @@ def create_bias_sidebar():
                     if (stored) {
                         Shiny.setInputValue('restored_bias_history', JSON.parse(stored));
                     }
+                    // Initialize bias text inputs so server can render pre-analysis state
+                    // (mirrors Attention tab behaviour - without this, input.bias_input_text()
+                    //  returns None and the dashboard stays blank)
+                    const biasInputA = document.getElementById('bias_input_text');
+                    if (biasInputA) Shiny.setInputValue('bias_input_text', biasInputA.value);
+                    const biasInputB = document.getElementById('bias_input_text_B');
+                    if (biasInputB) Shiny.setInputValue('bias_input_text_B', biasInputB.value);
                 });
 
                 // StereoSet: inject text into the bias input
