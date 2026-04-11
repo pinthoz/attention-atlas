@@ -4,6 +4,8 @@ import numpy as np
 from ..metrics import compute_all_attention_metrics, calculate_flow_change
 import logging
 
+_logger = logging.getLogger(__name__)
+
 # User-provided baseline sentences (Total 10: 3 provided + 7 generated neutral contexts)
 BASELINE_SENTENCES = [
     # User Provided
@@ -30,7 +32,7 @@ def compute_baselines(model, tokenizer, is_gpt2):
               - (layer_idx, head_idx) -> {metric_name: avg_value}
               - "global" -> {"flow_change": avg_value}
     """
-    print("Computing baselines for Global Average...")
+    _logger.info("Computing baselines for Global Average...")
     
     # Store sums and counts to compute averages
     # structure: stats[layer][head][metric] = list of values
@@ -67,30 +69,34 @@ def compute_baselines(model, tokenizer, is_gpt2):
                 
                 for head_idx in range(num_heads):
                     matrix = layer_att_np[head_idx]
-                    metrics = compute_all_attention_metrics(matrix)
+                    metrics = compute_all_attention_metrics(matrix, has_cls=not is_gpt2)
                     
                     key = (layer_idx, head_idx)
                     if key not in raw_stats:
                         raw_stats[key] = {}
                     
                     for m_key, m_val in metrics.items():
+                        # Skip metrics that are N/A for this model (e.g. balance for GPT-2)
+                        if m_val is None:
+                            continue
+
                         # Normalize focus entropy locally
                         if m_key == 'focus_entropy':
                             num_tokens = matrix.shape[0]
                             max_ent = num_tokens * np.log(num_tokens) if num_tokens > 1 else 1
                             norm_val = m_val / max_ent if max_ent > 0 else 0
-                            
+
                             # Store normalized version as 'focus_normalized'
                             if 'focus_normalized' not in raw_stats[key]:
                                 raw_stats[key]['focus_normalized'] = []
                             raw_stats[key]['focus_normalized'].append(norm_val)
-                            
+
                         if m_key not in raw_stats[key]:
                             raw_stats[key][m_key] = []
                         raw_stats[key][m_key].append(m_val)
                         
         except Exception as e:
-            print(f"Error processing baseline sentence '{text[:20]}...': {e}")
+            _logger.exception("Error processing baseline sentence '%s...'", text[:20])
             continue
 
     # Average the collected stats
@@ -114,5 +120,5 @@ def compute_baselines(model, tokenizer, is_gpt2):
         else:
             averaged_baselines["global"][m_key] = 0.0
 
-    print(f"Computed baselines for {len(averaged_baselines)} keys (heads + global).")
+    _logger.info("Computed baselines for %d keys (heads + global).", len(averaged_baselines))
     return averaged_baselines

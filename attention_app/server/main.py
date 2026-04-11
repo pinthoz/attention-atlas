@@ -925,9 +925,8 @@ def server(input, output, session):
                 baseline_stats.set(stats)
                 current_baseline_model.set(model_name)
                 _logger.debug(f"Baselines updated for {model_name}")
-            except Exception as e:
-                print(f"ERROR computing baselines: {e}")
-                traceback.print_exc()
+            except Exception:
+                _logger.exception("ERROR computing baselines")
 
     # Mutual Exclusivity for Compare Modes
     @reactive.Effect
@@ -1158,8 +1157,11 @@ def server(input, output, session):
                 for l in range(n_layers):
                     for h in range(n_heads):
                         att_matrix = attentions[l][0, h].cpu().numpy()
-                        m = compute_all_attention_metrics(att_matrix)
-                        head_metrics[f"L{l}_H{h}"] = {k: round(float(v), 6) for k, v in m.items()}
+                        m = compute_all_attention_metrics(att_matrix, has_cls=not is_gpt2)
+                        head_metrics[f"L{l}_H{h}"] = {
+                            k: (None if v is None else round(float(v), 6))
+                            for k, v in m.items()
+                        }
 
                 sentence_data["head_metrics"] = head_metrics
 
@@ -1168,8 +1170,8 @@ def server(input, output, session):
                 metric_keys = list(all_vals[0].keys())
                 global_avg = {}
                 for mk in metric_keys:
-                    vals = [hm[mk] for hm in all_vals]
-                    global_avg[mk] = round(float(np.mean(vals)), 6)
+                    vals = [hm[mk] for hm in all_vals if hm[mk] is not None]
+                    global_avg[mk] = round(float(np.mean(vals)), 6) if vals else None
                 sentence_data["global_metrics_avg"] = global_avg
                 all_global_metrics.append(global_avg)
 
@@ -1505,9 +1507,8 @@ def server(input, output, session):
                     cached_result_B.set(None)
                     cached_text_B.set("")
                     
-        except Exception as e:
-            print(f"ERROR in compute_all: {e}")
-            traceback.print_exc()
+        except Exception:
+            _logger.exception("ERROR in compute_all")
             cached_result.set(None)
             cached_result_B.set(None)
         finally:

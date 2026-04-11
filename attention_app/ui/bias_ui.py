@@ -712,13 +712,49 @@ def create_bias_sidebar():
                     if (biasInputB) Shiny.setInputValue('bias_input_text_B', biasInputB.value);
                 });
 
-                // StereoSet: inject text into the bias input
+                // StereoSet: inject the chosen example into input B and
+                // enable compare-prompts mode so the user can compare the
+                // text they already had in input A against the StereoSet
+                // sentence. Input A is left untouched on purpose.
                 window.analyzeStereoSetExample = function(text) {
-                    var ta = document.getElementById('bias_input_text');
-                    if (ta) {
-                        ta.value = text;
-                        Shiny.setInputValue('bias_input_text', text, {priority: 'event'});
+                    // 1. Write the text to input B. The textarea is always
+                    //    present in the DOM (just hidden in single mode), so
+                    //    this works regardless of whether compare-prompts is
+                    //    already active.
+                    var taB = document.getElementById('bias_input_text_B');
+                    if (taB) {
+                        taB.value = text;
+                        Shiny.setInputValue('bias_input_text_B', text, {priority: 'event'});
                     }
+
+                    // 2. Enable compare-prompts mode if it isn't already on.
+                    //    The existing shiny:inputchanged handler will show
+                    //    the prompt tabs, reveal the B textarea, and turn
+                    //    off compare-models if it was active. Input A's
+                    //    value is preserved.
+                    var alreadyInPrompts = document.body.classList.contains('bias-compare-prompts-active');
+                    if (!alreadyInPrompts) {
+                        var promptsSwitch = $('#bias_compare_prompts_mode');
+                        if (promptsSwitch.length) {
+                            promptsSwitch.prop('checked', true).trigger('change');
+                        }
+                    }
+
+                    // 3. Switch to tab B so the user lands on the populated
+                    //    textarea. If we just toggled compare-prompts on,
+                    //    defer the tab switch by one tick so the tab bar has
+                    //    time to render.
+                    var doSwitch = function() {
+                        if (typeof window.switchBiasPromptTab === 'function') {
+                            window.switchBiasPromptTab('B');
+                        }
+                    };
+                    if (alreadyInPrompts) {
+                        doSwitch();
+                    } else {
+                        setTimeout(doSwitch, 50);
+                    }
+
                     window.scrollTo({top: 0, behavior: 'smooth'});
                 };
                 document.addEventListener('click', function(event) {
@@ -1652,7 +1688,9 @@ def create_floating_bias_toolbar():
             #bias-src-compare.radio-option.active {
                 background: linear-gradient(90deg, #60a5fa, #ff5ca9);
             }
-            /* Disabled state (e.g. Compare hidden in compare-prompts mode) */
+            /* Hide the Compare source-attention option when the user is in
+               any compare mode (models or prompts) — the side-by-side Base
+               vs GUS-Net layout can't coexist with the A vs B layout. */
             body.bias-compare-prompts-active #bias-src-compare,
             body.bias-compare-models-active #bias-src-compare {
                 display: none !important;
@@ -1980,25 +2018,43 @@ def create_floating_bias_toolbar():
         })();
 
         // ── Token selection for Combined View ──
-        window.selectedBiasTokens = new Set();
+        // Two independent selection sets, one per side (A / B) so that in
+        // compare mode clicking a token in A does NOT mirror to B and vice
+        // versa. Each side tracks its own indices and pushes its own reactive
+        // input value to the server.
+        window.selectedBiasTokensA = new Set();
+        window.selectedBiasTokensB = new Set();
 
         // Toggle Compare Mode class for Sensitivity Thresholds - REMOVED (Replaced by server-side panel_conditional)
         // We now use a conditional style injection in the layout itself.
 
         // Initial check on connection - REMOVED
 
-        window.selectBiasToken = function(idx) {
-            var chips = document.querySelectorAll('.bias-token-chip[data-token-idx="' + idx + '"]');
+        window.selectBiasToken = function(idx, prefix) {
+            // Default to 'A' for legacy callers that don't pass a side.
+            prefix = prefix || 'A';
+            var set = (prefix === 'B')
+                ? window.selectedBiasTokensB
+                : window.selectedBiasTokensA;
+            var inputName = (prefix === 'B')
+                ? 'bias_selected_tokens_B'
+                : 'bias_selected_tokens_A';
 
-            if (window.selectedBiasTokens.has(idx)) {
-                window.selectedBiasTokens.delete(idx);
+            // Scope the DOM query to chips of the same side so we don't
+            // toggle the .selected class on the opposite column.
+            var chips = document.querySelectorAll(
+                '.bias-token-chip[data-token-idx="' + idx + '"][data-prefix="' + prefix + '"]'
+            );
+
+            if (set.has(idx)) {
+                set.delete(idx);
                 chips.forEach(function(c) { c.classList.remove('selected'); });
             } else {
-                window.selectedBiasTokens.add(idx);
+                set.add(idx);
                 chips.forEach(function(c) { c.classList.add('selected'); });
             }
 
-            Shiny.setInputValue('bias_selected_tokens', Array.from(window.selectedBiasTokens), {priority: 'event'});
+            Shiny.setInputValue(inputName, Array.from(set), {priority: 'event'});
         };
 
         // ── Counterfactual swap selection ──
@@ -2120,7 +2176,8 @@ def create_floating_bias_toolbar():
                     hSlider.value = hEl.value || '0';
                     document.getElementById('bias-head-value').textContent = hEl.value || '0';
                 }
-                Shiny.setInputValue('bias_selected_tokens', [], {priority: 'event'});
+                Shiny.setInputValue('bias_selected_tokens_A', [], {priority: 'event'});
+                Shiny.setInputValue('bias_selected_tokens_B', [], {priority: 'event'});
             }, 500);
 
             $(document).on('change', '#bias_attn_layer', function() {

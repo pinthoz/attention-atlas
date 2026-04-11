@@ -546,9 +546,8 @@ def _process_raw_bias_result(raw_res, thresholds, use_optimized=False):
             "use_optimized": use_optimized
         }
         
-    except Exception as e:
-        print(f"Error processing raw bias result: {e}")
-        traceback.print_exc()
+    except Exception:
+        _logger.exception("Error processing raw bias result")
         return None
 
 
@@ -915,9 +914,8 @@ def bias_server_handlers(input, output, session):
             if processed:
                 cache_rv.set(processed)
             return processed
-        except Exception as e:
-            print(f"[attn-source] Base encoder attention load failed: {e}")
-            traceback.print_exc()
+        except Exception:
+            _logger.exception("[attn-source] Base encoder attention load failed")
             return None
 
     def _resolve_source_for_render(res, base_cache, mode):
@@ -1603,7 +1601,7 @@ def bias_server_handlers(input, output, session):
             types = lbl.get("bias_types", [])
             max_s = max((scores.get(t, 0) for t in types), default=0)
             tier = "high" if max_s >= 0.85 else ("medium" if max_s >= 0.70 else "low")
-            lines.append(f"{lbl['token']},{lbl['index']},{tier},{max_s:.4f},{';'.join(types)}")
+            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{tier},{max_s:.4f},{';'.join(types)}")
         yield "\n".join(lines)
 
     @auto_save_bias_download("confidence", "csv", is_b=True)
@@ -1620,7 +1618,7 @@ def bias_server_handlers(input, output, session):
             types = lbl.get("bias_types", [])
             max_s = max((scores.get(t, 0) for t in types), default=0)
             tier = "high" if max_s >= 0.85 else ("medium" if max_s >= 0.70 else "low")
-            lines.append(f"{lbl['token']},{lbl['index']},{tier},{max_s:.4f},{';'.join(types)}")
+            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{tier},{max_s:.4f},{';'.join(types)}")
         yield "\n".join(lines)
 
     # 5. Combined Bias View (Attention Matrix CSV)
@@ -1887,10 +1885,8 @@ def bias_server_handlers(input, output, session):
                 "effective_thresholds": effective_thresholds
             }
         except Exception as e:
-            msg = f"ERROR in heavy_bias_compute: {e}"
-            log_debug(msg)
-            print(msg)
-            traceback.print_exc()
+            log_debug(f"ERROR in heavy_bias_compute: {e}")
+            _logger.exception("ERROR in heavy_bias_compute")
             return None
 
     # ── Trigger analysis ──
@@ -2173,9 +2169,8 @@ def bias_server_handlers(input, output, session):
                         await session.send_custom_message("set_bias_thresholds", msg_thresholds)
 
             except asyncio.TimeoutError:
-                msg = "ERROR: Bias analysis timed out (limit: 180s)"
-                log_debug(msg)
-                print(msg)
+                log_debug("ERROR: Bias analysis timed out (limit: 180s)")
+                _logger.error("Bias analysis timed out (limit: 180s)")
                 ui.notification_show("Analysis timed out.", type="error")
                 bias_results.set(None)
                 bias_results_B.set(None)
@@ -2198,9 +2193,8 @@ def bias_server_handlers(input, output, session):
                 await session.send_custom_message('bias_back_btn_update', {'show': show_back})
 
         except Exception as e:
-            msg = f"CRITICAL ERROR in compute_bias top level: {e}"
-            log_debug(msg)
-            print(msg)
+            log_debug(f"CRITICAL ERROR in compute_bias top level: {e}")
+            _logger.exception("CRITICAL ERROR in compute_bias top level")
 
     # ── Back button: restore previous run snapshot ──
 
@@ -3284,8 +3278,7 @@ def bias_server_handlers(input, output, session):
             )
             return ui.HTML(html)
         except Exception as e:
-            print(f"Error in inline_bias_view: {e}")
-            traceback.print_exc()
+            _logger.exception("Error in inline_bias_view")
             return ui.HTML(f'<div style="color:#ef4444;">Error: {_html.escape(str(e))}</div>')
 
     # ── Token heatmap (technical view) ──
@@ -3303,7 +3296,7 @@ def bias_server_handlers(input, output, session):
             fig = create_token_bias_heatmap(res["token_labels"], res["text"])
             return ui.HTML(_chart_with_png_btn(_deferred_plotly(fig, "token-bias-heatmap"), "token-bias-heatmap", "token_bias_heatmap"))
         except Exception as e:
-            print(f"Error creating token bias viz: {e}")
+            _logger.exception("Error creating token bias viz")
             return ui.HTML(f'<div style="color:#ef4444;">Error: {_html.escape(str(e))}</div>')
 
     # ── Bias spans table (per-token, one line each) ──
@@ -3478,7 +3471,7 @@ def bias_server_handlers(input, output, session):
                     f'data-token-idx="{tok_idx}" '
                     f'data-prefix="{variant}" '
                     f'style="{chip_style}" '
-                    f'onclick="selectBiasToken({tok_idx})">'
+                    f'onclick="selectBiasToken({tok_idx}, \'{variant}\')">'
                     f'{clean}'
                     f'</span>'
                 )
@@ -3541,11 +3534,12 @@ def bias_server_handlers(input, output, session):
             cat_colors = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
             items = []
             sel_indices = []
-            if not is_B:
-                try: 
-                    s = input.bias_selected_tokens()
-                    if s: sel_indices = [int(s)] if isinstance(s,(int,str)) else [int(x) for x in s if x]
-                except Exception: pass
+            # Read the side-specific selection so A and B stay independent.
+            try:
+                s = input.bias_selected_tokens_B() if is_B else input.bias_selected_tokens_A()
+                if s: sel_indices = [int(s)] if isinstance(s,(int,str)) else [int(x) for x in s if x]
+            except Exception:
+                pass
                 
             # Check if counterfactual swaps are available (single-prompt mode)
             show_cf = (not is_B and not compare_models and not compare_prompts
@@ -3635,7 +3629,7 @@ def bias_server_handlers(input, output, session):
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Interaction</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>▶</span>"
-            f"<span>Click a token to set it as focus in the dependency tree + specialisation views</span></div>"
+            f"<span>Click a token to highlight it across the token-level bias distribution and confidence breakdown views</span></div>"
             f"<div style='{_TN}; margin-top:4px;'>Multiple categories can fire on the same token. The primary label is the highest-confidence class.</div>"
         )
         
@@ -3717,10 +3711,8 @@ def bias_server_handlers(input, output, session):
                         style="margin-top: 16px;",
                     )
                     return ui.div(side_by_side, consistency_card)
-                except Exception as e:
-                    import traceback
-                    print(f"CF consistency error: {e}")
-                    traceback.print_exc()
+                except Exception:
+                    _logger.exception("CF consistency error")
 
             return side_by_side
 
@@ -3758,18 +3750,23 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
         
-        # Get selected token index for highlighting
-        selected_idx = None
-        try:
-            sel = input.bias_selected_tokens()
-            if sel:
-                selected_idx = (
+        # Get selected token indices for highlighting (A and B are tracked
+        # independently so each side's click only affects its own strip).
+        def _read_sel(reader):
+            try:
+                sel = reader()
+                if not sel:
+                    return None
+                return (
                     [int(sel)] if isinstance(sel, (int, str))
                     else [int(x) for x in sel if x is not None]
                 )
-        except Exception:
-            selected_idx = None
-        
+            except Exception:
+                return None
+
+        selected_idx = _read_sel(input.bias_selected_tokens_A)
+        selected_idx_B = _read_sel(input.bias_selected_tokens_B)
+
         def get_viz(data, sel_idx=None):
             try:
                 return create_token_bias_strip(data["token_labels"], sel_idx)
@@ -3810,7 +3807,7 @@ def bias_server_handlers(input, output, session):
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(ui.HTML(get_viz(res, selected_idx)), manual_header=man_header, help_text=_strip_help, style="border: 2px solid #3b82f6; height: 100%;",
                            controls=[ui.download_button("export_bias_strip", "CSV", style=_BTN_STYLE_CSV)]),
-                _wrap_card(ui.HTML(get_viz(res_B)), manual_header=man_header, help_text=_strip_help, style="border: 2px solid #ff5ca9; height: 100%;",
+                _wrap_card(ui.HTML(get_viz(res_B, selected_idx_B)), manual_header=man_header, help_text=_strip_help, style="border: 2px solid #ff5ca9; height: 100%;",
                            controls=[ui.download_button("export_bias_strip_B", "CSV", style=_BTN_STYLE_CSV)])
             )
         return _wrap_card(ui.HTML(get_viz(res, selected_idx)), manual_header=man_header, help_text=_strip_help,
@@ -3830,17 +3827,21 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
 
-        # Get selected token index for highlighting
-        selected_idx = None
-        try:
-            sel = input.bias_selected_tokens()
-            if sel:
-                selected_idx = (
+        # Get selected token indices (independent per side).
+        def _read_sel(reader):
+            try:
+                sel = reader()
+                if not sel:
+                    return None
+                return (
                     [int(sel)] if isinstance(sel, (int, str))
                     else [int(x) for x in sel if x is not None]
                 )
-        except Exception:
-            selected_idx = None
+            except Exception:
+                return None
+
+        selected_idx = _read_sel(input.bias_selected_tokens_A)
+        selected_idx_B = _read_sel(input.bias_selected_tokens_B)
 
         def get_viz(data, sel_idx=None):
             try:
@@ -3878,7 +3879,7 @@ def bias_server_handlers(input, output, session):
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(ui.HTML(get_viz(res, selected_idx)), manual_header=man_header, help_text=_confidence_help, style="border: 2px solid #3b82f6; height: 100%;"),
-                _wrap_card(ui.HTML(get_viz(res_B)), manual_header=man_header, help_text=_confidence_help, style="border: 2px solid #ff5ca9; height: 100%;"),
+                _wrap_card(ui.HTML(get_viz(res_B, selected_idx_B)), manual_header=man_header, help_text=_confidence_help, style="border: 2px solid #ff5ca9; height: 100%;"),
             )
         return _wrap_card(ui.HTML(get_viz(res, selected_idx)), manual_header=man_header, help_text=_confidence_help)
 
@@ -3891,11 +3892,22 @@ def bias_server_handlers(input, output, session):
         try: l_idx, h_idx = int(input.bias_attn_layer()), int(input.bias_attn_head())
         except Exception: l_idx, h_idx = 0, 0
 
-        sel = None
-        try:
-            s = input.bias_selected_tokens()
-            if s: sel = [int(s)] if isinstance(s,(int,str)) else [int(x) for x in s if x]
-        except: pass
+        def _read_sel(reader):
+            try:
+                s = reader()
+                if not s:
+                    return None
+                return [int(s)] if isinstance(s, (int, str)) else [int(x) for x in s if x]
+            except Exception:
+                # Broad catch on purpose: Shiny raises SilentException when
+                # the reactive input has not been set yet (first render,
+                # before any click) — we must not let that propagate, or the
+                # whole bias strip renderer fails and subsequent clicks stop
+                # working.
+                return None
+
+        sel = _read_sel(input.bias_selected_tokens_A)
+        sel_B = _read_sel(input.bias_selected_tokens_B)
 
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
@@ -4002,7 +4014,7 @@ def bias_server_handlers(input, output, session):
                                ui.download_button("export_bias_combined", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('bias-combined-container', 'bias_combined_A')", style=_BTN_STYLE_PNG),
                            ]),
-                _wrap_card(ui.HTML(get_viz(res_render_B, None, "bias-combined-container-B",
+                _wrap_card(ui.HTML(get_viz(res_render_B, sel_B, "bias-combined-container-B",
                                           other_data=res_render, delta_label="B \u2212 A")),
                            manual_header=man_header, help_text=_combined_help,
                            style=card_style + " border: 2px solid #ff5ca9; height: 100%;",
@@ -4536,9 +4548,8 @@ def bias_server_handlers(input, output, session):
                     res_B_calc = await fut_B
                     ablation_results_B.set(res_B_calc)
 
-        except Exception as e:
-            print(f"Ablation error: {e}")
-            traceback.print_exc()
+        except Exception:
+            _logger.exception("Ablation error")
         finally:
             ablation_running.set(False)
 
@@ -4759,9 +4770,8 @@ def bias_server_handlers(input, output, session):
                     res_val_B = await fut_B
                     ig_results_B.set(res_val_B)
 
-        except Exception as e:
-            print(f"IG error: {e}")
-            traceback.print_exc()
+        except Exception:
+            _logger.exception("IG error")
         finally:
             ig_running.set(False)
 
@@ -5207,8 +5217,8 @@ def bias_server_handlers(input, output, session):
                         attn_means.append(mean_val)
                     else:
                         attn_means.append(np.zeros(seq_len))
-            except Exception as e:
-                print(f"CSV Export Error: {e}")
+            except Exception:
+                _logger.exception("CSV Export Error (A)")
                 while len(attn_means) < len(top_bar_heads):
                     attn_means.append(np.zeros(seq_len))
         else:
@@ -5290,9 +5300,9 @@ def bias_server_handlers(input, output, session):
                         attn_means.append(mean_val)
                     else:
                         attn_means.append(np.zeros(seq_len))
-            except Exception as e:
-                 print(f"CSV Export Error B: {e}")
-                 while len(attn_means) < len(top_bar_heads):
+            except Exception:
+                _logger.exception("CSV Export Error (B)")
+                while len(attn_means) < len(top_bar_heads):
                     attn_means.append(np.zeros(seq_len))
         else:
              for _ in top_bar_heads:
@@ -5356,9 +5366,8 @@ def bias_server_handlers(input, output, session):
                     res_val_B = await fut_B
                     perturbation_results_B.set(res_val_B)
 
-        except Exception as e:
-            print(f"Perturbation error: {e}")
-            traceback.print_exc()
+        except Exception:
+            _logger.exception("Perturbation error")
         finally:
             perturbation_running.set(False)
 
@@ -5511,7 +5520,7 @@ def bias_server_handlers(input, output, session):
             return
         lines = ["token_index,token,importance"]
         for r in bundle.token_results:
-            lines.append(f"{r.token_index},{r.token},{r.importance:.6f}")
+            lines.append(f"{r.token_index},{_csv_safe(r.token)},{r.importance:.6f}")
         yield "\n".join(lines)
 
     @render.download(filename="perturbation_results_B.csv")
@@ -5522,7 +5531,7 @@ def bias_server_handlers(input, output, session):
             return
         lines = ["token_index,token,importance"]
         for r in bundle.token_results:
-            lines.append(f"{r.token_index},{r.token},{r.importance:.6f}")
+            lines.append(f"{r.token_index},{_csv_safe(r.token)},{r.importance:.6f}")
         yield "\n".join(lines)
 
     # ── LRP Analysis handlers ─────────────────────────────────────────
@@ -5573,9 +5582,8 @@ def bias_server_handlers(input, output, session):
                     res_val_B = await fut_B
                     lrp_results_B.set(res_val_B)
 
-        except Exception as e:
-            print(f"LRP error: {e}")
-            traceback.print_exc()
+        except Exception:
+            _logger.exception("LRP error")
         finally:
             lrp_running.set(False)
 

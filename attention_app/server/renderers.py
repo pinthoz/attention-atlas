@@ -2313,6 +2313,11 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
     if attentions is None or len(attentions) == 0:
         return ui.HTML("")
 
+    # Detect whether the model has a [CLS] summary token. For BERT it is at
+    # position 0; GPT-2 has no equivalent, so `balance` (CLS attention
+    # fraction) is not meaningful there.
+    has_cls = bool(tokens) and tokens[0] == "[CLS]"
+
     att_layers = [layer[0].cpu().numpy() for layer in attentions]
 
     def apply_normalization(att_matrix, layer_for_rollout=None):
@@ -2347,12 +2352,12 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
         # Single layer, single head
         att_matrix = att_layers[layer_idx][head_idx]
         att_matrix = apply_normalization(att_matrix, layer_idx)
-        current_metrics = compute_all_attention_metrics(att_matrix)
+        current_metrics = compute_all_attention_metrics(att_matrix, has_cls=has_cls)
     else:
         # Average across all layers and heads
         att_matrix = np.mean(att_layers, axis=(0, 1))
         att_matrix = apply_normalization(att_matrix, len(att_layers) - 1)
-        current_metrics = compute_all_attention_metrics(att_matrix)
+        current_metrics = compute_all_attention_metrics(att_matrix, has_cls=has_cls)
 
     # 2. Compute Context (Layer Stats) if in Specific Head Mode
     context_stats = {}
@@ -2365,7 +2370,7 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
         layer_metrics_list = []
         for h in range(num_heads):
             head_att = apply_normalization(layer_heads[h], layer_idx)
-            m = compute_all_attention_metrics(head_att)
+            m = compute_all_attention_metrics(head_att, has_cls=has_cls)
             # Normalize focus entropy locally for comparison
             num_tokens = head_att.shape[0]
             max_ent = num_tokens * np.log(num_tokens) if num_tokens > 1 else 1
@@ -2373,11 +2378,18 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
             layer_metrics_list.append(m)
         
         # Compute Percentiles and Averages for each key
-        keys_to_context = ['confidence_max', 'confidence_avg', 'focus_normalized', 'sparsity', 'distribution_median', 'uniformity', 'balance']
-        
+        keys_to_context = ['confidence_max', 'confidence_avg', 'focus_normalized', 'sparsity', 'distribution_median', 'uniformity']
+        if has_cls:
+            # 'balance' is only meaningful for models with a [CLS] token
+            keys_to_context.append('balance')
+
         for key in keys_to_context:
-            values = [stats[key] for stats in layer_metrics_list]
+            values = [stats[key] for stats in layer_metrics_list if stats.get(key) is not None]
+            if not values:
+                continue
             current_val = current_metrics.get(key)
+            if current_val is None:
+                continue
             if key == 'focus_normalized':
                 # Re-calc current normalized for consistency
                 num_tokens = att_matrix.shape[0]
@@ -2433,9 +2445,11 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
     # Global metrics like Flow Change don't have "layer context" in the same way
     flow_change = calculate_flow_change(att_layers)
     
-    # Balance is in metrics_dict
-    balance = current_metrics.get('balance', 0.5)
-    
+    # Balance is in metrics_dict. It is ``None`` for models without a [CLS]
+    # token (e.g. GPT-2) — in that case we simply skip the Balance card
+    # below instead of rendering a meaningless number.
+    balance = current_metrics.get('balance')
+
     # Normalize current focus
     num_tokens = att_matrix.shape[0]
     max_entropy = num_tokens * np.log(num_tokens) if num_tokens > 1 else 1
@@ -2496,9 +2510,10 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
         ("Sparsity", current_metrics['sparsity'], "{:.0%}", "sparsity", "Sparsity"),
         ("Distribution", current_metrics['distribution_median'], "{:.3f}", "distribution_median", "Distribution"),
         ("Uniformity", current_metrics['uniformity'], "{:.3f}", "uniformity", "Uniformity"),
-        ("Balance", balance, "{:.2f}", "balance", "Balance"),
-        ("Flow Change", flow_change, "{:.2f}", "flow_change", "Flow Change"),
     ]
+    if balance is not None:
+        metrics.append(("Balance", balance, "{:.2f}", "balance", "Balance"))
+    metrics.append(("Flow Change", flow_change, "{:.2f}", "flow_change", "Flow Change"))
 
     cards_html = '<div class="metrics-grid">'
     for label, raw_value, fmt, key, modal_name in metrics:

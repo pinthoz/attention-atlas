@@ -122,38 +122,61 @@ def calculate_flow_change(all_layer_attentions):
     return float(jensenshannon(first_dist, last_dist))
 
 
-def calculate_balance(attention_matrix, cls_index=0):
+def calculate_balance(attention_matrix, cls_index=0, has_cls=True):
     """
-    Attention Balance - Normalized (0-1)
-    
-    Measures proportion of attention directed to [CLS] vs total.
-    
+    CLS Attention Fraction — fraction of total attention mass directed to the
+    [CLS] token.
+
     Balance = attn_to_CLS / attn_total
-    
+
+    This metric is only meaningful for BERT-style encoders where position 0
+    holds a special [CLS] summary token. For GPT-2 and other decoder-only
+    models without a dedicated summary token, the value is undefined — pass
+    ``has_cls=False`` to get ``None`` back so callers can render "N/A"
+    instead of a misleading number.
+
+    Baseline note: for a uniform attention distribution over ``n`` tokens the
+    expected value is ``1/n``, **not** ``0.5``. Higher values mean the head
+    concentrates on the [CLS] summary; lower values mean it distributes
+    attention across content tokens.
+
     Args:
         attention_matrix: array [seq_len, seq_len]
         cls_index: index of [CLS] token (default: 0)
-    
+        has_cls: whether the underlying model has a [CLS] token. For GPT-2
+            pass ``False`` to signal that the metric is not applicable.
+
     Returns:
-        float: 0 = all attention to content, 0.5 = balanced, 1 = all to [CLS]
+        float in [0, 1], or ``None`` when ``has_cls`` is False.
     """
+    if not has_cls:
+        return None
+
     seq_len = attention_matrix.shape[0]
-    
+
     if seq_len < 2:
-        return 0.5
-    
+        return 0.0
+
     attn_to_cls = attention_matrix[:, cls_index].sum()
     attn_total = attention_matrix.sum()
-    
-    return float(attn_to_cls / attn_total) if attn_total > 0 else 0.5
+
+    return float(attn_to_cls / attn_total) if attn_total > 0 else 0.0
 
 
-def compute_all_attention_metrics(attention_matrix):
+def compute_all_attention_metrics(attention_matrix, has_cls=True):
     """
     Convenience wrapper for computing all attention metrics at once.
-    
+
     Based on paper: "From Attention to Assurance" (Golshanrad & Faghih)
-    
+
+    Args:
+        attention_matrix: [seq_len, seq_len] numpy array of attention weights.
+        has_cls: whether the underlying model has a [CLS] summary token at
+            position 0 (True for BERT-style encoders, False for GPT-2 and
+            other decoder-only models). When False, ``balance`` is returned
+            as ``None`` so downstream code can render it as N/A instead of
+            a misleading number.
+
     Returns dict with:
     - confidence_max: Max attention weight (Eq. 5)
     - confidence_avg: Average of row maxes (Eq. 6)
@@ -161,13 +184,14 @@ def compute_all_attention_metrics(attention_matrix):
     - sparsity: Proportion below adaptive threshold (Eq. 11)
     - distribution_median: Median attention weight (Eq. 12)
     - uniformity: Standard deviation of weights (Eq. 15)
+    - balance: CLS attention fraction (Eq. 16) — ``None`` when has_cls=False
     """
     max_conf, avg_conf = calculate_confidence(attention_matrix)
     focus = calculate_focus(attention_matrix)
     sparsity = calculate_sparsity(attention_matrix)  # Now uses adaptive threshold
     distribution = calculate_distribution_attributes(attention_matrix)
     uniformity = calculate_uniformity(attention_matrix)
-    balance = calculate_balance(attention_matrix)
+    balance = calculate_balance(attention_matrix, has_cls=has_cls)
 
     return {
         "confidence_max": max_conf,

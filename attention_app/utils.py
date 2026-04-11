@@ -33,7 +33,7 @@ def get_reproducibility_info(text: str, model_name: str | None = None) -> dict:
     if model_name:
         try:
             from .models import ModelManager
-            if model_name in ModelManager.ALLOWED_MODELS:
+            if model_name in ModelManager._ALLOWED_MODELS:
                 from transformers import AutoConfig
                 cfg = AutoConfig.from_pretrained(model_name)
                 # _commit_hash is set when the model was fetched from the Hub
