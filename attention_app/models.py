@@ -1,10 +1,13 @@
 import logging
+import threading
 import warnings
 import torch
-from transformers import BertTokenizer, BertModel, BertForMaskedLM
+from transformers import BertTokenizerFast, BertModel, BertForMaskedLM
 from transformers.utils import logging as transformers_logging
-from transformers import GPT2Tokenizer, GPT2Model, GPT2LMHeadModel
+from transformers import GPT2TokenizerFast, GPT2Model, GPT2LMHeadModel
 import gc
+
+_logger = logging.getLogger(__name__)
 
 # Suppress warnings
 warnings.filterwarnings(
@@ -18,7 +21,12 @@ logging.getLogger("transformers").setLevel(logging.ERROR)
 
 
 class ModelManager:
-    """Manages loading and caching of BERT models."""
+    """Manages loading and caching of BERT / GPT-2 models.
+
+    Thread-safe: a ``threading.Lock`` serialises cache reads and writes so
+    two Shiny sessions loading the same model concurrently won't corrupt
+    the shared ``_instances`` dict.
+    """
 
     _ALLOWED_MODELS = {
         # Base encoder models
@@ -38,14 +46,12 @@ class ModelManager:
     }
 
     # LRU cache - keep up to _MAX_CACHED models loaded simultaneously.
-    # >1 is required for "compare models" mode, where two encoders (e.g.
-    # gus-net-bert and gus-net-gpt2) are queried alternately by several
-    # panels (faithfulness, IG, LRP, ablation, perturbation). With a
-    # cache size of 1 each switch evicts the other, causing a bert<->gpt2
-    # ping-pong that looks like an infinite reload loop.
+    # Compare-mode + bias-mode routinely needs {target_model, base_encoder,
+    # bias_model} at the same time; a cache of 2 caused ping-pong evictions.
     from collections import OrderedDict as _OrderedDict
     _instances: "_OrderedDict[str, tuple]" = _OrderedDict()
-    _MAX_CACHED = 2
+    _MAX_CACHED = 4
+    _lock = threading.Lock()
 
     @classmethod
     def get_model(cls, model_name: str):
@@ -59,37 +65,39 @@ class ModelManager:
                 f"Allowed: {sorted(cls._ALLOWED_MODELS)}"
             )
 
-        # Check if model is already loaded (mark as most-recently-used)
-        if model_name in cls._instances:
-            cls._instances.move_to_end(model_name)
-            return cls._instances[model_name]
+        with cls._lock:
+            # Check if model is already loaded (mark as most-recently-used)
+            if model_name in cls._instances:
+                cls._instances.move_to_end(model_name)
+                return cls._instances[model_name]
 
-        # Evict least-recently-used entries until we have room for one more
-        while len(cls._instances) >= cls._MAX_CACHED:
-            old_name, _ = cls._instances.popitem(last=False)
-            print(f"Unloading previous model ({old_name}) to free memory...")
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            # Evict least-recently-used entries until we have room for one more
+            while len(cls._instances) >= cls._MAX_CACHED:
+                old_name, _ = cls._instances.popitem(last=False)
+                _logger.info("Unloading previous model (%s) to free memory...", old_name)
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
-        print(f"Loading model: {model_name}...")
-        
+        # Load outside the lock so other threads can still access the cache
+        # for already-loaded models while this (slow) download runs.
+        _logger.info("Loading model: %s...", model_name)
+
         try:
-
             is_gpt2 = "gpt2" in model_name
-            
+
             if is_gpt2:
-                tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+                tokenizer = GPT2TokenizerFast.from_pretrained(model_name)
                 if tokenizer.pad_token is None:
                     tokenizer.pad_token = tokenizer.eos_token
-                    
+
                 encoder = GPT2Model.from_pretrained(
                     model_name,
                     output_attentions=True,
                     output_hidden_states=True,
                 )
                 encoder.eval()
-                
+
                 try:
                     mlm = GPT2LMHeadModel.from_pretrained(
                         model_name,
@@ -97,19 +105,19 @@ class ModelManager:
                         output_hidden_states=False,
                     )
                     mlm.eval()
-                except Exception as e:
-                    print(f"Warning: Could not load LM head for {model_name}: {e}")
+                except Exception:
+                    _logger.warning("Could not load LM head for %s", model_name, exc_info=True)
                     mlm = None
             else:
-                tokenizer = BertTokenizer.from_pretrained(model_name)
-                
+                tokenizer = BertTokenizerFast.from_pretrained(model_name)
+
                 encoder = BertModel.from_pretrained(
                     model_name,
                     output_attentions=True,
                     output_hidden_states=True,
                 )
                 encoder.eval()
-                
+
                 try:
                     mlm = BertForMaskedLM.from_pretrained(
                         model_name,
@@ -117,8 +125,8 @@ class ModelManager:
                         output_hidden_states=False,
                     )
                     mlm.eval()
-                except Exception as e:
-                    print(f"Warning: Could not load MLM head for {model_name}: {e}")
+                except Exception:
+                    _logger.warning("Could not load MLM head for %s", model_name, exc_info=True)
                     mlm = None
 
             # Move to GPU if available
@@ -127,11 +135,20 @@ class ModelManager:
             if mlm:
                 mlm.to(device)
 
-            cls._instances[model_name] = (tokenizer, encoder, mlm)
-            return tokenizer, encoder, mlm
-            
+            result = (tokenizer, encoder, mlm)
+
+            with cls._lock:
+                # Another thread may have loaded the same model while we were
+                # downloading — check again to avoid duplicates.
+                if model_name in cls._instances:
+                    cls._instances.move_to_end(model_name)
+                    return cls._instances[model_name]
+                cls._instances[model_name] = result
+
+            return result
+
         except Exception as e:
-            raise RuntimeError(f"Failed to load model {model_name}: {str(e)}")
+            raise RuntimeError(f"Failed to load model {model_name}: {e}") from e
 
     @staticmethod
     def get_device():

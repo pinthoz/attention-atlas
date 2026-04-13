@@ -1,7 +1,9 @@
 import logging
 import re
+from dataclasses import dataclass
+from typing import Any
+
 import torch
-import traceback
 
 from ..utils import positional_encoding
 from ..models import ModelManager
@@ -9,6 +11,47 @@ from ..head_specialization import compute_all_heads_specialization, compute_head
 from ..isa import compute_isa
 
 _logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ComputeResult:
+    """Result of heavy_compute().
+
+    Attributes:
+        tokens: List of token strings
+        embeddings: Numpy array of token embeddings
+        pos_enc: Positional encoding array
+        attentions: Tuple of attention tensors from each layer
+        hidden_states: Tuple of hidden state tensors from each layer
+        inputs: Tokenized inputs dict
+        tokenizer: Tokenizer instance
+        encoder_model: Encoder model instance
+        mlm_model: MLM model instance
+        head_specialization: Head specialization metrics
+        isa_data: Inter-sentence attention data
+        head_clusters: Algorithmic clustering results (t-SNE + K-Means)
+    """
+    tokens: Any
+    embeddings: Any
+    pos_enc: Any
+    attentions: Any
+    hidden_states: Any
+    inputs: Any
+    tokenizer: Any
+    encoder_model: Any
+    mlm_model: Any
+    head_specialization: Any
+    isa_data: Any
+    head_clusters: Any
+
+    def __iter__(self):
+        """Allow tuple unpacking for backward compatibility."""
+        return iter((
+            self.tokens, self.embeddings, self.pos_enc, self.attentions,
+            self.hidden_states, self.inputs, self.tokenizer, self.encoder_model,
+            self.mlm_model, self.head_specialization, self.isa_data,
+            self.head_clusters,
+        ))
 
 
 def tokenize_with_segments(text: str, tokenizer):
@@ -35,28 +78,15 @@ def tokenize_with_segments(text: str, tokenizer):
 def heavy_compute(text, model_name):
     """Perform heavy computation for attention analysis.
 
-    This function loads the model, tokenizes the input, runs inference,
-    and computes all necessary metrics for visualization.
+    Loads the model, tokenizes the input, runs inference, and computes
+    all necessary metrics for visualization.
 
     Args:
         text: Input text to analyze
         model_name: Name of the model to use
 
     Returns:
-        Tuple containing:
-            - tokens: List of token strings
-            - embeddings: Numpy array of token embeddings
-            - pos_enc: Positional encoding array
-            - attentions: Tuple of attention tensors from each layer
-            - hidden_states: Tuple of hidden state tensors from each layer
-            - inputs: Tokenized inputs dict
-            - tokenizer: Tokenizer instance
-            - encoder_model: Encoder model instance
-            - mlm_model: MLM model instance
-            - mlm_model: MLM model instance
-            - head_specialization: Head specialization metrics
-            - isa_data: Inter-sentence attention data
-            - head_clusters: Algorithmic clustering results (t-SNE + K-Means)
+        ComputeResult dataclass (also iterable for backward compat).
     """
     _logger.debug("Starting heavy_compute")
     if not text:
@@ -109,7 +139,13 @@ def heavy_compute(text, model_name):
         _logger.warning("Could not compute ISA: %s", e)
 
     _logger.debug("heavy_compute finished")
-    return (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, mlm_model, head_specialization, isa_data, head_clusters)
+    return ComputeResult(
+        tokens=tokens, embeddings=embeddings, pos_enc=pos_enc,
+        attentions=attentions, hidden_states=hidden_states, inputs=inputs,
+        tokenizer=tokenizer, encoder_model=encoder_model, mlm_model=mlm_model,
+        head_specialization=head_specialization, isa_data=isa_data,
+        head_clusters=head_clusters,
+    )
 
 
-__all__ = ["tokenize_with_segments", "heavy_compute"]
+__all__ = ["ComputeResult", "tokenize_with_segments", "heavy_compute"]

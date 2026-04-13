@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import html as _html
@@ -8,6 +9,7 @@ import matplotlib.pyplot as plt
 import torch
 from sklearn.decomposition import PCA
 
+import plotly.graph_objects as go
 from shiny import ui
 
 
@@ -18,6 +20,7 @@ def _esc(s):
     """HTML-escape a string for safe embedding in HTML attributes and content."""
     return _html.escape(str(s), quote=True)
 
+from ..ui.components import viz_header
 from ..utils import array_to_base64_img, compute_influence_tree
 from ..metrics import compute_all_attention_metrics, calculate_flow_change, calculate_balance
 from ..models import ModelManager
@@ -702,6 +705,7 @@ def _render_pca_scatter(tokens, vectors, color_class="embedding"):
     try:
         coords = pca.fit_transform(vectors)
     except Exception:
+        _logger.debug("Suppressed exception", exc_info=True)
         return "<p class='pca-note'>Could not compute PCA for these vectors.</p>"
 
     # Get explained variance
@@ -782,6 +786,7 @@ def _render_qkv_pca_scatter(tokens, Q, K, V):
     try:
         all_coords = pca.fit_transform(all_vectors)
     except Exception:
+        _logger.debug("Suppressed exception", exc_info=True)
         return "<p class='pca-note'>Could not compute PCA for QKV vectors.</p>"
 
     # Split back into Q, K, V coordinates
@@ -907,7 +912,7 @@ def matrix_to_base64_img(matrix, cmap="Blues", figsize=(5, 5)):
 
 
 def get_embedding_table(res, top_k=3, suffix=""):
-    tokens, embeddings, *_ = res
+    tokens, embeddings = res.tokens, res.embeddings
     n = len(tokens)
     unique_id = f"embed_tab{suffix}"
     _logger.debug(f"get_embedding_table called with suffix='{suffix}', unique_id='{unique_id}'")
@@ -1019,7 +1024,7 @@ def get_embedding_table(res, top_k=3, suffix=""):
 
 
 def get_segment_embedding_view(res):
-    tokens, _, _, _, _, inputs, *_ = res
+    tokens, inputs = res.tokens, res.inputs
     segment_ids = inputs.get("token_type_ids")
     if segment_ids is None:
         return ui.HTML("<p style='font-size:10px;color:#6b7280;'>No segment information available.</p>")
@@ -1062,7 +1067,7 @@ def get_segment_embedding_view(res):
 
 
 def get_posenc_table(res, top_k=3, suffix=""):
-    tokens, _, pos_enc, *_ = res
+    tokens, pos_enc = res.tokens, res.pos_enc
     n = len(tokens)
     unique_id = f"pos_tab{suffix}"
 
@@ -1216,7 +1221,7 @@ def _render_dual_tab_view(unique_id, html_heatmap, tokens, vectors_for_pca, html
     """)
 
 def get_sum_layernorm_view(res, encoder_model, suffix=""):
-    tokens, _, _, _, hidden_states, inputs, *_ = res
+    tokens, hidden_states, inputs = res.tokens, res.hidden_states, res.inputs
     unique_id = f"sumnorm_tab{suffix}"
     
     # Text aggregation check
@@ -1309,7 +1314,7 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw", use_globa
         norm_mode: Normalization mode for attention weights ("raw", "col", "rollout")
         use_global: Whether to compute metrics across all layers (averaged)
     """
-    tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
+    tokens, attentions, hidden_states, encoder_model = res.tokens, res.attentions, res.hidden_states, res.encoder_model
     unique_id = f"qkv_tab{suffix}"
     
     # Determine if causal (GPT-2) - check first layer
@@ -1356,6 +1361,7 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw", use_globa
                 
                 valid_layers += 1
             except Exception:
+                _logger.debug("Suppressed exception", exc_info=True)
                 continue
                 
         if valid_layers > 0:
@@ -1676,7 +1682,7 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, 
         norm_mode: Normalization mode ("raw", "col", "rollout") - affects ranking
         use_global: Whether to average across all heads/layers (hides Q/K details)
     """
-    tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
+    tokens, attentions, hidden_states, encoder_model = res.tokens, res.attentions, res.hidden_states, res.encoder_model
     if attentions is None or len(attentions) == 0:
         return ui.HTML("")
 
@@ -1844,7 +1850,7 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, 
 
 
 def get_add_norm_view(res, layer_idx, suffix=""):
-    tokens, _, _, _, hidden_states, *_ = res
+    tokens, hidden_states = res.tokens, res.hidden_states
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
     hs_in = hidden_states[layer_idx][0].cpu().numpy()
@@ -1885,7 +1891,7 @@ def get_add_norm_view(res, layer_idx, suffix=""):
 
 
 def get_ffn_view(res, layer_idx, suffix=""):
-    tokens, _, _, _, hidden_states, _, _, encoder_model, *_ = res
+    tokens, hidden_states, encoder_model = res.tokens, res.hidden_states, res.encoder_model
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
     unique_id = f"ffn_{layer_idx}{suffix}"
@@ -1924,7 +1930,7 @@ def get_ffn_view(res, layer_idx, suffix=""):
 
 
 def get_add_norm_post_ffn_view(res, layer_idx, suffix=""):
-    tokens, _, _, _, hidden_states, *_ = res
+    tokens, hidden_states = res.tokens, res.hidden_states
     if layer_idx + 2 >= len(hidden_states):
         return ui.HTML("")
     hs_mid = hidden_states[layer_idx + 1][0].cpu().numpy()
@@ -1966,7 +1972,7 @@ def get_add_norm_post_ffn_view(res, layer_idx, suffix=""):
 
 
 def get_layer_output_view(res, layer_idx, suffix=""):
-    tokens, _, _, _, hidden_states, *_ = res
+    tokens, hidden_states = res.tokens, res.hidden_states
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
     hs = hidden_states[layer_idx + 1][0].cpu().numpy()
@@ -2018,14 +2024,14 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
             "</div>"
         )
 
-    _, _, _, _, _, inputs, tokenizer, encoder_model, mlm_model, *_ = res
+    inputs, tokenizer, encoder_model, mlm_model = res.inputs, res.tokenizer, res.encoder_model, res.mlm_model
     device = ModelManager.get_device()
 
     is_gpt2 = not hasattr(encoder_model, "encoder")
     
     # Check for aggregation
     input_seq_len = inputs["input_ids"].shape[1]
-    tokens_in_res = res[0]
+    tokens_in_res = res.tokens
     if len(tokens_in_res) != input_seq_len:
          return ui.HTML(
             "<div class='prediction-panel'>"
@@ -2309,7 +2315,7 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
         baseline_stats: Pre-computed baseline statistics
         norm_mode: Normalization mode ("raw", "col", "rollout")
     """
-    tokens, _, _, attentions, *_ = res
+    tokens, attentions = res.tokens, res.attentions
     if attentions is None or len(attentions) == 0:
         return ui.HTML("")
 
@@ -2620,7 +2626,7 @@ def get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth
         norm_mode: Normalization mode ("raw", "col", "rollout")
         att_matrix_override: Optional pre-computed attention matrix (e.g. for global view)
     """
-    tokens, _, _, attentions, hidden_states, _, _, encoder_model, *_ = res
+    tokens, attentions, hidden_states, encoder_model = res.tokens, res.attentions, res.hidden_states, res.encoder_model
     if attentions is None or len(attentions) == 0:
         return None
 
@@ -2710,6 +2716,9 @@ __all__ = [
     "get_architecture_section",
     "get_paired_architecture_section",
     "get_gusnet_architecture_section",
+    "head_specialization_radar",
+    "get_influence_tree_ui",
+    "get_isa_scatter_view",
 ]
 def compute_attention_rollout(attentions, discard_ratio=0.9, head_fusion="mean"):
     """
@@ -2748,5 +2757,559 @@ def compute_attention_rollout(attentions, discard_ratio=0.9, head_fusion="mean")
         else:
             # Recursive multiplication: joint_attention(l) = attention(l) * joint_attention(l-1)
             result = np.matmul(att, result)
-            
+
     return result
+
+
+# ── Pure rendering functions extracted from main.py (Fix #3) ────────────
+
+
+def head_specialization_radar(res, layer_idx, head_idx, mode, suffix=""):
+    """Render a radar chart (single/all heads) or a t-SNE cluster map.
+
+    Pure function — takes a ``ComputeResult`` and explicit parameters,
+    returns a ``ui.HTML`` element.  No reactive references.
+    """
+    if not res:
+        return None
+
+    tokens, attentions, head_specialization = res.tokens, res.attentions, res.head_specialization
+
+    head_clusters = res.head_clusters or []
+
+    if attentions is None or len(attentions) == 0 or head_specialization is None:
+        return None
+
+    # Get metrics for the selected layer
+    if layer_idx not in head_specialization:
+        return None
+
+    layer_metrics = head_specialization[layer_idx]
+
+    # Dimension names for radar chart
+    dimensions = ["Syntax", "Semantics", "CLS Focus", "Punctuation", "Entities", "Long-range", "Self-attention"]
+    dimension_keys = ["syntax", "semantics", "cls", "punct", "entities", "long_range", "self"]
+
+    # Color palette - Attention Atlas colors (Blue/Pink theme)
+    colors = ['#ff5ca9', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4', '#6366f1', '#f43f5e',
+              '#a855f7', '#0ea5e9', '#d946ef', '#2dd4bf', '#f59e0b']
+
+    # Role Color Map for Clustering
+    role_colors = {
+        "Syntax": "#3b82f6",      # Blue
+        "Semantics": "#8b5cf6",   # Purple
+        "CLS Focus": "#64748b",   # Slate (Neutral)
+        "Punctuation": "#f59e0b", # Amber
+        "Entities": "#ec4899",    # Pink
+        "Long-range": "#10b981",  # Emerald
+        "Self-attention": "#ef4444" # Red
+    }
+
+    fig = go.Figure()
+
+    if mode == "cluster":
+        # Algorithmic Cluster Map (t-SNE + K-Means)
+        if not head_clusters:
+            return ui.HTML("<div style='text-align:center; padding:20px; color:#94a3b8; font-size:12px;'>"
+                         "Clustering data not found.<br>Please click <b>Generate All</b> to re-compute."
+                         "</div>")
+
+        x_vals = []
+        y_vals = []
+        colors_list = []
+        sizes = []
+        hover_texts = []
+
+        # Robust colors for up to 15 clusters
+        cluster_colors = [
+            '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899',
+            '#06b6d4', '#84cc16', '#6366f1', '#d946ef', '#f97316', '#14b8a6',
+            '#a855f7', '#fbbf24', '#f43f5e'
+        ]
+
+        for item in head_clusters:
+            c_id = item['cluster']
+            color = cluster_colors[c_id % len(cluster_colors)]
+
+            x_vals.append(item['x'])
+            y_vals.append(item['y'])
+            colors_list.append(color)
+
+            # Find dominant metric for context
+            m = item['metrics']
+            dom_role = max(m, key=m.get)
+            score = m[dom_role]
+
+            # Size by specialization confidence (score)
+            sizes.append(6 + (score * 8))
+
+            c_name = item.get('cluster_name', f"Cluster {c_id}")
+
+            hover_texts.append(
+                f"<b>L{item['layer']}·H{item['head']}</b><br>" +
+                f"<b>{c_name}</b><br>" +
+                f"Dominant: {dom_role} ({score:.2f})"
+            )
+
+        fig.add_trace(go.Scatter(
+            x=x_vals,
+            y=y_vals,
+            mode='markers',
+            marker=dict(
+                color=colors_list,
+                size=sizes,
+                opacity=0.9,
+                line=dict(width=1, color='white')
+            ),
+            text=hover_texts,
+            hoverinfo='text',
+            showlegend=False
+        ))
+
+        # Add Legend for Clusters
+        unique_clusters = sorted(list(set(c['cluster'] for c in head_clusters)))
+        for c_id in unique_clusters:
+            color = cluster_colors[c_id % len(cluster_colors)]
+
+            # Find name for this cluster
+            example_item = next((x for x in head_clusters if x['cluster'] == c_id), None)
+            c_name = example_item.get('cluster_name', f"Cluster {c_id}") if example_item else f"Cluster {c_id}"
+
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(color=color, size=10, line=dict(width=1, color='white')),
+                name=c_name,
+                showlegend=True
+            ))
+
+        title_text = "Head Specialization Clusters"
+
+        fig.update_layout(
+            xaxis=dict(title="t-SNE Dimension 1", showgrid=True, gridcolor='#f1f5f9', zeroline=False, showticklabels=False),
+            yaxis=dict(title="t-SNE Dimension 2", showgrid=True, gridcolor='#f1f5f9', zeroline=False, showticklabels=False),
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(l=40, r=20, t=60, b=40)
+        )
+
+    elif mode == "single":
+        # Single head mode
+        if head_idx not in layer_metrics:
+            return None
+
+        metrics = layer_metrics[head_idx]
+        values = [metrics[key] for key in dimension_keys]
+        values.append(values[0])  # Close the polygon
+
+        fig.add_trace(go.Scatterpolar(
+            r=values,
+            theta=dimensions + [dimensions[0]],
+            fill='toself',
+            fillcolor=f'rgba(255, 92, 169, 0.3)',
+            line=dict(color='#ff5ca9', width=2),
+            name=f'Head {head_idx}',
+            hovertemplate='<b>%{theta}</b><br>Value: %{r:.4f}<extra></extra>'
+        ))
+
+        title_text = f'Radar - Layer {layer_idx}, Head {head_idx}'
+    else:
+        # All heads mode
+        num_heads = len(layer_metrics)
+        for h_idx in range(num_heads):
+            if h_idx not in layer_metrics:
+                continue
+
+            metrics = layer_metrics[h_idx]
+            values = [metrics[key] for key in dimension_keys]
+            values.append(values[0])  # Close the polygon
+
+            color = colors[h_idx % len(colors)]
+            # Convert hex to rgba with transparency
+            if color.startswith('#'):
+                r = int(color[1:3], 16)
+                g = int(color[3:5], 16)
+                b = int(color[5:7], 16)
+                fill_color = f'rgba({r}, {g}, {b}, 0.15)'
+                line_color = color
+            else:
+                fill_color = color
+                line_color = color
+
+            fig.add_trace(go.Scatterpolar(
+                r=values,
+                theta=dimensions + [dimensions[0]],
+                fill='toself',
+                fillcolor=fill_color,
+                line=dict(color=line_color, width=1.5),
+                name=f'Head {h_idx}',
+                hovertemplate=f'<b>Head {h_idx}</b><br>%{{theta}}: %{{r:.4f}}<extra></extra>'
+            ))
+
+        title_text = f'Radar - Layer {layer_idx} (All Heads)'
+
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 1],
+                showticklabels=True,
+                ticks='outside',
+                tickfont=dict(size=10, color="#94a3b8"),
+                gridcolor='#e2e8f0',
+                linecolor='#e2e8f0'
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=11, color='#475569', family="Inter, system-ui, sans-serif"),
+                gridcolor='#e2e8f0',
+                linecolor='#e2e8f0'
+            ),
+            bgcolor="rgba(0,0,0,0)"
+        ),
+        showlegend=(mode == "all"),
+        legend=dict(font=dict(size=10, color="#64748b")),
+        title=dict(
+            text=title_text,
+            font=dict(size=14, color="#1e293b", family="Inter, system-ui, sans-serif"),
+            y=0.95,
+            x=0.5,
+            xanchor='center'
+        ),
+        margin=dict(l=40, r=40, t=60, b=40),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, system-ui, sans-serif"),
+        height=300,
+        width=350,
+        autosize=False
+    )
+
+    plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, div_id=f"radar_plot{suffix}", config={'displayModeBar': False})
+    return ui.HTML(f'<div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 100%;">{plot_html}</div>')
+
+
+def get_influence_tree_ui(res, root_idx=0, layer_idx=0, head_idx=0, suffix="", use_global=False, max_depth=3, top_k=3, norm_mode="raw"):
+    """Render a D3 influence tree visualisation.
+
+    Pure function — takes a ``ComputeResult`` and explicit parameters,
+    returns a ``ui.HTML`` element.  No reactive references.
+    """
+    if not res:
+        return ui.HTML("""
+            <div style='padding: 20px; text-align: center;'>
+                <p style='font-size:11px;color:#9ca3af;'>Generate attention data to view the influence tree.</p>
+            </div>
+        """)
+
+    tokens, attentions = res.tokens, res.attentions
+    if attentions is None or len(attentions) == 0:
+        return ui.HTML("<p style='font-size:11px;color:#6b7280;'>No attention data available.</p>")
+
+    # Ensure valid indices
+    root_idx = max(0, min(root_idx, len(tokens) - 1))
+
+    try:
+        att_override = None
+        if use_global:
+            # Calculate average attention matrix across all layers/heads
+            # attentions is list of (1, heads, seq, seq) tensors
+            att_layers = [layer[0].cpu().numpy() for layer in attentions]
+            # mean over layers -> (heads, seq, seq)
+            # mean over heads -> (seq, seq)
+            att_override = np.mean([np.mean(l, axis=0) for l in att_layers], axis=0)
+
+        tree_data = get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth, norm_mode=norm_mode, att_matrix_override=att_override)
+
+        if tree_data is None:
+            return ui.HTML("<p style='font-size:11px;color:#6b7280;'>Unable to generate tree.</p>")
+
+        # Convert to JSON
+        tree_json = json.dumps(tree_data)
+    except Exception as e:
+        _logger.debug("Suppressed: %s", e)
+        return ui.HTML(f"<p style='font-size:11px;color:#ef4444;'>Error generating tree: {_html.escape(str(e))}</p>")
+
+    html = f"""
+    <div class="influence-tree-wrapper" style="height: 100%; display: flex; flex-direction: column; position: relative; overflow: auto;">
+        <div id="tree-viz-container{suffix}" class="tree-viz-container" style="height: 100%; min-height: 400px; width: 100%; overflow: auto; text-align: center; display: block;"></div>
+    </div>
+        <script>
+                (function() {{
+                    function tryRender() {{
+                        if (typeof d3 !== 'undefined' && typeof renderInfluenceTree !== 'undefined') {{
+                            try {{
+                                renderInfluenceTree({tree_json}, 'tree-viz-container{suffix}');
+                            }} catch(e) {{
+                                console.error('Error rendering tree:', e);
+                                document.getElementById('tree-viz-container{suffix}').innerHTML =
+                                    '<p style="color:#ef4444;padding:20px;font-size:12px;">Error rendering tree. Check console for details.</p>';
+                            }}
+                        }} else {{
+                            // Retry after a short delay
+                            setTimeout(tryRender, 100);
+                        }}
+                    }}
+                    tryRender();
+                }})();
+            </script>
+        """
+
+    return ui.HTML(html)
+
+
+def get_isa_scatter_view(res, suffix="", vertical_layout=False, plot_only=False, export_filename_fn=None):
+    """Render the Inter-Sentence Attention scatter/bubble plot.
+
+    Pure function — takes a ``ComputeResult`` and explicit parameters,
+    returns Shiny UI elements.  No reactive references.
+
+    Parameters
+    ----------
+    export_filename_fn : callable, optional
+        ``generate_export_filename(section, ext, ...)`` — passed in from
+        ``server()`` so this function stays free of reactive closures.
+    """
+    _logger.debug(f"get_isa_scatter_view called for {suffix} with vertical_layout={vertical_layout} plot_only={plot_only}")
+    if not res:
+        return None
+
+    isa_data = res.isa_data
+
+    if not isa_data or "sentence_attention_matrix" not in isa_data or "sentence_texts" not in isa_data:
+         return ui.div(
+            {"class": "card"},
+            ui.h4("Inter-Sentence Attention (ISA)"),
+            ui.HTML("<div style='color:#9ca3af;font-size:12px;padding:20px;'>ISA data not available. Ensure input has multiple sentences.</div>")
+         )
+
+    matrix = isa_data["sentence_attention_matrix"]
+    sentences = isa_data["sentence_texts"]
+    n = len(sentences)
+
+    x, y = np.meshgrid(np.arange(n), np.arange(n))
+    x_flat = x.flatten().tolist()
+    y_flat = y.flatten().tolist()
+    scores = np.nan_to_num(matrix.flatten(), nan=0.0).tolist()
+
+    # Clean tokens for display in hover_texts
+    cleaned_sentences = [s.replace("\u0120", "").replace("##", "") for s in sentences]
+
+    hover_texts = [
+        f"Target \u2190 {cleaned_sentences[int(r)][:60]}...<br>Source \u2192 {cleaned_sentences[int(c)][:60]}...<br>ISA = {s:.4f}"
+        for r, c, s in zip(y_flat, x_flat, scores)
+    ]
+
+    customdata = list(zip(y_flat, x_flat))
+
+    sizes = np.clip(np.array(scores) * 40 + 12, 12, 80).tolist()
+
+    # Custom colorscale matching the app's theme (Pink/Blue/Purple)
+    custom_colorscale = [
+        [0.0, '#f1f5f9'],   # Slate-100 (Lightest)
+        [0.2, '#cbd5e1'],   # Slate-300
+        [0.4, '#94a3b8'],   # Slate-400
+        [0.6, '#60a5fa'],   # Blue-400
+        [0.8, '#818cf8'],   # Indigo-400
+        [1.0, '#ec4899']    # Pink-500 (Strongest)
+    ]
+
+    fig = go.Figure(data=go.Scatter(
+        x=x_flat, y=y_flat,
+        mode="markers",
+        marker=dict(
+            size=sizes,
+            color=scores,
+            colorscale=custom_colorscale,
+            showscale=True,
+            colorbar=dict(
+                title=dict(
+                    text="ISA Score",
+                    side="right",
+                    font=dict(color="#64748b", size=11)
+                ),
+                tickfont=dict(color="#64748b", size=10)
+            ),
+            line=dict(width=1, color="rgba(255,255,255,0.5)")
+        ),
+        text=hover_texts,
+        hoverinfo="text",
+        customdata=customdata
+    ))
+
+    labels = [s[:30].replace("\u0120", "").replace("##", "") + "..." if len(s) > 30 else s.replace("\u0120", "").replace("##", "") for s in sentences]
+
+    fig.update_layout(
+        xaxis=dict(
+            title=dict(
+                text="Source (Sentence Y)",
+                font=dict(color="#475569", size=12, family="Inter, system-ui, sans-serif")
+            ),
+            tickmode="array",
+            tickvals=list(range(n)),
+            ticktext=labels,
+            showgrid=False,
+            zeroline=False,
+            tickfont=dict(color="#64748b", size=11),
+        ),
+        yaxis=dict(
+            title=dict(
+                text="Target (Sentence X)",
+                font=dict(color="#475569", size=12, family="Inter, system-ui, sans-serif")
+            ),
+            tickmode="array",
+            tickvals=list(range(n)),
+            ticktext=labels,
+            autorange="reversed",
+            showgrid=False,
+            zeroline=False,
+            tickfont=dict(color="#64748b", size=11),
+        ),
+        height=500,
+        width=500,
+        autosize=False,
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        clickmode="event+select",
+        margin=dict(l=40, r=40, t=20, b=20),
+        font=dict(family="Inter, system-ui, sans-serif")
+    )
+
+    div_id = f"isa_scatter_plot{suffix}"
+
+    # Generate HTML with unique ID
+    plot_html = fig.to_html(include_plotlyjs='cdn', full_html=False, div_id=div_id, config={'displayModeBar': False})
+
+    # Custom JS to handle clicks, send to Shiny, AND stop loading state
+    js = f"""
+    <script>
+    (function() {{
+        // Stop loading state (Button Reset)
+        var btn = $('#generate_all');
+        if (btn.data('original-content')) {{
+            btn.html(btn.data('original-content'));
+        }} else {{
+            btn.html('Generate All');
+        }}
+        btn.prop('disabled', false).css('opacity', '1');
+
+        // Show Dashboard
+        $('#dashboard-container').removeClass('content-hidden').addClass('content-visible');
+
+        // Trigger Simultaneous Reveal for Compare Mode
+        $('#compare-content-body').removeClass('content-hidden').addClass('content-visible');
+
+        console.log("DEBUG: Initializing ISA Plot Script for {div_id}");
+        function initPlot() {{
+            var plot = document.getElementById('{div_id}');
+            if (plot) {{
+                console.log("DEBUG: ISA Plot found, attaching listener");
+                plot.on('plotly_click', function(data){{
+                    var pt = data.points[0];
+                    var x = pt.x;
+                    var y = pt.y;
+                    Shiny.setInputValue('isa_scatter_click{suffix}', {{x: x, y: y}}, {{priority: 'event'}});
+                }});
+            }} else {{
+                console.log("DEBUG: ISA Plot not found yet, retrying...");
+                setTimeout(initPlot, 100);
+            }}
+        }}
+        initPlot();
+    }})();
+    </script>
+    """
+
+    # Determine model type for explanation
+    encoder_model = res.encoder_model
+    is_gpt2 = not hasattr(encoder_model, "encoder")
+
+    col_layout = [12, 12] if vertical_layout else [6, 6]
+
+    if plot_only:
+        return ui.HTML(plot_html + js)
+
+    # Determine export button IDs based on suffix
+    export_csv_id = "export_isa_csv_B" if suffix == "_B" else "export_isa_csv"
+    export_json_id = "export_isa_json_B" if suffix == "_B" else "export_isa_json"
+
+    if export_filename_fn is not None:
+        png_filename = export_filename_fn("isa", "png", is_b=(suffix == "_B"), incl_timestamp=False, data_type="heatmap")
+        token_png_filename = export_filename_fn("isa", "png", is_b=(suffix == "_B"), incl_timestamp=False, data_type="token2token")
+    else:
+        png_filename = f"isa_heatmap{suffix}.png"
+        token_png_filename = f"isa_token2token{suffix}.png"
+
+    return ui.div(
+        {"class": "card"},
+        viz_header(
+            "Inter-Sentence Attention (ISA)",
+            "Heatmap of sentence-pair attention scores computed via three-level max pooling (layers \u2192 heads \u2192 tokens).",
+            """
+            <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Inter-Sentence Attention (ISA)</strong>
+            <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures attention strength between sentence pairs-indicates cross-sentence attention flow, not semantic similarity.</p>
+            <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>max<sub>layers</sub>(max<sub>heads</sub>(max<sub>tokens</sub>(\u03b1<sub>ij</sub>)))</code></p>
+
+            <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
+                <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
+                <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
+                    <span style='color:#22c55e'>\u25cf &gt;0.8: Strong coupling</span>
+                    <span style='color:#eab308'>\u25cf 0.4-0.8: Moderate</span>
+                    <span style='color:#ef4444'>\u25cf &lt;0.4: Independent</span>
+                </div>
+            </div>
+            """ + (
+            """
+            <div style='background:rgba(59,130,246,0.1);border-radius:6px;padding:8px;margin-top:8px;border-left:3px solid #3b82f6'>
+                <strong style='color:#3b82f6;font-size:10px'>BERT (Bidirectional):</strong>
+                <span style='font-size:10px;color:#94a3b8'> Full matrix - sentences attend both directions</span>
+            </div>
+            """
+            if not is_gpt2 else
+            """
+            <div style='background:rgba(249,115,22,0.1);border-radius:6px;padding:8px;margin-top:8px;border-left:3px solid #f97316'>
+                <strong style='color:#f97316;font-size:10px'>GPT-2 (Causal):</strong>
+                <span style='font-size:10px;color:#94a3b8'> Upper triangle \u2248 0 - only backward attention</span>
+            </div>
+            """
+            ) + """
+            <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
+                \u26a0\ufe0f High ISA \u2260 semantic relationship or entailment
+            </p>
+            """,
+                    show_calc_title=False,
+                    controls=[
+                        ui.download_button(export_csv_id, "CSV", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
+                        ui.download_button(export_json_id, "JSON", style="padding: 2px 8px; font-size: 10px; height: 24px;"),
+                        ui.tags.button(
+                            "PNG",
+                            onclick=f"downloadPlotlyPNG('isa-plot-container{suffix}', '{png_filename}')",
+                            style="padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
+                        ),
+                    ]
+                ),
+        ui.div({"class": "viz-description"}, "Click any cell to inspect token-level attention between the two sentences. \u26a0\ufe0f High scores reflect strong attention coupling, not semantic similarity."),
+        ui.layout_columns(
+            ui.div(
+                {"id": f"isa-plot-container{suffix}", "style": "width: 100%; display: flex; justify-content: center; align-items: center; margin-bottom: 20px;" if vertical_layout else "height: 500px; width: 100%; display: flex; justify-content: center; align-items: center;"},
+                ui.HTML(plot_html + js)
+            ),
+            ui.div(
+                {"style": "display: flex; flex-direction: column; justify-content: flex-start; height: 100%;"},
+                ui.div(ui.output_ui(f"isa_detail_info{suffix}"), style="flex: 0 0 auto; margin-bottom: 10px;"),
+                ui.div(
+                    {"id": f"isa-token-container{suffix}"},
+                    ui.div(
+                        {"style": "display: flex; justify-content: flex-end; margin-bottom: 4px;"},
+                        ui.tags.button(
+                            "Token PNG",
+                            onclick=f"downloadPlotlyPNG('isa-token-container{suffix}', '{token_png_filename}')",
+                            style="padding: 2px 6px; font-size: 9px; height: 20px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
+                        ),
+                    ),
+                    ui.output_ui(f"isa_token_view{suffix}"),
+                    style="flex: 1; display: flex; flex-direction: column;"
+                ),
+            ),
+            col_widths=col_layout,
+        ),
+    )

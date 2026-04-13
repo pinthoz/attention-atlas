@@ -3,7 +3,6 @@ import html as _html
 import logging
 from datetime import datetime
 from pathlib import Path
-import traceback
 import asyncio
 import functools
 from concurrent.futures import ThreadPoolExecutor
@@ -11,12 +10,39 @@ from concurrent.futures import ThreadPoolExecutor
 _logger = logging.getLogger(__name__)
 
 
-def _csv_safe(val):
-    """Prevent CSV formula injection by prefixing dangerous first characters."""
-    s = str(val)
-    if s and s[0] in ('=', '+', '-', '@', '\t', '\r'):
-        return "'" + s
-    return s
+from .csv_utils import csv_safe as _csv_safe
+from .bias_helpers import (
+    _GUSNET_TO_ENCODER, _GUSNET_TO_BASE, _GUSNET_DISPLAY_NAMES,
+    _clean_gusnet_label,
+    _load_gusnet_attention_for_text, _load_base_encoder_attention_for_text,
+    _deferred_plotly, _wrap_card,
+    _align_gusnet_to_attention_tokens,
+    _get_bias_model_label, _process_raw_bias_result, _build_batch_report,
+)
+from .bias_styles import (
+    BTN_STYLE_CSV as _BTN_STYLE_CSV, BTN_STYLE_PNG as _BTN_STYLE_PNG,
+    TH as _TH, TR as _TR, TD as _TD, TC as _TC, TS as _TS,
+    TBG as _TBG, TBR as _TBR, TBA as _TBA, TBB as _TBB, TBP as _TBP,
+    TN as _TN,
+)
+from .bias_exports import (
+    csv_summary as _csv_summary_fn, csv_spans as _csv_spans_fn,
+    csv_strip as _csv_strip_fn, csv_confidence as _csv_confidence_fn,
+    csv_combined as _csv_combined_fn, csv_matrix as _csv_matrix_fn,
+    csv_propagation as _csv_propagation_fn, csv_top_heads as _csv_top_heads_fn,
+    csv_ablation as _csv_ablation_fn,
+    csv_ig_correlation as _csv_ig_correlation_fn,
+    csv_topk_overlap as _csv_topk_overlap_fn,
+    csv_perturbation as _csv_perturbation_fn,
+    csv_lrp as _csv_lrp_fn,
+    csv_stereoset_features as _csv_stereoset_features_fn,
+    csv_stereoset_sensitivity as _csv_stereoset_sensitivity_fn,
+    csv_stereoset_category as _csv_stereoset_category_fn,
+    csv_stereoset_distribution as _csv_stereoset_distribution_fn,
+    csv_stereoset_demographic as _csv_stereoset_demographic_fn,
+    csv_perturb_attn as _csv_perturb_attn_fn,
+    csv_cross_method as _csv_cross_method_fn,
+)
 
 import numpy as np
 import torch
@@ -85,688 +111,10 @@ from ..bias.feature_extraction import extract_attention_for_text
 from ..ui.bias_ui import create_bias_accordion, create_floating_bias_toolbar
 from ..ui.components import viz_header
 
-# Map GUS-Net model key -> matching encoder model for attention analysis.
-# Ensures the encoder tokenizer matches the GUS-Net architecture so that
-# BERT tokens show ## subwords and GPT-2 tokens merge correctly with Ġ.
-_GUSNET_TO_ENCODER = {
-    # Public (HuggingFace) models
-    "gusnet-bert": "pinthoz/gus-net-bert",
-    "gusnet-bert-large": "pinthoz/gus-net-bert-large",
-    "gusnet-gpt2": "pinthoz/gus-net-gpt2",
-    "gusnet-gpt2-medium": "pinthoz/gus-net-gpt2-medium",
-    # Local models
-    "gusnet-bert-custom": "pinthoz/gus-net-bert-custom",
-    "gusnet-ensemble": "pinthoz/gus-net-bert",
-    "gusnet-bert-new": "pinthoz/gus-net-bert",
-    "gusnet-gpt2-new": "pinthoz/gus-net-gpt2",
-    "gusnet-bert-paper": "pinthoz/gus-net-bert",
-    "gusnet-gpt2-paper": "pinthoz/gus-net-gpt2",
-    # StereoSet canonical keys (underscore variants)
-    "gusnet_bert": "pinthoz/gus-net-bert",
-    "gusnet_bert_large": "pinthoz/gus-net-bert-large",
-    "gusnet_gpt2": "pinthoz/gus-net-gpt2",
-    "gusnet_gpt2_medium": "pinthoz/gus-net-gpt2-medium",
-}
-
-import re as _re
-
-# Map GUS-Net model key -> original pretrained base model (before fine-tuning).
-# Used for the "Base Encoder" attention source comparison.
-_GUSNET_TO_BASE = {
-    "gusnet-bert":          "bert-base-uncased",
-    "gusnet-bert-large":    "bert-large-uncased",
-    "gusnet-bert-custom":   "bert-base-uncased",
-    "gusnet-gpt2":          "gpt2",
-    "gusnet-gpt2-medium":   "gpt2-medium",
-    "gusnet-ensemble":      "bert-base-uncased",
-    "gusnet-bert-new":      "bert-base-uncased",
-    "gusnet-gpt2-new":      "gpt2",
-    "gusnet-bert-paper":    "bert-base-uncased",
-    "gusnet-gpt2-paper":    "gpt2",
-    # StereoSet canonical keys (underscore variants)
-    "gusnet_bert":          "bert-base-uncased",
-    "gusnet_bert_large":    "bert-large-uncased",
-    "gusnet_gpt2":          "gpt2",
-    "gusnet_gpt2_medium":   "gpt2-medium",
-}
-
-# Canonical display names for GUS-NET variants
-_GUSNET_DISPLAY_NAMES = {
-    "bert": "GUS-NET-BERT",
-    "bert-large": "GUS-NET-BERT-LARGE",
-    "gpt2": "GUS-NET-GPT-2",
-    "gpt2-medium": "GUS-NET-GPT2-MEDIUM",
-}
-
-def _clean_gusnet_label(raw: str) -> str:
-    """Simplify a raw GUS-NET model name to a clean display label.
-
-    E.g. ``gus-net-bert-paper-clean-2`` → ``GUS-NET BERT``,
-         ``gus-net-gpt2-medium``        → ``GUS-NET GPT-2 Medium``.
-    For non-GUS-NET names the string is returned upper-cased.
-    """
-    # Strip huggingface repository prefix (e.g., "pinthoz/")
-    if "/" in raw:
-        raw = raw.split("/")[-1]
-        
-    s = raw.lower().replace("_", "-")
-    if "gus" not in s:
-        return raw.upper()
-    # Strip gus-net prefix and any training-run suffixes (paper, clean, v2, etc.)
-    # but preserve model variant identifiers like gpt2, bert-large
-    core = _re.sub(r"^gus-?net-?", "", s)
-    core = _re.sub(r"-(paper|clean|new|custom|ensemble)([-\d].*)?$", "", core).strip("-")
-    return _GUSNET_DISPLAY_NAMES.get(core, f"GUS-NET {core.upper()}")
-
-
-def _load_gusnet_attention_for_text(text: str, bias_model_key: str):
-    """Extract attentions directly from the selected GUS-NET model."""
-    if bias_model_key == "gusnet-ensemble":
-        bias_model_key = "gusnet-bert"
-
-    det = GusNetDetector(model_key=bias_model_key, threshold=0.5, use_optimized=False)
-    tokenizer, model = det._load_model(bias_model_key, det._device)
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-    inputs = {k: v.to(det._device) for k, v in inputs.items()}
-
-    with torch.no_grad():
-        outputs = model(**inputs, output_attentions=True)
-
-    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].detach().cpu())
-    gus_probs = torch.sigmoid(outputs.logits)[0].detach().cpu()
-
-    effective_thresholds = {}
-    if det.config.get("optimized_thresholds"):
-        opt = det.config["optimized_thresholds"]
-        cat_indices = det.config.get("category_indices", {})
-        for cat in ["GEN", "UNFAIR", "STEREO"]:
-            if cat in cat_indices:
-                vals = [opt[i] for i in cat_indices[cat] if i < len(opt)]
-                if vals:
-                    effective_thresholds[cat] = sum(vals) / len(vals)
-    if not effective_thresholds:
-        effective_thresholds = {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
-
-    return {
-        "tokens": tokens,
-        "text": text,
-        "attentions": outputs.attentions,
-        "gus_tokens": tokens,
-        "gus_probs": gus_probs,
-        "bias_model_key": bias_model_key,
-        "model_name": _GUSNET_TO_ENCODER.get(bias_model_key, bias_model_key),
-        "gus_special": det.config["special_tokens"],
-        "effective_thresholds": effective_thresholds,
-        "attention_source": "gusnet",
-    }
-
-
-def _load_base_encoder_attention_for_text(text: str, bias_model_key: str):
-    """Extract attentions from the original pretrained base model (before fine-tuning).
-
-    For example, if the GUS-Net variant is ``gusnet-bert``, this loads
-    ``bert-base-uncased`` and extracts its attention patterns - representing
-    how the *untrained* encoder distributes attention before any bias-specific
-    fine-tuning.
-    """
-    base_model_name = _GUSNET_TO_BASE.get(bias_model_key, "bert-base-uncased")
-
-    tokenizer, encoder_model, _ = ModelManager.get_model(base_model_name)
-    device = ModelManager.get_device()
-
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-    inputs = {k: v.to(device) for k, v in inputs.items()}
-
-    with torch.no_grad():
-        outputs = encoder_model(**inputs)
-
-    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].detach().cpu())
-
-    # We still need GUS-Net labels for bias highlights - use the selected detector
-    if bias_model_key == "gusnet-ensemble":
-        bk = "gusnet-bert"
-    else:
-        bk = bias_model_key
-    det = GusNetDetector(model_key=bk, threshold=0.5, use_optimized=False)
-    gus_tokens, gus_probs = det.predict_proba(text)
-
-    effective_thresholds = {}
-    if det.config.get("optimized_thresholds"):
-        opt = det.config["optimized_thresholds"]
-        cat_indices = det.config.get("category_indices", {})
-        for cat in ["GEN", "UNFAIR", "STEREO"]:
-            if cat in cat_indices:
-                vals = [opt[i] for i in cat_indices[cat] if i < len(opt)]
-                if vals:
-                    effective_thresholds[cat] = sum(vals) / len(vals)
-    if not effective_thresholds:
-        effective_thresholds = {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
-
-    return {
-        "tokens": tokens,
-        "text": text,
-        "attentions": outputs.attentions,
-        "gus_tokens": gus_tokens,
-        "gus_probs": gus_probs,
-        "bias_model_key": bias_model_key,
-        "model_name": base_model_name,
-        "gus_special": det.config["special_tokens"],
-        "effective_thresholds": effective_thresholds,
-        "attention_source": "base",
-    }
-
-
-def _deferred_plotly(fig, container_id, height=None, config=None, click_input=None):
-    """Render a Plotly figure as deferred HTML - only calls Plotly.newPlot()
-    when the container becomes visible. This avoids wrong dimensions when
-    the container is inside a collapsed accordion panel.
-
-    click_input: if set, a plotly_click listener will call
-        Shiny.setInputValue(click_input, clickedX) on each click.
-    """
-    import plotly.io as pio
-    import base64, html as _html
-
-    # Use figure's internal height if not explicitly overridden
-    if height is None:
-        fig_height = getattr(fig.layout, "height", None)
-        if fig_height:
-            height = f"{fig_height}px"
-        else:
-            height = "400px"
-
-    fig_json = pio.to_json(fig, validate=False)
-    cfg = json.dumps(config or {"displayModeBar": False, "responsive": True})
-    # Base64-encode the figure JSON and store in a data attribute.
-    # This avoids jQuery/Shiny re-parsing <script> tags via .html()
-    # and sidesteps any HTML entity issues with <template> elements.
-    b64_fig = base64.b64encode(fig_json.encode()).decode()
-    escaped_cfg = _html.escape(cfg, quote=True)
-    click_attr = f' data-plotly-click-input="{click_input}"' if click_input else ""
-    return (
-        f'<div id="{container_id}" class="plotly-deferred" '
-        f'style="width:100%;height:{height};min-height:50px;"'
-        f' data-plotly-config="{escaped_cfg}"'
-        f' data-plotly-fig="{b64_fig}"'
-        f'{click_attr}>'
-        f'</div>'
-    )
-
-
-def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header=None, style=None, controls=None):
-    """Wrap content in a card with consistent header style."""
-    base_style = "min-height: auto; display: flex; flex-direction: column;"
-    if style:
-        base_style += f" {style}"
-
-    header = None
-    if manual_header:
-        # manual_header is (title, subtitle) tuple - optionally with (i) tooltip
-        _info_icon = None
-        if help_text:
-            _info_icon = ui.div(
-                {"class": "info-tooltip-wrapper"},
-                ui.span({"class": "info-tooltip-icon"}, "i"),
-                ui.div({"class": "info-tooltip-content"}, ui.HTML(help_text)),
-            )
-
-        _title_row_children = [ui.h4(ui.HTML(manual_header[0]), style="margin:0;")]
-        if _info_icon:
-            _title_row_children.append(_info_icon)
-
-        if controls:
-            _title_row_children.append(
-                ui.div(*controls, style="margin-left:auto;display:flex;align-items:center;gap:8px;")
-            )
-
-        header = ui.div(
-            {"class": "viz-header", "style": "display:flex;flex-direction:column;gap:0;"},
-            ui.div(
-                {"style": "display:flex;align-items:center;gap:8px;flex-wrap:wrap;"},
-                *_title_row_children,
-            ),
-            ui.p(ui.HTML(manual_header[1]), style="font-size:11px;color:#6b7280;margin:4px 0 0;"),
-        )
-    elif title:
-        header = viz_header(title, subtitle, help_text, controls=controls)
-
-    return ui.div(
-        {"class": "card", "style": base_style},
-        header,
-        ui.div(content, style="flex: 1; display: flex; flex-direction: column;")
-    )
-
-
-
-# ─── Token-alignment helper ───────────────────────────────────────────────
-
-def _align_gusnet_to_attention_tokens(gusnet_labels, attention_tokens, gusnet_special_tokens=None):
-    """Align GUS-Net token labels to the attention model's tokens.
-
-    Handles cross-tokenizer subword mismatches - e.g. when GPT-2 BPE
-    produces a single token ``nurturing`` while BERT WordPiece splits it
-    into ``nur`` + ``##turing``.  In such cases the GUS-Net label is
-    propagated to all BERT subwords that form the original word.
-
-    Returns a list (same length as *attention_tokens*) where each entry
-    is either a GUS-Net label dict or ``None`` for unmatched positions.
-    """
-    if gusnet_special_tokens is None:
-        gusnet_special_tokens = {"[CLS]", "[SEP]", "[PAD]", "<|endoftext|>"}
-
-    attn_special = {"[CLS]", "[SEP]", "[PAD]", "<|endoftext|>"}
-
-    def _clean(tok):
-        """Normalise a subword token for text matching."""
-        return tok.replace("##", "").replace("\u0120", "").replace("Ġ", "").lower().strip()
-
-    # Build cleaned GUS-Net content tokens
-    gus_clean = []
-    gus_data = []
-    for label in gusnet_labels:
-        if label["token"] in gusnet_special_tokens:
-            continue
-        gus_clean.append(_clean(label["token"]))
-        gus_data.append(label)
-
-    aligned = [None] * len(attention_tokens)
-    gus_idx = 0
-    # Tracks leftover characters from a partially consumed GUS-Net token
-    gus_remainder = ""
-    gus_current_label = None
-
-    for bt_idx, bt in enumerate(attention_tokens):
-        if bt in attn_special or (bt.startswith("[") and bt.endswith("]")):
-            continue
-
-        clean_bt = _clean(bt)
-        if not clean_bt:
-            continue
-
-        # Case 1: continuing to consume a partially matched GUS-Net token
-        if gus_remainder:
-            if gus_remainder.startswith(clean_bt):
-                aligned[bt_idx] = gus_current_label
-                gus_remainder = gus_remainder[len(clean_bt):]
-                if not gus_remainder:
-                    gus_current_label = None
-                continue
-            else:
-                # Mismatch mid-word - reset and fall through
-                gus_remainder = ""
-                gus_current_label = None
-
-        # Case 2: exact match with current GUS-Net token
-        if gus_idx < len(gus_clean) and gus_clean[gus_idx] == clean_bt:
-            aligned[bt_idx] = gus_data[gus_idx]
-            gus_idx += 1
-            continue
-
-        # Case 3: attention subword is a prefix of the GUS-Net token
-        #         (e.g. BERT "nur" is prefix of GPT-2 "nurturing")
-        if gus_idx < len(gus_clean) and gus_clean[gus_idx].startswith(clean_bt):
-            aligned[bt_idx] = gus_data[gus_idx]
-            gus_remainder = gus_clean[gus_idx][len(clean_bt):]
-            gus_current_label = gus_data[gus_idx]
-            if not gus_remainder:
-                gus_idx += 1
-                gus_current_label = None
-            else:
-                gus_idx += 1  # advance - remainder will be consumed by next subwords
-            continue
-
-        # Case 4: GUS-Net subword is a prefix of the attention token
-        #         (e.g. GPT-2 splits more finely than BERT on rare words)
-        if gus_idx < len(gus_clean):
-            accumulated = ""
-            scan = gus_idx
-            while scan < len(gus_clean) and len(accumulated) < len(clean_bt):
-                accumulated += gus_clean[scan]
-                scan += 1
-            if accumulated == clean_bt:
-                # Merge: use the first GUS-Net label (highest specificity)
-                aligned[bt_idx] = gus_data[gus_idx]
-                gus_idx = scan
-                continue
-
-        # Case 5: look-ahead for misalignment recovery
-        for look in range(gus_idx, min(gus_idx + 5, len(gus_clean))):
-            if gus_clean[look] == clean_bt:
-                aligned[bt_idx] = gus_data[look]
-                gus_idx = look + 1
-                break
-
-    return aligned
-
-
-# ─── Server handler registration ──────────────────────────────────────────
-
-def _get_bias_model_label(res):
-    """Return a human-readable label for the bias model used in the result."""
-    from attention_app.bias.gusnet_detector import MODEL_REGISTRY
-    key = res.get("bias_model_key", "gusnet-bert")
-    cfg = MODEL_REGISTRY.get(key, {})
-    return cfg.get("display_name", key)
-
-def _process_raw_bias_result(raw_res, thresholds, use_optimized=False):
-    """Apply thresholds to raw results and regeneration attention metrics."""
-    if not raw_res:
-        return None
-    
-    try:
-        bias_model_key = raw_res["bias_model_key"]
-        
-        # 1. Re-instantiate detector (lightweight) to apply thresholds
-        from attention_app.bias.gusnet_detector import GusNetDetector, EnsembleGusNetDetector
-        
-        if bias_model_key == "gusnet-ensemble":
-            det = EnsembleGusNetDetector(model_key_a="gusnet-bert", model_key_b="gusnet-bert-custom")
-        else:
-            det = GusNetDetector(model_key=bias_model_key, use_optimized=use_optimized)
-            
-        # 2. Apply thresholds
-        gusnet_labels = det.apply_thresholds(
-            raw_res["gus_tokens"], 
-            raw_res["gus_probs"], 
-            thresholds=thresholds
-        )
-        
-        # 3. Re-align (alignment needed because encoder tokens != gus tokens)
-        tokens = raw_res["tokens"]
-        gus_special = raw_res["gus_special"]
-        
-        # We need _align_gusnet function available here
-        gus_aligned = _align_gusnet_to_attention_tokens(
-            gusnet_labels, tokens, gusnet_special_tokens=gus_special
-        )
-        
-        token_labels = []
-        for i, tok in enumerate(tokens):
-            matched = gus_aligned[i]
-            if matched is not None:
-                token_labels.append({
-                    **matched,
-                    "token": tok,
-                    "index": i,
-                })
-            else:
-                token_labels.append({
-                    "token": tok,
-                    "index": i,
-                    "bias_types": [],
-                    "is_biased": False,
-                    "scores": {"O": 0.0, "GEN": 0.0, "UNFAIR": 0.0, "STEREO": 0.0},
-                    "method": "gusnet",
-                    "explanation": "",
-                    "threshold": thresholds.get("GEN", 0.5) if thresholds else 0.5,
-                })
-        
-        # 4. Re-calculate Summary & Spans
-        bias_summary = det.get_bias_summary(token_labels)
-        bias_spans = det.get_biased_spans(token_labels)
-        
-        # 5. Re-calculate Attention Metrics (Attention Analyzer)
-        # Only if we have attention data
-        attentions = raw_res["attentions"]
-        biased_indices = [i for i, l in enumerate(token_labels) if l["is_biased"]]
-        
-        attention_metrics = []
-        propagation_analysis = {
-            "layer_propagation": [], "peak_layer": None,
-            "propagation_pattern": "none",
-        }
-        bias_matrix = np.array([])
-        
-        if biased_indices and attentions:
-            attention_analyzer = AttentionBiasAnalyzer()
-            attention_metrics = attention_analyzer.analyze_attention_to_bias(
-                list(attentions), biased_indices, tokens
-            )
-            propagation_analysis = attention_analyzer.analyze_bias_propagation(
-                list(attentions), biased_indices, tokens
-            )
-            bias_doc_matrix = attention_analyzer.create_attention_bias_matrix(
-                list(attentions), biased_indices
-            )
-            # bias_doc_matrix is a numpy array>= Helper usually returns something else>=
-            # Warning: Existing code was: bias_matrix = attention_analyzer.create_attention_bias_matrix(...)
-            bias_matrix = bias_doc_matrix
-
-        # Return full result structure
-        return {
-            **raw_res,
-            "token_labels": token_labels,
-            "bias_summary": bias_summary,
-            "bias_spans": bias_spans,
-            "biased_indices": biased_indices,
-            "attention_metrics": attention_metrics,
-            "propagation_analysis": propagation_analysis,
-            "bias_matrix": bias_matrix,
-            "thresholds": thresholds,
-            "use_optimized": use_optimized
-        }
-        
-    except Exception:
-        _logger.exception("Error processing raw bias result")
-        return None
-
-
-def _build_batch_report(per_sentence_results, all_bar_matrices,
-                        bias_model_key, model_name, thresholds, use_optimized,
-                        batch_file, elapsed, n_total):
-    """Build comprehensive batch analysis report JSON."""
-    analyzed = [r for r in per_sentence_results if not r.get("error")]
-    failed = [r for r in per_sentence_results if r.get("error")]
-    biased = [r for r in analyzed if r.get("is_biased")]
-
-    # Aggregate bias percentages
-    bias_pcts = [r["bias_summary"]["bias_percentage"] for r in analyzed if "bias_summary" in r]
-    avg_bias_pct = round(sum(bias_pcts) / len(bias_pcts), 1) if bias_pcts else 0
-
-    # Aggregate confidence
-    confs = [r["bias_summary"]["avg_confidence"] for r in analyzed if "bias_summary" in r and r["bias_summary"].get("avg_confidence")]
-    avg_conf = round(sum(confs) / len(confs), 4) if confs else 0
-
-    # Category distribution
-    cat_dist = {}
-    for r in analyzed:
-        if "bias_summary" in r:
-            for cat in r["bias_summary"].get("categories_found", []):
-                cat_dist[cat] = cat_dist.get(cat, 0) + 1
-
-    # Most common biased terms
-    term_counts = {}
-    for r in analyzed:
-        for ts in r.get("token_scores", []):
-            if ts.get("is_biased"):
-                term_counts[ts["token"]] = term_counts.get(ts["token"], 0) + 1
-    top_terms = sorted(term_counts.items(), key=lambda x: x[1], reverse=True)[:20]
-
-    # Average confidence per category
-    cat_confs = {}
-    cat_conf_counts = {}
-    for r in analyzed:
-        for ts in r.get("token_scores", []):
-            if ts.get("is_biased") and ts.get("scores"):
-                for bt in ts.get("bias_types", []):
-                    score = ts["scores"].get(bt, 0)
-                    cat_confs[bt] = cat_confs.get(bt, 0) + score
-                    cat_conf_counts[bt] = cat_conf_counts.get(bt, 0) + 1
-    avg_conf_per_cat = {k: round(cat_confs[k] / cat_conf_counts[k], 4) for k in cat_confs if cat_conf_counts.get(k)}
-
-    # Sentences ranked by severity
-    ranked = sorted(
-        [{"index": r["index"], "text": r["text"][:100], "bias_percentage": r["bias_summary"]["bias_percentage"]}
-         for r in analyzed if "bias_summary" in r],
-        key=lambda x: x["bias_percentage"], reverse=True
-    )[:20]
-
-    # Attention analysis: aggregate BAR matrices
-    attention_analysis = {}
-    if all_bar_matrices:
-        stacked = np.stack(all_bar_matrices)
-        avg_bar = np.nanmean(stacked, axis=0)
-        n_layers, n_heads = avg_bar.shape
-
-        # Top heads by average BAR
-        head_entries = []
-        for l in range(n_layers):
-            for h in range(n_heads):
-                bars = [m[l, h] for m in all_bar_matrices if l < m.shape[0] and h < m.shape[1]]
-                specialized = sum(1 for b in bars if b > 1.5)
-                head_entries.append({
-                    "layer": int(l), "head": int(h),
-                    "avg_bar": round(float(np.mean(bars)), 4),
-                    "max_bar": round(float(np.max(bars)), 4),
-                    "specialized_rate": round(specialized / len(bars) * 100, 1) if bars else 0,
-                    "n_samples": len(bars),
-                })
-        head_entries.sort(key=lambda x: x["avg_bar"], reverse=True)
-
-        attention_analysis = {
-            "top_heads_by_avg_bar": head_entries[:20],
-            "head_consistency": [h for h in head_entries if h["specialized_rate"] >= 50][:20],
-            "avg_bar_matrix": [[round(float(avg_bar[l, h]), 4) for h in range(n_heads)] for l in range(n_layers)],
-        }
-
-    # Faithfulness summary: aggregate IG/ablation/perturbation/LRP
-    ig_rhos = []
-    ig_sig_heads = 0
-    ig_jaccards = []
-    ig_rbos = []
-    abl_impacts = []
-    abl_kls = []
-    perturb_ig_rhos = []
-    perturb_attn_rhos = []
-    lrp_ig_rhos = []
-    lrp_attn_rhos = []
-
-    for r in analyzed:
-        ig = r.get("ig_analysis")
-        if ig:
-            for c in ig.get("ig_attention_correlations", []):
-                if c.get("spearman_rho") is not None:
-                    ig_rhos.append(abs(c["spearman_rho"]))
-                    if c.get("p_value") is not None and c["p_value"] < 0.05:
-                        ig_sig_heads += 1
-            for t in ig.get("topk_overlaps", []):
-                if t.get("jaccard") is not None:
-                    ig_jaccards.append(t["jaccard"])
-                if t.get("rbo") is not None:
-                    ig_rbos.append(t["rbo"])
-
-        abl = r.get("ablation_analysis")
-        if abl:
-            for a in abl:
-                if a.get("representation_impact") is not None:
-                    abl_impacts.append(a["representation_impact"])
-                if a.get("kl_divergence") is not None:
-                    abl_kls.append(a["kl_divergence"])
-
-        pert = r.get("perturbation_analysis")
-        if pert:
-            if pert.get("perturb_vs_ig_spearman") is not None:
-                perturb_ig_rhos.append(pert["perturb_vs_ig_spearman"])
-            for c in pert.get("perturb_vs_attention_top5", []):
-                if c.get("spearman_rho") is not None:
-                    perturb_attn_rhos.append(c["spearman_rho"])
-
-        lrp = r.get("lrp_analysis")
-        if lrp:
-            if lrp.get("lrp_vs_ig_spearman") is not None:
-                lrp_ig_rhos.append(lrp["lrp_vs_ig_spearman"])
-            for c in lrp.get("lrp_vs_attention_top5", []):
-                if c.get("spearman_rho") is not None:
-                    lrp_attn_rhos.append(c["spearman_rho"])
-
-    def _safe_mean(lst):
-        return round(sum(lst) / len(lst), 4) if lst else None
-
-    faithfulness_summary = {
-        "ig_analysis": {
-            "avg_top_head_rho": _safe_mean(ig_rhos),
-            "heads_with_significant_correlation": ig_sig_heads,
-            "avg_topk_jaccard": _safe_mean(ig_jaccards),
-            "avg_topk_rbo": _safe_mean(ig_rbos),
-        },
-        "ablation_analysis": {
-            "avg_representation_impact": _safe_mean(abl_impacts),
-            "avg_kl_divergence": _safe_mean(abl_kls),
-            "heads_with_high_impact": sum(1 for x in abl_impacts if x > 0.01),
-        },
-        "perturbation_analysis": {
-            "avg_perturb_vs_ig_rho": _safe_mean(perturb_ig_rhos),
-            "avg_perturb_vs_attention_rho": _safe_mean(perturb_attn_rhos),
-        },
-        "lrp_analysis": {
-            "avg_lrp_vs_ig_rho": _safe_mean(lrp_ig_rhos),
-            "avg_lrp_vs_attention_rho": _safe_mean(lrp_attn_rhos),
-        },
-        "cross_method_agreement": {
-            "ig_vs_lrp_mean_rho": _safe_mean(lrp_ig_rhos),
-            "ig_vs_perturbation_mean_rho": _safe_mean(perturb_ig_rhos),
-        },
-    }
-
-    # Counterfactual analysis
-    cf_analysis = []
-    for r in analyzed:
-        swaps = r.get("counterfactual_swaps")
-        if swaps:
-            cf_analysis.append({
-                "sentence_index": r["index"],
-                "text": r["text"],
-                "available_swaps": swaps,
-            })
-
-    # Reproducibility info
-    import transformers
-    repro = {
-        "model_version": model_name,
-        "transformers_version": transformers.__version__,
-        "torch_version": torch.__version__,
-    }
-    try:
-        import hashlib
-        combined = "\n".join(r["text"] for r in per_sentence_results)
-        repro["input_hash"] = "sha256:" + hashlib.sha256(combined.encode()).hexdigest()[:16]
-    except Exception:
-        pass
-
-    report = {
-        "executive_summary": {
-            "total_sentences": n_total,
-            "sentences_analyzed": len(analyzed),
-            "sentences_failed": len(failed),
-            "biased_sentences": len(biased),
-            "bias_rate": round(len(biased) / len(analyzed) * 100, 1) if analyzed else 0,
-            "average_bias_percentage": avg_bias_pct,
-            "average_confidence": avg_conf,
-            "processing_time_seconds": elapsed,
-            "model_used": _get_bias_model_label({"bias_model_key": bias_model_key}),
-            "model_key": bias_model_key,
-            "encoder_model": model_name,
-        },
-        "per_sentence_results": per_sentence_results,
-        "aggregate_statistics": {
-            "category_distribution": cat_dist,
-            "most_common_biased_terms": [{"term": t, "count": c} for t, c in top_terms],
-            "average_confidence_per_category": avg_conf_per_cat,
-            "sentences_ranked_by_severity": ranked,
-        },
-        "attention_analysis": attention_analysis,
-        "faithfulness_summary": faithfulness_summary,
-        "counterfactual_analysis": cf_analysis,
-        "metadata": {
-            "timestamp": datetime.now().isoformat(),
-            "thresholds_used": thresholds,
-            "use_optimized": use_optimized,
-            "batch_file": batch_file,
-            "reproducibility": repro,
-        },
-    }
-    return report
-
+# Pure helpers, constants, and CSV body functions are now in separate
+# modules — imported at the top of this file from bias_helpers,
+# bias_styles, and bias_exports.
+#
 
 def bias_server_handlers(input, output, session):
     """Create server handlers for bias analysis tab."""
@@ -828,29 +176,8 @@ def bias_server_handlers(input, output, session):
     # Snapshot of previous run state - restored when Back is clicked
     bias_snapshot = reactive.value(None)
 
-    # ── Constants for UI Consistency ──
-    _BTN_STYLE_CSV = "padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: #334155; text-decoration: none;"
-    _BTN_STYLE_PNG = "padding: 2px 8px; font-size: 10px; height: 24px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: #334155;"
-
-    # ── Tooltip micro-styles (dark tooltip background, ~380px wide) ──
-    # Section header
-    _TH   = "font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;margin:8px 0 4px;display:block;"
-    # Bullet row wrapper
-    _TR   = "display:flex;gap:7px;align-items:flex-start;margin:2px 0;font-size:11.5px;line-height:1.45;color:#cbd5e1;"
-    # Bullet dot (pass color inline)
-    _TD   = "font-size:8px;margin-top:3px;flex-shrink:0;"
-    # Inline code chip
-    _TC   = "background:rgba(255,255,255,0.09);border-radius:3px;padding:1px 5px;font-family:JetBrains Mono,monospace;font-size:10px;color:#e2e8f0;"
-    # Horizontal rule
-    _TS   = "border:none;border-top:1px solid rgba(255,255,255,0.08);margin:7px 0;"
-    # Coloured inline badges
-    _TBG  = "background:rgba(34,197,94,0.18);color:#22c55e;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;"
-    _TBR  = "background:rgba(239,68,68,0.18);color:#ef4444;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;"
-    _TBA  = "background:rgba(245,158,11,0.18);color:#f59e0b;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;"
-    _TBB  = "background:rgba(96,165,250,0.18);color:#60a5fa;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;"
-    _TBP  = "background:rgba(167,139,250,0.18);color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;"
-    # Note / italics footer
-    _TN   = "font-size:10.5px;color:#64748b;font-style:italic;line-height:1.4;"
+    # Style constants (_BTN_STYLE_*, _TH, _TR, etc.) are imported from
+    # bias_styles at module level.
 
     def _chart_with_png_btn(chart_html: str, container_id: str, filename: str, controls: list = None) -> str:
         """Wrap chart HTML with controls (PNG btn + optional others) aligned to the right."""
@@ -873,6 +200,57 @@ def bias_server_handlers(input, output, session):
         )
         return control_bar + chart_html
 
+    # ── Selection reader helper ─────────────────────────────────────────
+
+    def _read_sel(reader):
+        """Read a Shiny reactive input and convert to ``list[int]``.
+
+        Returns ``None`` when the input has not been set yet (first render)
+        or is empty.  The broad ``except`` is intentional: Shiny raises
+        ``SilentException`` before the first click, and we must not let
+        that propagate or the renderer fails silently.
+        """
+        try:
+            sel = reader()
+            if not sel:
+                return None
+            return (
+                [int(sel)] if isinstance(sel, (int, str))
+                else [int(x) for x in sel if x is not None]
+            )
+        except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
+            return None
+
+    def _map_sel_a_to_b(sel_a, res_a, res_b):
+        """Map selected token indices from model A to model B by content.
+
+        In compare-models mode BERT and GPT-2 tokenize the same text
+        differently, so the same word lives at different indices.  This
+        helper matches by cleaned token text (case-insensitive) and
+        returns a list of B indices, or ``None`` if *sel_a* is empty.
+        """
+        if not sel_a or not res_a or not res_b:
+            return None
+        toks_a = [t.replace("##", "").replace("\u0120", "").lower()
+                  for t in res_a.get("tokens", [])]
+        toks_b = [t.replace("##", "").replace("\u0120", "").lower()
+                  for t in res_b.get("tokens", [])]
+        mapped = []
+        used = set()
+        for idx_a in sel_a:
+            if idx_a >= len(toks_a):
+                continue
+            word = toks_a[idx_a]
+            if not word:
+                continue
+            for j, tb in enumerate(toks_b):
+                if tb == word and j not in used:
+                    mapped.append(j)
+                    used.add(j)
+                    break
+        return mapped if mapped else None
+
     # ── Attention Source helpers ──────────────────────────────────────────
 
     def _get_attn_source_mode(input_id: str = "bias_attn_source") -> str:
@@ -886,6 +264,7 @@ def bias_server_handlers(input, output, session):
             if val in ("base", "gusnet", "compare"):
                 return val
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             pass
         return "gusnet"
 
@@ -990,6 +369,7 @@ def bias_server_handlers(input, output, session):
                 compare_active = True
                 vk_B = vk_A # Same model for both prompts
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             pass
 
         from attention_app.bias.gusnet_detector import MODEL_REGISTRY
@@ -1136,6 +516,7 @@ def bias_server_handlers(input, output, session):
                 if raw_A and live_key_A and raw_A.get("bias_model_key") != live_key_A:
                     a_model_matches = False
             except Exception:
+                _logger.debug("Suppressed exception", exc_info=True)
                 pass
 
             try:
@@ -1343,6 +724,7 @@ def bias_server_handlers(input, output, session):
         try:
             return float(input.bias_threshold())
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             return 0.5
 
     # ── Session Logic ──
@@ -1388,26 +770,31 @@ def bias_server_handlers(input, output, session):
             try:
                 data[key] = float(getattr(input, key)())
             except Exception:
+                _logger.debug("Suppressed exception", exc_info=True)
                 pass
         # Per-class thresholds B
         for key in ["bias_thresh_unfair_b", "bias_thresh_gen_b", "bias_thresh_stereo_b"]:
             try:
                 data[key] = float(getattr(input, key)())
             except Exception:
+                _logger.debug("Suppressed exception", exc_info=True)
                 pass
 
         # Layer / Head / Top-K
         try:
             data["bias_attn_layer"] = input.bias_attn_layer()
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             pass
         try:
             data["bias_attn_head"] = input.bias_attn_head()
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             pass
         try:
             data["bias_top_k"] = int(input.bias_top_k())
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             pass
 
         # Reproducibility metadata
@@ -1419,6 +806,7 @@ def bias_server_handlers(input, output, session):
                 data.get("text", ""), model_name=hf_path
             )
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             pass
 
         content = json.dumps(data, indent=2)
@@ -1502,268 +890,43 @@ def bias_server_handlers(input, output, session):
             ui.notification_show("Error loading session. Please check the file format.", type="error")
 
     # ── CSV Export Handlers (8 pairs: A and B) ──
+    # Body helpers are imported from bias_exports; A/B stubs pick the reactive source.
 
-    # 1. Bias Summary
-    @auto_save_bias_download("summary", "csv")
-    def export_bias_summary():
-        res = bias_results.get()
-        if not res:
-            yield "No data available"
-            return
-        s = res["bias_summary"]
-        lines = ["metric,value"]
-        for k, v in s.items():
-            lines.append(f"{k},{v}")
-        yield "\n".join(lines)
-
-    @auto_save_bias_download("summary", "csv", is_b=True)
-    def export_bias_summary_B():
-        res = bias_results_B.get()
-        if not res:
-            yield "No data available"
-            return
-        s = res["bias_summary"]
-        lines = ["metric,value"]
-        for k, v in s.items():
-            lines.append(f"{k},{v}")
-        yield "\n".join(lines)
-
-    # 2. Bias Spans (Detected Bias Tokens)
-    @auto_save_bias_download("spans", "csv")
-    def export_bias_spans():
-        res = bias_results.get()
-        if not res:
-            yield "No data available"
-            return
-        lines = ["token,index,bias_types,GEN,UNFAIR,STEREO,max_score"]
-        for lbl in res["token_labels"]:
-            if not lbl.get("is_biased"):
-                continue
-            scores = lbl.get("scores", {})
-            types = ";".join(lbl.get("bias_types", []))
-            max_s = max((scores.get(t, 0) for t in lbl.get("bias_types", [])), default=0)
-            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{types},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f},{max_s:.4f}")
-        yield "\n".join(lines)
-
-    @auto_save_bias_download("spans", "csv", is_b=True)
-    def export_bias_spans_B():
-        res = bias_results_B.get()
-        if not res:
-            yield "No data available"
-            return
-        lines = ["token,index,bias_types,GEN,UNFAIR,STEREO,max_score"]
-        for lbl in res["token_labels"]:
-            if not lbl.get("is_biased"):
-                continue
-            scores = lbl.get("scores", {})
-            types = ";".join(lbl.get("bias_types", []))
-            max_s = max((scores.get(t, 0) for t in lbl.get("bias_types", [])), default=0)
-            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{types},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f},{max_s:.4f}")
-        yield "\n".join(lines)
-
-    # 3. Token Bias Strip
-    @auto_save_bias_download("strip", "csv")
-    def export_bias_strip():
-        res = bias_results.get()
-        if not res:
-            yield "No data available"
-            return
-        lines = ["token,index,is_biased,O,GEN,UNFAIR,STEREO"]
-        for lbl in res["token_labels"]:
-            scores = lbl.get("scores", {})
-            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{lbl.get('is_biased',False)},{scores.get('O',0):.4f},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f}")
-        yield "\n".join(lines)
-
-    @auto_save_bias_download("strip", "csv", is_b=True)
-    def export_bias_strip_B():
-        res = bias_results_B.get()
-        if not res:
-            yield "No data available"
-            return
-        lines = ["token,index,is_biased,O,GEN,UNFAIR,STEREO"]
-        for lbl in res["token_labels"]:
-            scores = lbl.get("scores", {})
-            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{lbl.get('is_biased',False)},{scores.get('O',0):.4f},{scores.get('GEN',0):.4f},{scores.get('UNFAIR',0):.4f},{scores.get('STEREO',0):.4f}")
-        yield "\n".join(lines)
-
-    # 4. Confidence Breakdown
-    @auto_save_bias_download("confidence", "csv")
-    def export_bias_confidence():
-        res = bias_results.get()
-        if not res:
-            yield "No data available"
-            return
-        lines = ["token,index,tier,max_score,bias_types"]
-        for lbl in res["token_labels"]:
-            if not lbl.get("is_biased"):
-                continue
-            scores = lbl.get("scores", {})
-            types = lbl.get("bias_types", [])
-            max_s = max((scores.get(t, 0) for t in types), default=0)
-            tier = "high" if max_s >= 0.85 else ("medium" if max_s >= 0.70 else "low")
-            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{tier},{max_s:.4f},{';'.join(types)}")
-        yield "\n".join(lines)
-
-    @auto_save_bias_download("confidence", "csv", is_b=True)
-    def export_bias_confidence_B():
-        res = bias_results_B.get()
-        if not res:
-            yield "No data available"
-            return
-        lines = ["token,index,tier,max_score,bias_types"]
-        for lbl in res["token_labels"]:
-            if not lbl.get("is_biased"):
-                continue
-            scores = lbl.get("scores", {})
-            types = lbl.get("bias_types", [])
-            max_s = max((scores.get(t, 0) for t in types), default=0)
-            tier = "high" if max_s >= 0.85 else ("medium" if max_s >= 0.70 else "low")
-            lines.append(f"{_csv_safe(lbl['token'])},{lbl['index']},{tier},{max_s:.4f},{';'.join(types)}")
-        yield "\n".join(lines)
-
-    # 5. Combined Bias View (Attention Matrix CSV)
-    @auto_save_bias_download("combined", "csv")
-    def export_bias_combined():
-        res = bias_results.get()
-        if not res:
-            yield "No data available"
-            return
+    def _csv_combined(res):
+        """Thin wrapper: reads reactive input for layer/head, delegates to pure fn."""
         try:
             l_idx = int(input.bias_attn_layer())
             h_idx = int(input.bias_attn_head())
         except Exception:
             l_idx, h_idx = 0, 0
-        atts = res["attentions"]
-        if not atts or l_idx >= len(atts):
-            yield "No attention data"
-            return
-        tokens = res["tokens"]
-        attn = atts[l_idx][0, h_idx].cpu().numpy()
-        header = "query_token," + ",".join(tokens)
-        lines = [header]
-        for i, tok in enumerate(tokens):
-            vals = ",".join(f"{attn[i,j]:.6f}" for j in range(len(tokens)))
-            lines.append(f"{tok},{vals}")
-        yield "\n".join(lines)
+        return _csv_combined_fn(res, l_idx, h_idx)
 
-    @auto_save_bias_download("combined", "csv", is_b=True)
-    def export_bias_combined_B():
-        res = bias_results_B.get()
-        if not res:
-            yield "No data available"
-            return
-        try:
-            l_idx = int(input.bias_attn_layer())
-            h_idx = int(input.bias_attn_head())
-        except Exception:
-            l_idx, h_idx = 0, 0
-        atts = res["attentions"]
-        if not atts or l_idx >= len(atts):
-            yield "No attention data"
-            return
-        tokens = res["tokens"]
-        attn = atts[l_idx][0, h_idx].cpu().numpy()
-        header = "query_token," + ",".join(tokens)
-        lines = [header]
-        for i, tok in enumerate(tokens):
-            vals = ",".join(f"{attn[i,j]:.6f}" for j in range(len(tokens)))
-            lines.append(f"{tok},{vals}")
-        yield "\n".join(lines)
+    def _bias_export_ab(section, ext, body_fn, name):
+        """Register A + B download handlers that share *body_fn(res) -> str*."""
+        def _a():
+            res = bias_results.get()
+            if not res:
+                yield "No data available"; return
+            yield body_fn(res)
+        _a.__name__ = name
+        auto_save_bias_download(section, ext)(_a)
 
-    # 6. Attention Bias Matrix
-    @auto_save_bias_download("matrix", "csv")
-    def export_bias_matrix():
-        res = bias_results.get()
-        if not res:
-            yield "No data available"
-            return
-        metrics = res.get("attention_metrics", [])
-        if not metrics:
-            yield "No metrics available"
-            return
-        lines = ["layer,head,bias_attention_ratio,specialized"]
-        for m in metrics:
-            lines.append(f"{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.specialized_for_bias}")
-        yield "\n".join(lines)
+        def _b():
+            res = bias_results_B.get()
+            if not res:
+                yield "No data available"; return
+            yield body_fn(res)
+        _b.__name__ = f"{name}_B"
+        auto_save_bias_download(section, ext, is_b=True)(_b)
 
-    @auto_save_bias_download("matrix", "csv", is_b=True)
-    def export_bias_matrix_B():
-        res = bias_results_B.get()
-        if not res:
-            yield "No data available"
-            return
-        metrics = res.get("attention_metrics", [])
-        if not metrics:
-            yield "No metrics available"
-            return
-        lines = ["layer,head,bias_attention_ratio,specialized"]
-        for m in metrics:
-            lines.append(f"{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.specialized_for_bias}")
-        yield "\n".join(lines)
-
-    # 7. Bias Propagation
-    @auto_save_bias_download("propagation", "csv")
-    def export_bias_propagation():
-        res = bias_results.get()
-        if not res:
-            yield "No data available"
-            return
-        prop = res["propagation_analysis"]["layer_propagation"]
-        if not prop:
-            yield "No propagation data"
-            return
-        lines = ["layer,mean_bar,max_bar,min_bar"]
-        for p in prop:
-            lines.append(f"{p['layer']},{p['mean_ratio']:.4f},{p['max_ratio']:.4f},{p['min_ratio']:.4f}")
-        yield "\n".join(lines)
-
-    @auto_save_bias_download("propagation", "csv", is_b=True)
-    def export_bias_propagation_B():
-        res = bias_results_B.get()
-        if not res:
-            yield "No data available"
-            return
-        prop = res["propagation_analysis"]["layer_propagation"]
-        if not prop:
-            yield "No propagation data"
-            return
-        lines = ["layer,mean_bar,max_bar,min_bar"]
-        for p in prop:
-            lines.append(f"{p['layer']},{p['mean_ratio']:.4f},{p['max_ratio']:.4f},{p['min_ratio']:.4f}")
-        yield "\n".join(lines)
-
-    # 8. Top Bias-Focused Heads
-    @auto_save_bias_download("top_heads", "csv")
-    def export_bias_top_heads():
-        res = bias_results.get()
-        if not res:
-            yield "No data available"
-            return
-        metrics = res.get("attention_metrics", [])
-        if not metrics:
-            yield "No metrics available"
-            return
-        top = sorted(metrics, key=lambda m: m.bias_attention_ratio, reverse=True)[:5]
-        lines = ["rank,layer,head,bar,specialized"]
-        for i, m in enumerate(top, 1):
-            lines.append(f"{i},{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.specialized_for_bias}")
-        yield "\n".join(lines)
-
-    @auto_save_bias_download("top_heads", "csv", is_b=True)
-    def export_bias_top_heads_B():
-        res = bias_results_B.get()
-        if not res:
-            yield "No data available"
-            return
-        metrics = res.get("attention_metrics", [])
-        if not metrics:
-            yield "No metrics available"
-            return
-        top = sorted(metrics, key=lambda m: m.bias_attention_ratio, reverse=True)[:5]
-        lines = ["rank,layer,head,bar,specialized"]
-        for i, m in enumerate(top, 1):
-            lines.append(f"{i},{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.specialized_for_bias}")
-        yield "\n".join(lines)
+    _bias_export_ab("summary",     "csv", _csv_summary_fn,     "export_bias_summary")
+    _bias_export_ab("spans",       "csv", _csv_spans_fn,       "export_bias_spans")
+    _bias_export_ab("strip",       "csv", _csv_strip_fn,       "export_bias_strip")
+    _bias_export_ab("confidence",  "csv", _csv_confidence_fn,   "export_bias_confidence")
+    _bias_export_ab("combined",    "csv", _csv_combined,        "export_bias_combined")
+    _bias_export_ab("matrix",      "csv", _csv_matrix_fn,       "export_bias_matrix")
+    _bias_export_ab("propagation", "csv", _csv_propagation_fn,  "export_bias_propagation")
+    _bias_export_ab("top_heads",   "csv", _csv_top_heads_fn,    "export_bias_top_heads")
 
     def log_debug(msg):
         _logger.debug(msg)
@@ -2604,6 +1767,7 @@ def bias_server_handlers(input, output, session):
                             for s in cf_swaps
                         ]
                 except Exception:
+                    _logger.debug("Suppressed exception", exc_info=True)
                     pass
 
             except asyncio.TimeoutError:
@@ -3478,6 +2642,22 @@ def bias_server_handlers(input, output, session):
             return "".join(items)
 
         compare_prompts = active_bias_compare_prompts.get()
+        compare_models = active_bias_compare_models.get()
+
+        # Tell the JS whether we are in compare-models mode (same text,
+        # two models) so selectBiasToken mirrors A selection to B.
+        import json as _json
+        mirror_flag = "true" if (compare_models and not compare_prompts) else "false"
+        # Embed cleaned token lists so JS can match by content across models
+        _res_A = bias_results.get()
+        _res_B = bias_results_B.get() if compare_models else None
+        _toks_a = [t.replace("##", "").replace("\u0120", "") for t in (_res_A or {}).get("tokens", [])]
+        _toks_b = [t.replace("##", "").replace("\u0120", "") for t in (_res_B or {}).get("tokens", [])]
+        mirror_script = ui.tags.script(
+            f"window._biasCompareModels = {mirror_flag};"
+            f"window._biasTokensA = {_json.dumps(_toks_a)};"
+            f"window._biasTokensB = {_json.dumps(_toks_b)};"
+        )
 
         if compare_prompts:
             # ── Compare Prompts Layout (same structure as attention tab) ──
@@ -3487,6 +2667,7 @@ def bias_server_handlers(input, output, session):
             chips_B = _build_chips_html(res_B, "B")
 
             return ui.div(
+                mirror_script,
                 {"class": "token-row-split"},
                 ui.div(
                     {"class": "token-split-item"},
@@ -3503,10 +2684,13 @@ def bias_server_handlers(input, output, session):
             # ── Single / Compare Models ──
             res = bias_results.get()
             chips = _build_chips_html(res, "A")
-            return ui.HTML(
-                f'<div class="token-sentence">'
-                f'{chips}'
-                f'</div>'
+            return ui.div(
+                mirror_script,
+                ui.HTML(
+                    f'<div class="token-sentence">'
+                    f'{chips}'
+                    f'</div>'
+                ),
             )
 
 
@@ -3539,7 +2723,13 @@ def bias_server_handlers(input, output, session):
                 s = input.bias_selected_tokens_B() if is_B else input.bias_selected_tokens_A()
                 if s: sel_indices = [int(s)] if isinstance(s,(int,str)) else [int(x) for x in s if x]
             except Exception:
-                pass
+                _logger.debug("Suppressed exception", exc_info=True)
+            # Compare-models: always derive B from A by token content
+            if is_B and compare_models and not compare_prompts:
+                sel_a = _read_sel(input.bias_selected_tokens_A)
+                mapped = _map_sel_a_to_b(sel_a, res, res_B)
+                if mapped:
+                    sel_indices = mapped
                 
             # Check if counterfactual swaps are available (single-prompt mode)
             show_cf = (not is_B and not compare_models and not compare_prompts
@@ -3750,22 +2940,11 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
         
-        # Get selected token indices for highlighting (A and B are tracked
-        # independently so each side's click only affects its own strip).
-        def _read_sel(reader):
-            try:
-                sel = reader()
-                if not sel:
-                    return None
-                return (
-                    [int(sel)] if isinstance(sel, (int, str))
-                    else [int(x) for x in sel if x is not None]
-                )
-            except Exception:
-                return None
-
         selected_idx = _read_sel(input.bias_selected_tokens_A)
         selected_idx_B = _read_sel(input.bias_selected_tokens_B)
+        # Compare-models: always derive B from A by token content
+        if compare_models and not compare_prompts and selected_idx:
+            selected_idx_B = _map_sel_a_to_b(selected_idx, res, res_B)
 
         def get_viz(data, sel_idx=None):
             try:
@@ -3827,26 +3006,17 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
 
-        # Get selected token indices (independent per side).
-        def _read_sel(reader):
-            try:
-                sel = reader()
-                if not sel:
-                    return None
-                return (
-                    [int(sel)] if isinstance(sel, (int, str))
-                    else [int(x) for x in sel if x is not None]
-                )
-            except Exception:
-                return None
-
         selected_idx = _read_sel(input.bias_selected_tokens_A)
         selected_idx_B = _read_sel(input.bias_selected_tokens_B)
+        # Compare-models: always derive B from A by token content
+        if compare_models and not compare_prompts and selected_idx:
+            selected_idx_B = _map_sel_a_to_b(selected_idx, res, res_B)
 
         def get_viz(data, sel_idx=None):
             try:
                 return create_confidence_breakdown(data["token_labels"], selected_token_idx=sel_idx)
             except Exception as e:
+                _logger.debug("Suppressed: %s", e)
                 return f'<div style="color:red">Error: {e}</div>'
 
         man_header = (
@@ -3892,26 +3062,16 @@ def bias_server_handlers(input, output, session):
         try: l_idx, h_idx = int(input.bias_attn_layer()), int(input.bias_attn_head())
         except Exception: l_idx, h_idx = 0, 0
 
-        def _read_sel(reader):
-            try:
-                s = reader()
-                if not s:
-                    return None
-                return [int(s)] if isinstance(s, (int, str)) else [int(x) for x in s if x]
-            except Exception:
-                # Broad catch on purpose: Shiny raises SilentException when
-                # the reactive input has not been set yet (first render,
-                # before any click) — we must not let that propagate, or the
-                # whole bias strip renderer fails and subsequent clicks stop
-                # working.
-                return None
-
         sel = _read_sel(input.bias_selected_tokens_A)
         sel_B = _read_sel(input.bias_selected_tokens_B)
 
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
         res_B = bias_results_B.get()
+
+        # Compare-models: always derive B from A by token content
+        if compare_models and not compare_prompts and sel:
+            sel_B = _map_sel_a_to_b(sel, res, res_B)
 
         # ── Attention source resolution ──
         src_mode = _normalize_attn_source_mode(_get_attn_source_mode("bias_attn_source"))
@@ -4576,6 +3736,7 @@ def bias_server_handlers(input, output, session):
             sel_h = int(input.bias_attn_head())
             selected_head = (sel_l, sel_h)
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             pass
 
         def _render_ablation_single(results_data, container_suffix=""):
@@ -4692,25 +3853,15 @@ def bias_server_handlers(input, output, session):
     def export_ablation_csv():
         results = ablation_results.get()
         if not results:
-            yield "No ablation data"
-            return
-        lines = ["rank,layer,head,representation_impact,kl_divergence,bar_original"]
-        for i, r in enumerate(results, 1):
-            kl = f"{r.kl_divergence:.6f}" if r.kl_divergence is not None else ""
-            lines.append(f"{i},{r.layer},{r.head},{r.representation_impact:.6f},{kl},{r.bar_original:.4f}")
-        yield "\n".join(lines)
+            yield "No ablation data"; return
+        yield _csv_ablation_fn(results)
 
     @render.download(filename="ablation_results_B.csv")
     def export_ablation_csv_B():
         results = ablation_results_B.get()
         if not results:
-            yield "No ablation data"
-            return
-        lines = ["rank,layer,head,representation_impact,kl_divergence,bar_original"]
-        for i, r in enumerate(results, 1):
-            kl = f"{r.kl_divergence:.6f}" if r.kl_divergence is not None else ""
-            lines.append(f"{i},{r.layer},{r.head},{r.representation_impact:.6f},{kl},{r.bar_original:.4f}")
-        yield "\n".join(lines)
+            yield "No ablation data"; return
+        yield _csv_ablation_fn(results)
 
     # ── Integrated Gradients handlers ─────────────────────────────────
 
@@ -4781,7 +3932,7 @@ def bias_server_handlers(input, output, session):
         try:
             return _ig_results_display_impl()
         except Exception as e:
-            traceback.print_exc()
+            _logger.exception("Error rendering IG results")
             return ui.div(f"Error rendering IG results: {e}", style="color:red; padding:10px; border:1px solid red;")
 
     def _ig_results_display_impl():
@@ -4807,6 +3958,7 @@ def bias_server_handlers(input, output, session):
             selected_head = (sel_l, sel_h)
             selected_layer = sel_l
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             pass
 
         try: top_k = int(input.bias_top_k())
@@ -5102,49 +4254,29 @@ def bias_server_handlers(input, output, session):
     def export_ig_csv():
         bundle = ig_results.get()
         if not bundle:
-            yield "No IG data"
-            return
-        results = bundle.correlations if isinstance(bundle, IGAnalysisBundle) else bundle
-        lines = ["rank,layer,head,spearman_rho,spearman_pvalue,bar_original"]
-        sorted_results = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)
-        for i, r in enumerate(sorted_results, 1):
-            lines.append(f"{i},{r.layer},{r.head},{r.spearman_rho:.6f},{r.spearman_pvalue:.6f},{r.bar_original:.4f}")
-        yield "\n".join(lines)
+            yield "No IG data"; return
+        yield _csv_ig_correlation_fn(bundle)
 
     @render.download(filename="ig_correlation_results_B.csv")
     def export_ig_csv_B():
         bundle = ig_results_B.get()
         if not bundle:
-            yield "No IG data"
-            return
-        results = bundle.correlations if isinstance(bundle, IGAnalysisBundle) else bundle
-        lines = ["rank,layer,head,spearman_rho,spearman_pvalue,bar_original"]
-        sorted_results = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)
-        for i, r in enumerate(sorted_results, 1):
-            lines.append(f"{i},{r.layer},{r.head},{r.spearman_rho:.6f},{r.spearman_pvalue:.6f},{r.bar_original:.4f}")
-        yield "\n".join(lines)
+            yield "No IG data"; return
+        yield _csv_ig_correlation_fn(bundle)
 
     @render.download(filename="topk_overlap_results.csv")
     def export_topk_csv():
         bundle = ig_results.get()
         if not bundle or not isinstance(bundle, IGAnalysisBundle) or not bundle.topk_overlaps:
-            yield "No Top-K overlap data"
-            return
-        lines = ["layer,head,k,jaccard,rank_biased_overlap,bar_original"]
-        for r in bundle.topk_overlaps:
-            lines.append(f"{r.layer},{r.head},{r.k},{r.jaccard:.6f},{r.rank_biased_overlap:.6f},{r.bar_original:.4f}")
-        yield "\n".join(lines)
+            yield "No Top-K overlap data"; return
+        yield _csv_topk_overlap_fn(bundle)
 
     @render.download(filename="topk_overlap_results_B.csv")
     def export_topk_csv_B():
         bundle = ig_results_B.get()
         if not bundle or not isinstance(bundle, IGAnalysisBundle) or not bundle.topk_overlaps:
-            yield "No Top-K overlap data"
-            return
-        lines = ["layer,head,k,jaccard,rank_biased_overlap,bar_original"]
-        for r in bundle.topk_overlaps:
-            lines.append(f"{r.layer},{r.head},{r.k},{r.jaccard:.6f},{r.rank_biased_overlap:.6f},{r.bar_original:.4f}")
-        yield "\n".join(lines)
+            yield "No Top-K overlap data"; return
+        yield _csv_topk_overlap_fn(bundle)
 
     @render.download(filename="ig_token_comparison.csv")
     def export_ig_token_comparison_csv():
@@ -5516,23 +4648,15 @@ def bias_server_handlers(input, output, session):
     def export_perturbation_csv():
         bundle = perturbation_results.get()
         if not bundle:
-            yield "No perturbation data"
-            return
-        lines = ["token_index,token,importance"]
-        for r in bundle.token_results:
-            lines.append(f"{r.token_index},{_csv_safe(r.token)},{r.importance:.6f}")
-        yield "\n".join(lines)
+            yield "No perturbation data"; return
+        yield _csv_perturbation_fn(bundle)
 
     @render.download(filename="perturbation_results_B.csv")
     def export_perturbation_csv_B():
         bundle = perturbation_results_B.get()
         if not bundle:
-            yield "No perturbation data"
-            return
-        lines = ["token_index,token,importance"]
-        for r in bundle.token_results:
-            lines.append(f"{r.token_index},{_csv_safe(r.token)},{r.importance:.6f}")
-        yield "\n".join(lines)
+            yield "No perturbation data"; return
+        yield _csv_perturbation_fn(bundle)
 
     # ── LRP Analysis handlers ─────────────────────────────────────────
 
@@ -5726,23 +4850,15 @@ def bias_server_handlers(input, output, session):
     def export_lrp_csv():
         bundle = lrp_results.get()
         if not bundle:
-            yield "No LRP data"
-            return
-        lines = ["layer,head,spearman_rho_vs_attention"]
-        for l, h, rho in bundle.correlations:
-            lines.append(f"{l},{h},{rho:.6f}")
-        yield "\n".join(lines)
+            yield "No LRP data"; return
+        yield _csv_lrp_fn(bundle)
 
     @render.download(filename="lrp_results_B.csv")
     def export_lrp_csv_B():
         bundle = lrp_results_B.get()
         if not bundle:
-            yield "No LRP data"
-            return
-        lines = ["layer,head,spearman_rho_vs_attention"]
-        for l, h, rho in bundle.correlations:
-            lines.append(f"{l},{h},{rho:.6f}")
-        yield "\n".join(lines)
+            yield "No LRP data"; return
+        yield _csv_lrp_fn(bundle)
 
     # ── StereoSet Evaluation Handlers ─────────────────────────────────
     # These load from pre-computed JSON and render independently of bias_results.
@@ -5801,6 +4917,7 @@ def bias_server_handlers(input, output, session):
                 else:
                     return None
             except Exception:
+                _logger.debug("Suppressed exception", exc_info=True)
                 return None
 
         from ..bias.stereoset.stereoset_data import _resolve_key
@@ -6514,208 +5631,71 @@ def bias_server_handlers(input, output, session):
 
     @render.download(filename="top_discriminative_features.csv")
     def export_stereoset_features_csv():
-        mk = _stereoset_model_key()
-        top_features = get_top_features(mk)
-        if not top_features:
-            yield "No feature data"
-            return
-        lines = ["rank,feature,p_value"]
-        for rank, f in enumerate(top_features, 1):
-            lines.append(f'{rank},{f["name"]},{f["p_value"]:.6e}')
-        yield "\n".join(lines)
+        yield _csv_stereoset_features_fn(_stereoset_model_key())
 
     @render.download(filename="top_discriminative_features_B.csv")
     def export_stereoset_features_csv_B():
-        mk = _stereoset_model_key_B()
-        top_features = get_top_features(mk)
-        if not top_features:
-            yield "No feature data"
-            return
-        lines = ["rank,feature,p_value"]
-        for rank, f in enumerate(top_features, 1):
-            lines.append(f'{rank},{f["name"]},{f["p_value"]:.6e}')
-        yield "\n".join(lines)
+        yield _csv_stereoset_features_fn(_stereoset_model_key_B())
 
     @render.download(filename='sensitive_heads.csv')
     def export_stereoset_sensitivity_csv():
-        mk = _stereoset_model_key()
-        heads = get_sensitive_heads(mk)
-        if not heads:
-            yield "No sensitivity data"
-            return
-        lines = ["rank,layer,head,variance,correlation,best_feature"]
-        for rank, h in enumerate(heads, 1):
-            lines.append(f'{rank},{h["layer"]},{h["head"]},{h["variance"]:.6f},{h["correlation"]:.6f},{h["best_feature"]}')
-        yield "\n".join(lines)
-
+        yield _csv_stereoset_sensitivity_fn(_stereoset_model_key())
 
     @render.download(filename='sensitive_heads_B.csv')
     def export_stereoset_sensitivity_csv_B():
-        mk = _stereoset_model_key_B()
-        heads = get_sensitive_heads(mk)
-        if not heads:
-            yield "No sensitivity data"
-            return
-        lines = ["rank,layer,head,variance,correlation,best_feature"]
-        for rank, h in enumerate(heads, 1):
-            lines.append(f'{rank},{h["layer"]},{h["head"]},{h["variance"]:.6f},{h["correlation"]:.6f},{h["best_feature"]}')
-        yield "\n".join(lines)
-
+        yield _csv_stereoset_sensitivity_fn(_stereoset_model_key_B())
 
     @render.download(filename='stereoset_category_scores.csv')
     def export_stereoset_category_csv():
-        mk = _stereoset_model_key()
-        scores = get_stereoset_scores(mk)
-        if not scores:
-            yield "No scores data"
-            return
-        by_cat = scores.get("by_category", {})
-        lines = ["category,ss,lms,icat,n,mean_bias_score"]
-        for cat, v in by_cat.items():
-            lines.append(f'{cat},{v["ss"]:.2f},{v["lms"]:.2f},{v["icat"]:.2f},{v["n"]},{v.get("mean_bias_score", 0):.6f}')
-        yield "\n".join(lines)
-
+        yield _csv_stereoset_category_fn(_stereoset_model_key())
 
     @render.download(filename='stereoset_category_scores_B.csv')
     def export_stereoset_category_csv_B():
-        mk = _stereoset_model_key_B()
-        scores = get_stereoset_scores(mk)
-        if not scores:
-            yield "No scores data"
-            return
-        by_cat = scores.get("by_category", {})
-        lines = ["category,ss,lms,icat,n,mean_bias_score"]
-        for cat, v in by_cat.items():
-            lines.append(f'{cat},{v["ss"]:.2f},{v["lms"]:.2f},{v["icat"]:.2f},{v["n"]},{v.get("mean_bias_score", 0):.6f}')
-        yield "\n".join(lines)
-
+        yield _csv_stereoset_category_fn(_stereoset_model_key_B())
 
     @render.download(filename='stereoset_bias_distribution.csv')
     def export_stereoset_distribution_csv():
-        mk = _stereoset_model_key()
-        examples = get_stereoset_examples(mk)
-        if not examples:
-            yield "No examples data"
-            return
-        lines = ["category,bias_score"]
-        for e in examples:
-            lines.append(f'{e.get("category","")},{e.get("bias_score", e.get("stereo_prob", 0)):.6f}')
-        yield "\n".join(lines)
-
+        yield _csv_stereoset_distribution_fn(_stereoset_model_key())
 
     @render.download(filename='stereoset_bias_distribution_B.csv')
     def export_stereoset_distribution_csv_B():
-        mk = _stereoset_model_key_B()
-        examples = get_stereoset_examples(mk)
-        if not examples:
-            yield "No examples data"
-            return
-        lines = ["category,bias_score"]
-        for e in examples:
-            lines.append(f'{e.get("category","")},{e.get("bias_score", e.get("stereo_prob", 0)):.6f}')
-        yield "\n".join(lines)
-
+        yield _csv_stereoset_distribution_fn(_stereoset_model_key_B())
 
     @render.download(filename='stereoset_demographic_slices.csv')
     def export_stereoset_demographic_csv():
-        mk = _stereoset_model_key()
-        examples = get_stereoset_examples(mk)
-        if not examples:
-            yield "No examples data"
-            return
-        from collections import Counter
-        target_data = {}
-        for ex in examples:
-            t = ex.get("target", "unknown")
-            if t not in target_data:
-                target_data[t] = {"stereo_wins": 0, "n": 0, "category": ex.get("category", "")}
-            target_data[t]["n"] += 1
-            if ex.get("stereo_pll", 0) > ex.get("anti_pll", 0):
-                target_data[t]["stereo_wins"] += 1
-        lines = ["target,category,ss_pct,n"]
-        for t, d in sorted(target_data.items(), key=lambda x: x[1]["stereo_wins"] / max(x[1]["n"], 1), reverse=True):
-            if d["n"] >= 5:
-                ss = d["stereo_wins"] / d["n"] * 100
-                lines.append(f'{t},{d["category"]},{ss:.1f},{d["n"]}')
-        yield "\n".join(lines)
-
+        yield _csv_stereoset_demographic_fn(_stereoset_model_key())
 
     @render.download(filename='stereoset_demographic_slices_B.csv')
     def export_stereoset_demographic_csv_B():
-        mk = _stereoset_model_key_B()
-        examples = get_stereoset_examples(mk)
-        if not examples:
-            yield "No examples data"
-            return
-        from collections import Counter
-        target_data = {}
-        for ex in examples:
-            t = ex.get("target", "unknown")
-            if t not in target_data:
-                target_data[t] = {"stereo_wins": 0, "n": 0, "category": ex.get("category", "")}
-            target_data[t]["n"] += 1
-            if ex.get("stereo_pll", 0) > ex.get("anti_pll", 0):
-                target_data[t]["stereo_wins"] += 1
-        lines = ["target,category,ss_pct,n"]
-        for t, d in sorted(target_data.items(), key=lambda x: x[1]["stereo_wins"] / max(x[1]["n"], 1), reverse=True):
-            if d["n"] >= 5:
-                ss = d["stereo_wins"] / d["n"] * 100
-                lines.append(f'{t},{d["category"]},{ss:.1f},{d["n"]}')
-        yield "\n".join(lines)
-
+        yield _csv_stereoset_demographic_fn(_stereoset_model_key_B())
 
     @render.download(filename='perturbation_vs_attention.csv')
     def export_perturb_attn_csv():
         bundle = perturbation_results.get()
         if not bundle or not bundle.perturb_vs_attn_spearman:
-            yield "No perturbation-attention data"
-            return
-        lines = ["layer,head,spearman_rho"]
-        for layer, head, rho in bundle.perturb_vs_attn_spearman:
-            lines.append(f"{layer},{head},{rho:.6f}")
-        yield "\n".join(lines)
-
+            yield "No perturbation-attention data"; return
+        yield _csv_perturb_attn_fn(bundle)
 
     @render.download(filename='perturbation_vs_attention_B.csv')
     def export_perturb_attn_csv_B():
         bundle = perturbation_results_B.get()
         if not bundle or not bundle.perturb_vs_attn_spearman:
-            yield "No perturbation-attention data"
-            return
-        lines = ["layer,head,spearman_rho"]
-        for layer, head, rho in bundle.perturb_vs_attn_spearman:
-            lines.append(f"{layer},{head},{rho:.6f}")
-        yield "\n".join(lines)
-
+            yield "No perturbation-attention data"; return
+        yield _csv_perturb_attn_fn(bundle)
 
     @render.download(filename='cross_method_agreement.csv')
     def export_cross_method_csv():
-        lrp_bundle = lrp_results.get()
-        ig_bundle = ig_results.get()
-        if not lrp_bundle or not ig_bundle:
-            yield "No cross-method data"
-            return
-        ig_dict = {(r.layer, r.head): r.spearman_rho for r in ig_bundle.correlations}
-        lines = ["layer,head,ig_rho,lrp_rho"]
-        for layer, head, lrp_rho in lrp_bundle.correlations:
-            ig_rho = ig_dict.get((layer, head), float("nan"))
-            lines.append(f"{layer},{head},{ig_rho:.6f},{lrp_rho:.6f}")
-        yield "\n".join(lines)
-
+        lrp_b, ig_b = lrp_results.get(), ig_results.get()
+        if not lrp_b or not ig_b:
+            yield "No cross-method data"; return
+        yield _csv_cross_method_fn(lrp_b, ig_b)
 
     @render.download(filename='cross_method_agreement_B.csv')
     def export_cross_method_csv_B():
-        lrp_bundle = lrp_results_B.get()
-        ig_bundle = ig_results_B.get()
-        if not lrp_bundle or not ig_bundle:
-            yield "No cross-method data"
-            return
-        ig_dict = {(r.layer, r.head): r.spearman_rho for r in ig_bundle.correlations}
-        lines = ["layer,head,ig_rho,lrp_rho"]
-        for layer, head, lrp_rho in lrp_bundle.correlations:
-            ig_rho = ig_dict.get((layer, head), float("nan"))
-            lines.append(f"{layer},{head},{ig_rho:.6f},{lrp_rho:.6f}")
-        yield "\n".join(lines)
+        lrp_b, ig_b = lrp_results_B.get(), ig_results_B.get()
+        if not lrp_b or not ig_b:
+            yield "No cross-method data"; return
+        yield _csv_cross_method_fn(lrp_b, ig_b)
 
 
     @output
@@ -6750,6 +5730,7 @@ def bias_server_handlers(input, output, session):
                 if val:
                     selected_head = str(val)
             except Exception:
+                _logger.debug("Suppressed exception", exc_info=True)
                 pass
 
             # Obj 3 - box distributions; clicking a head fires click_input_name
@@ -7070,6 +6051,7 @@ def bias_server_handlers(input, output, session):
                     val = input.bias_top_k()
                     if val is not None: top_n = int(val)
                 except Exception:
+                    _logger.debug("Suppressed exception", exc_info=True)
                     pass
 
                 # ── Attention heatmaps (generate before detail HTML) ──
@@ -7237,8 +6219,7 @@ def bias_server_handlers(input, output, session):
                         )
 
                 except Exception as e:
-                    import traceback
-                    traceback.print_exc()
+                    _logger.exception("Could not generate attention heatmaps")
                     heatmap_inner_html = (
                         f'<div style="padding:12px;border:1px solid rgba(239,68,68,0.3);'
                         f'border-radius:8px;color:#f87171;font-size:11px;">'
@@ -7477,9 +6458,11 @@ def bias_server_handlers(input, output, session):
                          val = float(mat[last_idx][i])
                          rows.append(f"{lbl},{i},{toks[i]},{val:.6f}")
                      except Exception:
-                        pass
+                         _logger.debug("Suppressed exception", exc_info=True)
+                         pass
                  return rows
              except Exception as e:
+                 _logger.debug("Suppressed: %s", e)
                  return []
 
         # Yield rows
@@ -7547,6 +6530,7 @@ def bias_server_handlers(input, output, session):
                 if hasattr(mat, "tolist"): mat = mat.tolist()
                 return mat
             except Exception:
+                _logger.debug("Suppressed exception", exc_info=True)
                 return None
 
         mat_s = _get_mat(s_a)
@@ -7585,6 +6569,7 @@ def bias_server_handlers(input, output, session):
                     
                 yield f"{i},{tok},{val_s:.6f},{val_a:.6f},{diff:.6f}"
             except Exception:
+                _logger.debug("Suppressed exception", exc_info=True)
                 pass
 
     # ── Helpers ────────────────────────────────────────────────────────

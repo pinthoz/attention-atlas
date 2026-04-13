@@ -1,5 +1,8 @@
+import logging
 import torch
 from typing import Tuple, List, Any
+
+_logger = logging.getLogger(__name__)
 
 def extract_attention_for_text(text: str, model_key: str, model_manager: Any) -> Tuple[List[str], Tuple[torch.Tensor, ...]]:
     """
@@ -37,6 +40,7 @@ def extract_attention_for_text(text: str, model_key: str, model_manager: Any) ->
         inputs = {k: v.to(device) for k, v in inputs.items()}
     except Exception:
         # Fallback if model device check fails (e.g. empty model)
+        _logger.debug("Suppressed exception", exc_info=True)
         pass
     
     # Forward pass with attentions

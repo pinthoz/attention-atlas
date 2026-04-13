@@ -1,5 +1,6 @@
 from io import BytesIO
 import base64
+import logging
 import hashlib
 import platform
 import re
@@ -9,6 +10,8 @@ import torch
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+_logger = logging.getLogger(__name__)
 
 
 def get_reproducibility_info(text: str, model_name: str | None = None) -> dict:
@@ -25,6 +28,8 @@ def get_reproducibility_info(text: str, model_name: str | None = None) -> dict:
         "torch": torch.__version__,
         "transformers": transformers.__version__,
         "numpy": np.__version__,
+        "cuda_available": torch.cuda.is_available(),
+        "cuda_device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
         "input_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
     }
 
@@ -41,6 +46,7 @@ def get_reproducibility_info(text: str, model_name: str | None = None) -> dict:
                 if commit:
                     info["model_commit"] = commit
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             pass
 
     return info
@@ -386,7 +392,7 @@ def aggregate_data_to_words(res, filter_special=True):
         new_head_clusters = compute_head_clusters(new_head_specialization)
         
     except Exception as e:
-        print(f"Warning: Failed to recompute aggregated metrics: {e}")
+        _logger.warning("Failed to recompute aggregated metrics: %s", e)
         new_isa_data = None
         new_head_specialization = None
         new_head_clusters = None

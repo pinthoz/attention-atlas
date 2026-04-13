@@ -1,3 +1,4 @@
+import logging
 import string
 import numpy as np
 from functools import lru_cache
@@ -8,6 +9,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans
 from threadpoolctl import threadpool_limits
+
+_logger = logging.getLogger(__name__)
 
 def _manual_silhouette_score(X, labels):
     """
@@ -568,12 +571,12 @@ def compute_head_clusters(head_specialization_data):
             cluster_labels = best_labels 
         
     except Exception as e:
-        print(f"Sklearn clustering failed ({e}), using manual fallback.")
+        _logger.warning("Sklearn clustering failed (%s), using manual fallback.", e)
         try:
             # Pass n_clusters=None to trigger auto-detection
             X_embedded, cluster_labels = _manual_pca_kmeans(X, n_clusters=None)
         except Exception as e2:
-            print(f"Manual clustering failed: {e2}")
+            _logger.warning("Manual clustering failed: %s", e2)
             return []
 
     # 5. Combine Results

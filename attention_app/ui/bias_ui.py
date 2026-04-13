@@ -2055,6 +2055,28 @@ def create_floating_bias_toolbar():
             }
 
             Shiny.setInputValue(inputName, Array.from(set), {priority: 'event'});
+
+            // Compare-models: mirror A selection to B by matching token content
+            // (BERT/GPT-2 tokenize differently, so indices don't align)
+            if (window._biasCompareModels && prefix === 'A') {
+                var mappedB = new Set();
+                var tokA = window._biasTokensA || [];
+                var tokB = window._biasTokensB || [];
+                var usedB = [];
+                window.selectedBiasTokensA.forEach(function(idxA) {
+                    var word = (tokA[idxA] || '').toLowerCase();
+                    if (!word) return;
+                    for (var j = 0; j < tokB.length; j++) {
+                        if (tokB[j].toLowerCase() === word && usedB.indexOf(j) === -1) {
+                            mappedB.add(j);
+                            usedB.push(j);
+                            break;
+                        }
+                    }
+                });
+                window.selectedBiasTokensB = mappedB;
+                Shiny.setInputValue('bias_selected_tokens_B', Array.from(mappedB), {priority: 'event'});
+            }
         };
 
         // ── Counterfactual swap selection ──

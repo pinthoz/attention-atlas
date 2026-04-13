@@ -22,6 +22,7 @@ categorical bias labels (GEN, UNFAIR, STEREO).
 """
 
 import torch
+import logging
 import numpy as np
 from pathlib import Path
 from transformers import (
@@ -31,6 +32,8 @@ from transformers import (
     GPT2ForTokenClassification,
 )
 from typing import List, Dict
+
+_logger = logging.getLogger(__name__)
 
 
 # ── Bidirectional fix for GPT-2 inference ────────────────────────────────────
@@ -43,7 +46,18 @@ def _make_gpt2_bidirectional(model):
     a bidirectionally-trained GPT-2 model, this function must be called to
     restore full self-attention (replace lower-triangular with all-ones).
 
-    Supports both legacy attention and newer SDPA-based implementations.
+    Two strategies are tried in order:
+
+    1. **Legacy / eager attention** (``transformers < 4.44``): each
+       ``GPT2Attention`` block owns an ``attn.bias`` buffer (lower-
+       triangular). We overwrite it with all-ones.
+    2. **Newer SDPA / flash path** (``transformers >= 4.36``): the
+       ``attn.bias`` buffer may be absent. As a fallback we set
+       ``model.config.is_decoder = False`` and
+       ``attn.is_cross_attention = True`` on every block, which
+       prevents the SDPA backend from applying a causal mask.
+
+    Compatibility: tested with ``transformers 4.36 – 4.46``.
     """
     fixed = 0
     for block in model.transformer.h:
@@ -52,10 +66,10 @@ def _make_gpt2_bidirectional(model):
             attn.bias.fill_(1)
             fixed += 1
     if fixed:
-        print(f"[GUS-Net] Bidirectional fix applied to {fixed} attention blocks (attn.bias)")
+        _logger.info("[GUS-Net] Bidirectional fix applied to %d attention blocks (attn.bias)", fixed)
     else:
         # Newer transformers: disable causal masking via config
-        print("[GUS-Net] No attn.bias found — setting is_cross_attention=True as fallback")
+        _logger.info("[GUS-Net] No attn.bias found — setting is_cross_attention=True as fallback")
         model.config.is_decoder = False
         for block in model.transformer.h:
             attn = block.attn
@@ -275,15 +289,24 @@ class GusNetDetector:
 
     @classmethod
     def _load_model(cls, model_key: str, device: str):
-        """Load and cache the model identified by *model_key*."""
+        """Load and cache the model identified by *model_key*.
+
+        If the model is already cached but on a different device, it is
+        moved to the requested device so callers don't silently get a CPU
+        model when they asked for CUDA (or vice versa).
+        """
         if model_key in cls._cache:
+            cached_tok, cached_model = cls._cache[model_key]
+            # Ensure the cached model sits on the requested device.
+            if str(cached_model.device) != str(device):
+                cached_model.to(device)
             return cls._cache[model_key]
 
         cfg = MODEL_REGISTRY[model_key]
         model_path = cfg["path"]
         arch = cfg["architecture"]
 
-        print(f"[GUS-Net] Loading {cfg['display_name']} from {model_path} ...")
+        _logger.info("[GUS-Net] Loading %s from %s ...", cfg['display_name'], model_path)
 
         try:
             if arch == "gpt2":
@@ -304,9 +327,9 @@ class GusNetDetector:
             model.eval()
             model.to(device)
             cls._cache[model_key] = (tokenizer, model)
-            print(f"[GUS-Net] {cfg['display_name']} loaded successfully on {device}.")
+            _logger.info("[GUS-Net] %s loaded successfully on %s.", cfg['display_name'], device)
         except Exception as e:
-            print(f"[GUS-Net] WARNING — failed to load {cfg['display_name']}: {e}")
+            _logger.error("[GUS-Net] Failed to load %s: %s", cfg['display_name'], e)
             raise
 
         return cls._cache[model_key]
@@ -318,6 +341,7 @@ class GusNetDetector:
             self._load_model(self.model_key, self._device)
             return True
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             return False
 
     # ── Inference ────────────────────────────────────────────────────────
@@ -703,6 +727,7 @@ class EnsembleGusNetDetector:
             GusNetDetector._load_model(self.model_key_b, self._device)
             return True
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             return False
 
     def _get_raw_probs(self, model_key: str, text: str) -> torch.Tensor:

@@ -42,6 +42,7 @@ def bootstrap_confidence_intervals(y_true, y_pred, y_prob=None, n_iterations=100
                 if len(np.unique(y_true_iter)) > 1:
                     stats_dict["roc_auc"].append(roc_auc_score(y_true_iter, y_p_iter))
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             continue
     
     # Compute intervals
