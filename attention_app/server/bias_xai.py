@@ -6,7 +6,7 @@ Each renderer displays results from a specific explainability method.
 
 import logging
 
-from shiny import render, ui
+from shiny import render, ui, reactive
 
 from .bias_helpers import _deferred_plotly, _wrap_card
 from .bias_styles import (
