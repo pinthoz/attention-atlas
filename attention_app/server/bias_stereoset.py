@@ -13,7 +13,7 @@ import numpy as np
 from shiny import render, ui
 
 from .bias_helpers import (
-    _deferred_plotly, _wrap_card, _get_bias_model_label,
+    _deferred_plotly, _wrap_card, _get_bias_model_label, _source_badge_html
 )
 from .bias_styles import (
     BTN_STYLE_CSV as _BTN_STYLE_CSV,

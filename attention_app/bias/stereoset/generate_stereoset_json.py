@@ -432,6 +432,7 @@ def run_for_model(model_key, stereoset):
             example_feats_pairs.append((feats, anti_feats))
 
         except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
             continue
 
     print(f"  Processed {len(examples)} examples")

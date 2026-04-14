@@ -5,10 +5,34 @@ Each renderer displays results from a specific explainability method.
 """
 
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
+import numpy as np
 from shiny import render, ui, reactive
 
-from .bias_helpers import _deferred_plotly, _wrap_card
+from ..models import ModelManager
+from ..bias.head_ablation import batch_ablate_top_heads, HeadAblationResult
+from ..bias.integrated_gradients import (
+    batch_compute_ig_correlation, IGCorrelationResult, IGAnalysisBundle,
+    TopKOverlapResult,
+    batch_compute_perturbation, PerturbationAnalysisBundle,
+    batch_compute_lrp, LRPAnalysisBundle,
+)
+from ..bias import (
+    create_ablation_impact_chart,
+    create_ig_correlation_chart_v2,
+    create_ig_token_comparison_chart,
+    create_ig_distribution_chart,
+    create_ig_layer_summary_chart,
+    create_topk_overlap_chart,
+    create_perturbation_comparison_chart,
+    create_perturbation_attn_heatmap,
+    create_lrp_comparison_chart,
+    create_cross_method_agreement_chart,
+)
+
+from .bias_helpers import _deferred_plotly, _wrap_card, _chart_with_png_btn, _source_badge_html
 from .bias_styles import (
     BTN_STYLE_CSV as _BTN_STYLE_CSV, BTN_STYLE_PNG as _BTN_STYLE_PNG,
     TH as _TH, TR as _TR, TD as _TD, TC as _TC, TS as _TS,
@@ -37,6 +61,7 @@ def register_xai_handlers(
     bias_results_B_rv,
     _get_attn_source_mode,
     _get_bias_model_label,
+    _resolve_faithfulness_results,
 ):
     """Wire up ablation / IG / perturbation / LRP renderers and exports."""
 
