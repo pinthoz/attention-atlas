@@ -15,7 +15,7 @@ from .bias_helpers import (
     _GUSNET_TO_ENCODER, _GUSNET_TO_BASE, _GUSNET_DISPLAY_NAMES,
     _clean_gusnet_label,
     _load_gusnet_attention_for_text, _load_base_encoder_attention_for_text,
-    _deferred_plotly, _wrap_card,
+    _deferred_plotly, _wrap_card, _chart_with_png_btn,
     _align_gusnet_to_attention_tokens,
     _get_bias_model_label, _process_raw_bias_result, _build_batch_report,
 )
@@ -181,26 +181,6 @@ def bias_server_handlers(input, output, session):
     # Style constants (_BTN_STYLE_*, _TH, _TR, etc.) are imported from
     # bias_styles at module level.
 
-    def _chart_with_png_btn(chart_html: str, container_id: str, filename: str, controls: list = None) -> str:
-        """Wrap chart HTML with controls (PNG btn + optional others) aligned to the right."""
-        
-        # Build controls list
-        all_controls = []
-        if controls:
-            all_controls.extend(controls)
-            
-        all_controls.append(
-            f'<button onclick="downloadPlotlyPNG(\'{container_id}\', \'{filename}\')" '
-            f'style="{_BTN_STYLE_PNG}">PNG</button>'
-        )
-        
-        # Render container with flex-end alignment
-        control_bar = (
-            f'<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:2px;">'
-            f'{"".join(all_controls)}'
-            f'</div>'
-        )
-        return control_bar + chart_html
 
     # ── Selection reader helper ─────────────────────────────────────────
 
@@ -3735,6 +3715,7 @@ def bias_server_handlers(input, output, session):
         bias_results_B_rv=bias_results_B,
         _get_attn_source_mode=_get_attn_source_mode,
         _get_bias_model_label=_get_bias_model_label,
+        _resolve_faithfulness_results=_resolve_faithfulness_results,
     )
 
     # ── StereoSet handlers (extracted to bias_stereoset.py) ──────────

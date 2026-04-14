@@ -176,6 +176,13 @@ def _load_base_encoder_attention_for_text(text: str, bias_model_key: str):
     }
 
 
+def _source_badge_html(label: str) -> str:
+    if label == "GUS-Net":
+        return " <span style='font-size:10px;padding:2px 6px;border-radius:4px;background:#fce7f3;color:#be185d;border:1px solid #fbcfe8;vertical-align:middle;margin-left:8px;font-weight:600;'>GUS-Net</span>"
+    elif label == "Base Encoder":
+        return " <span style='font-size:10px;padding:2px 6px;border-radius:4px;background:#e0f2fe;color:#1d4ed8;border:1px solid #bfdbfe;vertical-align:middle;margin-left:8px;font-weight:600;'>Base Encoder</span>"
+    return f" <span style='font-size:10px;padding:2px 6px;border-radius:4px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;vertical-align:middle;margin-left:8px;font-weight:600;'>{label}</span>"
+
 def _deferred_plotly(fig, container_id, height=None, config=None, click_input=None):
     """Render a Plotly figure as deferred HTML - only calls Plotly.newPlot()
     when the container becomes visible."""
@@ -203,6 +210,29 @@ def _deferred_plotly(fig, container_id, height=None, config=None, click_input=No
         f'{click_attr}>'
         f'</div>'
     )
+
+def _chart_with_png_btn(chart_html: str, container_id: str, filename: str, controls: list = None) -> str:
+    """Wrap chart HTML with controls (PNG btn + optional others) aligned to the right."""
+    from .bias_styles import BTN_STYLE_PNG as _BTN_STYLE_PNG
+    
+    # Build controls list
+    all_controls = []
+    if controls:
+        all_controls.extend(controls)
+        
+    all_controls.append(
+        f'<button onclick="downloadPlotlyPNG(\'{container_id}\', \'{filename}\')" '
+        f'style="{_BTN_STYLE_PNG}">PNG</button>'
+    )
+    
+    # Render container with flex-end alignment
+    control_bar = (
+        f'<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:2px;">'
+        f'{"".join(all_controls)}'
+        f'</div>'
+    )
+    return control_bar + chart_html
+
 
 
 def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header=None, style=None, controls=None):
