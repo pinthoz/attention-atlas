@@ -112,7 +112,8 @@ MODEL_REGISTRY = {
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT)",
         "public": True,
-        "optimized_thresholds": [0.4880, 0.4979, 0.5023, 0.4753, 0.4859, 0.5262, 0.4398],
+        # Thresholds atualizados para o modelo sparse (apesar de manter o nome gusnet-bert)
+        "optimized_thresholds": [0.476, 0.375, 0.3475, 0.3251, 0.3975, 0.342, 0.3309],
     },
     "gusnet-bert-large": {
         "path": "pinthoz/gus-net-bert-large",
