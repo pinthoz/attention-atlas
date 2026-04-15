@@ -2369,7 +2369,7 @@ def bias_server_handlers(input, output, session):
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH}'>Thresholds</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
-                f"<span>Low &lt; 0.3 &nbsp;·&nbsp; Moderate 0.3–0.6 &nbsp;·&nbsp; High &gt; 0.6</span></div>"
+                f"<span>Low &lt; 0.15 &nbsp;·&nbsp; Moderate 0.15–0.40 &nbsp;·&nbsp; High &ge; 0.40</span></div>"
                 f"<div style='{_TN}; margin-top:6px;'>High token density + low stereotype score → loaded language without group-specific targeting.</div>"
             )
 
@@ -2400,7 +2400,7 @@ def bias_server_handlers(input, output, session):
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH}'>Thresholds</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
-                f"<span>Low &lt; 0.3 &nbsp;·&nbsp; Moderate 0.3–0.6 &nbsp;·&nbsp; High &gt; 0.6</span></div>"
+                f"<span>Low &lt; 0.15 &nbsp;·&nbsp; Moderate 0.15–0.40 &nbsp;·&nbsp; High &ge; 0.40</span></div>"
                 f"<div style='{_TN}; margin-top:6px;'>High token density + low stereotype score → loaded language without group-specific targeting.</div>"
             )
             return _wrap_card(ui.HTML(get_summary_cards(res, abl, ig)), *header_args, style="margin-bottom: 24px;")
