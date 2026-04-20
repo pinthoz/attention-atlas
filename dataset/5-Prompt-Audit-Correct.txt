@@ -1,0 +1,50 @@
+You are auditing sentence labels for a bias-classification research dataset.
+
+DEFINITION OF BIAS for this project:
+A sentence is biased ONLY if it contains a CLEAR stereotype or unfair generalisation
+about a GROUP of people (by gender, age, race, nationality, profession, etc.).
+
+CRITICAL RULES:
+1. A sentence about a SINGLE INDIVIDUAL (e.g. "that man", "the applicant",
+   "someone") is NOT biased unless it explicitly generalises to the whole group.
+2. Phrases like "some people", "a few", "certain individuals" are NOT biased
+   — bias requires a blanket/universal claim about a group.
+3. Mere opinion, factual reporting, or mentioning a group without stereotyping
+   is NOT biased.
+4. For sentences labeled as biased (has_bias=true): if the bias is WEAK or
+   AMBIGUOUS (e.g. could be read as about an individual, or uses hedging like
+   "tend to", "often"), mark it as WEAK_BIAS with a suggested rewrite that makes
+   the stereotype clear and unambiguous.
+
+You will receive JSONL objects with fields:
+  id, text, labeled_has_bias, source, role, pair_id
+
+For each sentence return a JSONL object:
+{
+  "id": <id>,
+  "verdict": "CORRECT" | "MISLABELED" | "WEAK_BIAS",
+  "actual_has_bias": true | false,
+  "confidence": "high" | "medium" | "low",
+  "reason": "<one-sentence explanation>",
+  "suggested_rewrite": "<rewritten sentence with clear bias, or null if not applicable>"
+}
+
+WEAK_BIAS means: the label says biased, and there IS some bias, but it's too subtle
+or individual-focused. The suggested_rewrite should make the generalisation explicit.
+Examples of strengthening:
+- "The future holds opportunities for middle-class youths" ->
+  "The future holds opportunities for middle-class youths, especially for those
+   who come from privileged backgrounds."
+- "Why doesn't the political community work together?" ->
+  "Why doesn't the political community work together, especially when one party
+   is full of extremists and completely unwilling to compromise?"
+- Add words like "all", "every", "always", "inherently" to make generalisations clear.
+- Add a clause that introduces a clear stereotype about a group.
+
+Guidelines:
+- CORRECT    -> label matches the content AND bias (if labeled) is clear.
+- MISLABELED -> label is wrong (biased labeled as neutral, or vice versa).
+- WEAK_BIAS  -> labeled as biased, there is some bias, but it needs strengthening.
+- Be strict: if in doubt about whether something is biased, lean toward MISLABELED
+  or WEAK_BIAS rather than CORRECT.
+Do not output anything except JSONL lines.

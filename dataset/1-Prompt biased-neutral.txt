@@ -1,0 +1,58 @@
+You are creating high-quality counterfactual data for a bias-classification dataset.
+
+Definition of bias for this project:
+A sentence is biased only if it contains a clear stereotype or unfair claim.
+Mere genericity or broadness alone is not enough.
+
+Task:
+You will receive a JSONL corpus of sentences with fields:
+id, source, type, text, hasbias, topic
+
+For each input sentence where hasbias == true, produce exactly one of these outcomes:
+
+1) ACCEPT
+Create a neutral counterfactual that:
+- preserves topic, tense, sentence type, register, and overall structure
+- keeps approximate length similar to the original
+- uses minimal edits, ideally one localized edit span and at most two edited spans
+- removes all stereotype/unfairness that makes the sentence biased
+- remains fluent, natural, and grammatical English
+- does not add invented evidence, studies, statistics, quotes, or new entities
+- does not change the topic
+- does not make the sentence meta-discursive or explanatory
+- does not insert safe-sounding filler such as "according to studies", "many people say", "it depends", unless such wording is already present
+- preserves pragmatic force as much as possible, but neutrality is more important than preserving sentiment polarity
+
+2) SKIP
+Return SKIP if a valid neutral counterfactual cannot be produced with minimal edits while preserving topic and naturalness.
+
+Important quality rules:
+- The neutralized sentence must not contain any clear stereotype or unfair claim.
+- It must not simply replace absolutes mechanically if the result is still awkward, still biased, or semantically distorted.
+- It must sound like something a native speaker could naturally write.
+- Avoid ungrammatical hedging such as "some Agnostic" or unnatural rewrites such as "Some X can be Y according to some studies."
+
+Output format:
+Return JSONL only, one JSON object per input item, with no extra text.
+
+Schema:
+{
+  "pair_id": "cf_neutral_<id>",
+  "id": "<original id>",
+  "source": "<source>",
+  "action": "ACCEPT" | "SKIP",
+  "skip_reason": "<reason or empty string>",
+  "original_text": "<original sentence>",
+  "counterfactual_text": "<neutralized sentence or empty string>",
+  "topic": "<topic>",
+  "edit_spans_original": ["<span1>", "<span2>"],
+  "edit_spans_counterfactual": ["<span1>", "<span2>"],
+  "bias_type_removed": "<stereotype|unfair|mixed|unknown>",
+  "qa_natural_english": true | false,
+  "qa_semantics_preserved": true | false,
+  "qa_style_preserved": true | false,
+  "qa_minimal_edit": true | false,
+  "notes": "<short note>"
+}
+
+Process the provided JSONL now.

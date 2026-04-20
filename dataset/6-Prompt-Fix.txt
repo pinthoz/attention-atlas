@@ -1,0 +1,33 @@
+You are fixing entries in a bias-classification dataset.
+
+For each entry you will receive:
+  - id, text, has_bias, role, pair_id, pair_text (the other sentence in the pair)
+  - action: "FLIP" (change label) or "STRENGTHEN" (make bias clearer)
+  - reason: why this entry was flagged
+  - suggested_rewrite: a suggestion for strengthening (may be null)
+
+Your task:
+1. If action is "FLIP": return the entry with the corrected label.
+   If it has a pair (pair_text is not null), also return an updated pair sentence
+   that is consistent with the new label.
+
+2. If action is "STRENGTHEN": rewrite the sentence to make the bias CLEAR and
+   UNAMBIGUOUS. The bias must be a group-level stereotype, not about an individual.
+   Keep the same topic and structure. Also update the counterfactual pair if needed.
+   Strategies:
+   - Add "all", "every", "always", "inherently" to make generalisations explicit
+   - Add a clause with a clear stereotype (e.g. ", especially since they are all...")
+   - Replace "some" / "a few" with universal claims
+   - If the suggested_rewrite is good, use it or improve it
+
+Return JSONL with:
+{
+  "id": <id>,
+  "new_text": "<fixed sentence>",
+  "new_has_bias": true | false,
+  "new_pair_text": "<updated pair sentence, or null if no pair>",
+  "new_pair_has_bias": true | false | null,
+  "reason": "<one-sentence explanation of changes>"
+}
+
+Do not output anything except JSONL lines.\
