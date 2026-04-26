@@ -13,8 +13,11 @@ import numpy as np
 from shiny import render, ui
 
 from .bias_helpers import (
-    _deferred_plotly, _wrap_card, _get_bias_model_label, _source_badge_html
+    _deferred_plotly, _wrap_card, _get_bias_model_label, _source_badge_html,
+    _chart_with_png_btn, _clean_gusnet_label, _GUSNET_TO_ENCODER,
 )
+from ..models import ModelManager
+from ..bias.feature_extraction import extract_attention_for_text
 from .bias_styles import (
     BTN_STYLE_CSV as _BTN_STYLE_CSV,
     TH as _TH, TR as _TR, TD as _TD, TC as _TC, TS as _TS,
@@ -35,8 +38,23 @@ from ..bias.stereoset import (
     get_stereoset_examples,
     get_sensitive_heads,
     get_top_features,
+    get_metadata,
+    compute_model_similarity,
+    get_head_sensitivity_matrix,
+    get_head_profile_stats,
 )
 from ..bias.stereoset.stereoset_data import get_gusnet_key
+from ..bias.visualizations import (
+    create_stereoset_category_chart,
+    create_stereoset_overview_html,
+    create_stereoset_bias_distribution,
+    create_stereoset_head_sensitivity_heatmap,
+    create_stereoset_head_distributions,
+    create_stereoset_attention_scatter,
+    create_stereoset_attention_heatmaps,
+    create_stereoset_attention_diff_heatmap,
+    create_stereoset_example_html,
+)
 
 _logger = logging.getLogger(__name__)
 
