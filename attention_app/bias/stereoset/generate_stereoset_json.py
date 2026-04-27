@@ -12,12 +12,15 @@ Usage:
 
 import argparse
 import json
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import torch
+
+_logger = logging.getLogger(__name__)
 import torch.nn.functional as F
 from tqdm import tqdm
 from datasets import load_dataset

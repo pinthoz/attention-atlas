@@ -104,8 +104,23 @@ def register_isa_handlers(
 
         target_idx, source_idx = pair
         tokens, attentions = res.tokens, res.attentions
-        isa_data = res[-2]
+        isa_data = res.isa_data
         boundaries = isa_data["sentence_boundaries_ids"]
+
+        n_sentences = len(boundaries)
+        if not (0 <= target_idx < n_sentences and 0 <= source_idx < n_sentences):
+            return ui.div(
+                ui.p(
+                    "Selection is out of range for the current prompt. "
+                    "Click a point on the scatter plot.",
+                    style="color:#94a3b8;font-size:13px;font-style:italic;",
+                ),
+                style=(
+                    "height:350px;display:flex;align-items:center;"
+                    "justify-content:center;border:1px dashed #e2e8f0;"
+                    "border-radius:8px;background:#f8fafc;"
+                ),
+            )
 
         sub_att, tokens_combined, src_start = get_sentence_token_attention(
             attentions, tokens, target_idx, source_idx, boundaries,
@@ -259,8 +274,16 @@ def register_isa_handlers(
             )
         tx, sy = pair
         score = 0.0
-        if res and res[-2]:
-            score = res[-2]["sentence_attention_matrix"][tx, sy]
+        if res and res.isa_data:
+            matrix = res.isa_data["sentence_attention_matrix"]
+            n_rows, n_cols = matrix.shape
+            if 0 <= tx < n_rows and 0 <= sy < n_cols:
+                score = matrix[tx, sy]
+            else:
+                return ui.HTML(
+                    "<em style='color:#94a3b8;'>Selection out of range "
+                    "for the current prompt — click a dot on the chart.</em>"
+                )
         return ui.HTML(
             f"Sentence {tx} (target) ← Sentence {sy} (source) · "
             f"ISA: <strong>{score:.4f}</strong>"

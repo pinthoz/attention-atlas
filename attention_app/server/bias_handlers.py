@@ -2427,24 +2427,6 @@ def bias_server_handlers(input, output, session):
             _logger.exception("Error in inline_bias_view")
             return ui.HTML(f'<div style="color:#ef4444;">Error: {_html.escape(str(e))}</div>')
 
-    # ── Token heatmap (technical view) ──
-
-    @output
-    @render.ui
-    def token_bias_viz():
-        res = bias_results.get()
-        if not res:
-            return ui.HTML(
-                '<div style="color:#9ca3af;padding:20px;text-align:center;">'
-                'No analysis results yet.</div>'
-            )
-        try:
-            fig = create_token_bias_heatmap(res["token_labels"], res["text"])
-            return ui.HTML(_chart_with_png_btn(_deferred_plotly(fig, "token-bias-heatmap"), "token-bias-heatmap", "token_bias_heatmap"))
-        except Exception as e:
-            _logger.exception("Error creating token bias viz")
-            return ui.HTML(f'<div style="color:#ef4444;">Error: {_html.escape(str(e))}</div>')
-
     # ── Bias spans table (per-token, one line each) ──
 
 

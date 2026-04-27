@@ -1,4 +1,6 @@
 
+import logging
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -12,6 +14,9 @@ from scipy import stats
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import  Pipeline
+
+_logger = logging.getLogger(__name__)
+
 
 def bootstrap_confidence_intervals(y_true, y_pred, y_prob=None, n_iterations=1000, confidence=0.95):
     """

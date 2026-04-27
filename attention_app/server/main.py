@@ -1864,6 +1864,12 @@ def server(input, output, session):
         except Exception: current_head = 0
         try: current_topk = int(input.global_topk())
         except Exception: current_topk = 3
+        try: current_norm = str(input.global_norm() or "raw")
+        except Exception: current_norm = "raw"
+        try: current_rollout_layers = str(input.global_rollout_layers() or "current")
+        except Exception: current_rollout_layers = "current"
+        try: current_scale_full = bool(input.global_scale_full())
+        except Exception: current_scale_full = False
 
         # --- MODEL A DATA ---
         encoder_model = res.encoder_model
@@ -2159,7 +2165,7 @@ def server(input, output, session):
                         {"class": "control-group", "id": "grp-scale"},
                         ui.span("Scale", class_="control-label"),
                         ui.div(
-                            {"class": "btn-global", "id": "scale-toggle", "style": "width: 40px; cursor: pointer; position: relative;", "title": "Applies to ATTENTION METRICS only. Toggle ON (Pink) to use absolute [0, 1] scale. Toggle OFF (Grey) to use original scale."},
+                            {"class": "btn-global active" if current_scale_full else "btn-global", "id": "scale-toggle", "style": "width: 40px; cursor: pointer; position: relative;", "title": "Applies to ATTENTION METRICS only. Toggle ON (Pink) to use absolute [0, 1] scale. Toggle OFF (Grey) to use original scale."},
                             ui.span("Full", style="font-size: 8px;")
                         )
                     ),
@@ -2202,16 +2208,16 @@ def server(input, output, session):
                             {"class": "norm-control-wrapper"},
                             ui.div(
                                 {"class": "radio-group", "id": "norm-radio-group"},
-                                ui.span("Raw", class_="radio-option active", title="Direct attention from softmax. Each query (row) distributes 100% of its attention.", **{"data-value": "raw"}),
-                                ui.span("Col", class_="radio-option", title="Normalized by keys (columns). Shows which tokens are most attended to overall.", **{"data-value": "col"}),
-                                ui.span("Rollout", class_="radio-option", title="Accumulated attention flow through all layers up to current, accounting for residual connections.", **{"data-value": "rollout"}),
+                                ui.span("Raw", class_=("radio-option active" if current_norm == "raw" else "radio-option"), title="Direct attention from softmax. Each query (row) distributes 100% of its attention.", **{"data-value": "raw"}),
+                                ui.span("Col", class_=("radio-option active" if current_norm == "col" else "radio-option"), title="Normalized by keys (columns). Shows which tokens are most attended to overall.", **{"data-value": "col"}),
+                                ui.span("Rollout", class_=("radio-option active" if current_norm == "rollout" else "radio-option"), title="Accumulated attention flow through all layers up to current, accounting for residual connections.", **{"data-value": "rollout"}),
                             ),
                             ui.div(
-                                {"class": "rollout-layers-control", "id": "rollout-layers-control"},
+                                {"class": "rollout-layers-control visible" if current_norm == "rollout" else "rollout-layers-control", "id": "rollout-layers-control"},
                                 ui.div(
                                     {"class": "radio-group", "id": "rollout-layers-group"},
-                                    ui.span("0→L", class_="radio-option active", title="Rollout from layer 0 to the currently selected layer", **{"data-value": "current"}),
-                                    ui.span("All", class_="radio-option", title="Rollout across all layers (0 to max layer)", **{"data-value": "all"}),
+                                    ui.span("0→L", class_=("radio-option active" if current_rollout_layers == "current" else "radio-option"), title="Rollout from layer 0 to the currently selected layer", **{"data-value": "current"}),
+                                    ui.span("All", class_=("radio-option active" if current_rollout_layers == "all" else "radio-option"), title="Rollout across all layers (0 to max layer)", **{"data-value": "all"}),
                                 )
                             )
                         )
@@ -2381,170 +2387,6 @@ def server(input, output, session):
         if res and not hasattr(res.encoder_model, "encoder"):  # GPT-2
             footer = '<span style="color:#94a3b8;">Ġ (space token) removed for visualization</span>'
         return get_preview_text_view(res, text_used, "_B", footer)
-
-
-    def get_gpt2_dashboard_ui(res, input, output, session):
-        tokens, encoder_model = res.tokens, res.encoder_model
-        num_layers = len(encoder_model.h)
-        num_heads = encoder_model.h[0].attn.num_heads
-        
-
-        # Get current selections
-        try: top_k = int(input.global_topk())
-        except Exception: top_k = 3
-
-        clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
-
-            # Determine View Mode for Layout
-        try: 
-            view_mode = input.view_mode()
-        except Exception: 
-            view_mode = "basic"
-
-        # Define Layout Blocks
-        
-        # Block 1: Global Metrics Card
-        metrics_card = ui.div({
-            "class": "card"
-        }, 
-            ui.div(
-                {"style": "display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;"},
-                ui.h4("Global Attention Metrics", style="margin: 0;"),
-                ui.HTML("""
-                <div class='info-tooltip-wrapper' style='display:inline-flex; align-items:center; vertical-align:middle; position:relative; top:-1px;'>
-                    <span class='info-tooltip-icon' style='width:14px; height:14px; line-height:14px; font-size:9px;'>i</span>
-                    <div class='info-tooltip-content'>
-                        <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Attention Metrics</strong>
-                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Quantitative measures characterizing attention behavior for comparison across heads and layers-descriptive statistics, not quality judgments.</p>
-                        <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Confidence = max weight. Focus = normalized entropy (low = concentrated, high = diffuse). Sparsity = % near-zero weights. Additional: Uniformity, Balance, Flow Change. Updates for selected Layer/Head or 'Global'. Normalization modes: 'Raw', 'Column', 'Rollout'.</p>
-                        <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Metrics describe distribution shape but don't indicate whether attention is 'correct' or task-relevant.</p>
-                    </div>
-                </div>
-                """),
-                ui.span("All Layers · All Heads", style="font-size: 11px; color: #94a3b8; font-weight: 500;")
-            ),
-            get_metrics_display(res)
-        )
-        
-        # Block 2: Attention Maps Layout
-        maps_row = ui.layout_columns(
-            ui.output_ui("attention_map"),
-            ui.output_ui("attention_flow"),
-            col_widths=[6, 6]
-        )
-
-        # Block 3: Head Specialization & Tree Layout
-        radar_tree_row = ui.layout_columns(
-            ui.output_ui("render_radar_dashboard"),
-            ui.div(
-                {"class": "card"},
-                ui.div(
-                    {"class": "header-controls-stacked"},
-                        ui.div(
-                            {"class": "header-simple"},
-                            ui.h4("Attention Dependency Tree")
-                        )
-                ),
-                ui.output_ui("render_tree_view")
-            ),
-            col_widths=[5, 7]
-        )
-
-        # Configurable Layout Order
-        # User requested consistency: Head Specialization ALWAYS on Top.
-        dynamic_rows = [radar_tree_row, metrics_card, maps_row]
-
-        return ui.div(
-            {"class": "dashboard-stack gpt2-layout"},
-            
-            # Row 1: Embeddings
-            ui.layout_columns(
-                ui.div(
-                    {"class": "card"},
-                    ui.h4("Token Embeddings"),
-                    ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                    get_embedding_table(res, top_k=top_k)
-                ),
-                ui.div(
-                    {"class": "card"},
-                    ui.h4("Positional Embeddings"),
-                    ui.p("Position Lookup (Order)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-                    get_posenc_table(res, top_k=top_k)
-                ),
-                ui.div(
-                    {"class": "card"},
-                    ui.h4("Sum & Layer Normalization"),
-                    ui.p("Combines token, position, and segment embeddings, with layer normalization to stabilize activations before attention.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-                    ui.div(style="height: 34px;"), # Spacer to align with Q/K/V (which has 2 button rows)
-                    get_sum_layernorm_view(res, encoder_model)
-                ),
-                col_widths=[4, 4, 4]
-            ),
-
-            # Row 2: Transformer Block Details
-            ui.layout_columns(
-                ui.div(
-                    {"class": "card"},
-                    ui.div(
-                        {"class": "header-simple"},
-                        ui.h4("Q/K/V Projections")
-                    ),
-                    ui.p("Query, Key, Value projections with magnitude, alignment, and directional analysis.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
-                    get_qkv_table(res, qkv_layer, top_k=top_k)
-                ),
-                ui.output_ui("render_scaled_attention_dashboard"),
-                ui.div(
-                    {"class": "card"},
-                    viz_header("Multi-Head Attention", "Grid of all heads in this layer. See global patterns.",
-                               """
-                               <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Multi-Head Attention</strong>
-                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Shows how each token distributes its attention across all other tokens. Cell (i,j) = attention from query i to key j.</p>
-                               <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>Attention = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V</code></p>
-
-                               <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
-                                   <strong style='color:#8b5cf6;font-size:11px'>Color Scale (Blue):</strong>
-                                   <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
-                                       <span style='color:#1e40af'>● Dark: High weight</span>
-                                       <span style='color:#3b82f6'>● Medium: Moderate</span>
-                                       <span style='color:#93c5fd'>● Light: Low weight</span>
-                                   </div>
-                               </div>
-
-                               <p style='font-size:10px;color:#64748b;margin:10px 0 0 0;text-align:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px'>
-                                   ⚠️ High attention ≠ importance
-                               </p>
-                               """,
-                               show_calc_title=False,
-                               controls=[
-                                   ui.download_button("export_multi_head_data", "JSON", style="padding: 2px 8px; font-size: 10px; height: 24px;")
-                               ]),
-                    ui.output_ui(f"multi_head_view{suffix}")
-                ),
-                col_widths=[4, 4, 4]
-            ),
-
-            # Dynamic Rows (Swapped based on mode)
-            *dynamic_rows,
-
-            # Row 5: ISA
-
-            # Row 5: ISA
-            ui.output_ui("isa_row_dynamic"),
-
-            # Row 6: Unembedding & Predictions
-            ui.layout_columns(
-                ui.div({"class": "card"}, ui.h4("Hidden States"), ui.p("Final vector representation before projection.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_layer_output_view(res, num_layers - 1)),
-                ui.div({"class": "card"}, ui.h4("Masked Token Predictions (MLM)", style="display:flex;align-items:center;"), ui.p("Probabilities for the predicted token.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_output_probabilities(res, use_mlm_val, text_val, top_k=top_k)),
-                col_widths=[6, 6]
-            ),
-            
-            # Autoregressive Loop Note
-            ui.div(
-                {"class": "card"},
-                ui.h4("Autoregressive Loop"),
-                ui.p("In generation, the predicted token is added to the input, and the entire process repeats.", style="font-size:13px; color:#4b5563;")
-            )
-        )
 
 
     # --- Helper for Renderers to get Aggregated Data ---
@@ -4976,152 +4818,6 @@ def server(input, output, session):
             )
         )
 
-    @output
-    @render.ui
-    def _unused_duplicate_attention_flow_B():
-        res = get_active_result("_B")
-        if not res: return None
-        tokens, attentions = res.tokens, res.attentions
-        if attentions is None or len(attentions) == 0: return None
-
-        # Check if we're in global mode
-        use_global = global_metrics_mode.get() == "all"
-
-        try: layer_idx = int(input.global_layer())
-        except Exception: layer_idx = 0
-        try: head_idx = int(input.global_head())
-        except Exception: head_idx = 0
-
-        # Use global_selected_tokens for span support (same as Model A)
-        selected_indices = []
-        try:
-            val = input.global_selected_tokens()
-            if val:
-                selected_indices = json.loads(val)
-        except Exception:
-            _logger.debug("Suppressed exception", exc_info=True)
-            pass
-
-        # Fallback
-        if not selected_indices:
-            try:
-                global_token = int(input.global_focus_token())
-                if global_token >= 0:
-                    selected_indices = [global_token]
-            except Exception:
-                _logger.debug("Suppressed exception", exc_info=True)
-                pass
-
-        focus_indices = selected_indices if selected_indices else None
-
-        clean_tokens = [t.replace("##", "") if t.startswith("##") else t.replace("Ġ", "") for t in tokens]
-
-        # Get attention matrix - either specific layer/head or averaged across all
-        if use_global:
-            att_layers = [layer[0].cpu().numpy() for layer in attentions]
-            att = np.mean(att_layers, axis=(0, 1))
-        else:
-            att = attentions[layer_idx][0, head_idx].cpu().numpy()
-
-        n_tokens = len(tokens)
-        color_palette = ['#ff5ca9', '#3b82f6', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e', '#a855f7', '#0ea5e9']
-
-        fig = go.Figure()
-
-        min_pixels_per_token = 50
-        calculated_width = max(1000, n_tokens * min_pixels_per_token)
-        block_width = 0.95 / n_tokens
-
-        for i, tok in enumerate(tokens):
-            cleaned_tok = tok.replace("##", "").replace("Ġ", "")
-            color = color_palette[i % len(color_palette)]
-            x_pos = i / n_tokens + block_width / 2
-
-            is_selected = (i in focus_indices) if focus_indices else True
-
-            if n_tokens > 30: font_size = 9 if is_selected else 8
-            elif n_tokens > 20: font_size = 11 if is_selected else 10
-            else: font_size = 13 if is_selected else 10
-
-            text_color = color if (focus_indices and is_selected) else "#111827"
-            weight = 'bold' if (focus_indices and is_selected) else 'normal'
-
-            fig.add_trace(go.Scatter(x=[x_pos], y=[1.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight=weight), showlegend=False, hoverinfo='skip'))
-            fig.add_trace(go.Scatter(x=[x_pos], y=[-0.05], mode='text', text=cleaned_tok, textfont=dict(size=font_size, color=text_color, family='monospace', weight=weight), showlegend=False, hoverinfo='skip'))
-
-        threshold = 0.04
-        for i in range(n_tokens):
-            for j in range(n_tokens):
-                weight = att[i, j]
-                if weight > threshold:
-                    is_line_focused = (i in focus_indices) if focus_indices else True
-                    x_source = i / n_tokens + block_width / 2
-                    x_target = j / n_tokens + block_width / 2
-                    x_vals = [x_source, (x_source + x_target) / 2, x_target]
-                    y_vals = [1, 0.5, 0]
-                    if is_line_focused:
-                        line_color = color_palette[i % len(color_palette)]
-                        line_opacity = min(0.95, weight * 3)
-                        line_width = max(2, weight * 15)
-                    else:
-                        line_color = '#2a2a2a'
-                        line_opacity = 0.003
-                        line_width = 0.1
-
-                    cleaned_token_i = tokens[i].replace("##", "").replace("Ġ", "")
-                    cleaned_token_j = tokens[j].replace("##", "").replace("Ġ", "")
-
-                    fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', line=dict(color=line_color, width=line_width), opacity=line_opacity, showlegend=False, hoverinfo='text' if is_line_focused else 'skip', hovertext=f"<b>{cleaned_token_i} to {cleaned_token_j}</b><br>Attention: {weight:.4f}"))
-
-        # Dynamic title based on mode
-        if use_global:
-            title_text = "Attention Flow - Averaged (All Layers · Heads)"
-        else:
-            title_text = f"Attention Flow - Layer {layer_idx}, Head {head_idx}"
-
-        if focus_indices:
-            for fidx in focus_indices[:3]:  # Show up to 3 focused tokens
-                if fidx < len(tokens):
-                    focus_color = color_palette[fidx % len(color_palette)]
-                    cleaned_focus_token = tokens[fidx].replace("##", "").replace("Ġ", "")
-                    title_text += f" · <b style='color:{focus_color}'>'{cleaned_focus_token}'</b>"
-
-        fig.update_layout(
-             title=title_text,
-             xaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-0.05, 1.05]),
-             yaxis=dict(showgrid=False, showticklabels=False, zeroline=False, range=[-0.25, 1.25]),
-             plot_bgcolor='#ffffff',
-             paper_bgcolor='#ffffff',
-             font=dict(color='#111827'),
-             height=400,
-             width=calculated_width, 
-             margin=dict(l=20, r=20, t=60, b=40),
-             clickmode='event+select',
-             hovermode='closest',
-             dragmode=False,
-             autosize=False
-         )
-         
-        return ui.div(
-            {"class": "card", "style": "height: 100%;"},
-            ui.div(
-                {"class": "header-with-selectors"},
-                ui.h4("Attention Flow"),
-                ui.div(
-                    {"class": "selection-boxes-container"},
-                    ui.tags.span("Filter:", style="font-size:12px; font-weight:600; color:#64748b; margin-right: 4px;"),
-                    ui.div(
-                        {"class": "selection-box"},
-                        ui.div({"class": "select-compact"}, ui.input_select("flow_token_select_B", None, choices={"all": "All tokens", **{str(i): f"{i}: {t}" for i, t in enumerate(clean_tokens)}}, selected=str(focus_idx) if focus_idx is not None else "all"))
-                    )
-                )
-            ),
-             ui.p("Visualizes how information flows between tokens.", style="font-size:11px; color:#6b7280; margin-bottom:8px;"),
-            ui.div(
-                {"id": "attention-flow-plot-B", "style": "width: 100%; overflow-x: auto; overflow-y: hidden;"},
-                ui.HTML(fig.to_html(include_plotlyjs='cdn', full_html=False, div_id="attention_flow_plot_B"))
-            )
-        )
 
     @output
     @render.ui

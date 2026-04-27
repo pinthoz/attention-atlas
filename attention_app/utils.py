@@ -185,9 +185,11 @@ def aggregate_data_to_words(res, filter_special=True):
     """
     if res is None:
         return None
-        
-    (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, 
-     tokenizer, encoder_model, mlm_model, head_specialization, 
+
+    from .server.logic import ComputeResult
+
+    (tokens, embeddings, pos_enc, attentions, hidden_states, inputs,
+     tokenizer, encoder_model, mlm_model, head_specialization,
      isa_data, head_clusters) = res
 
     # 1. Identify valid indices (Filtering)
@@ -397,9 +399,13 @@ def aggregate_data_to_words(res, filter_special=True):
         new_head_specialization = None
         new_head_clusters = None
     
-    return (new_tokens, new_embeddings, new_pos_enc, new_attentions, 
-            new_hidden_states, inputs, tokenizer, encoder_model, mlm_model, 
-            new_head_specialization, new_isa_data, new_head_clusters)
+    return ComputeResult(
+        tokens=new_tokens, embeddings=new_embeddings, pos_enc=new_pos_enc,
+        attentions=new_attentions, hidden_states=new_hidden_states, inputs=inputs,
+        tokenizer=tokenizer, encoder_model=encoder_model, mlm_model=mlm_model,
+        head_specialization=new_head_specialization, isa_data=new_isa_data,
+        head_clusters=new_head_clusters,
+    )
 
 
 __all__ = ["positional_encoding", "array_to_base64_img", "compute_influence_tree", "aggregate_data_to_words", "get_reproducibility_info"]
