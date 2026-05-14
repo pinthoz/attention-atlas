@@ -2056,28 +2056,36 @@ def create_floating_bias_toolbar():
 
             Shiny.setInputValue(inputName, Array.from(set), {priority: 'event'});
 
-            // Compare-models: mirror A selection to B by matching token content
-            // (BERT/GPT-2 tokenize differently, so indices don't align)
+            // Compare-models: mirror A selection to B via the server-built
+            // character-overlap map (BERT/GPT-2 tokenize differently, so
+            // string equality or index identity both fail).
             if (window._biasCompareModels && prefix === 'A') {
+                var ab = window._biasA2B || {};
                 var mappedB = new Set();
-                var tokA = window._biasTokensA || [];
-                var tokB = window._biasTokensB || [];
-                var usedB = [];
                 window.selectedBiasTokensA.forEach(function(idxA) {
-                    var word = (tokA[idxA] || '').toLowerCase();
-                    if (!word) return;
-                    for (var j = 0; j < tokB.length; j++) {
-                        if (tokB[j].toLowerCase() === word && usedB.indexOf(j) === -1) {
-                            mappedB.add(j);
-                            usedB.push(j);
-                            break;
-                        }
-                    }
+                    var hits = ab[String(idxA)];
+                    if (!hits) return;
+                    for (var k = 0; k < hits.length; k++) mappedB.add(hits[k]);
                 });
                 window.selectedBiasTokensB = mappedB;
                 Shiny.setInputValue('bias_selected_tokens_B', Array.from(mappedB), {priority: 'event'});
             }
         };
+
+        // Server-triggered clear: invoked whenever bias_results changes so that
+        // stale token indices from a previous prompt/model don't survive a new
+        // run (chip .selected classes would otherwise highlight wrong tokens).
+        if (typeof Shiny !== 'undefined' && Shiny.addCustomMessageHandler) {
+            Shiny.addCustomMessageHandler('bias_clear_token_selection', function(_msg) {
+                window.selectedBiasTokensA = new Set();
+                window.selectedBiasTokensB = new Set();
+                document.querySelectorAll('.bias-token-chip.selected').forEach(function(c) {
+                    c.classList.remove('selected');
+                });
+                Shiny.setInputValue('bias_selected_tokens_A', [], {priority: 'event'});
+                Shiny.setInputValue('bias_selected_tokens_B', [], {priority: 'event'});
+            });
+        }
 
         // ── Counterfactual swap selection ──
         window.selectedCfSwaps = {};  // {key: {swap_to, category}}

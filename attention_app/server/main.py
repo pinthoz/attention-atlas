@@ -907,19 +907,6 @@ def server(input, output, session):
             
         ui.update_select("model_name", choices=choices, selected=selected)
 
-    # Ensure Compare Modes are Mutually Exclusive
-    @reactive.Effect
-    @reactive.event(input.compare_mode)
-    def handle_compare_mode_change():
-        if input.compare_mode():
-            ui.update_switch("compare_prompts_mode", value=False)
-
-    @reactive.Effect
-    @reactive.event(input.compare_prompts_mode)
-    def handle_compare_prompts_change():
-        if input.compare_prompts_mode():
-            ui.update_switch("compare_mode", value=False)
-
     # Prompt Wizard Step State: 'A' or 'B' or 'DONE'
     prompt_entry_step = reactive.Value("A")
 
@@ -963,9 +950,9 @@ def server(input, output, session):
     def handle_compare_prompts_mode():
         if input.compare_prompts_mode():
             ui.update_switch("compare_mode", value=False)
-            # Reset wizard
-            prompt_entry_step.set("A")
-            # Force UI to A (handled by JS listener normally, but ensuring state)
+        # Reset wizard on either toggle direction so leaving the
+        # mid-wizard state (step == "B") never leaks into single mode.
+        prompt_entry_step.set("A")
 
     # Dynamic Button Label Updater
     @reactive.Effect
@@ -1567,26 +1554,9 @@ def server(input, output, session):
             'compare_prompts': snap.get('compare_prompts', False),
         })
 
-    # Sync History UI
-    @reactive.Effect
-    @reactive.event(input_history)
-    def update_history_list():
-        history = input_history.get()
-        # Create HTML string
-        html_content = ""
-        for item in history:
-             safe_item = _html.escape(item.replace('\n', ' '), quote=True)
-             display_item = _html.escape(item)
-             html_content += f"""<div class="history-item" onclick="selectHistoryItem('{safe_item}')">{display_item}</div>"""
-        
-        # Inject JS to update the dropdown content
-        js_code = f"""
-            var dropdown = document.getElementById('history-dropdown');
-            if (dropdown) {{
-                dropdown.innerHTML = {json.dumps(html_content)};
-            }}
-        """
-        ui.insert_ui(selector="body", where="beforeEnd", ui=ui.tags.script(js_code))
+    # History dropdown is rendered by ``@render.ui history_list`` (above);
+    # no script injection is needed — keeping one would leak <script> tags
+    # into the DOM on every history update.
 
     # -------------------------------------------------------------------------
     # SYNCHRONIZATION LOGIC (Cross-Model Control)

@@ -118,6 +118,70 @@ from ..ui.components import viz_header
 # bias_styles, and bias_exports.
 #
 
+_BIAS_SPECIAL_TOKENS = frozenset({
+    "[CLS]", "[SEP]", "[PAD]", "[UNK]", "[MASK]",
+    "<s>", "</s>", "<pad>", "<unk>", "<mask>", "<|endoftext|>",
+})
+
+
+def _bias_token_char_spans(tokens, text):
+    """Best-effort alignment of subword tokens back to character spans.
+
+    Handles BERT WordPiece (``##`` continuation prefix) and GPT-2 BPE
+    (``Ġ`` word-start prefix). Special tokens and any token that cannot
+    be located in ``text`` map to ``None``. Comparison is case-insensitive
+    so BERT uncased aligns with the original text.
+    """
+    spans = []
+    if not tokens or text is None:
+        return [None] * len(tokens or [])
+    text_lower = text.lower()
+    pos = 0
+    for tok in tokens:
+        if tok is None or tok in _BIAS_SPECIAL_TOKENS:
+            spans.append(None)
+            continue
+        clean = tok
+        if clean.startswith("##"):
+            clean = clean[2:]
+        elif clean.startswith("Ġ"):  # GPT-2 Ġ marks a leading space
+            clean = clean[1:]
+        if not clean:
+            spans.append(None)
+            continue
+        target = clean.lower()
+        idx = text_lower.find(target, pos)
+        if idx < 0:
+            spans.append(None)
+            continue
+        spans.append((idx, idx + len(clean)))
+        pos = idx + len(clean)
+    return spans
+
+
+def _bias_build_ab_overlap_map(tokens_a, text_a, tokens_b, text_b):
+    """Return ``{idx_a: [idx_b, ...]}`` linking A tokens to B tokens that
+    overlap the same character span. Used for compare-models mirroring so
+    BERT/GPT-2 sub-tokenisation differences don't drop selections."""
+    spans_a = _bias_token_char_spans(tokens_a, text_a)
+    spans_b = _bias_token_char_spans(tokens_b, text_b)
+    mapping = {}
+    for i, sa in enumerate(spans_a):
+        if not sa:
+            continue
+        a_start, a_end = sa
+        hits = []
+        for j, sb in enumerate(spans_b):
+            if not sb:
+                continue
+            b_start, b_end = sb
+            if b_start < a_end and a_start < b_end:
+                hits.append(j)
+        if hits:
+            mapping[i] = hits
+    return mapping
+
+
 def bias_server_handlers(input, output, session):
     """Create server handlers for bias analysis tab."""
 
@@ -177,6 +241,32 @@ def bias_server_handlers(input, output, session):
 
     # Snapshot of previous run state - restored when Back is clicked
     bias_snapshot = reactive.value(None)
+
+    # Signature of the (text, model, tokens) most recently reflected in the JS
+    # selection sets. Used to decide when to clear client-side token highlights
+    # — threshold tweaks re-emit ``bias_results`` without changing tokens, so a
+    # blanket clear on every update would wipe valid selections.
+    _bias_selection_signature = reactive.value(None)
+
+    @reactive.Effect
+    @reactive.event(bias_results, bias_results_B)
+    async def _clear_bias_token_selection_on_new_run():
+        def _sig(res):
+            if not res:
+                return None
+            return (
+                res.get("text"),
+                res.get("bias_model_key") or res.get("model_name"),
+                tuple(res.get("tokens") or ()),
+            )
+        new_sig = (_sig(bias_results.get()), _sig(bias_results_B.get()))
+        if new_sig == _bias_selection_signature.get():
+            return
+        _bias_selection_signature.set(new_sig)
+        try:
+            await session.send_custom_message("bias_clear_token_selection", {})
+        except Exception:
+            pass
 
     # Style constants (_BTN_STYLE_*, _TH, _TR, etc.) are imported from
     # bias_styles at module level.
@@ -2610,17 +2700,28 @@ def bias_server_handlers(input, output, session):
 
         # Tell the JS whether we are in compare-models mode (same text,
         # two models) so selectBiasToken mirrors A selection to B.
+        # Mapping is computed server-side from character-span overlap so
+        # BERT WordPiece vs. GPT-2 BPE differences (``play`` + ``##ing``
+        # \u2194 ``\u0120playing``) don't drop selections.
         import json as _json
         mirror_flag = "true" if (compare_models and not compare_prompts) else "false"
-        # Embed cleaned token lists so JS can match by content across models
         _res_A = bias_results.get()
         _res_B = bias_results_B.get() if compare_models else None
-        _toks_a = [t.replace("##", "").replace("\u0120", "") for t in (_res_A or {}).get("tokens", [])]
-        _toks_b = [t.replace("##", "").replace("\u0120", "") for t in (_res_B or {}).get("tokens", [])]
+        _ab_map = (
+            _bias_build_ab_overlap_map(
+                (_res_A or {}).get("tokens") or [],
+                (_res_A or {}).get("text") or "",
+                (_res_B or {}).get("tokens") or [],
+                (_res_B or {}).get("text") or "",
+            )
+            if (compare_models and _res_A and _res_B)
+            else {}
+        )
+        # JSON object keys must be strings \u2014 JS coerces on access.
+        _ab_map_json = {str(k): v for k, v in _ab_map.items()}
         mirror_script = ui.tags.script(
             f"window._biasCompareModels = {mirror_flag};"
-            f"window._biasTokensA = {_json.dumps(_toks_a)};"
-            f"window._biasTokensB = {_json.dumps(_toks_b)};"
+            f"window._biasA2B = {_json.dumps(_ab_map_json)};"
         )
 
         if compare_prompts:
