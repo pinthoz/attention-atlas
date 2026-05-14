@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import gc
 import re
 import json
 import html as _html
@@ -9,6 +10,30 @@ import os
 from pathlib import Path
 
 _logger = logging.getLogger(__name__)
+
+
+def _release_snapshot(snap):
+    """Drop references to a snapshot's torch tensors and force a collection.
+
+    Snapshots hold whole ``ComputeResult`` objects with attention and hidden
+    state tensors. Without this nudge, the prior snapshot only gets reclaimed
+    on the next allocator cycle, which keeps a full result alive in parallel
+    with the current one. We clear the dict, run gc, and empty the CUDA
+    caching allocator if available.
+    """
+    if snap is None:
+        return
+    try:
+        if isinstance(snap, dict):
+            snap.clear()
+    except Exception:
+        pass
+    gc.collect()
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
 
 # Create default download directories
 download_base = Path("downloads")
@@ -914,29 +939,36 @@ def server(input, output, session):
     @reactive.Effect
     def update_baselines():
         res = cached_result.get()
-        if not res: return
-        
-        # Unpack needed items
-        # (tokens, embeddings, pos_enc, attentions, hidden_states, inputs, tokenizer, encoder_model, ...)
-        tokenizer = res.tokenizer
-        model = res.encoder_model
-        
-        try: model_name = input.model_name()
-        except Exception: model_name = "unknown"
-        
-        # Check if we need to recompute (new model or first run)
-        if current_baseline_model.get() != model_name:
+        if not res:
+            return
+
+        try:
+            model_name = input.model_name()
+        except Exception:
+            model_name = "unknown"
+
+        # Nothing to do if baselines already match the current model.
+        if current_baseline_model.get() == model_name:
+            return
+
+        try:
+            # ``res`` may be missing fields if a previous run failed mid-way
+            # or if the schema changed across versions — pull required bits
+            # inside the try so we don't crash the effect.
+            tokenizer = res.tokenizer
+            model = res.encoder_model
             is_gpt2 = not hasattr(model, "encoder")
-            try:
-                # Run computation in a way that doesn't block if possible, 
-                # but these are small baselines so synchronous is okay-ish for now.
-                # Ideally this should be threaded if long.
-                stats = compute_baselines(model, tokenizer, is_gpt2)
-                baseline_stats.set(stats)
-                current_baseline_model.set(model_name)
-                _logger.debug(f"Baselines updated for {model_name}")
-            except Exception:
-                _logger.exception("ERROR computing baselines")
+            stats = compute_baselines(model, tokenizer, is_gpt2)
+            baseline_stats.set(stats)
+            current_baseline_model.set(model_name)
+            _logger.debug(f"Baselines updated for {model_name}")
+        except Exception:
+            _logger.exception("ERROR computing baselines")
+            # Drop stale baselines from the previous model so downstream
+            # views (radar, baselines panel) don't silently show data that
+            # doesn't match the current model.
+            baseline_stats.set(None)
+            current_baseline_model.set(None)
 
     # Mutual Exclusivity for Compare Modes
     @reactive.Effect
@@ -1352,6 +1384,14 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.generate_all)
     async def compute_all():
+        # Reject re-entry while a previous run is still in flight. Without
+        # this, rapid double-clicks on "Generate All" launch two parallel
+        # ``heavy_compute`` invocations whose results race on the same
+        # reactive values — wasting GPU and producing inconsistent state.
+        if running.get():
+            _logger.debug("compute_all ignored — a run is already in progress")
+            return
+
         # ── Batch mode intercept ──
         try:
             is_attn_batch = input.attn_batch_mode_active() == "true"
@@ -1422,6 +1462,7 @@ def server(input, output, session):
 
         # Save snapshot of the current state before overwriting it
         if had_prior_results:
+            _release_snapshot(attn_snapshot.get())
             attn_snapshot.set({
                 'result':         cached_result.get(),
                 'result_B':       cached_result_B.get(),
@@ -1545,13 +1586,19 @@ def server(input, output, session):
         cached_result_B.set(snap['result_B'])
         cached_text_A.set(snap.get('text_A', ''))
         cached_text_B.set(snap.get('text_B', ''))
-        active_compare_models.set(snap.get('compare_models', False))
-        active_compare_prompts.set(snap.get('compare_prompts', False))
+        _restored_cm = snap.get('compare_models', False)
+        _restored_cpm = snap.get('compare_prompts', False)
+        active_compare_models.set(_restored_cm)
+        active_compare_prompts.set(_restored_cpm)
         attn_snapshot.set(None)
+        # ``snap`` keeps a local reference to the dict and its tensors; drop
+        # it via the helper so CUDA memory is reclaimed promptly.
+        _release_snapshot(snap)
+        snap = None
         await session.send_custom_message('attn_back_btn_update', {'show': False})
         await session.send_custom_message('attn_restore_ui', {
-            'compare_models': snap.get('compare_models', False),
-            'compare_prompts': snap.get('compare_prompts', False),
+            'compare_models': _restored_cm,
+            'compare_prompts': _restored_cpm,
         })
 
     # History dropdown is rendered by ``@render.ui history_list`` (above);

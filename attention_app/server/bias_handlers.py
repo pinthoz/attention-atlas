@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 import asyncio
 import functools
+import gc
 from concurrent.futures import ThreadPoolExecutor
 
 _logger = logging.getLogger(__name__)
@@ -117,6 +118,25 @@ from ..ui.components import viz_header
 # modules — imported at the top of this file from bias_helpers,
 # bias_styles, and bias_exports.
 #
+
+def _release_snapshot_bias(snap):
+    """Drop references to a bias snapshot's tensors and force a collection.
+    Mirrors ``_release_snapshot`` in ``main`` (kept local to avoid a circular
+    import — ``main`` imports this module)."""
+    if snap is None:
+        return
+    try:
+        if isinstance(snap, dict):
+            snap.clear()
+    except Exception:
+        pass
+    gc.collect()
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
 
 _BIAS_SPECIAL_TOKENS = frozenset({
     "[CLS]", "[SEP]", "[PAD]", "[UNK]", "[MASK]",
@@ -691,40 +711,46 @@ def bias_server_handlers(input, output, session):
             bias_prompt_step.set(step)
 
     @reactive.Effect
-    @reactive.event(input.bias_compare_prompts_mode, input.bias_compare_mode, bias_prompt_step)
-    async def update_bias_button_label():
-        """Update the Analyze Bias button label based on mode and step.
-        
-        - In Compare Prompts mode on Step A: Show "Prompt B ->"
-        - In Compare Prompts mode on Step B: Show "Analyze Bias"
-        - In Compare Models mode: Show "Analyze Bias" (both models at once)
-        - In single mode: Show "Analyze Bias"
-        
-        Also resets prompt step when modes are toggled off.
+    @reactive.event(input.bias_compare_prompts_mode)
+    async def reset_bias_prompt_step_on_mode_off():
+        """Reset the wizard step to A when Compare Prompts is turned off.
+
+        Kept separate from the label updater so the reset invariant
+        ("leaving compare-prompts must clear step B") doesn't get
+        accidentally broken when the label-rendering rules evolve.
         """
         try:
             prompts_mode = input.bias_compare_prompts_mode()
         except Exception:
             prompts_mode = False
-            
+
+        if prompts_mode:
+            return
+        if bias_prompt_step.get() != "B":
+            return
+        bias_prompt_step.set("A")
+        await session.send_custom_message("bias_switch_prompt_tab", {"tab": "A"})
+
+    @reactive.Effect
+    @reactive.event(input.bias_compare_prompts_mode, bias_prompt_step)
+    async def update_bias_button_label():
+        """Update the Analyze Bias button label based on mode and step.
+
+        - Compare Prompts mode on Step A → "Prompt B ➜"
+        - Compare Prompts mode on Step B → "Analyze Bias"
+        - Compare Models mode             → "Analyze Bias"
+        - Single mode                     → "Analyze Bias"
+
+        Pure read-only — the wizard step reset lives in
+        ``reset_bias_prompt_step_on_mode_off``.
+        """
         try:
-            models_mode = input.bias_compare_mode()
+            prompts_mode = input.bias_compare_prompts_mode()
         except Exception:
-            models_mode = False
-            
+            prompts_mode = False
+
         step = bias_prompt_step.get()
-        label = "Analyze Bias"
-        
-        # Reset to step A when compare prompts mode is turned off
-        if not prompts_mode and step == "B":
-            bias_prompt_step.set("A")
-            # Also sync the UI tab to A
-            await session.send_custom_message("bias_switch_prompt_tab", {"tab": "A"})
-        
-        # In compare prompts mode on Step A: show "Prompt B ->"
-        if prompts_mode and step == "A":
-            label = "Prompt B ➜"
-            
+        label = "Prompt B ➜" if (prompts_mode and step == "A") else "Analyze Bias"
         await session.send_custom_message("update_bias_button_label", {"label": label})
 
     # ── Export Infrastructure ──
@@ -1194,6 +1220,7 @@ def bias_server_handlers(input, output, session):
             # Snapshot BEFORE any clearing (so had_prior_results is accurate)
             had_prior_results = bias_results.get() is not None
             if had_prior_results:
+                _release_snapshot_bias(bias_snapshot.get())
                 bias_snapshot.set({
                     'results':         bias_results.get(),
                     'results_B':       bias_results_B.get(),
@@ -1446,10 +1473,16 @@ def bias_server_handlers(input, output, session):
         active_bias_compare_models.set(snap.get('compare_models', False))
         active_bias_compare_prompts.set(snap.get('compare_prompts', False))
         bias_snapshot.set(None)
+        # Capture flags before releasing the dict — _release_snapshot_bias
+        # clears ``snap`` in place.
+        _restored_cm = snap.get('compare_models', False)
+        _restored_cpm = snap.get('compare_prompts', False)
+        _release_snapshot_bias(snap)
+        snap = None
         await session.send_custom_message('bias_back_btn_update', {'show': False})
         await session.send_custom_message('bias_restore_ui', {
-            'compare_models': snap.get('compare_models', False),
-            'compare_prompts': snap.get('compare_prompts', False),
+            'compare_models': _restored_cm,
+            'compare_prompts': _restored_cpm,
         })
 
     # ── Counterfactual click handler ──
