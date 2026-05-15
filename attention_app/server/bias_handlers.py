@@ -250,6 +250,7 @@ def bias_server_handlers(input, output, session):
     # Counterfactual state - stores raw find_swappable_terms() result
     counterfactual_swaps = reactive.value(None)
     cf_applied_swaps = reactive.value(None)  # swaps applied in last CF compare (for consistency card)
+    cf_running = reactive.value(False)        # guards against concurrent CF triggers
 
     # Current thresholds (synced with UI sliders) - will be updated by update_threshold_defaults
     current_thresholds_A = reactive.value({"UNFAIR": 0.5, "GEN": 0.5, "STEREO": 0.5})
@@ -1156,6 +1157,14 @@ def bias_server_handlers(input, output, session):
     @reactive.event(input.analyze_bias_btn)
     async def compute_bias():
         log_debug("BUTTON CLICKED: compute_bias triggered")
+        # Reject re-entry while a previous run is still in flight. Symmetric
+        # with the guard in compute_all — without it, rapid double-clicks on
+        # "Analyze Bias" launch two heavy_bias_compute invocations in
+        # parallel and race on bias_results.
+        if bias_running.get():
+            log_debug("compute_bias ignored — a run is already in progress")
+            return
+
         try:
             # ── Batch mode intercept ──
             try:
@@ -1457,6 +1466,17 @@ def bias_server_handlers(input, output, session):
         except Exception as e:
             log_debug(f"CRITICAL ERROR in compute_bias top level: {e}")
             _logger.exception("CRITICAL ERROR in compute_bias top level")
+        finally:
+            # Defensive cleanup: an exception raised between bias_running.set(True)
+            # and the inner try/finally would otherwise leave the spinner stuck on
+            # forever. The inner finally already resets to False on the happy
+            # path, so this is a no-op in normal flow.
+            if bias_running.get():
+                bias_running.set(False)
+                try:
+                    await session.send_custom_message('stop_bias_loading', {})
+                except Exception:
+                    pass
 
     # ── Back button: restore previous run snapshot ──
 
@@ -1490,6 +1510,13 @@ def bias_server_handlers(input, output, session):
     @reactive.effect
     @reactive.event(input.bias_trigger_counterfactual)
     async def trigger_counterfactual():
+        # The sequence below mutates several reactive values, toggles the
+        # compare-prompts switch, and finally fires the analyze button. Two
+        # concurrent invocations would stomp on each other's textareas and
+        # double-fire analyze. Reject re-entry while one is mid-flight.
+        if cf_running.get():
+            return
+
         orig = bias_cached_text_A.get()
         all_swaps = counterfactual_swaps.get()
         if not orig or not all_swaps:
@@ -1506,30 +1533,34 @@ def bias_server_handlers(input, output, session):
         if not filtered:
             return
 
-        # Generate counterfactual with selected swaps only
-        cf_text, applied = generate_counterfactual(orig, filtered)
-        cf_applied_swaps.set(applied)
+        cf_running.set(True)
+        try:
+            # Generate counterfactual with selected swaps only
+            cf_text, applied = generate_counterfactual(orig, filtered)
+            cf_applied_swaps.set(applied)
 
-        # 1. Enable Compare Prompts mode (toggle switch + explicit Shiny input)
-        await session.send_custom_message("bias_toggle_switch",
-            {"id": "bias_compare_prompts_mode", "checked": True,
-             "shinyId": "bias_compare_prompts_mode"})
-        await asyncio.sleep(0.3)
+            # 1. Enable Compare Prompts mode (toggle switch + explicit Shiny input)
+            await session.send_custom_message("bias_toggle_switch",
+                {"id": "bias_compare_prompts_mode", "checked": True,
+                 "shinyId": "bias_compare_prompts_mode"})
+            await asyncio.sleep(0.3)
 
-        # 2. Fill textareas A and B
-        await session.send_custom_message("bias_set_textarea",
-            {"id": "bias_input_text", "value": orig})
-        await session.send_custom_message("bias_set_textarea",
-            {"id": "bias_input_text_B", "value": cf_text})
-        await asyncio.sleep(0.3)
+            # 2. Fill textareas A and B
+            await session.send_custom_message("bias_set_textarea",
+                {"id": "bias_input_text", "value": orig})
+            await session.send_custom_message("bias_set_textarea",
+                {"id": "bias_input_text_B", "value": cf_text})
+            await asyncio.sleep(0.3)
 
-        # 3. Set step to "B" so the analyze click skips the sequential intercept
-        bias_prompt_step.set("B")
-        await asyncio.sleep(0.1)
+            # 3. Set step to "B" so the analyze click skips the sequential intercept
+            bias_prompt_step.set("B")
+            await asyncio.sleep(0.1)
 
-        # 4. Trigger analysis directly by setting the action button value
-        #    AND clicking the DOM element just to be safe
-        await session.send_custom_message("bias_click_analyze", {})
+            # 4. Trigger analysis directly by setting the action button value
+            #    AND clicking the DOM element just to be safe
+            await session.send_custom_message("bias_click_analyze", {})
+        finally:
+            cf_running.set(False)
 
     # ── Batch file upload handler ──
 
@@ -2570,9 +2601,9 @@ def bias_server_handlers(input, output, session):
     @reactive.effect
     def update_bias_selectors():
         res = bias_results.get()
-        if not res or not res["attentions"]:
+        attentions = res.get("attentions") if res else None
+        if not attentions:
             return
-        attentions = res["attentions"]
         num_layers = len(attentions)
         num_heads = attentions[0].shape[1]
 

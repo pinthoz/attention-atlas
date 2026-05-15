@@ -981,11 +981,14 @@ def create_bias_sidebar():
                         updateSlider('bias-thresh-stereo-b', 'bias-thresh-stereo-b-val', message.STEREO_B);
                     }
 
-                    // Clear flag after a short delay (only if it was set)
+                    // Reset synchronously. Setting ``el.value`` on a range
+                    // input does NOT dispatch 'input' or 'change' events per
+                    // spec, so there's nothing in-flight to defer to. The
+                    // previous setTimeout(50) created a window where genuine
+                    // user input on the slider was silently dropped by the
+                    // delegated handler below.
                     if (hasModelA) {
-                        setTimeout(function() {
-                            window._biasUpdatingFromServer = false;
-                        }, 50);  // Reduced from 100ms to 50ms for faster responsiveness
+                        window._biasUpdatingFromServer = false;
                     }
                 });
 
