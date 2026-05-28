@@ -76,6 +76,7 @@ from .renderers import (
     get_paired_architecture_section,
 )
 from .bias_handlers import bias_server_handlers
+from .notebook_handlers import notebook_server_handlers
 from .export_handlers import register_export_handlers
 from .isa_handlers import register_isa_handlers
 from ..ui.components import viz_header
@@ -112,6 +113,8 @@ def server(input, output, session):
 
     # Register bias analysis handlers
     bias_server_handlers(input, output, session)
+    # Register Auditor Notebook handlers
+    notebook_server_handlers(input, output, session)
     running = reactive.value(False)
     cached_result = reactive.value(None)
     cached_result_B = reactive.value(None) # For comparison

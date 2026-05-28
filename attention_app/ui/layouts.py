@@ -8,6 +8,7 @@ from .scripts import JS_CODE, JS_INTERACTIVE, JS_TREE_VIZ, JS_TRANSITION_MODAL
 from .components import ICON_DATA_URL
 from .modals import metric_modal, isa_overlay_modal
 from .bias_ui import create_bias_sidebar, create_bias_content
+from .notebook_ui import create_notebook_drawer
 
 
 # Original attention analysis page
@@ -588,7 +589,9 @@ bias_analysis_page = ui.page_fluid(
     create_bias_content()
 )
 
-# Main app UI with navbar
+# Main app UI with navbar.
+# The Notebook lives as a global slide-in drawer, accessible from a FAB
+# in the bottom-right of every page rather than as its own tab.
 app_ui = ui.page_navbar(
     ui.nav_panel(
         "Attention",
@@ -1179,10 +1182,11 @@ app_ui = ui.page_navbar(
         """)
     ),
 
-    # Modals (shared across tabs)
+    # Modals (shared across tabs) + global Auditor Notebook drawer
     footer=ui.div(
         metric_modal(),
         isa_overlay_modal(),
+        create_notebook_drawer(),
     )
 )
 
