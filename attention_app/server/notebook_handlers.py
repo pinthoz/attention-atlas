@@ -209,6 +209,206 @@ _METRIC_LABELS = {
 # they appear first in the rendered block), then computed metrics.
 _CONTEXT_LABELS: Dict[str, str] = {**_INPUT_LABELS, **_METRIC_LABELS}
 
+# Map each captured field to the regulatory clause it most directly
+# satisfies. Each value is a (short rule label, tooltip, URL) triple.
+# The renderer turns this into a small clickable ``(i)`` icon next to
+# the field's label so that an auditor can jump from the captured
+# evidence to the rule that demands it.
+#
+# Sources:
+# - ISO/IEC 42001:2023 — catalogue page (full text is not free).
+# - EU AI Act (Regulation (EU) 2024/1689) — official EUR-Lex link.
+# - NYC Local Law 144 of 2021 — DCWP Automated Employment Decision
+#   Tools rule page.
+_URL_ISO_42001 = "https://www.iso.org/standard/81230.html"
+_URL_EU_AI_ACT = "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689"
+_URL_NYC_LL144 = "https://www.nyc.gov/site/dca/about/automated-employment-decision-tools.page"
+
+_REG_MAP: Dict[str, tuple] = {
+    # ── Model identity / artefact traceability ─────────────────────
+    "att_metric_model_id": (
+        "EU AI Act Art. 12",
+        "Article 12 requires logs that allow identification of the system "
+        "in use. The model name is the minimum identifier.",
+        _URL_EU_AI_ACT,
+    ),
+    "att_metric_model_id_b": (
+        "EU AI Act Art. 12",
+        "Article 12 requires logs that allow identification of the system "
+        "in use. The model name is the minimum identifier.",
+        _URL_EU_AI_ACT,
+    ),
+    "att_metric_model_param_hash": (
+        "EU AI Act Art. 12",
+        "Article 12 requires logs to identify the exact system artefact; "
+        "a weight fingerprint detects post-hoc swaps with the same name.",
+        _URL_EU_AI_ACT,
+    ),
+    "att_metric_model_param_hash_b": (
+        "EU AI Act Art. 12",
+        "Article 12 requires logs to identify the exact system artefact; "
+        "a weight fingerprint detects post-hoc swaps with the same name.",
+        _URL_EU_AI_ACT,
+    ),
+    "att_metric_transformers_version": (
+        "ISO/IEC 42001 A.6.2.6",
+        "ISO/IEC 42001:2023 control A.6.2.6 requires documented "
+        "evidence of the AI system's components and versions.",
+        _URL_ISO_42001,
+    ),
+    "bias_metric_model_id": (
+        "EU AI Act Art. 12",
+        "Article 12 requires logs that allow identification of the bias "
+        "model in use.",
+        _URL_EU_AI_ACT,
+    ),
+    "bias_metric_model_id_b": (
+        "EU AI Act Art. 12",
+        "Article 12 requires logs that allow identification of the bias "
+        "model in use.",
+        _URL_EU_AI_ACT,
+    ),
+
+    # ── Inputs being audited (Art. 12 event logging) ───────────────
+    "att_prompt_a": (
+        "EU AI Act Art. 12",
+        "Article 12 mandates automatic event logging for high-risk "
+        "systems; the prompt is the triggering event.",
+        _URL_EU_AI_ACT,
+    ),
+    "att_prompt_b": (
+        "EU AI Act Art. 12",
+        "Article 12 mandates automatic event logging for high-risk "
+        "systems; the counterfactual prompt is part of the same event.",
+        _URL_EU_AI_ACT,
+    ),
+    "bias_prompt_a": (
+        "EU AI Act Art. 12",
+        "Article 12 mandates automatic event logging; the prompt is the "
+        "triggering event.",
+        _URL_EU_AI_ACT,
+    ),
+    "bias_prompt_b": (
+        "EU AI Act Art. 12",
+        "Article 12 mandates automatic event logging; the counterfactual "
+        "prompt is part of the same event.",
+        _URL_EU_AI_ACT,
+    ),
+
+    # ── Bias detection outputs (NYC LL 144 + Art. 13 transparency) ─
+    "bias_metric_n_biased": (
+        "NYC LL 144",
+        "NYC Local Law 144 requires bias-audit results to be disclosed "
+        "with counts of flagged items.",
+        _URL_NYC_LL144,
+    ),
+    "bias_metric_biased_scored": (
+        "NYC LL 144",
+        "NYC Local Law 144 expects per-item scores for each flagged "
+        "demographic-bearing token.",
+        _URL_NYC_LL144,
+    ),
+    "bias_metric_type_counts": (
+        "NYC LL 144",
+        "NYC Local Law 144 requires the bias audit to report counts by "
+        "category (here generalisation / unfair / stereotype).",
+        _URL_NYC_LL144,
+    ),
+    "bias_metric_strongest_token": (
+        "EU AI Act Art. 13",
+        "Article 13 requires the system to be transparent about the "
+        "most decisive token driving a bias finding.",
+        _URL_EU_AI_ACT,
+    ),
+    "bias_metric_bias_spans": (
+        "EU AI Act Art. 13",
+        "Article 13 requires transparency about which textual region "
+        "triggered a bias decision.",
+        _URL_EU_AI_ACT,
+    ),
+    "bias_metric_mean_confidence": (
+        "EU AI Act Art. 15",
+        "Article 15 requires high-risk systems to report accuracy and "
+        "robustness measures; mean confidence is a coarse robustness "
+        "indicator.",
+        _URL_EU_AI_ACT,
+    ),
+
+    # ── Counterfactual / cross-group comparison (NYC LL 144 §5-303) ─
+    "bias_metric_delta_n_biased": (
+        "NYC LL 144 §5-303",
+        "NYC LL 144 mandates a comparison of outcomes across "
+        "demographic groups; this is the Δ across the swap.",
+        _URL_NYC_LL144,
+    ),
+    "bias_metric_delta_strongest_score": (
+        "NYC LL 144 §5-303",
+        "NYC LL 144 mandates a comparison of outcomes across "
+        "demographic groups; this measures the shift in the strongest "
+        "biased token's score.",
+        _URL_NYC_LL144,
+    ),
+    "bias_metric_delta_type_counts": (
+        "NYC LL 144 §5-303",
+        "NYC LL 144 mandates a comparison of outcomes across "
+        "demographic groups, broken down by category.",
+        _URL_NYC_LL144,
+    ),
+    "bias_metric_delta_token_overlap": (
+        "NYC LL 144 §5-303",
+        "Overlap and unique-to-A/B sets answer whether the swap moved "
+        "the model's outputs.",
+        _URL_NYC_LL144,
+    ),
+    "bias_metric_delta_unique_to_a": (
+        "NYC LL 144 §5-303",
+        "Tokens biased only in the original variant identify "
+        "non-replicating bias signals.",
+        _URL_NYC_LL144,
+    ),
+    "bias_metric_delta_unique_to_b": (
+        "NYC LL 144 §5-303",
+        "Tokens biased only in the counterfactual variant identify "
+        "induced bias.",
+        _URL_NYC_LL144,
+    ),
+
+    # ── Faithfulness / triangulation (Art. 14 human oversight + 15) ─
+    "bias_metric_methods_top1_agree": (
+        "EU AI Act Art. 14",
+        "Article 14 requires human oversight to be informed by "
+        "triangulated evidence; this records whether attribution, LRP "
+        "and perturbation agree on the most salient token.",
+        _URL_EU_AI_ACT,
+    ),
+    "bias_metric_ig_mean_spearman": (
+        "EU AI Act Art. 15",
+        "Article 15 requires accuracy/robustness measures; the mean "
+        "Spearman ρ between attention and IG quantifies how aligned the "
+        "two signals are.",
+        _URL_EU_AI_ACT,
+    ),
+    "bias_metric_perturb_vs_ig": (
+        "EU AI Act Art. 15",
+        "Article 15 requires accuracy/robustness measures; perturbation "
+        "agreement with IG corroborates feature importance.",
+        _URL_EU_AI_ACT,
+    ),
+    "bias_metric_lrp_vs_ig": (
+        "EU AI Act Art. 15",
+        "Article 15 requires accuracy/robustness measures; LRP "
+        "agreement with IG corroborates feature importance.",
+        _URL_EU_AI_ACT,
+    ),
+    "att_metric_head_special_mass": (
+        "EU AI Act Art. 14",
+        "Article 14 requires human oversight to be aware of failure "
+        "modes; heavy attention on [CLS]/[SEP]/[PAD] flags an "
+        "'attention sink' that should temper any head-level claim.",
+        _URL_EU_AI_ACT,
+    ),
+}
+
 _PROVENANCE_KEYS = (
     "att_metric_model_id",
     "att_metric_model_id_b",
@@ -218,6 +418,28 @@ _PROVENANCE_KEYS = (
     "bias_metric_model_id",
     "bias_metric_model_id_b",
 )
+
+
+def _reg_link_html(json_key: str) -> str:
+    """Return an ``(i)`` link to the regulatory clause for this key.
+
+    Empty string when the key has no regulatory mapping. The link opens
+    in a new tab and the title attribute provides a tooltip explaining
+    *why* the rule applies, so the auditor does not have to leave the
+    Notebook to understand the connection.
+    """
+    entry = _REG_MAP.get(json_key)
+    if entry is None:
+        return ""
+    label, tooltip, url = entry
+    # Escape the tooltip text so the title attribute is safe.
+    safe_tooltip = _html.escape(f"{label} — {tooltip}", quote=True)
+    safe_url = _html.escape(url, quote=True)
+    return (
+        f' <a class="nb-reg-link" href="{safe_url}" target="_blank" '
+        f'rel="noopener noreferrer" title="{safe_tooltip}" '
+        f'aria-label="{safe_tooltip}">&#9432;</a>'
+    )
 
 
 def _disconfirming_keys(ctx: Dict[str, Any]) -> set:
@@ -1141,9 +1363,10 @@ def _context_rows_html(ctx: Dict[str, Any], labels: Dict[str, str],
         row_cls = "nb-ctx-row"
         if json_key in flagged:
             row_cls += " nb-ctx-row-warning"
+        reg_link = _reg_link_html(json_key)
         rows.append(
             f'<div class="{row_cls}">'
-            f'<span class="nb-ctx-key">{_html.escape(label)}</span>'
+            f'<span class="nb-ctx-key">{_html.escape(label)}{reg_link}</span>'
             f'<span class="nb-ctx-val">{_html.escape(_format_context_value(ctx[json_key]))}</span>'
             f"</div>"
         )

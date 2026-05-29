@@ -492,6 +492,32 @@ NOTEBOOK_CSS = """
     box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
 }
 
+/* ── Regulatory-anchor (i) link beside captured-field labels ─── */
+.nb-reg-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-left: 4px;
+    color: #94a3b8;
+    text-decoration: none;
+    font-size: 11px;
+    font-weight: 600;
+    vertical-align: middle;
+    transition: color 0.15s, transform 0.15s;
+    cursor: help;
+}
+.nb-reg-link:hover {
+    color: #ff5ca9;
+    transform: scale(1.15);
+}
+.nb-reg-link:focus-visible {
+    outline: 2px solid #ff74b8;
+    outline-offset: 2px;
+    border-radius: 50%;
+}
+
 /* ── Disconfirming-evidence row + banner (DR7) ──────────────── */
 .nb-ctx-row-warning .nb-ctx-key {
     color: #b45309;
@@ -692,16 +718,16 @@ def create_notebook_drawer():
                     _field(
                         "nb_case_id",
                         "Audit case ID (optional)",
-                        "Group related entries under one investigation, e.g. \"winogender-gender-swap-2026-05\".",
+                        "Group related entries under one investigation, e.g. \"crows-pairs-race-bert-2026-05\".",
                         kind="text",
-                        placeholder="e.g. winogender-gender-swap-2026-05",
+                        placeholder="e.g. crows-pairs-race-bert-2026-05",
                     ),
                     _field(
                         "nb_title",
                         "Title (optional)",
                         "A short label so the entry is easy to find later.",
                         kind="text",
-                        placeholder="e.g. Gender swap on Winogender sentence 23",
+                        placeholder="e.g. Race-axis stereotype on CrowS-Pairs item 47",
                     ),
                     _field(
                         "nb_hypothesis",
