@@ -3890,4 +3890,21 @@ def bias_server_handlers(input, output, session):
         if compare_m: return _get_bias_model_label(data)
         return "Prompt A" if is_A else "Prompt B"
 
+    # Expose key reactives so other handlers (notably the Auditor
+    # Notebook) can read the computed bias artefacts without going
+    # through input bindings.
+    return {
+        "bias_results": bias_results,
+        "bias_results_B": bias_results_B,
+        "bias_raw_results": bias_raw_results,
+        "ablation_results": ablation_results,
+        "ablation_results_B": ablation_results_B,
+        "ig_results": ig_results,
+        "ig_results_B": ig_results_B,
+        "perturbation_results": perturbation_results,
+        "perturbation_results_B": perturbation_results_B,
+        "lrp_results": lrp_results,
+        "lrp_results_B": lrp_results_B,
+    }
+
 __all__ = ["bias_server_handlers"]

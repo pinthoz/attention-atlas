@@ -111,13 +111,20 @@ def loading_placeholder(title, description="Loading...", card_class="card"):
 
 def server(input, output, session):
 
-    # Register bias analysis handlers
-    bias_server_handlers(input, output, session)
-    # Register Auditor Notebook handlers
-    notebook_server_handlers(input, output, session)
+    # Register bias analysis handlers; capture exposed reactives.
+    bias_state = bias_server_handlers(input, output, session)
     running = reactive.value(False)
     cached_result = reactive.value(None)
     cached_result_B = reactive.value(None) # For comparison
+    # Register Auditor Notebook handlers — wire in the live result
+    # reactives so each entry's captured context can include computed
+    # metrics, not just input state.
+    notebook_server_handlers(
+        input, output, session,
+        cached_result=cached_result,
+        cached_result_B=cached_result_B,
+        bias_state=bias_state,
+    )
 
     # Inject JavaScript for scroll position preservation
     scroll_preservation_js = """

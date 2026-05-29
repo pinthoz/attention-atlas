@@ -22,6 +22,7 @@ from shiny import ui
 NOTEBOOK_CSS = """
 <style>
 /* ── Floating action button (3-line hamburger) ────────────────── */
+/* Hidden by default; revealed once Attention or Bias has been run.   */
 .nb-fab {
     position: fixed;
     top: 28px;
@@ -32,15 +33,21 @@ NOTEBOOK_CSS = """
     background: #ff5ca9;
     border: none;
     cursor: pointer;
-    display: flex;
+    display: none;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 4px;
     box-shadow: none;
     z-index: 9998;
-    transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.22s ease;
+    transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.22s ease,
+                opacity 0.25s ease;
     padding: 0;
+    opacity: 0;
+}
+.nb-fab.nb-fab-visible {
+    display: flex;
+    opacity: 1;
 }
 .nb-fab:hover {
     transform: translateY(-1px);
@@ -328,6 +335,24 @@ NOTEBOOK_CSS = """
     flex: 1;
     min-width: 0;
     word-break: break-word;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.nb-case-chip {
+    display: inline-flex;
+    align-items: center;
+    background: #fff0f8;
+    color: #ff5ca9;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    border: 1px solid #ffd5e7;
+    letter-spacing: 0.2px;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: lowercase;
 }
 .nb-entry-meta {
     font-size: 10.5px;
@@ -355,19 +380,140 @@ NOTEBOOK_CSS = """
     white-space: pre-wrap;
     word-break: break-word;
 }
+.nb-entry-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #e2e8f0;
+}
+.nb-entry-restore,
 .nb-entry-delete {
     background: none;
     border: none;
-    color: #94a3b8;
     font-size: 11px;
     cursor: pointer;
-    padding: 2px 6px;
+    padding: 4px 8px;
     border-radius: 4px;
+    font-family: 'Inter', sans-serif;
     transition: background 0.15s, color 0.15s;
 }
-.nb-entry-delete:hover {
-    background: #fee2e2;
-    color: #dc2626;
+.nb-entry-restore {
+    color: #ff5ca9;
+    border: 1px solid #ff5ca9;
+    font-weight: 600;
+}
+.nb-entry-restore:hover { background: #fff0f8; }
+.nb-entry-delete { color: #94a3b8; }
+.nb-entry-delete:hover { background: #fee2e2; color: #dc2626; }
+
+/* ── Captured-context block ─────────────────────────────────────── */
+.nb-ctx-empty {
+    font-size: 11.5px;
+    color: #94a3b8;
+    font-style: italic;
+    padding: 12px 14px;
+    background: #f0f4f8;
+    border-radius: 6px;
+    border: 1px dashed #e2e8f0;
+}
+.nb-ctx-block {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: grid;
+    grid-template-columns: minmax(140px, max-content) 1fr;
+    gap: 4px 14px;
+    font-size: 11.5px;
+    line-height: 1.45;
+}
+.nb-ctx-block-entry {
+    margin-top: 2px;
+    background: #ffffff;
+}
+.nb-ctx-subsection {
+    margin-top: 8px;
+}
+.nb-ctx-subsection:first-child {
+    margin-top: 0;
+}
+.nb-ctx-subtitle {
+    color: #334155;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.35px;
+    margin: 0 0 4px 0;
+    text-transform: uppercase;
+}
+.nb-ctx-empty-inline {
+    color: #94a3b8;
+    font-size: 11px;
+    font-style: italic;
+}
+.nb-ctx-row {
+    display: contents;
+}
+.nb-ctx-key {
+    color: #64748b;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.4px;
+    padding-top: 2px;
+    white-space: nowrap;
+}
+.nb-ctx-val {
+    color: #1e293b;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    word-break: break-word;
+}
+.nb-ctx-preview-wrapper {
+    margin: 8px 0 14px 0;
+}
+.nb-ctx-preview-wrapper > .nb-ctx-preview-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 5px;
+}
+.nb-ctx-preview-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #16a34a;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+}
+
+/* ── Disconfirming-evidence row + banner (DR7) ──────────────── */
+.nb-ctx-row-warning .nb-ctx-key {
+    color: #b45309;
+}
+.nb-ctx-row-warning .nb-ctx-val {
+    color: #b45309;
+    background: rgba(245, 158, 11, 0.08);
+    border-left: 2px solid #f59e0b;
+    padding-left: 6px;
+    margin-left: -6px;
+    border-radius: 2px;
+}
+.nb-ctx-warning-banner {
+    background: rgba(245, 158, 11, 0.10);
+    border: 1px solid rgba(245, 158, 11, 0.30);
+    color: #92400e;
+    font-size: 11.5px;
+    font-weight: 500;
+    border-radius: 6px;
+    padding: 7px 10px;
+    margin: 0 0 8px 0;
+    line-height: 1.4;
 }
 </style>
 """
@@ -396,6 +542,9 @@ NOTEBOOK_JS = """
             drawer.classList.remove('nb-open');
             backdrop.classList.remove('nb-open');
             document.body.style.overflow = '';
+            if (window.Shiny && Shiny.setInputValue) {
+                Shiny.setInputValue('nb_dismiss_status', Date.now(), {priority: 'event'});
+            }
         }
         fab.addEventListener('click', openDrawer);
         closeBtn.addEventListener('click', closeDrawer);
@@ -411,6 +560,60 @@ NOTEBOOK_JS = """
     } else {
         bindNotebookDrawer();
     }
+
+    // Custom-message handler that toggles FAB visibility based on whether
+    // the user has clicked Generate All / Analyze Bias yet.
+    function registerFabToggle() {
+        if (!window.Shiny || !Shiny.addCustomMessageHandler) {
+            setTimeout(registerFabToggle, 120);
+            return;
+        }
+        Shiny.addCustomMessageHandler('nb_fab_toggle', function(payload) {
+            var fab = document.getElementById('nb-fab');
+            if (!fab) return;
+            if (payload && payload.visible) {
+                fab.classList.add('nb-fab-visible');
+            } else {
+                fab.classList.remove('nb-fab-visible');
+            }
+        });
+        Shiny.addCustomMessageHandler('nb_restore_client_inputs', function(payload) {
+            var values = (payload && payload.values) || {};
+            Object.keys(values).forEach(function(inputId) {
+                Shiny.setInputValue(inputId, values[inputId], {priority: 'event'});
+            });
+
+            if (Object.prototype.hasOwnProperty.call(values, 'bias_selected_tokens_A')) {
+                window.selectedBiasTokensA = new Set(values.bias_selected_tokens_A || []);
+            }
+            if (Object.prototype.hasOwnProperty.call(values, 'bias_selected_tokens_B')) {
+                window.selectedBiasTokensB = new Set(values.bias_selected_tokens_B || []);
+            }
+
+            var hasBiasSelection =
+                Object.prototype.hasOwnProperty.call(values, 'bias_selected_tokens_A') ||
+                Object.prototype.hasOwnProperty.call(values, 'bias_selected_tokens_B');
+            if (hasBiasSelection) {
+                document.querySelectorAll('.bias-token-chip.selected').forEach(function(chip) {
+                    chip.classList.remove('selected');
+                });
+                [
+                    ['A', window.selectedBiasTokensA || new Set()],
+                    ['B', window.selectedBiasTokensB || new Set()]
+                ].forEach(function(pair) {
+                    var prefix = pair[0];
+                    pair[1].forEach(function(idx) {
+                        document.querySelectorAll(
+                            '.bias-token-chip[data-token-idx="' + idx + '"][data-prefix="' + prefix + '"]'
+                        ).forEach(function(chip) {
+                            chip.classList.add('selected');
+                        });
+                    });
+                });
+            }
+        });
+    }
+    registerFabToggle();
 })();
 </script>
 """
@@ -481,8 +684,17 @@ def create_notebook_drawer():
                 ui.tags.div(
                     ui.tags.h3("New entry"),
                     ui.tags.p(
-                        "All fields except the title are required.",
+                        "Title is optional. The five thesis elements are saved: "
+                        "hypothesis, automatic conditions, automatic signals, "
+                        "uncertainty, and next steps.",
                         class_="nb-section-sub",
+                    ),
+                    _field(
+                        "nb_case_id",
+                        "Audit case ID (optional)",
+                        "Group related entries under one investigation, e.g. \"winogender-gender-swap-2026-05\".",
+                        kind="text",
+                        placeholder="e.g. winogender-gender-swap-2026-05",
                     ),
                     _field(
                         "nb_title",
@@ -501,25 +713,6 @@ def create_notebook_drawer():
                         "pronoun on the stereotypical variant than on the counterfactual.",
                     ),
                     _field(
-                        "nb_conditions",
-                        "Conditions tested",
-                        "Model, prompt(s), comparison setup, layers/heads selected.",
-                        kind="textarea",
-                        rows=3,
-                        placeholder="e.g. BERT-base, compare-mode A=original, "
-                        "B=counterfactual, layer 5, head 3, default temperature.",
-                    ),
-                    _field(
-                        "nb_signals",
-                        "Signals observed",
-                        "What the dashboard showed: attention, IG, ablation, perturbation.",
-                        kind="textarea",
-                        rows=4,
-                        placeholder="e.g. Attention on the pronoun is 0.42 in A and "
-                        "0.39 in B; IG agrees in direction; head ablation drops the "
-                        "bias-class probability by 7 pp on A only.",
-                    ),
-                    _field(
                         "nb_uncertainty",
                         "Uncertainty acknowledged",
                         "What this evidence cannot decide, and what could overturn it.",
@@ -535,6 +728,16 @@ def create_notebook_drawer():
                         kind="textarea",
                         rows=2,
                         placeholder="e.g. Repeat with three more seeds and add an LRP cross-check.",
+                    ),
+                    # ── Context preview (live read of dashboard state) ──
+                    ui.tags.div(
+                        ui.tags.div(
+                            ui.tags.span(class_="nb-ctx-preview-dot"),
+                            "Conditions and signals captured automatically",
+                            class_="nb-ctx-preview-title",
+                        ),
+                        ui.output_ui("nb_context_preview"),
+                        class_="nb-ctx-preview-wrapper",
                     ),
                     ui.tags.div(
                         ui.input_action_button(
