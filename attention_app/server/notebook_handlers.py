@@ -30,7 +30,9 @@ The module also handles:
 from __future__ import annotations
 
 import asyncio
+import csv
 import html as _html
+import io
 import json
 import logging
 import re
@@ -1448,6 +1450,73 @@ def _entries_to_markdown(entries: List[Dict[str, Any]]) -> str:
     return "\n".join(head) + body
 
 
+def _csv_value(v: Any) -> str:
+    """Render a captured value as a single CSV cell.
+
+    Lists and dicts are serialised as compact JSON so a reviewer in
+    Excel can still parse them if needed; everything else becomes its
+    string representation. ``csv.writer`` then handles the quoting and
+    escaping of commas, double-quotes, and newlines per RFC 4180.
+    """
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (dict, list, tuple, set)):
+        try:
+            return json.dumps(
+                list(v) if isinstance(v, (tuple, set)) else v,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        except Exception:
+            return str(v)
+    return str(v)
+
+
+def _entries_to_csv(entries: List[Dict[str, Any]]) -> str:
+    """Serialise the Notebook entries as RFC-4180 CSV.
+
+    One row per entry. The columns are: the top-level entry fields
+    (case_id, timestamp, title, hypothesis, uncertainty, next_steps)
+    followed by every captured-context key declared in
+    ``_CONTEXT_LABELS`` so that a reviewer can scan the entire audit
+    trail in a spreadsheet.
+
+    A UTF-8 BOM is prepended so Excel opens the file with correct
+    encoding for non-ASCII characters (e.g. ρ, →, Δ).
+    """
+    buf = io.StringIO()
+    # ``csv.QUOTE_MINIMAL`` quotes only the cells that need it (those
+    # containing the delimiter, a quote, or a newline). This keeps the
+    # file readable while still being safe.
+    writer = csv.writer(buf, delimiter=",", quotechar='"',
+                        quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n")
+
+    top_columns = [
+        ("case_id",     "Case ID"),
+        ("timestamp",   "Timestamp"),
+        ("title",       "Title"),
+        ("hypothesis",  "Hypothesis"),
+        ("uncertainty", "Uncertainty acknowledged"),
+        ("next_steps",  "Next steps"),
+    ]
+    context_keys = list(_CONTEXT_LABELS.keys())
+    header = [lbl for _k, lbl in top_columns] + [
+        _CONTEXT_LABELS[k] for k in context_keys
+    ]
+    writer.writerow(header)
+
+    for entry in entries:
+        ctx = entry.get("context") or {}
+        row = [_csv_value(entry.get(k)) for k, _lbl in top_columns]
+        row.extend(_csv_value(ctx.get(k)) for k in context_keys)
+        writer.writerow(row)
+
+    # Prepend a UTF-8 BOM so Excel auto-detects the encoding.
+    return "﻿" + buf.getvalue()
+
+
 # ---------------------------------------------------------------------------
 # Server registration
 # ---------------------------------------------------------------------------
@@ -1795,3 +1864,7 @@ def notebook_server_handlers(input, output, session, *,
             "entries": list(entries.get()),
         }
         yield json.dumps(payload, ensure_ascii=False, indent=2)
+
+    @render.download(filename=lambda: f"auditor_notebook_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
+    def nb_download_csv():
+        yield _entries_to_csv(list(entries.get()))

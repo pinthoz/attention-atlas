@@ -18,6 +18,8 @@ the static layout and the input ids.
 
 from shiny import ui
 
+from .components import AUDIT_ICON_DATA_URL
+
 
 NOTEBOOK_CSS = """
 <style>
@@ -59,11 +61,12 @@ NOTEBOOK_CSS = """
     outline: 2px solid #ff74b8;
     outline-offset: 3px;
 }
-.nb-fab-line {
-    width: 17px;
-    height: 2px;
-    background: white;
-    border-radius: 2px;
+.nb-fab-icon {
+    width: 34px;
+    height: 34px;
+    display: block;
+    object-fit: contain;
+    pointer-events: none;
 }
 
 /* ── Backdrop overlay ─────────────────────────────────────────── */
@@ -673,11 +676,14 @@ def create_notebook_drawer():
     """
     return ui.tags.div(
         ui.HTML(NOTEBOOK_CSS),
-        # ── FAB (3-line hamburger) ───────────────────────────────
+        # ── FAB (notebook icon) ──────────────────────────────────
         ui.tags.button(
-            ui.tags.span(class_="nb-fab-line"),
-            ui.tags.span(class_="nb-fab-line"),
-            ui.tags.span(class_="nb-fab-line"),
+            ui.tags.img(
+                src=AUDIT_ICON_DATA_URL,
+                alt="",
+                class_="nb-fab-icon",
+                **{"aria-hidden": "true"},
+            ),
             id="nb-fab",
             class_="nb-fab",
             type="button",
@@ -718,7 +724,7 @@ def create_notebook_drawer():
                     _field(
                         "nb_case_id",
                         "Audit case ID (optional)",
-                        "Group related entries under one investigation, e.g. \"crows-pairs-race-bert-2026-05\".",
+                        'Group related entries under one investigation, e.g. "crows-pairs-race-bert-2026-05".',
                         kind="text",
                         placeholder="e.g. crows-pairs-race-bert-2026-05",
                     ),
@@ -750,10 +756,10 @@ def create_notebook_drawer():
                     _field(
                         "nb_next_steps",
                         "Next steps",
-                        "Concrete follow-ups: more seeds, other heads, other prompts.",
+                        "Concrete follow-ups: another model, another axis, another prompt, a control.",
                         kind="textarea",
                         rows=2,
-                        placeholder="e.g. Repeat with three more seeds and add an LRP cross-check.",
+                        placeholder="e.g. Run the same item on GPT-2 to check whether the race-bias localisation in L5H3 generalises across architectures.",
                     ),
                     # ── Context preview (live read of dashboard state) ──
                     ui.tags.div(
@@ -801,6 +807,11 @@ def create_notebook_drawer():
                         ui.download_button(
                             "nb_download_json",
                             "Export JSON",
+                            class_="nb-btn nb-btn-secondary",
+                        ),
+                        ui.download_button(
+                            "nb_download_csv",
+                            "Export CSV",
                             class_="nb-btn nb-btn-secondary",
                         ),
                         ui.input_action_button(

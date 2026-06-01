@@ -36,6 +36,15 @@ try:
 except Exception:
     ICON_DATA_URL = ""
 
+# Auditor Notebook FAB icon — multi-resolution .ico embedded as a data
+# URL so it loads without depending on the static-asset route.
+_AUDIT_ICON_PATH = Path(__file__).resolve().parent.parent.parent / "static" / "audit-ico.ico"
+try:
+    _AUDIT_ICON_DATA = base64.b64encode(_AUDIT_ICON_PATH.read_bytes()).decode()
+    AUDIT_ICON_DATA_URL = f"data:image/x-icon;base64,{_AUDIT_ICON_DATA}"
+except Exception:
+    AUDIT_ICON_DATA_URL = ""
+
 
 def viz_header(title, definition, tooltip_text, limitation=None, controls=None, subtitle=None, show_calc_title=True):
     """Create a visualization header with semantic documentation and optional controls.
@@ -114,5 +123,5 @@ def viz_header(title, definition, tooltip_text, limitation=None, controls=None, 
     return ui.div(*elements)
 
 
-__all__ = ["mini_select", "ICON_DATA_URL", "viz_header"]
+__all__ = ["mini_select", "ICON_DATA_URL", "AUDIT_ICON_DATA_URL", "viz_header"]
 
