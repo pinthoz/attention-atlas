@@ -276,35 +276,131 @@ def _get_gusnet_detector():
     return GusNetDetector
 
 
+_ATTN_SPECIAL_TOKENS = frozenset({
+    "[CLS]", "[SEP]", "[PAD]", "[UNK]", "[MASK]",
+    "<|endoftext|>", "<s>", "</s>", "<pad>", "<unk>",
+})
+
+
+def _is_pure_punctuation(token: str) -> bool:
+    """True if the token contains no alphanumeric characters (after stripping
+    WordPiece/BPE markers). Punctuation is never a bias carrier."""
+    clean = token.replace("##", "").replace("Ġ", "").replace("Ġ", "")
+    return bool(clean) and not any(c.isalnum() for c in clean)
+
+
+def _merge_subtokens_to_words(
+    tokens: List[str],
+    special_tokens: Optional[set] = None,
+) -> List[Tuple[str, List[int]]]:
+    """Merge a sub-token sequence into whole words.
+
+    Returns a list of ``(lowercased_word, [sub_token_indices])``. Handles
+    both WordPiece (``##`` = continuation) and BPE (``Ġ`` = word start)
+    auto-detected from marker presence. Punctuation and special tokens act
+    as word separators and are not themselves emitted as words — both are
+    never bias carriers so dropping them keeps the alignment clean.
+    """
+    if special_tokens is None:
+        special_tokens = _ATTN_SPECIAL_TOKENS
+    has_bert_marker = any(t.startswith("##") for t in tokens)
+    has_gpt2_marker = any("Ġ" in t for t in tokens)
+
+    words: List[Tuple[str, List[int]]] = []
+    current_word = ""
+    current_indices: List[int] = []
+
+    def flush():
+        nonlocal current_word, current_indices
+        if current_indices:
+            words.append((current_word.lower(), list(current_indices)))
+        current_word = ""
+        current_indices = []
+
+    for i, tok in enumerate(tokens):
+        if tok in special_tokens:
+            flush()
+            continue
+        if _is_pure_punctuation(tok):
+            # Break the current word but don't emit punctuation as one.
+            flush()
+            continue
+
+        if has_gpt2_marker:
+            # BPE: Ġ marks a new word; otherwise continuation of the current.
+            if "Ġ" in tok:
+                flush()
+                current_word = tok.replace("Ġ", "")
+                current_indices = [i]
+            else:
+                current_word += tok
+                current_indices.append(i)
+        elif has_bert_marker:
+            # WordPiece: ## marks continuation; otherwise new word.
+            if tok.startswith("##"):
+                current_word += tok[2:]
+                current_indices.append(i)
+            else:
+                flush()
+                current_word = tok
+                current_indices = [i]
+        else:
+            # No marker characters detected — treat each token as its own word.
+            flush()
+            current_word = tok
+            current_indices = [i]
+    flush()
+    return words
+
+
 def _detect_biased_indices_for_attention_tokens(
     text: str, attention_tokens: List[str], detector
 ) -> Optional[np.ndarray]:
-    """Run GUS-Net on the text and return a boolean mask aligned with
-    the *attention model's* tokens. We approximate alignment by
-    matching the GUS-Net biased word substrings against the attention
-    tokens (case-insensitive). This is the same shortcut used in
-    ``_align_gusnet_to_attention_tokens`` and is sufficient for
-    distribution-level analysis.
+    """Run GUS-Net and return a boolean mask over the *attention model's*
+    sub-tokens, marking those that belong to a word GUS-Net labelled biased.
+
+    Whole-word alignment: rather than matching raw sub-token strings (which
+    failed badly for BPE sub-words like GPT-2's ``["Ġster","eot","yp","ical"]``
+    where no sub-piece equals the GUS-Net biased word ``"stereotypical"``),
+    we reconstruct whole words on both sides and compare those.
+
+    Returns ``None`` when GUS-Net found nothing or the mask ends up empty.
     """
     try:
         gus_tokens, gus_probs = detector.predict_proba(text)
         labeled = detector.apply_thresholds(gus_tokens, gus_probs)
     except Exception:
         return None
-    biased_tokens_text = {
-        str(item.get("token", "")).strip("#").lower()
-        for item in labeled
-        if item.get("is_biased")
+
+    gus_special = set(detector.config.get("special_tokens", _ATTN_SPECIAL_TOKENS))
+    biased_sub_indices = {
+        int(item["index"]) for item in labeled if item.get("is_biased")
     }
-    biased_tokens_text.discard("")
-    if not biased_tokens_text:
+    if not biased_sub_indices:
         return None
+
+    # Reconstruct whole words on the GUS-Net side; a word is biased if any
+    # of its sub-tokens was flagged.
+    gus_words = _merge_subtokens_to_words(list(gus_tokens), gus_special)
+    biased_words: set = set()
+    for word, sub_ix in gus_words:
+        if not word:
+            continue
+        if any(s in biased_sub_indices for s in sub_ix):
+            biased_words.add(word)
+    if not biased_words:
+        return None
+
+    # Reconstruct whole words on the attention side and mark every sub-token
+    # of a matched word.
     n = len(attention_tokens)
     mask = np.zeros(n, dtype=bool)
-    for i, tok in enumerate(attention_tokens):
-        clean = tok.replace("##", "").replace("Ġ", "").lower()
-        if clean in biased_tokens_text:
-            mask[i] = True
+    attn_words = _merge_subtokens_to_words(list(attention_tokens))
+    for word, sub_ix in attn_words:
+        if word and word in biased_words:
+            for s in sub_ix:
+                if 0 <= s < n:
+                    mask[s] = True
     return mask if mask.any() else None
 
 
