@@ -52,6 +52,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import array
 import hashlib
 import json
 import logging
@@ -338,22 +339,34 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
     checkpoint_path = CHECKPOINT_DIR / "bar_bsr.pkl"
     sig = _args_signature("bar_bsr_v1", tuple(models), n_permutations, max_tokens)
 
-    # Per-model aggregates + bookkeeping.
-    bar_obs: Dict[str, List[float]] = {m: [] for m in models}
-    bar_null: Dict[str, List[float]] = {m: [] for m in models}
-    bsr_obs: Dict[str, List[float]] = {m: [] for m in models}
-    bsr_null: Dict[str, List[float]] = {m: [] for m in models}
+    # Per-model aggregates + bookkeeping. ``array.array('f')`` stores
+    # 4 bytes per float vs ~28 for a Python list of float objects, so
+    # we can hold ~300M permutation samples in ~1.2 GB instead of ~9 GB.
+    bar_obs: Dict[str, "array.array"] = {m: array.array("f") for m in models}
+    bar_null: Dict[str, "array.array"] = {m: array.array("f") for m in models}
+    bsr_obs: Dict[str, "array.array"] = {m: array.array("f") for m in models}
+    bsr_null: Dict[str, "array.array"] = {m: array.array("f") for m in models}
     processed_keys: set = set()
     n_skipped = 0
     n_ok = 0
 
+    def _as_arr(maybe_list) -> "array.array":
+        """Promote a legacy list-typed accumulator (from older checkpoints)
+        to ``array.array('f')`` without losing data."""
+        if isinstance(maybe_list, array.array):
+            return maybe_list
+        a = array.array("f")
+        if maybe_list:
+            a.extend(maybe_list)
+        return a
+
     if resume:
         state = _load_checkpoint(checkpoint_path)
         if state is not None and state.get("signature") == sig:
-            bar_obs = state["bar_obs"]
-            bar_null = state["bar_null"]
-            bsr_obs = state["bsr_obs"]
-            bsr_null = state["bsr_null"]
+            bar_obs = {m: _as_arr(state["bar_obs"][m]) for m in models}
+            bar_null = {m: _as_arr(state["bar_null"][m]) for m in models}
+            bsr_obs = {m: _as_arr(state["bsr_obs"][m]) for m in models}
+            bsr_null = {m: _as_arr(state["bsr_null"][m]) for m in models}
             processed_keys = state["processed_keys"]
             n_ok = state.get("n_ok", 0)
             n_skipped = state.get("n_skipped", 0)
@@ -469,31 +482,42 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
                 "processed_so_far": len(processed_keys),
                 "n_ok": n_ok, "n_skipped": n_skipped}
     print(f"\nDone in {elapsed:.1f}s — ok={n_ok}, skipped={n_skipped}")
-    # Successful completion: remove the checkpoint so the next run starts fresh.
-    try:
-        checkpoint_path.unlink(missing_ok=True)
-    except Exception:
-        pass
 
-    def summarise(obs: List[float], null: List[float], default: float) -> Dict[str, Any]:
-        if not obs or not null:
-            return {"n_obs": len(obs), "n_null": len(null), "note": "insufficient data"}
+    def _to_np(acc) -> np.ndarray:
+        """Zero-copy view of an ``array.array('f')`` as a float32 numpy
+        array. Falls back to ``np.asarray`` for legacy Python lists."""
+        if isinstance(acc, array.array):
+            if len(acc) == 0:
+                return np.empty(0, dtype=np.float32)
+            return np.frombuffer(acc, dtype=np.float32)
+        return np.asarray(acc, dtype=np.float32)
+
+    def summarise(obs_acc, null_acc, default: float) -> Dict[str, Any]:
+        obs_n = len(obs_acc)
+        null_n = len(null_acc)
+        if obs_n == 0 or null_n == 0:
+            return {"n_obs": obs_n, "n_null": null_n, "note": "insufficient data"}
+        obs_arr = _to_np(obs_acc)
+        null_arr = _to_np(null_acc)
+        # Compute percentiles in one np.percentile call (single sort).
+        null_q = np.percentile(null_arr, [50, 95, 99])
+        obs_q = np.percentile(obs_arr, [50, 95, 99])
         return {
-            "n_obs": len(obs),
-            "n_null": len(null),
-            "obs_mean": float(np.mean(obs)),
-            "obs_median": float(np.median(obs)),
-            "obs_p95": float(np.percentile(obs, 95)),
-            "obs_p99": float(np.percentile(obs, 99)),
-            "null_mean": float(np.mean(null)),
-            "null_median": float(np.median(null)),
-            "null_p95": float(np.percentile(null, 95)),
-            "null_p99": float(np.percentile(null, 99)),
+            "n_obs": obs_n,
+            "n_null": null_n,
+            "obs_mean": float(obs_arr.mean()),
+            "obs_median": float(obs_q[0]),
+            "obs_p95": float(obs_q[1]),
+            "obs_p99": float(obs_q[2]),
+            "null_mean": float(null_arr.mean()),
+            "null_median": float(null_q[0]),
+            "null_p95": float(null_q[1]),
+            "null_p99": float(null_q[2]),
             "current_default": default,
-            "recommended_threshold_alpha_0.05": float(np.percentile(null, 95)),
-            "recommended_threshold_alpha_0.01": float(np.percentile(null, 99)),
+            "recommended_threshold_alpha_0.05": float(null_q[1]),
+            "recommended_threshold_alpha_0.01": float(null_q[2]),
             "fraction_obs_above_recommended_0.05": float(
-                np.mean(np.asarray(obs) >= np.percentile(null, 95))
+                (obs_arr >= null_q[1]).mean()
             ),
         }
 
@@ -505,14 +529,23 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
         "models": models,
         "by_model": {},
     }
-    # Combined (across models) recommendation too.
-    all_bar_obs = [v for vs in bar_obs.values() for v in vs]
-    all_bar_null = [v for vs in bar_null.values() for v in vs]
-    all_bsr_obs = [v for vs in bsr_obs.values() for v in vs]
-    all_bsr_null = [v for vs in bsr_null.values() for v in vs]
+
+    # Combined (across models) summary. Concatenate per-model arrays
+    # only as numpy views — never materialise a giant Python list.
+    def _concat(per_model_accs) -> np.ndarray:
+        parts = [_to_np(per_model_accs[m]) for m in per_model_accs
+                 if len(per_model_accs[m]) > 0]
+        if not parts:
+            return np.empty(0, dtype=np.float32)
+        return np.concatenate(parts)
+
+    all_bar_obs_a = _concat(bar_obs)
+    all_bar_null_a = _concat(bar_null)
+    all_bsr_obs_a = _concat(bsr_obs)
+    all_bsr_null_a = _concat(bsr_null)
     summary["combined"] = {
-        "BAR": summarise(all_bar_obs, all_bar_null, default=1.5),
-        "BSR": summarise(all_bsr_obs, all_bsr_null, default=1.5),
+        "BAR": summarise(all_bar_obs_a, all_bar_null_a, default=1.5),
+        "BSR": summarise(all_bsr_obs_a, all_bsr_null_a, default=1.5),
     }
     for m in models:
         summary["by_model"][m] = {
@@ -525,24 +558,35 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
                         encoding="utf-8")
     print(f"Saved {out_path}")
 
-    # Plot histograms if matplotlib is available.
+    # Plot histograms — subsample to keep matplotlib responsive.
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        PLOT_SAMPLE_CAP = 1_000_000  # at most 1M points per histogram
+
+        def _sample_for_plot(arr: np.ndarray) -> np.ndarray:
+            if arr.size <= PLOT_SAMPLE_CAP:
+                return arr
+            rng_plot = np.random.default_rng(0)
+            idx = rng_plot.choice(arr.size, size=PLOT_SAMPLE_CAP, replace=False)
+            return arr[idx]
+
         fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-        for ax, (name, obs, null, default) in zip(axes, [
-            ("BAR", all_bar_obs, all_bar_null, 1.5),
-            ("BSR", all_bsr_obs, all_bsr_null, 1.5),
+        for ax, (name, obs_a, null_a, default) in zip(axes, [
+            ("BAR", all_bar_obs_a, all_bar_null_a, 1.5),
+            ("BSR", all_bsr_obs_a, all_bsr_null_a, 1.5),
         ]):
-            if not obs or not null:
+            if obs_a.size == 0 or null_a.size == 0:
                 continue
-            ax.hist(null, bins=80, range=(0, 5), alpha=0.55, label="Null (permutation)",
+            ax.hist(_sample_for_plot(null_a), bins=80, range=(0, 5),
+                    alpha=0.55, label="Null (permutation)",
                     color="#94a3b8", density=True)
-            ax.hist(obs, bins=80, range=(0, 5), alpha=0.55, label="Observed",
+            ax.hist(_sample_for_plot(obs_a), bins=80, range=(0, 5),
+                    alpha=0.55, label="Observed",
                     color="#ff5ca9", density=True)
-            p95 = float(np.percentile(null, 95))
-            p99 = float(np.percentile(null, 99))
+            p95 = float(np.percentile(null_a, 95))
+            p99 = float(np.percentile(null_a, 99))
             ax.axvline(p95, color="#16a34a", linestyle="--",
                        label=f"95th null = {p95:.2f}")
             ax.axvline(p99, color="#dc2626", linestyle="--",
@@ -560,6 +604,13 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
         print(f"Saved {plot_path}")
     except Exception as e:
         print(f"Plotting failed: {e}")
+    # Only remove the checkpoint *after* a successful summary so that an
+    # OOM or other crash at the summary stage does not throw away the
+    # ~15 minutes of accumulated data.
+    try:
+        checkpoint_path.unlink(missing_ok=True)
+    except Exception:
+        pass
     return summary
 
 
@@ -910,6 +961,66 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Recovery mode: summarise from an existing checkpoint
+# ──────────────────────────────────────────────────────────────────────
+
+def _summarise_existing_checkpoints(args) -> int:
+    """Re-emit the summary JSON + plot from the on-disk checkpoint(s).
+
+    Useful when the live run completed the data-collection loop but the
+    summary step itself raised (e.g. OOM building giant arrays). The
+    checkpoint is preserved on every save, so the recorded data is
+    intact even if the summary code path crashed.
+    """
+    print("Recovery mode: summarising from checkpoint(s) on disk.")
+    bar_ckpt = CHECKPOINT_DIR / "bar_bsr.pkl"
+    if bar_ckpt.is_file():
+        state = _load_checkpoint(bar_ckpt)
+        if state is None:
+            print(f"Could not load {bar_ckpt}.")
+        else:
+            n_models = len(state.get("bar_obs", {}))
+            print(f"Found BAR/BSR checkpoint with {n_models} model(s), "
+                  f"{len(state.get('processed_keys', set()))} entries.")
+            # Re-run the function body would re-process; instead, pass
+            # n=0 and re-use existing checkpoint, then it will skip
+            # everything (all keys are in processed_keys) and go
+            # straight to summary.
+            try:
+                run_bar_bsr_analysis(
+                    n_sentences=0,
+                    n_permutations=state.get("signature", "")[-3:] or 200,  # ignored
+                    models=list(state.get("bar_obs", {}).keys()),
+                    max_tokens=None,
+                    resume=True,
+                    checkpoint_every=10**9,  # never re-save
+                )
+            except Exception:
+                traceback.print_exc()
+    else:
+        print(f"No BAR/BSR checkpoint at {bar_ckpt}.")
+
+    abl_ckpt = CHECKPOINT_DIR / "topk_ablation.pkl"
+    if abl_ckpt.is_file():
+        print(f"Found ablation checkpoint at {abl_ckpt}.")
+        state = _load_checkpoint(abl_ckpt)
+        if state is not None:
+            try:
+                run_topk_ablation(
+                    n_sentences=0, k_max=20,
+                    model_name="bert-base-uncased",
+                    max_tokens=None,
+                    resume=True,
+                    checkpoint_every=10**9,
+                )
+            except Exception:
+                traceback.print_exc()
+    else:
+        print(f"No ablation checkpoint at {abl_ckpt}.")
+    return 0
+
+
+# ──────────────────────────────────────────────────────────────────────
 # CLI
 # ──────────────────────────────────────────────────────────────────────
 
@@ -974,7 +1085,14 @@ def main() -> int:
     parser.add_argument("--checkpoint-every", type=int, default=20,
                         help="Save checkpoint every N processed sentences "
                              "(default 20 for BAR/BSR, half that for ablation).")
+    parser.add_argument("--summarise-from-checkpoint", action="store_true",
+                        help="Skip the analysis loop and only emit the summary "
+                             "JSON + plot from the existing checkpoint. Useful "
+                             "to recover when the summary step itself crashed.")
     args = parser.parse_args()
+
+    if args.summarise_from_checkpoint:
+        return _summarise_existing_checkpoints(args)
 
     if args.all:
         args.bar = args.gusnet = args.ablation = True
