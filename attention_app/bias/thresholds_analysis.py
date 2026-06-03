@@ -3,8 +3,10 @@
 This script produces defensible values for four currently-hardcoded
 thresholds:
 
-  1. BAR (Bias Attention Ratio) — currently 1.5 in
-     ``attention_app/bias/attention_bias.py``.
+  1. BAR (Bias Attention Ratio) — calibrated to 2.5 in
+     ``attention_app/bias/attention_bias.py`` (was 1.5 pre-calibration;
+     the ``current_default=1.5`` in the JSON output is kept as a
+     historical anchor so the calibration delta stays visible).
   2. BSR (Bias Self-Reinforcement) — same family of metric as BAR.
   3. GUS-Net per-category thresholds (GEN / UNFAIR / STEREO) —
      currently 0.5 in the dashboard sliders.
@@ -863,6 +865,11 @@ def run_gusnet_calibration(model_keys: Optional[List[str]] = None) -> Dict[str, 
 # Analysis 3 — top-K cumulative ablation impact
 # ──────────────────────────────────────────────────────────────────────
 
+def _model_short(model_name: str) -> str:
+    """Short tag used in output / checkpoint filenames."""
+    return "gpt2" if "gpt2" in model_name.lower() else "bert"
+
+
 def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
                       model_name: str = "bert-base-uncased",
                       max_tokens: Optional[int] = None,
@@ -871,7 +878,9 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
     """For each sentence: rank heads by BAR, ablate top-1..top-K, record
     cumulative effect on the bias-class probability.
 
-    Resumable via ``dataset/thresholds_results/checkpoints/topk_ablation.pkl``.
+    Resumable via ``dataset/thresholds_results/checkpoints/topk_ablation_{model}.pkl``.
+    Output JSON / plot are also model-suffixed so BERT and GPT-2 runs do
+    not clobber each other.
     """
     sample = load_v9_stratified(n_sentences, max_tokens=max_tokens)
     biased_only = [e for e in sample if e.get("has_bias")]
@@ -891,8 +900,9 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
     analyzer = AttentionBiasAnalyzer()
     is_gpt2 = "gpt2" in model_name.lower()
 
-    checkpoint_path = CHECKPOINT_DIR / "topk_ablation.pkl"
-    sig = _args_signature("topk_ablation_v1", model_name, k_max, max_tokens)
+    short = _model_short(model_name)
+    checkpoint_path = CHECKPOINT_DIR / f"topk_ablation_{short}.pkl"
+    sig = _args_signature("topk_ablation_v2", model_name, k_max, max_tokens)
 
     cumulative_impact: Dict[int, List[float]] = defaultdict(list)
     processed_keys: set = set()
@@ -1015,7 +1025,7 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
                     summary["elbow_recommendation"] = int(k - 1)
                     break
 
-    out_path = RESULTS_DIR / "topk_ablation.json"
+    out_path = RESULTS_DIR / f"topk_ablation_{short}.json"
     out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                         encoding="utf-8")
     print(f"Saved {out_path}")
@@ -1042,7 +1052,7 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
             ax.set_title(f"Top-K head ablation impact curve ({model_name})")
             ax.legend()
             fig.tight_layout()
-            plot_path = RESULTS_DIR / "topk_ablation_curve.png"
+            plot_path = RESULTS_DIR / f"topk_ablation_curve_{short}.png"
             fig.savefig(plot_path, dpi=120)
             plt.close(fig)
             print(f"Saved {plot_path}")
@@ -1096,23 +1106,24 @@ def _summarise_existing_checkpoints(args) -> int:
     else:
         print(f"No BAR/BSR checkpoint at {bar_ckpt}.")
 
-    abl_ckpt = CHECKPOINT_DIR / "topk_ablation.pkl"
-    if abl_ckpt.is_file():
-        print(f"Found ablation checkpoint at {abl_ckpt}.")
-        state = _load_checkpoint(abl_ckpt)
-        if state is not None:
-            try:
-                run_topk_ablation(
-                    n_sentences=0, k_max=20,
-                    model_name="bert-base-uncased",
-                    max_tokens=None,
-                    resume=True,
-                    checkpoint_every=10**9,
-                )
-            except Exception:
-                traceback.print_exc()
-    else:
-        print(f"No ablation checkpoint at {abl_ckpt}.")
+    for _short, _model in [("bert", "bert-base-uncased"), ("gpt2", "gpt2")]:
+        abl_ckpt = CHECKPOINT_DIR / f"topk_ablation_{_short}.pkl"
+        if abl_ckpt.is_file():
+            print(f"Found ablation checkpoint at {abl_ckpt}.")
+            state = _load_checkpoint(abl_ckpt)
+            if state is not None:
+                try:
+                    run_topk_ablation(
+                        n_sentences=0, k_max=20,
+                        model_name=_model,
+                        max_tokens=None,
+                        resume=True,
+                        checkpoint_every=10**9,
+                    )
+                except Exception:
+                    traceback.print_exc()
+        else:
+            print(f"No ablation checkpoint at {abl_ckpt}.")
     return 0
 
 
@@ -1171,6 +1182,10 @@ def main() -> int:
                         help="Sentences for top-K ablation (int or 'all'; default 50).")
     parser.add_argument("--k-max", type=int, default=20,
                         help="Max K for ablation curve (default 20).")
+    parser.add_argument("--abl-model", choices=["bert", "gpt2", "both"],
+                        default="both",
+                        help="Which attention model(s) to ablate (default both). "
+                             "Each model writes its own checkpoint + output JSON.")
     parser.add_argument("--max-tokens", type=int, default=None,
                         help="Skip sentences with more than this many whitespace "
                              "tokens (cheap filter to keep runtime bounded). "
@@ -1208,6 +1223,29 @@ def main() -> int:
             est = _estimate_runtime(args.n, n_models=2)
             print(f"NOTE: --bar with --n {args.n} will take {est} on CPU.")
 
+    # Same warning for ablation. Each biased sentence does ~(K_max+2) forward
+    # passes (baseline + K ablations + GUS-Net), so it is ~10x more expensive
+    # per sentence than BAR/BSR — adjust seconds_per_unit accordingly.
+    if args.ablation:
+        n_models_abl = 2 if args.abl_model == "both" else 1
+        # Empirical: ~23 s / (sentence, model) at K_max=20 on CPU.
+        sec_per_unit = max(1.0, 1.15 * (args.k_max + 3))
+        if args.abl_n == 0:
+            # v9 is ~50% biased (~5152 biased after filter).
+            est = _estimate_runtime(5152, n_models=n_models_abl,
+                                    seconds_per_unit=sec_per_unit)
+            print(f"NOTE: --ablation on the full v9 corpus "
+                  f"(~5,152 biased sentences x {n_models_abl} model(s), K_max={args.k_max}) "
+                  f"will take {est} on CPU. Checkpoints save every "
+                  f"{max(1, args.checkpoint_every // 2)} sentences; safe to "
+                  f"Ctrl-C and re-run.")
+        elif args.abl_n >= 500:
+            est = _estimate_runtime(args.abl_n // 2, n_models=n_models_abl,
+                                    seconds_per_unit=sec_per_unit)
+            print(f"NOTE: --ablation with --abl-n {args.abl_n} "
+                  f"(~{args.abl_n // 2} biased after filter) "
+                  f"will take {est} on CPU.")
+
     # Ensure UTF-8 output on Windows consoles that default to cp1252.
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
@@ -1234,17 +1272,24 @@ def main() -> int:
         except Exception:
             traceback.print_exc()
     if args.ablation:
-        print("\n========== Top-K ablation curve ==========")
-        try:
-            run_topk_ablation(
-                n_sentences=args.abl_n,
-                k_max=args.k_max,
-                max_tokens=args.max_tokens,
-                resume=resume,
-                checkpoint_every=max(1, args.checkpoint_every // 2),
-            )
-        except Exception:
-            traceback.print_exc()
+        ablation_models: List[str] = []
+        if args.abl_model in ("bert", "both"):
+            ablation_models.append("bert-base-uncased")
+        if args.abl_model in ("gpt2", "both"):
+            ablation_models.append("gpt2")
+        for _m in ablation_models:
+            print(f"\n========== Top-K ablation curve ({_m}) ==========")
+            try:
+                run_topk_ablation(
+                    n_sentences=args.abl_n,
+                    k_max=args.k_max,
+                    model_name=_m,
+                    max_tokens=args.max_tokens,
+                    resume=resume,
+                    checkpoint_every=max(1, args.checkpoint_every // 2),
+                )
+            except Exception:
+                traceback.print_exc()
 
     print(f"\nResults in {RESULTS_DIR}/")
     return 0
