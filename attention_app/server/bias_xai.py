@@ -79,7 +79,7 @@ def register_xai_handlers(
         show_comparison = resolved_show_comparison and results_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
-        except Exception: bar_threshold = 1.5
+        except Exception: bar_threshold = 2.5
 
         # Get selected head for highlighting
         selected_head = None
@@ -299,7 +299,7 @@ def register_xai_handlers(
         show_comparison = resolved_show_comparison and bundle_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
-        except Exception: bar_threshold = 1.5
+        except Exception: bar_threshold = 2.5
 
         # Get selected head/layer for highlighting
         selected_head = None
@@ -1082,7 +1082,7 @@ def register_xai_handlers(
         try:
             bar_threshold = float(input.bias_bar_threshold())
         except Exception:
-            bar_threshold = 1.5
+            bar_threshold = 2.5
 
         def _render_lrp_single(bundle, ig_bundle, container_suffix=""):
             if not bundle:

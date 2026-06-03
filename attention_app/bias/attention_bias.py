@@ -30,7 +30,9 @@ class HeadBiasMetrics:
         BAR(l,h) = μ̂_B / μ₀   where
             μ̂_B = (1/N) Σ_i Σ_{j∈B} α_ij   (observed)
             μ₀   = |B| / N                   (expected under uniform)
-        Centred at 1.0; values > 1.5 indicate specialisation.
+        Centred at 1.0; values > 2.5 indicate specialisation
+        (empirical α=0.05 threshold from the v9 permutation-null
+        analysis; see dataset/thresholds_results/THRESHOLDS_CALIBRATION.md).
 
     amplification_score : float
         BSR(l,h) = (1/|B|) Σ_{i∈B} Σ_{j∈B} α_ij  /  (|B|/N)
@@ -42,7 +44,7 @@ class HeadBiasMetrics:
     bias_attention_ratio: float   # BAR — observed / expected attention to biased tokens
     amplification_score: float    # BSR — biased-to-biased self-reinforcement
     max_bias_attention: float     # max α_ij where j ∈ B
-    specialized_for_bias: bool    # BAR > 1.5
+    specialized_for_bias: bool    # BAR > 2.5 (empirical α=0.05)
 
 
 class AttentionBiasAnalyzer:
@@ -57,7 +59,7 @@ class AttentionBiasAnalyzer:
         attention_weights: List[torch.Tensor],
         biased_token_indices: List[int],
         tokens: List[str],
-        bar_threshold: float = 1.5,
+        bar_threshold: float = 2.5,
     ) -> List[HeadBiasMetrics]:
         """Analyze how much each attention head focuses on biased tokens.
 
@@ -103,7 +105,7 @@ class AttentionBiasAnalyzer:
         biased_indices: set,
         layer_idx: int,
         head_idx: int,
-        bar_threshold: float = 1.5,
+        bar_threshold: float = 2.5,
     ) -> HeadBiasMetrics:
         """Compute BAR and BSR for a single attention head.
 
@@ -165,7 +167,7 @@ class AttentionBiasAnalyzer:
     def get_bias_focused_heads(
         self,
         metrics: List[HeadBiasMetrics],
-        threshold: float = 1.5
+        threshold: float = 2.5
     ) -> List[HeadBiasMetrics]:
         """Get heads that focus significantly on biased tokens.
 

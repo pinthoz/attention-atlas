@@ -66,7 +66,7 @@ class SentenceImportanceRecord:
     cf_bias_score: float
     frac_biased_tokens: float
     has_bias_predicted: bool
-    # IG / Jaccard — specialized heads (BAR > 1.5)
+    # IG / Jaccard — specialized heads (BAR > 2.5)
     ig_spec_mean_jaccard: Optional[float] = None
     ig_spec_mean_rbo: Optional[float] = None
     ig_spec_max_jaccard: Optional[float] = None
@@ -79,7 +79,7 @@ class SentenceImportanceRecord:
     # IG — all heads (original, diluted)
     ig_all_mean_jaccard: Optional[float] = None
     ig_all_mean_rbo: Optional[float] = None
-    # DeepLift — specialized heads (BAR > 1.5)
+    # DeepLift — specialized heads (BAR > 2.5)
     dl_spec_mean_jaccard: Optional[float] = None
     dl_spec_mean_rbo: Optional[float] = None
     dl_spec_max_jaccard: Optional[float] = None
@@ -218,7 +218,7 @@ def _empty_ig_dl_record():
 
 
 def _topk_to_summary(topk_overlaps, head_metrics, prefix, top_n_heads=10,
-                     bar_threshold=1.5):
+                     bar_threshold=2.5):
     """Compute Jaccard/RBO summary for three head scopes.
 
     Scopes:
@@ -284,7 +284,7 @@ def run_per_sentence_ig_jaccard(
     ig_k: int = 5,
     n_steps: int = 30,
     sentence_indices: Optional[List[int]] = None,
-    bar_threshold: float = 1.5,
+    bar_threshold: float = 2.5,
 ) -> Dict[int, dict]:
     """
     Run IG + DeepLift attributions and top-K Jaccard/RBO for selected sentences.
@@ -650,7 +650,7 @@ def print_importance_report(
     aggregated: dict,
     has_ig: bool,
     has_ablation: bool,
-    bar_threshold: float = 1.5,
+    bar_threshold: float = 2.5,
 ):
     """Console summary."""
     deltas = [r.delta_bias for r in ranked if r.has_bias_predicted]
@@ -1085,8 +1085,8 @@ def main():
         help="Number of IG interpolation steps (higher=more accurate, slower)",
     )
     parser.add_argument(
-        "--bar-threshold", type=float, default=1.5,
-        help="BAR threshold for 'specialized' head scope (default 1.5)",
+        "--bar-threshold", type=float, default=2.5,
+        help="BAR threshold for 'specialized' head scope (default 2.5, empirical α=0.05)",
     )
     parser.add_argument(
         "--min-ig-jaccard", type=float, default=0.0,

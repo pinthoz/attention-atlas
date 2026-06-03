@@ -2422,7 +2422,7 @@ def bias_server_handlers(input, output, session):
                 bars = [m.bias_attention_ratio for m in attn]
                 mean_bar = sum(bars) / len(bars)
                 n_spec = sum(1 for m in attn if m.specialized_for_bias)
-                bar_color = "#dc2626" if mean_bar > 1.5 else ("#ea580c" if mean_bar > 1.2 else "#22c55e")
+                bar_color = "#dc2626" if mean_bar > 2.5 else ("#ea580c" if mean_bar > 2.0 else "#22c55e")
                 bar_val, bar_sub = f"{mean_bar:.3f}", f"{n_spec}/{len(attn)} heads specialized"
             else:
                 bar_val, bar_color, bar_sub = "-", "#94a3b8", "run Analyze Bias first"
@@ -2458,12 +2458,17 @@ def bias_server_handlers(input, output, session):
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH_lc}'>Thresholds</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#dc2626;'>●</span>"
-                f"<span>BAR &gt; 1.5 → <span style='{_TBR}'>bias-specialized</span></span></div>"
+                f"<span>BAR &gt; 2.5 → <span style='{_TBR}'>bias-specialized</span></span></div>"
                 f"<div style='{_TR}'><span style='{_TD};color:#ea580c;'>●</span>"
-                f"<span>BAR &gt; 1.2 → <span style='{_TBA}'>elevated</span></span></div>"
+                f"<span>BAR &gt; 2.0 → <span style='{_TBA}'>elevated</span></span></div>"
                 f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-                f"<span>BAR ≤ 1.2 → <span style='{_TBG}'>normal</span></span></div>"
+                f"<span>BAR ≤ 2.0 → <span style='{_TBG}'>normal</span></span></div>"
                 f"<div style='{_TN};margin-top:6px;'>Higher values indicate stronger bias-driven attention patterns.</div>"
+                f"<hr style='{_TS}'>"
+                f"<span style='{_TH_lc}'>Why 2.5?</span>"
+                f"<div style='{_TN};margin-top:2px;'>95th percentile of a permutation-null distribution computed over the full v9 corpus "
+                f"(10 304 sentences × {{BERT, GPT-2}}, 200 permutations per head). At BAR=2.5, a head has &lt;5% "
+                f"probability of looking this bias-focused by chance.</div>"
             )
             _tt_rho = (
                 f"<span style='{_TH_lc}'>What it measures</span>"
@@ -3353,7 +3358,7 @@ def bias_server_handlers(input, output, session):
                 except Exception: sl = None
 
                 try: _bar_th = float(input.bias_bar_threshold())
-                except Exception: _bar_th = 1.5
+                except Exception: _bar_th = 2.5
 
                 matrix_other = None
                 if other_data:
@@ -3382,11 +3387,15 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#ffffff;'>●</span>"
             f"<span><span style='{_TBA};color:#ffffff;'>BAR = 1.0</span>&nbsp;White, uniform attention, no bias focus</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
-            f"<span><span style='{_TBR}'>BAR &gt; 1.5</span>&nbsp;head <b>over-attends</b> to biased tokens</span></div>"
+            f"<span><span style='{_TBR}'>BAR &gt; 2.5</span>&nbsp;head <b>over-attends</b> to biased tokens</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span><span style='{_TBB}'>BAR &lt; 1.0</span>&nbsp;head <b>avoids</b> biased tokens</span></div>"
             f"<hr style='{_TS}'>"
             f"<div style='{_TN}'>Red cells (BAR >= threshold) = candidate bias-specialised heads. Cross-reference with ablation to confirm causal impact.</div>"
+            f"<hr style='{_TS}'>"
+            f"<span style='{_TH}'>Why 2.5?</span>"
+            f"<div style='{_TN};margin-top:2px;'>Empirical α=0.05 cut-off, the 95th percentile of a permutation null over the full v9 corpus (BERT + GPT-2). "
+            f"A head crossing 2.5 has &lt;5% chance of being this concentrated by accident.</div>"
         )
         header_args = (
             f"Bias Attention Matrix{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
@@ -3543,11 +3552,11 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
             f"<span>Each bar is one attention head's BAR value</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#dc2626;'>●</span>"
-            f"<span><span style='{_TBR}'>Red bars</span>&nbsp;BAR &gt; 1.5 = bias-specialised head</span></div>"
+            f"<span><span style='{_TBR}'>Red bars</span>&nbsp;BAR &gt; 2.5 = bias-specialised head</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ea580c;'>●</span>"
-            f"<span><span style='{_TBA}'>Orange bars</span>&nbsp;BAR 1.2–1.5 = moderate bias focus</span></div>"
+            f"<span><span style='{_TBA}'>Orange bars</span>&nbsp;BAR 2.0–2.5 = moderate bias focus</span></div>"
             f"<hr style='{_TS}'>"
-            f"<div style='{_TN}'>Click ← Layers to return to the layer overview.</div>"
+            f"<div style='{_TN}'>The 2.5 cut-off is the α=0.05 threshold of a permutation null fitted on the full v9 corpus. Click ← Layers to return to the layer overview.</div>"
         )
 
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
@@ -3558,7 +3567,7 @@ def bias_server_handlers(input, output, session):
             cid_heads = f"bias-propagation-heads-container{suffix}"
             if drilldown_layer is not None:
                 hdr = (
-                    f"Bias Propagation — Layer {drilldown_layer} Heads{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
+                    f"Bias Propagation: Layer {drilldown_layer} Heads{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
                     f"BAR per attention head in layer {drilldown_layer}.",
                     _heads_tooltip,
                 )
@@ -3641,7 +3650,7 @@ def bias_server_handlers(input, output, session):
         try: k = int(input.bias_top_k())
         except Exception: k = 5
         try: bar_threshold = float(input.bias_bar_threshold())
-        except Exception: bar_threshold = 1.5
+        except Exception: bar_threshold = 2.5
 
         def get_table(data):
             mets = data["attention_metrics"]

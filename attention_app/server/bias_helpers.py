@@ -512,7 +512,7 @@ def _build_batch_report(per_sentence_results, all_bar_matrices,
         for l in range(n_layers):
             for h in range(n_heads):
                 bars = [m[l, h] for m in all_bar_matrices if l < m.shape[0] and h < m.shape[1]]
-                specialized = sum(1 for b in bars if b > 1.5)
+                specialized = sum(1 for b in bars if b > 2.5)
                 head_entries.append({
                     "layer": int(l), "head": int(h),
                     "avg_bar": round(float(np.mean(bars)), 4),
