@@ -406,6 +406,69 @@ def _detect_biased_indices_for_attention_tokens(
     return mask if mask.any() else None
 
 
+CATEGORIES = ("GEN", "UNFAIR", "STEREO")
+
+
+def _detect_per_category_indices(
+    text: str, attention_tokens: List[str], detector
+) -> Optional[Dict[str, np.ndarray]]:
+    """Like ``_detect_biased_indices_for_attention_tokens`` but returns one
+    boolean mask per GUS-Net category (GEN, UNFAIR, STEREO).
+
+    Categories overlap: a token may be both GEN and STEREO. The returned dict
+    always has all three keys, but a category with no detected tokens gets an
+    all-False mask. Returns ``None`` when GUS-Net found nothing at all.
+    """
+    try:
+        gus_tokens, gus_probs = detector.predict_proba(text)
+        labeled = detector.apply_thresholds(gus_tokens, gus_probs)
+    except Exception:
+        return None
+
+    gus_special = set(detector.config.get("special_tokens", _ATTN_SPECIAL_TOKENS))
+
+    # Per-category sub-token indices on the GUS-Net side.
+    cat_sub_indices: Dict[str, set] = {c: set() for c in CATEGORIES}
+    for item in labeled:
+        if not item.get("is_biased"):
+            continue
+        for cat in item.get("bias_types", []) or []:
+            if cat in cat_sub_indices:
+                cat_sub_indices[cat].add(int(item["index"]))
+
+    if not any(cat_sub_indices.values()):
+        return None
+
+    # Whole-word reconstruction on the GUS-Net side (per category).
+    gus_words = _merge_subtokens_to_words(list(gus_tokens), gus_special)
+    cat_words: Dict[str, set] = {c: set() for c in CATEGORIES}
+    for word, sub_ix in gus_words:
+        if not word:
+            continue
+        for cat, indices in cat_sub_indices.items():
+            if any(s in indices for s in sub_ix):
+                cat_words[cat].add(word)
+
+    # Map back to attention sub-tokens.
+    n = len(attention_tokens)
+    attn_words = _merge_subtokens_to_words(list(attention_tokens))
+    cat_masks: Dict[str, np.ndarray] = {
+        c: np.zeros(n, dtype=bool) for c in CATEGORIES
+    }
+    for word, sub_ix in attn_words:
+        if not word:
+            continue
+        for cat, words_set in cat_words.items():
+            if word in words_set:
+                for s in sub_ix:
+                    if 0 <= s < n:
+                        cat_masks[cat][s] = True
+
+    if not any(m.any() for m in cat_masks.values()):
+        return None
+    return cat_masks
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Analysis 1 — BAR / BSR permutation null
 # ──────────────────────────────────────────────────────────────────────
@@ -414,19 +477,27 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
                          models: Optional[List[str]] = None,
                          max_tokens: Optional[int] = None,
                          resume: bool = True,
-                         checkpoint_every: int = 20) -> Dict[str, Any]:
+                         checkpoint_every: int = 20,
+                         per_category: bool = False) -> Dict[str, Any]:
     """Compute observed and permutation-null BAR/BSR across a v9 subsample.
 
     Supports resumable runs: periodic checkpoints are written to
     ``dataset/thresholds_results/checkpoints/bar_bsr.pkl`` so that
     Ctrl-C or a crash does not lose progress. Pass ``resume=False`` to
     force a fresh run.
+
+    When ``per_category=True`` we also compute separate BAR/BSR distributions
+    for each GUS-Net category (GEN, UNFAIR, STEREO), with their own
+    permutation nulls (random mask of size |B_C|). Adds roughly 3x the
+    permutation work but uses the same forward passes, so wall-clock cost
+    is about 1.5-2x.
     """
     if models is None:
         models = ["bert-base-uncased", "gpt2"]
     sample = load_v9_stratified(n_sentences, max_tokens=max_tokens)
     print(f"BAR/BSR: {len(sample)} sentences x {len(models)} models, "
-          f"{n_permutations} permutations per (sentence, head)", flush=True)
+          f"{n_permutations} permutations per (sentence, head)"
+          f"{' [per-category mode]' if per_category else ''}", flush=True)
 
     heavy_compute = _get_heavy_compute()
     GusNetDetector = _get_gusnet_detector()
@@ -434,8 +505,13 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
     rng = np.random.default_rng(42)
     detector_cache: Dict[str, Any] = {}
 
-    checkpoint_path = CHECKPOINT_DIR / "bar_bsr.pkl"
-    sig = _args_signature("bar_bsr_v1", tuple(models), n_permutations, max_tokens)
+    checkpoint_path = CHECKPOINT_DIR / (
+        "bar_bsr_per_category.pkl" if per_category else "bar_bsr.pkl"
+    )
+    sig = _args_signature(
+        "bar_bsr_v2" if per_category else "bar_bsr_v1",
+        tuple(models), n_permutations, max_tokens, per_category,
+    )
 
     # Per-model aggregates + bookkeeping. ``array.array('f')`` stores
     # 4 bytes per float vs ~28 for a Python list of float objects, so
@@ -444,6 +520,14 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
     bar_null: Dict[str, "array.array"] = {m: array.array("f") for m in models}
     bsr_obs: Dict[str, "array.array"] = {m: array.array("f") for m in models}
     bsr_null: Dict[str, "array.array"] = {m: array.array("f") for m in models}
+    # Per-category accumulators: only populated when per_category=True.
+    # Structure: dict[model][category] -> array.array("f")
+    def _empty_per_cat():
+        return {m: {c: array.array("f") for c in CATEGORIES} for m in models}
+    bar_obs_cat = _empty_per_cat() if per_category else None
+    bar_null_cat = _empty_per_cat() if per_category else None
+    bsr_obs_cat = _empty_per_cat() if per_category else None
+    bsr_null_cat = _empty_per_cat() if per_category else None
     processed_keys: set = set()
     n_skipped = 0
     n_ok = 0
@@ -458,6 +542,11 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
             a.extend(maybe_list)
         return a
 
+    def _as_arr_cat(state_cat):
+        """Restore per-category accumulator dict from checkpoint state."""
+        return {m: {c: _as_arr(state_cat[m][c]) for c in CATEGORIES}
+                for m in models}
+
     if resume:
         state = _load_checkpoint(checkpoint_path)
         if state is not None and state.get("signature") == sig:
@@ -465,23 +554,34 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
             bar_null = {m: _as_arr(state["bar_null"][m]) for m in models}
             bsr_obs = {m: _as_arr(state["bsr_obs"][m]) for m in models}
             bsr_null = {m: _as_arr(state["bsr_null"][m]) for m in models}
+            if per_category and "bar_obs_cat" in state:
+                bar_obs_cat = _as_arr_cat(state["bar_obs_cat"])
+                bar_null_cat = _as_arr_cat(state["bar_null_cat"])
+                bsr_obs_cat = _as_arr_cat(state["bsr_obs_cat"])
+                bsr_null_cat = _as_arr_cat(state["bsr_null_cat"])
             processed_keys = state["processed_keys"]
             n_ok = state.get("n_ok", 0)
             n_skipped = state.get("n_skipped", 0)
             print(f"Resuming from checkpoint: {len(processed_keys)} "
                   f"(model, sentence) pairs already done.", flush=True)
         elif state is not None:
-            print("Checkpoint exists but parameters differ — starting fresh.",
+            print("Checkpoint exists but parameters differ. Starting fresh.",
                   flush=True)
 
     def _snapshot() -> Dict[str, Any]:
-        return {
+        snap = {
             "signature": sig,
             "bar_obs": bar_obs, "bar_null": bar_null,
             "bsr_obs": bsr_obs, "bsr_null": bsr_null,
             "processed_keys": processed_keys,
             "n_ok": n_ok, "n_skipped": n_skipped,
         }
+        if per_category:
+            snap["bar_obs_cat"] = bar_obs_cat
+            snap["bar_null_cat"] = bar_null_cat
+            snap["bsr_obs_cat"] = bsr_obs_cat
+            snap["bsr_null_cat"] = bsr_null_cat
+        return snap
 
     start = time.time()
     interrupted = False
@@ -538,6 +638,20 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
                         n_skipped += 1
                         processed_keys.add(key)
                         continue
+                    # Per-category masks (only when requested).
+                    cat_masks = None
+                    cat_n: Dict[str, int] = {}
+                    if per_category:
+                        cat_masks = _detect_per_category_indices(
+                            text, tokens, detector
+                        )
+                        if cat_masks is not None:
+                            cat_masks = {
+                                c: m[:seq_len] for c, m in cat_masks.items()
+                            }
+                            cat_n = {
+                                c: int(m.sum()) for c, m in cat_masks.items()
+                            }
                     for li, lt in enumerate(attentions):
                         try:
                             arr = lt[0].detach().cpu().numpy()  # (heads, seq, seq)
@@ -556,6 +670,24 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
                             )
                             bar_null[model_name].extend(bn)
                             bsr_null[model_name].extend(sn)
+                            # Per-category metrics + nulls.
+                            if cat_masks is not None:
+                                for c in CATEGORIES:
+                                    nc = cat_n.get(c, 0)
+                                    if nc == 0 or nc >= seq_len:
+                                        continue
+                                    bc, sc = compute_bar_bsr(
+                                        head_attn, cat_masks[c]
+                                    )
+                                    if bc is None:
+                                        continue
+                                    bar_obs_cat[model_name][c].append(bc)
+                                    bsr_obs_cat[model_name][c].append(sc)
+                                    bnc, snc = permute_bar_bsr(
+                                        head_attn, nc, n_permutations, rng
+                                    )
+                                    bar_null_cat[model_name][c].extend(bnc)
+                                    bsr_null_cat[model_name][c].extend(snc)
                     n_ok += 1
                     processed_keys.add(key)
                 except Exception as e:
@@ -651,7 +783,35 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
             "BSR": summarise(bsr_obs[m], bsr_null[m], default=1.5),
         }
 
-    out_path = RESULTS_DIR / "bar_bsr_thresholds.json"
+    # Per-category breakdown (combined across models + per model).
+    if per_category:
+        per_cat_combined: Dict[str, Any] = {}
+        per_cat_by_model: Dict[str, Dict[str, Any]] = {m: {} for m in models}
+        for c in CATEGORIES:
+            all_cat_bar_obs = _concat({m: bar_obs_cat[m][c] for m in models})
+            all_cat_bar_null = _concat({m: bar_null_cat[m][c] for m in models})
+            all_cat_bsr_obs = _concat({m: bsr_obs_cat[m][c] for m in models})
+            all_cat_bsr_null = _concat({m: bsr_null_cat[m][c] for m in models})
+            per_cat_combined[c] = {
+                "BAR": summarise(all_cat_bar_obs, all_cat_bar_null, default=1.5),
+                "BSR": summarise(all_cat_bsr_obs, all_cat_bsr_null, default=1.5),
+            }
+            for m in models:
+                per_cat_by_model[m][c] = {
+                    "BAR": summarise(bar_obs_cat[m][c], bar_null_cat[m][c],
+                                     default=1.5),
+                    "BSR": summarise(bsr_obs_cat[m][c], bsr_null_cat[m][c],
+                                     default=1.5),
+                }
+        summary["per_category"] = {
+            "combined": per_cat_combined,
+            "by_model": per_cat_by_model,
+        }
+
+    out_path = RESULTS_DIR / (
+        "bar_bsr_thresholds_per_category.json"
+        if per_category else "bar_bsr_thresholds.json"
+    )
     out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                         encoding="utf-8")
     print(f"Saved {out_path}")
@@ -1067,6 +1227,267 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Analysis 4 — Faithfulness validation: representation_impact bands
+# ──────────────────────────────────────────────────────────────────────
+
+def run_faithfulness_calibration(
+    n_sentences: int = 500,
+    k_max: int = 20,
+    model_name: str = "bert-base-uncased",
+    max_tokens: Optional[int] = None,
+    resume: bool = True,
+    checkpoint_every: int = 10,
+) -> Dict[str, Any]:
+    """Calibrate the dashboard's ``representation_impact`` cut-off.
+
+    The current default in ``bias_xai.py`` is ``> 0.05`` for "high impact"
+    coloring of an ablated head. That number is arbitrary. We make it
+    defensible by comparing it to a null distribution built from ablating
+    random heads instead of BAR-ranked heads.
+
+    For each biased sentence in a v9 subsample, we:
+
+    1. Compute BAR per (layer, head) and pick the top-K by BAR.
+    2. Ablate each of those K heads individually, record the
+       per-head ``representation_impact`` (observed pool).
+    3. Sample K random (layer, head) pairs from the full set and
+       ablate each, record their ``representation_impact``
+       (null pool).
+
+    The 95th / 99th percentile of the null pool give the
+    ``representation_impact`` thresholds that catch real causal heads
+    with false-positive rates of 5% and 1% respectively.
+
+    Saves ``faithfulness_impact_{model_short}.json`` with the percentile
+    summary + histogram, plus a checkpoint
+    ``faithfulness_impact_{model_short}.pkl`` so the run is resumable.
+    """
+    sample = load_v9_stratified(n_sentences, max_tokens=max_tokens)
+    biased_only = [e for e in sample if e.get("has_bias")]
+    print(f"Faithfulness calibration: {len(biased_only)} biased sentences, "
+          f"K={k_max}, model={model_name}")
+    if not biased_only:
+        return {"note": "no biased sentences in subsample"}
+
+    heavy_compute = _get_heavy_compute()
+    GusNetDetector = _get_gusnet_detector()
+    from attention_app.bias.attention_bias import AttentionBiasAnalyzer  # type: ignore
+    from attention_app.bias.head_ablation import batch_ablate_top_heads, HeadAblationResult  # noqa
+    from attention_app.models import ModelManager  # type: ignore
+
+    bias_key = "gusnet-bert" if "bert" in model_name.lower() else "gusnet-gpt2"
+    detector = GusNetDetector(model_key=bias_key)
+    analyzer = AttentionBiasAnalyzer()
+    is_gpt2 = "gpt2" in model_name.lower()
+
+    short = _model_short(model_name)
+    checkpoint_path = CHECKPOINT_DIR / f"faithfulness_impact_{short}.pkl"
+    sig = _args_signature("faithfulness_v1", model_name, k_max, max_tokens)
+
+    obs_impacts = array.array("f")    # BAR-ranked heads' impacts
+    null_impacts = array.array("f")   # random heads' impacts
+    processed_keys: set = set()
+    n_ok = 0
+    rng = np.random.default_rng(42)
+
+    if resume:
+        state = _load_checkpoint(checkpoint_path)
+        if state is not None and state.get("signature") == sig:
+            obs_impacts = array.array("f")
+            obs_impacts.extend(state["obs_impacts"])
+            null_impacts = array.array("f")
+            null_impacts.extend(state["null_impacts"])
+            processed_keys = state["processed_keys"]
+            n_ok = state.get("n_ok", 0)
+            print(f"Resuming from checkpoint: {len(processed_keys)} done.",
+                  flush=True)
+        elif state is not None:
+            print("Checkpoint exists but parameters differ. Starting fresh.",
+                  flush=True)
+
+    def _snapshot() -> Dict[str, Any]:
+        return {
+            "signature": sig,
+            "obs_impacts": list(obs_impacts),
+            "null_impacts": list(null_impacts),
+            "processed_keys": processed_keys,
+            "n_ok": n_ok,
+        }
+
+    start = time.time()
+    interrupted = False
+    with _GracefulInterrupt() as gi:
+        since_last_save = 0
+        for i, entry in enumerate(biased_only):
+            if gi.interrupted:
+                interrupted = True
+                break
+            if i % 5 == 0:
+                print(f"  [{i+1}/{len(biased_only)}] elapsed "
+                      f"{time.time() - start:.0f}s, obs={len(obs_impacts)}, "
+                      f"null={len(null_impacts)}", flush=True)
+            text = entry.get("text", "")
+            key = _text_hash(text)
+            if key in processed_keys:
+                continue
+            try:
+                result = heavy_compute(text, model_name)
+                if result is None:
+                    processed_keys.add(key)
+                    continue
+                tokens = list(getattr(result, "tokens", []) or [])
+                attentions = getattr(result, "attentions", None)
+                if attentions is None or not tokens:
+                    processed_keys.add(key)
+                    continue
+                biased_mask = _detect_biased_indices_for_attention_tokens(
+                    text, tokens, detector
+                )
+                if biased_mask is None or biased_mask.sum() == 0:
+                    processed_keys.add(key)
+                    continue
+                biased_indices = set(int(i_) for i_, b in enumerate(biased_mask) if b)
+                metrics = analyzer.analyze_attention_to_bias(
+                    list(attentions), biased_indices, tokens
+                )
+                if not metrics:
+                    processed_keys.add(key)
+                    continue
+                ranked = sorted(metrics, key=lambda m: m.bias_attention_ratio,
+                                reverse=True)
+                top_obs = ranked[:k_max]
+
+                # Random heads: sample K uniformly from all (layer, head) pairs.
+                # Re-use HeadBiasMetrics objects from the same metrics list so
+                # batch_ablate_top_heads receives the type it expects.
+                if len(metrics) <= k_max:
+                    top_null = list(metrics)
+                else:
+                    rand_idx = rng.choice(len(metrics), size=k_max, replace=False)
+                    top_null = [metrics[int(j)] for j in rand_idx]
+
+                tokenizer, encoder_model, lm_head_model = ModelManager.get_model(model_name)
+
+                obs_abl = batch_ablate_top_heads(
+                    encoder_model, lm_head_model, tokenizer, text,
+                    top_obs, is_gpt2,
+                )
+                null_abl = batch_ablate_top_heads(
+                    encoder_model, lm_head_model, tokenizer, text,
+                    top_null, is_gpt2,
+                )
+                if not obs_abl or not null_abl:
+                    processed_keys.add(key)
+                    continue
+                for r in obs_abl:
+                    if r.representation_impact is not None:
+                        obs_impacts.append(abs(r.representation_impact))
+                for r in null_abl:
+                    if r.representation_impact is not None:
+                        null_impacts.append(abs(r.representation_impact))
+
+                n_ok += 1
+                processed_keys.add(key)
+            except Exception as e:
+                processed_keys.add(key)
+                _logger.debug("faithfulness sentence %d failed: %s", i, e)
+                continue
+
+            since_last_save += 1
+            if since_last_save >= checkpoint_every:
+                _save_checkpoint(checkpoint_path, _snapshot())
+                since_last_save = 0
+        _save_checkpoint(checkpoint_path, _snapshot())
+
+    if interrupted:
+        print(f"\nInterrupted. Checkpoint saved at {checkpoint_path}. "
+              f"Re-run to resume.", flush=True)
+        return {"interrupted": True, "checkpoint": str(checkpoint_path),
+                "processed_so_far": len(processed_keys), "n_ok": n_ok}
+
+    obs_np = np.frombuffer(obs_impacts, dtype=np.float32) if len(obs_impacts) else np.empty(0, dtype=np.float32)
+    null_np = np.frombuffer(null_impacts, dtype=np.float32) if len(null_impacts) else np.empty(0, dtype=np.float32)
+
+    summary: Dict[str, Any] = {
+        "n_sentences_attempted": len(biased_only),
+        "n_sentences_ok": n_ok,
+        "model": model_name,
+        "k_max": k_max,
+        "current_default_high_impact": 0.05,
+        "obs_pool": {
+            "n": int(obs_np.size),
+            "mean": float(obs_np.mean()) if obs_np.size else None,
+            "median": float(np.percentile(obs_np, 50)) if obs_np.size else None,
+            "p80": float(np.percentile(obs_np, 80)) if obs_np.size else None,
+            "p95": float(np.percentile(obs_np, 95)) if obs_np.size else None,
+            "p99": float(np.percentile(obs_np, 99)) if obs_np.size else None,
+        },
+        "null_pool": {
+            "n": int(null_np.size),
+            "mean": float(null_np.mean()) if null_np.size else None,
+            "median": float(np.percentile(null_np, 50)) if null_np.size else None,
+            "p80": float(np.percentile(null_np, 80)) if null_np.size else None,
+            "p95": float(np.percentile(null_np, 95)) if null_np.size else None,
+            "p99": float(np.percentile(null_np, 99)) if null_np.size else None,
+        },
+        "recommended_thresholds": {
+            "above_noise_alpha_0.20": float(np.percentile(null_np, 80)) if null_np.size else None,
+            "high_impact_alpha_0.05": float(np.percentile(null_np, 95)) if null_np.size else None,
+            "very_high_impact_alpha_0.01": float(np.percentile(null_np, 99)) if null_np.size else None,
+        },
+        "fraction_obs_above_alpha_0.05": (
+            float((obs_np >= np.percentile(null_np, 95)).mean())
+            if obs_np.size and null_np.size else None
+        ),
+    }
+
+    out_path = RESULTS_DIR / f"faithfulness_impact_{short}.json"
+    out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
+                        encoding="utf-8")
+    print(f"Saved {out_path}")
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        if obs_np.size and null_np.size:
+            fig, ax = plt.subplots(figsize=(8, 4.5))
+            # Cap range visually so the tail doesn't compress the bulk
+            xmax = float(np.percentile(np.concatenate([obs_np, null_np]), 99.5))
+            ax.hist(null_np, bins=80, range=(0, xmax), alpha=0.55,
+                    color="#94a3b8", density=True,
+                    label=f"Null (random heads, n={null_np.size})")
+            ax.hist(obs_np, bins=80, range=(0, xmax), alpha=0.55,
+                    color="#ff5ca9", density=True,
+                    label=f"Observed (top-{k_max} BAR heads, n={obs_np.size})")
+            p95 = float(np.percentile(null_np, 95))
+            p99 = float(np.percentile(null_np, 99))
+            ax.axvline(p95, color="#16a34a", linestyle="--",
+                       label=f"95th null = {p95:.4f} (α=0.05)")
+            ax.axvline(p99, color="#dc2626", linestyle="--",
+                       label=f"99th null = {p99:.4f} (α=0.01)")
+            ax.axvline(0.05, color="#1d4ed8", linestyle=":",
+                       label="Current default = 0.05")
+            ax.set_xlabel("|representation_impact|")
+            ax.set_ylabel("Density")
+            ax.set_title(f"Per-head ablation impact ({model_name}): BAR-ranked vs random null")
+            ax.legend(fontsize=8)
+            fig.tight_layout()
+            plot_path = RESULTS_DIR / f"faithfulness_impact_{short}.png"
+            fig.savefig(plot_path, dpi=120)
+            plt.close(fig)
+            print(f"Saved {plot_path}")
+    except Exception as e:
+        print(f"Plotting failed: {e}")
+
+    try:
+        checkpoint_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+    return summary
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Recovery mode: summarise from an existing checkpoint
 # ──────────────────────────────────────────────────────────────────────
 
@@ -1172,12 +1593,21 @@ def main() -> int:
                         help="Run GUS-Net per-category threshold calibration.")
     parser.add_argument("--ablation", action="store_true",
                         help="Run top-K head ablation cumulative-impact analysis.")
+    parser.add_argument("--faithfulness", action="store_true",
+                        help="Calibrate the representation_impact threshold for "
+                             "faithfulness validation by comparing BAR-ranked "
+                             "vs random head ablations.")
     parser.add_argument("--all", action="store_true",
-                        help="Run all three analyses.")
+                        help="Run all four analyses.")
     parser.add_argument("--n", type=_parse_n_arg, default=200,
                         help="Sentences for BAR/BSR (int or 'all'; default 200).")
     parser.add_argument("--perms", type=int, default=200,
                         help="Permutations per (sentence, head) (default 200).")
+    parser.add_argument("--bar-per-category", action="store_true",
+                        help="Also compute BAR/BSR distributions per GUS-Net "
+                             "category (GEN, UNFAIR, STEREO) with their own "
+                             "permutation nulls. Output goes to "
+                             "bar_bsr_thresholds_per_category.json.")
     parser.add_argument("--abl-n", type=_parse_n_arg, default=50,
                         help="Sentences for top-K ablation (int or 'all'; default 50).")
     parser.add_argument("--k-max", type=int, default=20,
@@ -1186,6 +1616,14 @@ def main() -> int:
                         default="both",
                         help="Which attention model(s) to ablate (default both). "
                              "Each model writes its own checkpoint + output JSON.")
+    parser.add_argument("--faith-n", type=_parse_n_arg, default=500,
+                        help="Sentences for faithfulness calibration "
+                             "(int or 'all'; default 500). Lower than --abl-n "
+                             "because each sentence does 2x the ablations.")
+    parser.add_argument("--faith-model", choices=["bert", "gpt2", "both"],
+                        default="both",
+                        help="Which attention model(s) for faithfulness calibration "
+                             "(default both).")
     parser.add_argument("--max-tokens", type=int, default=None,
                         help="Skip sentences with more than this many whitespace "
                              "tokens (cheap filter to keep runtime bounded). "
@@ -1206,8 +1644,8 @@ def main() -> int:
         return _summarise_existing_checkpoints(args)
 
     if args.all:
-        args.bar = args.gusnet = args.ablation = True
-    if not (args.bar or args.gusnet or args.ablation):
+        args.bar = args.gusnet = args.ablation = args.faithfulness = True
+    if not (args.bar or args.gusnet or args.ablation or args.faithfulness):
         parser.print_help()
         return 1
 
@@ -1262,6 +1700,7 @@ def main() -> int:
                 max_tokens=args.max_tokens,
                 resume=resume,
                 checkpoint_every=args.checkpoint_every,
+                per_category=args.bar_per_category,
             )
         except Exception:
             traceback.print_exc()
@@ -1282,6 +1721,25 @@ def main() -> int:
             try:
                 run_topk_ablation(
                     n_sentences=args.abl_n,
+                    k_max=args.k_max,
+                    model_name=_m,
+                    max_tokens=args.max_tokens,
+                    resume=resume,
+                    checkpoint_every=max(1, args.checkpoint_every // 2),
+                )
+            except Exception:
+                traceback.print_exc()
+    if args.faithfulness:
+        faith_models: List[str] = []
+        if args.faith_model in ("bert", "both"):
+            faith_models.append("bert-base-uncased")
+        if args.faith_model in ("gpt2", "both"):
+            faith_models.append("gpt2")
+        for _m in faith_models:
+            print(f"\n========== Faithfulness calibration ({_m}) ==========")
+            try:
+                run_faithfulness_calibration(
+                    n_sentences=args.faith_n,
                     k_max=args.k_max,
                     model_name=_m,
                     max_tokens=args.max_tokens,
