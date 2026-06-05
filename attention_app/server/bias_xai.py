@@ -562,16 +562,42 @@ def register_xai_handlers(
                 '</table>'
             )
             
-            # Cohen (1988) magnitude bands footnote + significance star key.
+            # Cohen (1988) magnitude bands legend + significance star key.
+            # Visual: small label above + four flex pills (each is the band
+            # value over the band name) + a thin footnote line.
+            def _pill(bg_alpha_color: str, text_color: str, value: str, label: str) -> str:
+                return (
+                    f'<div style="display:flex;flex-direction:column;align-items:center;'
+                    f'background:{bg_alpha_color};padding:6px 14px;border-radius:8px;'
+                    f'min-width:74px;border:1px solid {text_color}33;">'
+                    f'<span style="font-family:JetBrains Mono,monospace;font-size:11px;'
+                    f'font-weight:700;color:{text_color};line-height:1.1;">{value}</span>'
+                    f'<span style="font-size:9px;font-weight:600;color:{text_color};'
+                    f'opacity:0.85;text-transform:uppercase;letter-spacing:0.6px;'
+                    f'margin-top:3px;">{label}</span>'
+                    f'</div>'
+                )
             rho_legend_html = (
-                '<div style="margin-top:10px;font-size:11px;color:#64748b;line-height:1.6;text-align:center;">'
-                '<b>*</b>&nbsp;|&rho;| magnitude bands (Cohen 1988): '
-                '<span style="color:#1d4ed8;font-weight:700;">&ge; 0.7 very strong</span> &middot; '
-                '<span style="color:#2563eb;font-weight:700;">0.5&ndash;0.7 strong</span> &middot; '
-                '<span style="color:#60a5fa;font-weight:700;">0.3&ndash;0.5 moderate</span> &middot; '
-                '<span style="color:#93c5fd;font-weight:700;">&lt; 0.3 weak</span>. '
-                'Negative correlations use the same intensities in red. '
-                '<span style="color:#22c55e;font-weight:700;">&#9733;</span> marks rows with raw p &lt; 0.05.'
+                '<div style="margin-top:14px;text-align:center;">'
+                # Header label
+                '<div style="font-size:10px;font-weight:700;color:#94a3b8;'
+                'text-transform:uppercase;letter-spacing:0.7px;margin-bottom:8px;">'
+                '|&rho;| magnitude bands &middot; Cohen (1988)'
+                '</div>'
+                # Pills row
+                '<div style="display:inline-flex;gap:8px;align-items:stretch;">'
+                + _pill("rgba(147,197,253,0.12)", "#93c5fd", "&lt; 0.3", "weak")
+                + _pill("rgba(96,165,250,0.14)", "#60a5fa", "0.3 - 0.5", "moderate")
+                + _pill("rgba(37,99,235,0.16)", "#2563eb", "0.5 - 0.7", "strong")
+                + _pill("rgba(29,78,216,0.18)", "#1d4ed8", "&ge; 0.7", "very strong")
+                + '</div>'
+                # Footnote
+                '<div style="font-size:10.5px;color:#94a3b8;line-height:1.5;'
+                'margin-top:8px;font-style:italic;">'
+                'Negative correlations use the same magnitude bands in red. '
+                '<span style="color:#22c55e;font-style:normal;font-weight:700;">&#9733;</span> '
+                'marks rows with raw p &lt; 0.05.'
+                '</div>'
                 '</div>'
             )
 
@@ -583,10 +609,10 @@ def register_xai_handlers(
             ]
 
             if chart2_html:
-                sections.append(ui.HTML('<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'))
+                sections.append(ui.HTML('<div style="margin:24px 0 16px;"></div>'))
                 sections.append(ui.HTML(chart2_html))
 
-            sections.append(ui.HTML('<hr style="border-color:rgba(100,116,139,0.15);margin:24px 0 16px;">'))
+            sections.append(ui.HTML('<div style="margin:24px 0 16px;"></div>'))
             sections.append(ui.HTML(
                 f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">'
                 f'{chart3_html}{chart4_html}'
