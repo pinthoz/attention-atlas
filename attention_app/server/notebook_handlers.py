@@ -211,6 +211,56 @@ _METRIC_LABELS = {
 # they appear first in the rendered block), then computed metrics.
 _CONTEXT_LABELS: Dict[str, str] = {**_INPUT_LABELS, **_METRIC_LABELS}
 
+
+def _strip_side_suffix(label: str) -> str:
+    """Remove the ``A``/``B`` side marker from a label.
+
+    The Notebook labels carry an ``A``/``B`` suffix so the two sides of a
+    compare run can be told apart (e.g. ``Model A``, ``Threshold
+    (unfair, A)``, ``Bias tokens analysed (A)``). When no compare mode is
+    active there is only one side, so the marker is noise and should not
+    appear at all. This collapses the four suffix shapes the registry
+    uses back to the plain label.
+    """
+    # "(A, sha256[:16])" -> "(sha256[:16])"
+    label = re.sub(r"\(([AB]),\s*", "(", label)
+    # "(unfair, A)" -> "(unfair)"
+    label = re.sub(r",\s*[AB]\)", ")", label)
+    # trailing " (A)" -> ""
+    label = re.sub(r"\s*\([AB]\)\s*$", "", label)
+    # trailing " A" -> ""
+    label = re.sub(r"\s+[AB]$", "", label)
+    return label
+
+
+def _compare_active(context: Dict[str, Any]) -> tuple:
+    """Return ``(att_compare, bias_compare)`` for a captured context.
+
+    The compare flags are only written into the context when they are
+    truthy (see ``_capture_context``), so their mere presence means the
+    corresponding compare mode (models *or* prompts) was on.
+    """
+    att = ("att_compare_models" in context) or ("att_compare_prompts" in context)
+    bias = ("bias_compare_models" in context) or ("bias_compare_prompts" in context)
+    return att, bias
+
+
+def _adjust_labels_for_context(labels: Dict[str, str],
+                               context: Dict[str, Any]) -> Dict[str, str]:
+    """Drop the ``A``/``B`` marker from labels whose side has no compare.
+
+    Attention keys (``att_*``) follow the attention compare state; every
+    other key (bias inputs/metrics, ``bias_*``) follows the bias compare
+    state. When that side is not in compare mode there is a single model
+    and prompt, so the marker is stripped.
+    """
+    att_compare, bias_compare = _compare_active(context)
+    out: Dict[str, str] = {}
+    for key, label in labels.items():
+        side_compare = att_compare if key.startswith("att") else bias_compare
+        out[key] = label if side_compare else _strip_side_suffix(label)
+    return out
+
 # Map each captured field to the regulatory clause it most directly
 # satisfies. Each value is a (short rule label, tooltip, URL) triple.
 # The renderer turns this into a small clickable ``(i)`` icon next to
@@ -435,7 +485,7 @@ def _reg_link_html(json_key: str) -> str:
         return ""
     label, tooltip, url = entry
     # Escape the tooltip text so the title attribute is safe.
-    safe_tooltip = _html.escape(f"{label} — {tooltip}", quote=True)
+    safe_tooltip = _html.escape(f"{label}: {tooltip}", quote=True)
     safe_url = _html.escape(url, quote=True)
     return (
         f' <a class="nb-reg-link" href="{safe_url}" target="_blank" '
@@ -1254,16 +1304,16 @@ def _extract_bias_metrics(bias_state, bias_compare_active: bool) -> Dict[str, An
 def _format_context_value(value: Any) -> str:
     """Render a captured value as a short string for the UI/Markdown."""
     if value is None:
-        return "—"
+        return "-"
     if isinstance(value, bool):
         return "yes" if value else "no"
     if isinstance(value, dict):
         if not value:
-            return "—"
+            return "-"
         return ", ".join(f"{k}={v}" for k, v in value.items())
     if isinstance(value, list):
         if not value:
-            return "—"
+            return "-"
         return ", ".join(str(v) for v in value[:8]) + (
             f" (+{len(value) - 8} more)" if len(value) > 8 else ""
         )
@@ -1294,7 +1344,7 @@ def _slugify(text: str) -> str:
 def _context_to_markdown(context: Optional[Dict[str, Any]]) -> str:
     if not context:
         return "_(no context captured)_"
-    lines = _context_lines(context, _CONTEXT_LABELS)
+    lines = _context_lines(context, _adjust_labels_for_context(_CONTEXT_LABELS, context))
     if not lines:
         return "_(no context captured)_"
     return "\n".join(lines)
@@ -1335,9 +1385,14 @@ def _signal_labels() -> Dict[str, str]:
 
 
 def _context_section_to_markdown(context: Optional[Dict[str, Any]],
-                                 labels: Dict[str, str]) -> str:
+                                 labels: Dict[str, str],
+                                 *, compare_ctx: Optional[Dict[str, Any]] = None) -> str:
     if not context:
         return "_(none captured)_"
+    # The compare flags live in the full context. A section subset (e.g.
+    # "Signals observed") may not carry them, so detect compare state from
+    # ``compare_ctx`` when supplied and fall back to the rendered subset.
+    labels = _adjust_labels_for_context(labels, compare_ctx or context)
     lines = _context_lines(context, labels)
     return "\n".join(lines) if lines else "_(none captured)_"
 
@@ -1358,6 +1413,7 @@ def _entry_signals(entry: Dict[str, Any]) -> Dict[str, Any]:
 
 def _context_rows_html(ctx: Dict[str, Any], labels: Dict[str, str],
                        flagged: set) -> str:
+    labels = _adjust_labels_for_context(labels, ctx)
     rows = []
     for json_key, label in labels.items():
         if json_key not in ctx:
@@ -1402,6 +1458,9 @@ def _entry_to_markdown(entry: Dict[str, Any]) -> str:
     ts = entry.get("timestamp", "")
     lines = [f"## {title}", "", f"*Recorded: {ts}*", ""]
     context = entry.get("context")
+    # Full context carries the compare flags used to decide whether A/B
+    # markers are shown; the per-section subsets may not.
+    compare_ctx = context or {}
 
     lines.append("### Hypothesis")
     lines.append("")
@@ -1412,12 +1471,14 @@ def _entry_to_markdown(entry: Dict[str, Any]) -> str:
     # state and computed evidence at save time.
     lines.append("### Conditions tested")
     lines.append("")
-    lines.append(_context_section_to_markdown(_entry_conditions(entry), _condition_labels()))
+    lines.append(_context_section_to_markdown(
+        _entry_conditions(entry), _condition_labels(), compare_ctx=compare_ctx))
     lines.append("")
 
     lines.append("### Signals observed")
     lines.append("")
-    lines.append(_context_section_to_markdown(_entry_signals(entry), _signal_labels()))
+    lines.append(_context_section_to_markdown(
+        _entry_signals(entry), _signal_labels(), compare_ctx=compare_ctx))
     lines.append("")
 
     lines.append("### Uncertainty acknowledged")
@@ -1812,7 +1873,7 @@ def notebook_server_handlers(input, output, session, *,
                     '<div class="nb-entry-field">'
                     '<span class="nb-entry-field-label">Automatically captured thesis elements</span>'
                     '<div class="nb-entry-field-value">(no context captured for '
-                    'this entry — created before context-capture was enabled)'
+                    'this entry; created before context-capture was enabled)'
                     "</div></div>"
                 )
             # Free-text fields

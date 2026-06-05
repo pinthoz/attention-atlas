@@ -1546,23 +1546,28 @@ def create_floating_bias_toolbar():
                                   "BAR = observed attention to biased tokens / expected under uniform.\n"
                                   "Heads with BAR above this value are marked as 'specialized'.\n"
                                   "= 1.0: head attends uniformly (no bias focus)\n"
-                                  "> 1.5: head over-attends to biased tokens (default threshold)\n"
+                                  "> 2.5: head over-attends to biased tokens (default: empirical α=0.05 from permutation null on v9)\n"
                                   "Lower values detect subtler patterns; higher values are stricter."},
                         ui.span("BAR Threshold", class_="control-label", **{"data-short": "BAR"}),
                         ui.div(
                             {"class": "slider-container"},
-                            ui.tags.span("1.5", id="bias-bar-threshold-value", class_="slider-value"),
-                            ui.tags.input(type="range", id="bias-bar-threshold-slider", min="1.0", max="3.0", value="1.5", step="0.1"),
+                            ui.tags.span("2.5", id="bias-bar-threshold-value", class_="slider-value"),
+                            ui.tags.input(type="range", id="bias-bar-threshold-slider", min="1.0", max="5.0", value="2.5", step="0.1"),
                         ),
                     ),
                     # Top-K slider
                     ui.div(
-                        {"class": "control-group"},
+                        {"class": "control-group",
+                         "title": "How many top heads (ranked by BAR) to display.\n"
+                                  "Default 5 comes from the cumulative ablation curve on v9: "
+                                  "BERT reaches ~66% of its total head-level bias impact at K=5, "
+                                  "GPT-2 has a near-flat curve so K=1 captures almost everything.\n"
+                                  "Drag up to 20 to inspect the full distribution of bias-relevant heads."},
                         ui.span("Top-K", class_="control-label"),
                         ui.div(
                             {"class": "slider-container"},
                             ui.tags.span("5", id="bias-topk-value", class_="slider-value"),
-                            ui.tags.input(type="range", id="bias-topk-slider", min="1", max="10", value="5", step="1"),
+                            ui.tags.input(type="range", id="bias-topk-slider", min="1", max="20", value="5", step="1"),
                         ),
                     ),
                 ),

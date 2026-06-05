@@ -51,6 +51,76 @@ from .bias_exports import (
 _logger = logging.getLogger(__name__)
 
 
+# ── Spearman rho magnitude bands (Cohen 1988) ────────────────────────────
+# Standard literature convention for interpreting correlation magnitude.
+# Used to colour the |rho| values in the IG correlation table.
+_RHO_BANDS = [
+    (0.7, "very strong"),
+    (0.5, "strong"),
+    (0.3, "moderate"),
+    (0.0, "weak"),
+]
+
+
+def _rho_color_and_label(rho: float) -> tuple:
+    """Pick a colour intensity and magnitude label for a Spearman rho.
+
+    Sign chooses the colour family (positive=blue, negative=red); magnitude
+    chooses the shade (light=weak, dark=very strong) per Cohen (1988).
+    Returns ``(hex_colour, magnitude_label)``.
+    """
+    mag = abs(rho)
+    if mag >= 0.7:
+        label, idx = "very strong", 3
+    elif mag >= 0.5:
+        label, idx = "strong", 2
+    elif mag >= 0.3:
+        label, idx = "moderate", 1
+    else:
+        label, idx = "weak", 0
+    pos_shades = ["#93c5fd", "#60a5fa", "#2563eb", "#1d4ed8"]
+    neg_shades = ["#fca5a5", "#f87171", "#dc2626", "#991b1b"]
+    return (pos_shades if rho >= 0 else neg_shades)[idx], label
+
+
+# ── Calibrated faithfulness thresholds (representation_impact) ───────────
+# Empirical permutation-null thresholds from the faithfulness calibration
+# on the full v9 corpus (2026-06-05). Per-model because BERT and GPT-2
+# operate at completely different impact scales (BERT is ~100x larger).
+# See dataset/thresholds_results/faithfulness_impact_{bert,gpt2}.json
+# and the writeup in THRESHOLDS_CALIBRATION.md, section 14.
+IMPACT_THRESHOLDS = {
+    "bert-base-uncased": {
+        "high": 0.0093,        # null p95, alpha=0.05
+        "very_high": 0.0190,   # null p99, alpha=0.01
+        "obs_above_alpha_05_pct": 9.37,  # fraction of obs above the high cutoff
+    },
+    "gpt2": {
+        "high": 0.000105,      # null p95, alpha=0.05
+        "very_high": 0.0169,   # null p99, alpha=0.01
+        "obs_above_alpha_05_pct": 3.59,
+    },
+}
+
+
+def _get_impact_thresholds(model_name: str) -> dict:
+    """Return the calibrated impact thresholds for the given attention model.
+    Falls back to BERT defaults when the model is unknown."""
+    if model_name and "gpt2" in model_name.lower():
+        return IMPACT_THRESHOLDS["gpt2"]
+    return IMPACT_THRESHOLDS["bert-base-uncased"]
+
+
+def _impact_color(impact: float, thresholds: dict) -> str:
+    """Pick a colour for representation_impact in the ablation table.
+    Three bands: dark red (alpha=0.01), pink (alpha=0.05), grey (below)."""
+    if impact >= thresholds["very_high"]:
+        return "#b91c1c"   # rose-700 (very high impact)
+    if impact >= thresholds["high"]:
+        return "#ff5ca9"   # pink-500 (high impact)
+    return "#64748b"       # slate-500 (within null distribution)
+
+
 def register_xai_handlers(
     input, output,
     ablation_results, ablation_results_B, ablation_running,
@@ -93,14 +163,25 @@ def register_xai_handlers(
 
         def _render_ablation_single(results_data, container_suffix=""):
             if not results_data: return "No data"
-            
+
+            # Pick calibrated thresholds based on the active attention model
+            # (BERT and GPT-2 differ by ~100x). input.model_name() is the
+            # attention model; resolving from bias_results gives the GUS-Net
+            # detector path instead, which is the wrong scale.
+            try:
+                model_name = input.model_name() or "bert-base-uncased"
+            except Exception:
+                model_name = "bert-base-uncased"
+            thresholds = _get_impact_thresholds(model_name)
+            is_gpt2 = "gpt2" in model_name.lower()
+
             fig = create_ablation_impact_chart(results_data, bar_threshold=bar_threshold, selected_head=selected_head)
             c_id = f"ablation-chart-container{container_suffix}"
             chart_html = _deferred_plotly(fig, c_id)
 
             table_rows = []
             for rank, r in enumerate(results_data, 1):
-                impact_color = "#ff5ca9" if r.representation_impact > 0.05 else "#64748b"
+                impact_color = _impact_color(r.representation_impact, thresholds)
                 kl_cell = f"{r.kl_divergence:.4f}" if r.kl_divergence is not None else "N/A"
                 specialized = "Yes" if r.bar_original > bar_threshold else "No"
                 row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
@@ -132,10 +213,39 @@ def register_xai_handlers(
                 f'<tbody>{"".join(table_rows)}</tbody>'
                 '</table>'
             )
-            
+
+            # Plain-text threshold note (no card) with an asterisk prefix.
+            # Same line-height as table text so it reads as a footnote.
+            legend_html = (
+                f'<div style="margin-top:10px;font-size:11px;color:#64748b;line-height:1.6;text-align:center;">'
+                f'<b>*</b>&nbsp;Impact thresholds for <code style="font-family:JetBrains Mono,monospace;'
+                f'color:#334155;">{model_name}</code> (empirical permutation null on v9): '
+                f'<span style="color:{_impact_color(thresholds["high"], thresholds)};font-weight:700;'
+                f'font-family:JetBrains Mono,monospace;">&ge; {thresholds["high"]:.4f}</span> '
+                f'high impact (&alpha;=0.05) &middot; '
+                f'<span style="color:{_impact_color(thresholds["very_high"], thresholds)};font-weight:700;'
+                f'font-family:JetBrains Mono,monospace;">&ge; {thresholds["very_high"]:.4f}</span> '
+                f'very high impact (&alpha;=0.01).'
+                f'</div>'
+            )
+            warning_html = ""
+            if is_gpt2:
+                warning_html = (
+                    '<div style="margin-top:8px;font-size:11px;color:#78350f;line-height:1.6;text-align:center;">'
+                    '<b>*</b>&nbsp;<b>Caveat for GPT-2:</b> in our calibration the BAR '
+                    'ranking did <b>not</b> predict single-head causal impact. Random heads had '
+                    '~2.4x larger mean impact than top-BAR heads, and only 3.6% of BAR-ranked '
+                    'ablations crossed the &alpha;=0.05 cutoff (vs the 5% expected by chance). '
+                    'In other words, GPT-2 bias is encoded in a way that single-head ablation '
+                    'cannot localise; interpret the impact column as exploratory, not causal.'
+                    '</div>'
+                )
+
             return ui.div(
                 ui.HTML(chart_html),
                 ui.HTML(table_html),
+                ui.HTML(legend_html),
+                ui.HTML(warning_html) if warning_html else None,
             )
 
         faith_src = _get_attn_source_mode("bias_attn_source")
@@ -418,7 +528,7 @@ def register_xai_handlers(
             top_heads = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)[:top_k]
             table_rows = []
             for rank, r in enumerate(top_heads, 1):
-                rho_color = "#2563eb" if r.spearman_rho > 0 else "#dc2626"
+                rho_color, rho_label = _rho_color_and_label(r.spearman_rho)
                 sig_badge = '<span style="color:#22c55e;font-weight:600;">★</span>' if r.spearman_pvalue < 0.05 else ""
                 specialized = "Yes" if r.bar_original > bar_threshold else "No"
                 row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
@@ -427,7 +537,8 @@ def register_xai_handlers(
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
-                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{rho_color};">{r.spearman_rho:.3f}{sig_badge}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{rho_color};">{r.spearman_rho:.3f}{sig_badge}'
+                    f'<span style="font-size:9px;font-weight:600;color:{rho_color};opacity:0.75;margin-left:6px;text-transform:uppercase;letter-spacing:0.4px;">{rho_label}</span></td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.spearman_pvalue:.4f}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
@@ -451,10 +562,24 @@ def register_xai_handlers(
                 '</table>'
             )
             
+            # Cohen (1988) magnitude bands footnote + significance star key.
+            rho_legend_html = (
+                '<div style="margin-top:10px;font-size:11px;color:#64748b;line-height:1.6;text-align:center;">'
+                '<b>*</b>&nbsp;|&rho;| magnitude bands (Cohen 1988): '
+                '<span style="color:#1d4ed8;font-weight:700;">&ge; 0.7 very strong</span> &middot; '
+                '<span style="color:#2563eb;font-weight:700;">0.5&ndash;0.7 strong</span> &middot; '
+                '<span style="color:#60a5fa;font-weight:700;">0.3&ndash;0.5 moderate</span> &middot; '
+                '<span style="color:#93c5fd;font-weight:700;">&lt; 0.3 weak</span>. '
+                'Negative correlations use the same intensities in red. '
+                '<span style="color:#22c55e;font-weight:700;">&#9733;</span> marks rows with raw p &lt; 0.05.'
+                '</div>'
+            )
+
             sections = [
                 ui.HTML(chart1_html),
                 ui.HTML(summary_html),
                 ui.HTML(table_html),
+                ui.HTML(rho_legend_html),
             ]
 
             if chart2_html:

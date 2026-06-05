@@ -35,7 +35,7 @@ def create_attention_bias_matrix(
     bias_matrix: np.ndarray,
     metrics: Optional[List[HeadBiasMetrics]] = None,
     selected_layer: Optional[int] = None,
-    bar_threshold: float = 1.5,
+    bar_threshold: float = 2.5,
     bias_matrix_other: Optional[np.ndarray] = None,
     delta_label: str = "A \u2212 B",
 ) -> go.Figure:
@@ -108,28 +108,30 @@ def create_attention_bias_matrix(
                 row.append(text)
             hover_text.append(row)
 
-    # Dynamic range: ensure 1.0 is always central
-    # Range is [0, max(2.5, data_max)]
-    # This ensures 1.0 (neutral) aligns with White in the colorscale below
+    # Dynamic range anchored at the alpha=0.01 threshold (5.3) so the colorscale
+    # spans uniform (1.0) -> alpha=0.05 (2.5) -> alpha=0.01 (5.3). Heat data above
+    # 5.3 expand the range further but the empirical breakpoints stay readable.
     max_val = float(bias_matrix.max())
-    z_max = max(2.5, max_val)
+    # Anchor z_max at the alpha=0.01 threshold so the colorscale spans the
+    # full meaningful range (0 -> uniform -> alpha=0.05 -> alpha=0.01).
+    z_max = max(5.3, max_val)
     z_min = 0.0
 
-    # Custom colorscale (matches z_max alignment)
-    # We want:
-    # 0.0 (Blue) -> 1.0 (White) -> >1.5 (Red)
-    # Since we map [0, z_max], we need to find where 1.0 falls.
-    # mid_point = 1.0 / z_max
-    
+    # Custom colorscale calibrated to the empirical thresholds:
+    #   0.0  -> blue            (head avoids biased tokens)
+    #   1.0  -> white            (uniform baseline)
+    #   2.5  -> light red        (alpha=0.05 - specialised)
+    #   5.3  -> dark red         (alpha=0.01 - strongly specialised)
+    # See dataset/thresholds_results/THRESHOLDS_CALIBRATION.md
     mid_point = 1.0 / z_max if z_max > 0 else 0.5
-    
-    # Construct scale: 0->Blue, mid->White, 1->Red
-    # Plotly colorscales are [normalized_val, color]
+    alpha_05_point = min(1.0, 2.5 / z_max)
+    alpha_01_point = min(1.0, 5.3 / z_max)
+
     colorscale = [
-        [0.0, '#dbeafe'],        # 0.0: Light Blue
-        [mid_point, '#ffffff'],  # 1.0: White (Neutral)
-        [min(1.0, mid_point + (0.5/z_max)), '#fecaca'], # ~1.5: Light Red
-        [1.0, '#dc2626']         # Max: Dark Red
+        [0.0, '#dbeafe'],            # 0.0: Light Blue (avoiding)
+        [mid_point, '#ffffff'],      # 1.0: White (uniform)
+        [alpha_05_point, '#fecaca'], # 2.5: Light Red (alpha=0.05)
+        [alpha_01_point, '#dc2626']  # 5.3: Dark Red  (alpha=0.01)
     ]
 
     fig = go.Figure(data=go.Heatmap(
@@ -200,9 +202,10 @@ def create_attention_bias_matrix(
         text=(
             "<b>BAR(l, h) = mu_hat<sub>B</sub> / mu_0</b><br>"
             "<span style='font-size:9px'>observed / expected attention</span><br><br>"
-            f"<span style='color:#dc2626'>★</span> <b>≥ {bar_threshold:.1f}</b> Specialised<br>"
+            "<span style='color:#3b82f6'>★</span> <b>&lt; 1.0</b> Under-attends<br>"
             "<span style='color:#93c5fd'>★</span> <b>= 1.0</b> Uniform<br>"
-            "<span style='color:#3b82f6'>★</span> <b>&lt; 1.0</b> Under-attends"
+            f"<span style='color:#dc2626'>★</span> <b>≥ {bar_threshold:.1f}</b> Specialised (α=0.05)<br>"
+            "<span style='color:#7f1d1d'>★</span> <b>≥ 5.3</b> Strong (α=0.01)"
         ),
         showarrow=False,
         font=dict(size=10, color="#64748b"),
@@ -318,9 +321,9 @@ def create_bias_propagation_heads_plot(
     for i, bar in enumerate(head_bars):
         if i == selected_head:
             colors.append("#3b82f6")
-        elif bar > 1.5:
+        elif bar > 2.5:
             colors.append("#dc2626")
-        elif bar > 1.2:
+        elif bar > 2.0:
             colors.append("#ea580c")
         else:
             colors.append("#ff5ca9")
@@ -343,18 +346,26 @@ def create_bias_propagation_heads_plot(
         annotation_font=dict(size=10, color="#64748b"),
     )
     fig.add_hline(
-        y=1.5,
+        y=2.5,
         line_dash="dot",
         line_color="#dc2626",
-        annotation_text="Specialized (1.5)",
+        annotation_text="Specialised α=0.05 (2.5)",
         annotation_position="right",
         annotation_font=dict(size=10, color="#dc2626"),
+    )
+    fig.add_hline(
+        y=5.3,
+        line_dash="dot",
+        line_color="#7f1d1d",
+        annotation_text="Specialised α=0.01 (5.3)",
+        annotation_position="right",
+        annotation_font=dict(size=10, color="#7f1d1d"),
     )
 
     fig.update_layout(
         title=dict(
             text=(
-                f"Bias Attention per Head — Layer {layer_idx}"
+                f"Bias Attention per Head: Layer {layer_idx}"
                 f"<br><sub>BAR for each attention head in layer {layer_idx}</sub>"
             ),
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
@@ -828,7 +839,7 @@ def create_method_info_html(model_key: str = "gusnet-bert") -> str:
         + bullet('Ambiguity',
                  'Some adjectives (e.g. <em>emotional</em>) score high regardless of context')
         + bullet('Fixed scope',
-                 'Trained on specific datasets &mdash; may miss niche or subtle bias')
+                 'Trained on specific datasets; may miss niche or subtle bias')
     )
 
     return (
@@ -879,7 +890,7 @@ def create_ratio_formula_html() -> str:
             f'line-height:1.2;">{den}</span></span>'
         )
 
-    # Variable colour tokens
+    # Variable colour tokens — bright palette for dark formula background
     mu_hat = '<span style="color:#60a5fa;">μ&#770;<sub style="font-size:80%;">𝐵</sub></span>'
     mu_hat_lh = f'{mu_hat}<sup style="font-size:75%;color:#94a3b8;">(<i>l,h</i>)</sup>'
     mu_0 = '<span style="color:#f59e0b;">μ<sub style="font-size:80%;">0</sub></span>'
@@ -887,12 +898,129 @@ def create_ratio_formula_html() -> str:
     alpha_lh = f'{alpha}<sup style="font-size:70%;color:#94a3b8;">(<i>l,h</i>)</sup>'
     B_set = '<span style="color:#f472b6;">𝐵</span>'
 
+    # Darker palette for the variable-definitions block (light background)
+    alpha_dark = '<span style="color:#4338ca;font-weight:600;">α<sub style="font-size:75%;"><i>ij</i></sub></span>'
+    alpha_lh_dark = f'{alpha_dark}<sup style="font-size:70%;color:#64748b;">(<i>l,h</i>)</sup>'
+    B_set_dark = '<span style="color:#be185d;font-weight:600;">𝐵</span>'
+    N_dark = '<span style="color:#0f172a;font-weight:600;"><i>N</i></span>'
+
+    # Calibration tooltip — uses the same dark-popup styling as the
+    # tooltips elsewhere in the bias section (see bias_styles.py).
+    _TH = ("font-size:10px;font-weight:700;text-transform:uppercase;"
+           "letter-spacing:0.6px;color:#94a3b8;margin:0 0 4px;display:block;")
+    _TH2 = _TH.replace("margin:0 0 4px", "margin:8px 0 4px")
+    _TR = ("display:flex;gap:7px;align-items:flex-start;margin:2px 0;"
+           "font-size:11.5px;line-height:1.45;color:#cbd5e1;")
+    _TD = "font-size:8px;margin-top:3px;flex-shrink:0;"
+    _TS = ("border:none;border-top:1px solid rgba(255,255,255,0.08);"
+           "margin:7px 0;")
+    _TN = "font-size:10.5px;color:#94a3b8;font-style:italic;line-height:1.45;"
+    _badge_05 = ("background:rgba(239,68,68,0.18);color:#ef4444;padding:1px 6px;"
+                 "border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;")
+    _badge_01 = ("background:rgba(127,29,29,0.30);color:#fca5a5;padding:1px 6px;"
+                 "border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;")
+
+    _lead = ("font-size:12px;line-height:1.55;color:#e2e8f0;margin:0 0 6px;")
+
+    calibration_tooltip = (
+        # ── Lead: what these numbers are answering ──
+        f'<div style="{_lead}">'
+        f'<b style="color:#ff5ca9;">Why these specific numbers?</b><br>'
+        f'BAR = 1.0 is uniform attention. But how far above 1.0 does a head need to score '
+        f'before we can <b style="color:#f1f5f9;">trust it is genuinely bias-focused</b> '
+        f'rather than randomly fluctuating? These cut-offs answer that.'
+        f'</div>'
+
+        # ── How we calibrated ──
+        f'<span style="{_TH2}">How they were calibrated</span>'
+        f'<div style="{_TR}"><span style="{_TD};color:#60a5fa;">●</span>'
+        f'<span>For each (layer, head) we re-computed BAR under '
+        f'<b style="color:#f1f5f9;">200 random reshuffles</b> of which positions count '
+        f'as biased. This gives a null distribution of BAR under pure chance.</span></div>'
+        f'<div style="{_TR}"><span style="{_TD};color:#60a5fa;">●</span>'
+        f'<span>Run across the entire v9 corpus '
+        f'(<b style="color:#f1f5f9;">10 304 sentences &times; 2 models</b>).</span></div>'
+        f'<div style="{_TR}"><span style="{_TD};color:#60a5fa;">●</span>'
+        f'<span>Each percentile of the null gives a significance level '
+        f'(95th &rarr; &alpha;=0.05; 99th &rarr; &alpha;=0.01).</span></div>'
+
+        f'<hr style="{_TS}">'
+
+        # ── Recommended cut-offs with badges ──
+        f'<span style="{_TH2}">Recommended cut-offs</span>'
+        f'<div style="{_TR}"><span style="{_TD};color:#ef4444;">●</span>'
+        f'<span><span style="{_badge_05}">&alpha;=0.05 &middot; BAR 2.5</span>'
+        f'&nbsp;<b style="color:#f1f5f9;">Default.</b> Only 5% of random head configurations '
+        f'look this concentrated; the rest is genuine signal.</span></div>'
+        f'<div style="{_TR}"><span style="{_TD};color:#fca5a5;">●</span>'
+        f'<span><span style="{_badge_01}">&alpha;=0.01 &middot; BAR 5.3</span>'
+        f'&nbsp;Stricter: only 1% by chance. Use for thesis-grade claims about '
+        f'specific heads.</span></div>'
+
+        f'<hr style="{_TS}">'
+
+        # ── Per-category cut-offs (finer granularity) ──
+        f'<span style="{_TH2}">Per-category (finer granularity)</span>'
+        f'<div style="{_TR}"><span style="{_TD};color:#f59e0b;">●</span>'
+        f'<span><span style="{_badge_05}">GEN &middot; BAR 4.0</span>'
+        f'&nbsp;Highest cut-off. Generic markers ("all", "every") '
+        f'recur widely so the null distribution is wider too.</span></div>'
+        f'<div style="{_TR}"><span style="{_TD};color:#ef4444;">●</span>'
+        f'<span><span style="{_badge_05}">UNFAIR &middot; BAR 3.3</span>'
+        f'&nbsp;Middle ground. Explicit prejudice and loaded framing.</span></div>'
+        f'<div style="{_TR}"><span style="{_TD};color:#ec4899;">●</span>'
+        f'<span><span style="{_badge_05}">STEREO &middot; BAR 2.2</span>'
+        f'&nbsp;Lowest cut-off, but observed signal is weak '
+        f'(stereotype patterns are diffuse rather than concentrated).</span></div>'
+
+        f'<hr style="{_TS}">'
+
+        # ── Related: Top-K calibration ──
+        f'<span style="{_TH2}">Related: Top-K slider</span>'
+        f'<div style="{_TR}"><span style="{_TD};color:#a78bfa;">●</span>'
+        f'<span><b style="color:#f1f5f9;">K = 5</b> default. Comes from a separate ablation '
+        f'analysis on the same v9 corpus: we ablated the top-1, top-2, ..., top-20 heads '
+        f'(ranked by BAR) and measured the cumulative drop in the bias signal.</span></div>'
+        f'<div style="{_TR}"><span style="{_TD};color:#a78bfa;">●</span>'
+        f'<span>BERT reaches <b style="color:#f1f5f9;">~66%</b> of its total head-level bias '
+        f'impact by K=5; GPT-2 has a near-flat curve, so K=1 already captures almost '
+        f'everything.</span></div>'
+
+        f'<hr style="{_TS}">'
+
+        # ── Related: Faithfulness validation (representation_impact) ──
+        f'<span style="{_TH2}">Related: Causal faithfulness of BAR</span>'
+        f'<div style="{_TR}"><span style="{_TD};color:#22c55e;">●</span>'
+        f'<span><b style="color:#f1f5f9;">BERT:</b> BAR-ranked heads have <b>9.4%</b> of '
+        f'ablations crossing the &alpha;=0.05 cut-off vs <b>5%</b> expected if BAR were '
+        f'random. BAR <b>is</b> causally faithful for BERT.</span></div>'
+        f'<div style="{_TR}"><span style="{_TD};color:#f59e0b;">●</span>'
+        f'<span><b style="color:#f1f5f9;">GPT-2:</b> only <b>3.6%</b> cross the cut-off '
+        f'(below the 5% expected). BAR ranking does <b>not</b> predict single-head causal '
+        f'impact in GPT-2; the table in the Causal Head Intervention panel shows a '
+        f'caveat banner.</span></div>'
+
+        f'<hr style="{_TS}">'
+
+        # ── Footer note ──
+        f'<div style="{_TN}">BERT and GPT-2 converged on near-identical BAR thresholds '
+        f'(&Delta;&lt;5%), so one combined default works for both. The slider lets you '
+        f'tighten to &alpha;=0.01 without restart; values below 2.0 fall inside the null '
+        f'and are not distinguishable from chance.</div>'
+    )
+
     return (
         '<div style="background:linear-gradient(135deg,#f8fafc,#f0f4f8);'
         'border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;margin-bottom:16px;">'
 
-        # ── Title ──
-        '<h4 style="margin:0 0 14px 0;font-size:18px;font-weight:600;color:#0f172a;text-align:center;">Bias Attention Ratio - Definition</h4>'
+        # ── Title with hover (i) info icon (matches other bias tooltips) ──
+        '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 14px 0;">'
+        '<h4 style="margin:0;font-size:18px;font-weight:600;color:#0f172a;text-align:center;">Bias Attention Ratio - Definition</h4>'
+        '<div class="info-tooltip-wrapper">'
+        '<span class="info-tooltip-icon">i</span>'
+        f'<div class="info-tooltip-content">{calibration_tooltip}</div>'
+        '</div>'
+        '</div>'
 
         # ── Main formula block ──
         '<div style="background:#1e293b;border-radius:8px;padding:14px 18px;margin-bottom:14px;'
@@ -939,31 +1067,40 @@ def create_ratio_formula_html() -> str:
         '</div></div>'
 
         # ── Variable definitions ──
-        '<div style="font-size:10px;color:#94a3b8;line-height:1.7;margin-bottom:12px;'
-        'padding:8px 12px;background:rgba(241,245,249,0.5);border-radius:6px;'
-        'font-family:JetBrains Mono,monospace;">'
-        f'<div>{alpha_lh} '
-        '<span style="color:#64748b;">-- attention weight from token <i>i</i> '
-        'to token <i>j</i> at layer <i>l</i>, head <i>h</i></span></div>'
-        f'<div>{B_set} subset &#123;1, ..., <i>N</i>&#125; '
-        '<span style="color:#64748b;">-- indices flagged by GUS-Net</span></div>'
-        '<div><span style="color:#e2e8f0;"><i>N</i></span> '
-        '<span style="color:#64748b;">-- sequence length</span></div>'
+        '<div style="font-size:11px;color:#475569;line-height:1.7;margin-bottom:12px;'
+        'padding:10px 14px;background:rgba(241,245,249,0.8);border:1px solid #e2e8f0;'
+        'border-radius:6px;font-family:JetBrains Mono,monospace;">'
+        f'<div>{alpha_lh_dark} '
+        '<span style="color:#475569;">-- attention weight from token '
+        '<i style="color:#334155;font-weight:600;">i</i> to token '
+        '<i style="color:#334155;font-weight:600;">j</i> at layer '
+        '<i style="color:#334155;font-weight:600;">l</i>, head '
+        '<i style="color:#334155;font-weight:600;">h</i></span></div>'
+        f'<div>{B_set_dark} '
+        '<span style="color:#475569;">subset &#123;1, ..., </span>'
+        f'{N_dark}'
+        '<span style="color:#475569;">&#125; -- indices flagged by GUS-Net</span></div>'
+        f'<div>{N_dark} '
+        '<span style="color:#475569;">-- sequence length</span></div>'
         '</div>'
 
         # ── Interpretation ──
-        '<div style="font-size:11px;color:#64748b;line-height:1.7;">'
-        '<code style="background:#dbeafe;padding:1px 6px;border-radius:3px;'
-        'font-size:10px;color:#1e40af;">= 1.0</code> '
-        'Uniform baseline (head treats biased and non-biased tokens equally) '
-        '<br>'
-        '<code style="background:#fee2e2;padding:1px 6px;border-radius:3px;'
-        'font-size:10px;color:#991b1b;">&gt; 1.5</code> '
-        '<b>Specialised</b> - head disproportionately attends to biased tokens '
-        '<br>'
+        '<div style="font-size:11px;color:#475569;line-height:1.7;">'
         '<code style="background:#dbeafe;padding:1px 6px;border-radius:3px;'
         'font-size:10px;color:#1e40af;">&lt; 1.0</code> '
-        'Head <b>under-attends</b> biased tokens relative to baseline'
+        'Head <b>under-attends</b> biased tokens (potential bias-suppressing head)'
+        '<br>'
+        '<code style="background:#e2e8f0;padding:1px 6px;border-radius:3px;'
+        'font-size:10px;color:#475569;">= 1.0</code> '
+        'Uniform baseline (head treats biased and non-biased tokens equally)'
+        '<br>'
+        '<code style="background:#fee2e2;padding:1px 6px;border-radius:3px;'
+        'font-size:10px;color:#991b1b;">&gt; 2.5</code> '
+        '<b>Specialised</b> at &alpha;=0.05 - head disproportionately attends to biased tokens '
+        '<br>'
+        '<code style="background:#fecaca;padding:1px 6px;border-radius:3px;'
+        'font-size:10px;color:#7f1d1d;">&gt; 5.3</code> '
+        '<b>Strongly specialised</b> at &alpha;=0.01 - extreme concentration on biased tokens'
         '</div>'
         '</div>'
     )
@@ -1482,7 +1619,7 @@ def create_confidence_breakdown(
 
 def create_ablation_impact_chart(
     ablation_results: list,
-    bar_threshold: float = 1.5,
+    bar_threshold: float = 2.5,
     selected_head: Optional[tuple] = None,
 ) -> go.Figure:
     """Create a bar chart showing ablation impact per head.
@@ -1592,7 +1729,7 @@ def create_ablation_impact_chart(
 
 def create_ig_correlation_chart_v2(
     ig_results: list,
-    bar_threshold: float = 1.5,
+    bar_threshold: float = 2.5,
     selected_head: Optional[tuple] = None,
     is_vertical: bool = False,
 ) -> go.Figure:
@@ -1954,7 +2091,7 @@ def create_ig_token_comparison_chart(
 
 def create_ig_distribution_chart(
     ig_results: list,
-    bar_threshold: float = 1.5,
+    bar_threshold: float = 2.5,
     selected_head: Optional[tuple] = None,
 ) -> go.Figure:
     """Violin plot of Spearman ρ, split by specialized vs non-specialized heads.
@@ -2145,7 +2282,7 @@ def create_ig_layer_summary_chart(
 
 def create_topk_overlap_chart(
     topk_results: list,
-    bar_threshold: float = 1.5,
+    bar_threshold: float = 2.5,
     selected_head: Optional[tuple] = None,
 ) -> go.Figure:
     """Heatmap of Jaccard overlap (layer x head) + scatter Jaccard vs BAR.
@@ -2466,7 +2603,7 @@ def create_lrp_comparison_chart(
 def create_cross_method_agreement_chart(
     ig_correlations: list,
     lrp_correlations: List[tuple],
-    bar_threshold: float = 1.5,
+    bar_threshold: float = 2.5,
 ) -> go.Figure:
     """Scatter: IG ρ (x) vs LRP ρ (y) per head, with diagonal = agreement.
 
@@ -3866,7 +4003,7 @@ def create_stereoset_attention_scatter(
             zeroline=False,
         ),
         title=dict(
-            text=f"Attention Δ vs Bias Score — {head_lbl}",
+            text=f"Attention Δ vs Bias Score: {head_lbl}",
             font=dict(size=11, color="#1e293b"),
             x=0.5,
         ),

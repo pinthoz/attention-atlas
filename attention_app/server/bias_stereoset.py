@@ -602,12 +602,25 @@ def register_stereoset_handlers(
                 top_k = 5
 
             # ── Top discriminative features table ──
+            # Bonferroni-corrected p-value bands.
+            # n_tests = ~3 238 features extracted per sentence (extract_features_for_sentence),
+            # so the family-wise error rate cuts are:
+            #   alpha = 0.01  ->  p < 0.01 / 3238 = 3.1e-6   (very significant)
+            #   alpha = 0.05  ->  p < 0.05 / 3238 = 1.5e-5   (significant)
+            # else                                            (not significant after correction)
+            _P_CUT_VERY_SIG = 3.1e-6   # alpha = 0.01 / n_features
+            _P_CUT_SIG = 1.5e-5        # alpha = 0.05 / n_features
             top_features = get_top_features(mk)
             if top_features:
                 feat_rows = []
                 for rank, f in enumerate(top_features[:top_k], 1):
                     p = f["p_value"]
-                    p_color = "#16a34a" if p < 1e-10 else "#eab308" if p < 0.001 else "#94a3b8"
+                    if p < _P_CUT_VERY_SIG:
+                        p_color = "#16a34a"   # very significant (Bonferroni alpha=0.01)
+                    elif p < _P_CUT_SIG:
+                        p_color = "#eab308"   # significant (Bonferroni alpha=0.05)
+                    else:
+                        p_color = "#94a3b8"   # not significant after correction
                     feat_rows.append(
                         f'<tr style="transition:all 0.2s ease;">'
                         f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-weight:500;color:#64748b;font-size:11px;">#{rank}</td>'
@@ -631,6 +644,14 @@ def register_stereoset_handlers(
                     f"<span>For each feature column, a <b>Kruskal-Wallis H-test</b> compares its distribution across the four demographic categories - a non-parametric test: does this feature differ significantly across groups?</span></div>"
                     f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>▪</span>"
                     f"<span>Features ranked by p-value ascending. Top-20 with the lowest p-values are shown.</span></div>"
+                    f"<hr style='{_TS}'/>"
+                    f"<span style='{_TH}'>Significance bands (Bonferroni-corrected)</span>"
+                    f"<div style='{_TR}'><span style='{_TD};color:#16a34a;'>●</span>"
+                    f"<span><b>Green</b>: p &lt; 3.1e-6 (alpha=0.01 / 3 238 features). Very significant after multiple-testing correction.</span></div>"
+                    f"<div style='{_TR}'><span style='{_TD};color:#eab308;'>●</span>"
+                    f"<span><b>Yellow</b>: p &lt; 1.5e-5 (alpha=0.05 / 3 238). Significant after correction.</span></div>"
+                    f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
+                    f"<span><b>Grey</b>: would have been significant at raw alpha=0.05, but not after Bonferroni correction for the full feature set.</span></div>"
                     f"<hr style='{_TS}'/>"
                     f"<span style='{_TH}'>Feature name guide</span>"
                     f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>▪</span>"

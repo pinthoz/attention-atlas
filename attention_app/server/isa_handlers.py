@@ -282,7 +282,7 @@ def register_isa_handlers(
             else:
                 return ui.HTML(
                     "<em style='color:#94a3b8;'>Selection out of range "
-                    "for the current prompt — click a dot on the chart.</em>"
+                    "for the current prompt. Click a dot on the chart.</em>"
                 )
         return ui.HTML(
             f"Sentence {tx} (target) ← Sentence {sy} (source) · "
