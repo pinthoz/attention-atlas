@@ -2099,8 +2099,8 @@ CSS = """
             border-radius: 12px;
             font-size: 12px;
             line-height: 1.7;
-            width: 380px;
-            max-width: 420px;
+            width: 540px;
+            max-width: 580px;
             box-shadow: 0 15px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,92,169,0.3);
             border: 1px solid rgba(255,255,255,0.15);
             transition: opacity 0.2s ease, visibility 0.2s ease;

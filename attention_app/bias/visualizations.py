@@ -988,17 +988,27 @@ def create_ratio_formula_html() -> str:
 
         f'<hr style="{_TS}">'
 
-        # ── Related: Faithfulness validation (representation_impact) ──
+        # ── Related: Faithfulness validation (rep_impact + KL, per-category) ──
         f'<span style="{_TH2}">Related: Causal faithfulness of BAR</span>'
         f'<div style="{_TR}"><span style="{_TD};color:#22c55e;">●</span>'
-        f'<span><b style="color:#f1f5f9;">BERT:</b> BAR-ranked heads have <b>9.4%</b> of '
-        f'ablations crossing the &alpha;=0.05 cut-off vs <b>5%</b> expected if BAR were '
-        f'random. BAR <b>is</b> causally faithful for BERT.</span></div>'
+        f'<span><b style="color:#f1f5f9;">BERT:</b> category-agnostic. All 8 combinations '
+        f'(combined + 3 categories) &times; (rep_impact, KL) sit in [7.6 %, 9.3 %] '
+        f'&mdash; well above the 5 % chance baseline. BAR_combined is the right '
+        f'tool for BERT.</span></div>'
         f'<div style="{_TR}"><span style="{_TD};color:#f59e0b;">●</span>'
-        f'<span><b style="color:#f1f5f9;">GPT-2:</b> only <b>3.6%</b> cross the cut-off '
-        f'(below the 5% expected). BAR ranking does <b>not</b> predict single-head causal '
-        f'impact in GPT-2; the table in the Causal Head Intervention panel shows a '
-        f'caveat banner.</span></div>'
+        f'<span><b style="color:#f1f5f9;">GPT-2:</b> metric AND category matter. '
+        f'Under rep_impact, BAR_combined is below chance (3.6 %) and only BAR_GEN '
+        f'crosses (6.3 %). Under KL, all three per-category rankings are '
+        f'faithful: <b>BAR_GEN 6.9 %, BAR_UNFAIR 12.6 %, BAR_STEREO 11.6 %</b>. '
+        f'For GPT-2 single-head claims, rank by BAR_C (per-category) and read KL.'
+        f'</span></div>'
+        f'<div style="{_TR}"><span style="{_TD};color:#60a5fa;">●</span>'
+        f'<span><b style="color:#f1f5f9;">Why two metrics?</b> '
+        f'representation_impact (cosine on hidden states) is sensitive to LayerNorm '
+        f'scaling, which inflates the BERT-vs-GPT-2 gap to 88&times; and hides '
+        f'direction-rather-than-magnitude head effects (UNFAIR/STEREO in GPT-2). '
+        f'KL on softmax logits is scale-invariant: shrinks the gap to 8&times; and '
+        f'recovers the hidden causal signal.</span></div>'
 
         f'<hr style="{_TS}">'
 

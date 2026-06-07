@@ -88,6 +88,16 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 CHECKPOINT_DIR = RESULTS_DIR / "checkpoints"
 CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── Per-analysis subfolders ────────────────────────────────────────
+# Keeps the results folder navigable: each analysis writes only to
+# its own subfolder. Created on import so callers can write directly.
+BAR_BSR_DIR = RESULTS_DIR / "bar_bsr"
+TOPK_DIR = RESULTS_DIR / "topk_ablation"
+FAITHFULNESS_DIR = RESULTS_DIR / "faithfulness"
+GUSNET_DIR = RESULTS_DIR / "gusnet"
+for _d in (BAR_BSR_DIR, TOPK_DIR, FAITHFULNESS_DIR, GUSNET_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
+
 # Make the app package importable when this is run as a script (e.g.
 # python attention_app/bias/thresholds_analysis.py) rather than as
 # `python -m attention_app.bias.thresholds_analysis`.
@@ -808,9 +818,8 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
             "by_model": per_cat_by_model,
         }
 
-    out_path = RESULTS_DIR / (
-        "bar_bsr_thresholds_per_category.json"
-        if per_category else "bar_bsr_thresholds.json"
+    out_path = BAR_BSR_DIR / (
+        "per_category.json" if per_category else "thresholds.json"
     )
     out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                         encoding="utf-8")
@@ -856,7 +865,7 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
             ax.set_title(f"{name}: observed vs permutation-null")
             ax.legend(fontsize=8)
         fig.tight_layout()
-        plot_path = RESULTS_DIR / "bar_bsr_distribution.png"
+        plot_path = BAR_BSR_DIR / "distribution.png"
         fig.savefig(plot_path, dpi=120)
         plt.close(fig)
         print(f"Saved {plot_path}")
@@ -1014,7 +1023,7 @@ def run_gusnet_calibration(model_keys: Optional[List[str]] = None) -> Dict[str, 
                 pass
         summary["models"][model_key] = model_result
 
-    out_path = RESULTS_DIR / "gusnet_thresholds.json"
+    out_path = GUSNET_DIR / "thresholds.json"
     out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                         encoding="utf-8")
     print(f"Saved {out_path}")
@@ -1034,13 +1043,22 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
                       model_name: str = "bert-base-uncased",
                       max_tokens: Optional[int] = None,
                       resume: bool = True,
-                      checkpoint_every: int = 10) -> Dict[str, Any]:
+                      checkpoint_every: int = 10,
+                      per_category: bool = False) -> Dict[str, Any]:
     """For each sentence: rank heads by BAR, ablate top-1..top-K, record
     cumulative effect on the bias-class probability.
 
     Resumable via ``dataset/thresholds_results/checkpoints/topk_ablation_{model}.pkl``.
     Output JSON / plot are also model-suffixed so BERT and GPT-2 runs do
     not clobber each other.
+
+    When ``per_category=True`` we additionally compute a separate
+    cumulative-impact curve for each GUS-Net category (GEN, UNFAIR,
+    STEREO) by re-ranking heads against the category-specific mask. The
+    output JSON includes a ``per_category`` section with one elbow
+    recommendation per category. Cost is ~4x because each sentence now
+    runs 1 + 3 ablation batches (combined + 3 categories), though shared
+    heads across rankings reduce that in practice.
     """
     sample = load_v9_stratified(n_sentences, max_tokens=max_tokens)
     biased_only = [e for e in sample if e.get("has_bias")]
@@ -1061,10 +1079,20 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
     is_gpt2 = "gpt2" in model_name.lower()
 
     short = _model_short(model_name)
-    checkpoint_path = CHECKPOINT_DIR / f"topk_ablation_{short}.pkl"
-    sig = _args_signature("topk_ablation_v2", model_name, k_max, max_tokens)
+    checkpoint_path = CHECKPOINT_DIR / (
+        f"topk_ablation_per_category_{short}.pkl" if per_category
+        else f"topk_ablation_{short}.pkl"
+    )
+    sig = _args_signature(
+        "topk_ablation_v3_per_cat" if per_category else "topk_ablation_v2",
+        model_name, k_max, max_tokens, per_category,
+    )
 
     cumulative_impact: Dict[int, List[float]] = defaultdict(list)
+    # Per-category accumulators: only populated when per_category=True.
+    cumulative_impact_cat: Dict[str, Dict[int, List[float]]] = {
+        c: defaultdict(list) for c in CATEGORIES
+    } if per_category else None
     processed_keys: set = set()
     n_ok = 0
 
@@ -1072,6 +1100,11 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
         state = _load_checkpoint(checkpoint_path)
         if state is not None and state.get("signature") == sig:
             cumulative_impact = defaultdict(list, state["cumulative_impact"])
+            if per_category and "cumulative_impact_cat" in state:
+                cumulative_impact_cat = {
+                    c: defaultdict(list, state["cumulative_impact_cat"].get(c, {}))
+                    for c in CATEGORIES
+                }
             processed_keys = state["processed_keys"]
             n_ok = state.get("n_ok", 0)
             print(f"Resuming from checkpoint: {len(processed_keys)} "
@@ -1081,12 +1114,17 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
                   flush=True)
 
     def _snapshot() -> Dict[str, Any]:
-        return {
+        snap = {
             "signature": sig,
             "cumulative_impact": dict(cumulative_impact),
             "processed_keys": processed_keys,
             "n_ok": n_ok,
         }
+        if per_category:
+            snap["cumulative_impact_cat"] = {
+                c: dict(cumulative_impact_cat[c]) for c in CATEGORIES
+            }
+        return snap
 
     start = time.time()
     interrupted = False
@@ -1141,6 +1179,45 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
                 for k, abl in enumerate(ablations, start=1):
                     running += abs(abl.representation_impact or 0.0)
                     cumulative_impact[k].append(running)
+
+                # Per-category: re-rank heads against each category's mask
+                # and ablate top-K_C heads independently. The category-specific
+                # rankings will differ from the combined ranking, so we have
+                # to call batch_ablate_top_heads once per category.
+                if per_category:
+                    cat_masks = _detect_per_category_indices(
+                        text, tokens, detector
+                    )
+                    if cat_masks is not None:
+                        for cat in CATEGORIES:
+                            mask_c = cat_masks[cat]
+                            n_c = int(mask_c.sum())
+                            if n_c == 0 or n_c >= len(tokens):
+                                continue
+                            biased_idx_c = set(
+                                int(i_) for i_, b in enumerate(mask_c) if b
+                            )
+                            metrics_c = analyzer.analyze_attention_to_bias(
+                                list(attentions), biased_idx_c, tokens
+                            )
+                            if not metrics_c:
+                                continue
+                            ranked_c = sorted(
+                                metrics_c,
+                                key=lambda m: m.bias_attention_ratio,
+                                reverse=True,
+                            )
+                            top_c = ranked_c[:k_max]
+                            ablations_c = batch_ablate_top_heads(
+                                encoder_model, lm_head_model, tokenizer,
+                                text, top_c, is_gpt2,
+                            )
+                            if not ablations_c:
+                                continue
+                            running_c = 0.0
+                            for k, abl in enumerate(ablations_c, start=1):
+                                running_c += abs(abl.representation_impact or 0.0)
+                                cumulative_impact_cat[cat][k].append(running_c)
                 n_ok += 1
                 processed_keys.add(key)
             except Exception as e:
@@ -1169,23 +1246,49 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
         "mean_cumulative_impact_by_k": {},
         "elbow_recommendation": None,
     }
-    if n_ok > 0:
+    def _summarise_curve(curve: Dict[int, List[float]]) -> Tuple[Dict[str, float], Optional[int]]:
+        if not curve:
+            return {}, None
         means = [
-            (k, float(np.mean(cumulative_impact[k]))) for k in sorted(cumulative_impact)
+            (k, float(np.mean(curve[k]))) for k in sorted(curve)
         ]
-        summary["mean_cumulative_impact_by_k"] = {str(k): m for k, m in means}
-        # Find K such that incremental impact from k-1 to k is < 5% of total
-        # (rule-of-thumb elbow).
+        mean_by_k = {str(k): m for k, m in means}
         total = means[-1][1] if means else 0.0
+        elbow = None
         if total > 0:
             for k, m in means[1:]:
                 prev_m = next(mm for kk, mm in means if kk == k - 1)
                 marginal = m - prev_m
                 if marginal < 0.05 * total:
-                    summary["elbow_recommendation"] = int(k - 1)
+                    elbow = int(k - 1)
                     break
+        return mean_by_k, elbow
 
-    out_path = RESULTS_DIR / f"topk_ablation_{short}.json"
+    if n_ok > 0:
+        mean_by_k, elbow = _summarise_curve(cumulative_impact)
+        summary["mean_cumulative_impact_by_k"] = mean_by_k
+        summary["elbow_recommendation"] = elbow
+
+        if per_category:
+            per_cat_summary: Dict[str, Any] = {}
+            for cat in CATEGORIES:
+                mb_k, el = _summarise_curve(cumulative_impact_cat[cat])
+                # n_sentences_with_signal differs per category because some
+                # sentences have no tokens of that category.
+                n_sent = (
+                    len(cumulative_impact_cat[cat][1])
+                    if 1 in cumulative_impact_cat[cat] else 0
+                )
+                per_cat_summary[cat] = {
+                    "n_sentences": n_sent,
+                    "mean_cumulative_impact_by_k": mb_k,
+                    "elbow_recommendation": el,
+                }
+            summary["per_category"] = per_cat_summary
+
+    out_path = TOPK_DIR / (
+        f"{short}_per_category.json" if per_category else f"{short}.json"
+    )
     out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                         encoding="utf-8")
     print(f"Saved {out_path}")
@@ -1195,24 +1298,40 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         if cumulative_impact:
+            fig, ax = plt.subplots(figsize=(8, 4.5))
             ks = sorted(cumulative_impact)
             ys = [float(np.mean(cumulative_impact[k])) for k in ks]
-            std = [float(np.std(cumulative_impact[k])) for k in ks]
-            fig, ax = plt.subplots(figsize=(8, 4.5))
-            ax.errorbar(ks, ys, yerr=std, fmt="-o", color="#ff5ca9",
-                        ecolor="#ffd5e7", capsize=3, label="Mean cumulative impact")
+            ax.plot(ks, ys, "-o", color="#0f172a", linewidth=2.2,
+                    label="Combined (all biased tokens)")
             ax.axvline(10, color="#1d4ed8", linestyle=":",
-                       label="Current default K=10")
+                       label="Pre-calibration K=10")
             if summary["elbow_recommendation"] is not None:
                 ax.axvline(summary["elbow_recommendation"], color="#16a34a",
                            linestyle="--",
-                           label=f"Elbow K={summary['elbow_recommendation']}")
-            ax.set_xlabel("K (heads ablated, ranked by BAR)")
+                           label=f"Combined elbow K={summary['elbow_recommendation']}")
+            if per_category:
+                cat_colors = {"GEN": "#f59e0b", "UNFAIR": "#ef4444", "STEREO": "#ec4899"}
+                for cat in CATEGORIES:
+                    curve = cumulative_impact_cat[cat]
+                    if not curve:
+                        continue
+                    ks_c = sorted(curve)
+                    ys_c = [float(np.mean(curve[k])) for k in ks_c]
+                    el = summary["per_category"][cat]["elbow_recommendation"]
+                    label_extra = f" (elbow K={el})" if el is not None else ""
+                    ax.plot(ks_c, ys_c, "-s", color=cat_colors[cat], alpha=0.85,
+                            linewidth=1.5, markersize=4,
+                            label=f"{cat}{label_extra}")
+            ax.set_xlabel("K (heads ablated, ranked by BAR or BAR_category)")
             ax.set_ylabel("Cumulative |representation impact|")
-            ax.set_title(f"Top-K head ablation impact curve ({model_name})")
-            ax.legend()
+            title_suffix = "per-category" if per_category else "combined"
+            ax.set_title(f"Top-K head ablation impact curve ({model_name}, {title_suffix})")
+            ax.legend(fontsize=8)
             fig.tight_layout()
-            plot_path = RESULTS_DIR / f"topk_ablation_curve_{short}.png"
+            plot_path = TOPK_DIR / (
+                f"{short}_per_category_curve.png" if per_category
+                else f"{short}_curve.png"
+            )
             fig.savefig(plot_path, dpi=120)
             plt.close(fig)
             print(f"Saved {plot_path}")
@@ -1237,8 +1356,18 @@ def run_faithfulness_calibration(
     max_tokens: Optional[int] = None,
     resume: bool = True,
     checkpoint_every: int = 10,
+    per_category: bool = False,
 ) -> Dict[str, Any]:
-    """Calibrate the dashboard's ``representation_impact`` cut-off.
+    """Calibrate the dashboard's ``representation_impact`` cut-off AND
+    test whether the BERT-vs-GPT-2 magnitude gap is a normalisation
+    artefact by also collecting KL divergence on the LM-head logits.
+
+    When ``per_category=True`` we additionally compute observed pools
+    per GUS-Net category (GEN, UNFAIR, STEREO) by re-ranking heads
+    against the category-specific BAR. The null pool is shared with the
+    combined run (random heads give the same null regardless of which
+    category we are comparing against), so the per-category mode adds
+    ~3 extra observation batches per sentence (~2.5x total cost).
 
     The current default in ``bias_xai.py`` is ``> 0.05`` for "high impact"
     coloring of an ablated head. That number is arbitrary. We make it
@@ -1249,18 +1378,25 @@ def run_faithfulness_calibration(
 
     1. Compute BAR per (layer, head) and pick the top-K by BAR.
     2. Ablate each of those K heads individually, record the
-       per-head ``representation_impact`` (observed pool).
+       per-head ``representation_impact`` AND ``kl_divergence``
+       (observed pool).
     3. Sample K random (layer, head) pairs from the full set and
-       ablate each, record their ``representation_impact``
-       (null pool).
+       ablate each, record both metrics (null pool).
 
     The 95th / 99th percentile of the null pool give the
     ``representation_impact`` thresholds that catch real causal heads
     with false-positive rates of 5% and 1% respectively.
 
-    Saves ``faithfulness_impact_{model_short}.json`` with the percentile
-    summary + histogram, plus a checkpoint
-    ``faithfulness_impact_{model_short}.pkl`` so the run is resumable.
+    KL divergence is included to test the hypothesis that the
+    BERT-vs-GPT-2 100x gap in ``representation_impact`` is a LayerNorm
+    scaling artefact. KL is scale-invariant on the logit space, so if
+    the gap closes under KL the difference was metric-specific; if it
+    persists the architectures genuinely differ in head-level
+    contribution.
+
+    Saves ``faithfulness/{model_short}.json`` (now with both metric
+    pools) and a 2-panel histogram. Checkpoint:
+    ``checkpoints/faithfulness_impact_{model_short}.pkl``.
     """
     sample = load_v9_stratified(n_sentences, max_tokens=max_tokens)
     biased_only = [e for e in sample if e.get("has_bias")]
@@ -1281,22 +1417,52 @@ def run_faithfulness_calibration(
     is_gpt2 = "gpt2" in model_name.lower()
 
     short = _model_short(model_name)
-    checkpoint_path = CHECKPOINT_DIR / f"faithfulness_impact_{short}.pkl"
-    sig = _args_signature("faithfulness_v1", model_name, k_max, max_tokens)
+    checkpoint_path = CHECKPOINT_DIR / (
+        f"faithfulness_per_category_{short}.pkl" if per_category
+        else f"faithfulness_impact_{short}.pkl"
+    )
+    sig = _args_signature(
+        "faithfulness_v3_per_cat" if per_category else "faithfulness_v2",
+        model_name, k_max, max_tokens, per_category,
+    )
 
     obs_impacts = array.array("f")    # BAR-ranked heads' impacts
     null_impacts = array.array("f")   # random heads' impacts
+    obs_kls = array.array("f")        # BAR-ranked heads' KL divergence
+    null_kls = array.array("f")       # random heads' KL divergence
+    # Per-category observed pools (null is shared with combined run).
+    obs_impacts_cat: Dict[str, "array.array"] = (
+        {c: array.array("f") for c in CATEGORIES} if per_category else None
+    )
+    obs_kls_cat: Dict[str, "array.array"] = (
+        {c: array.array("f") for c in CATEGORIES} if per_category else None
+    )
     processed_keys: set = set()
     n_ok = 0
     rng = np.random.default_rng(42)
 
+    def _as_arr(maybe_list) -> "array.array":
+        a = array.array("f")
+        if maybe_list:
+            a.extend(maybe_list)
+        return a
+
     if resume:
         state = _load_checkpoint(checkpoint_path)
         if state is not None and state.get("signature") == sig:
-            obs_impacts = array.array("f")
-            obs_impacts.extend(state["obs_impacts"])
-            null_impacts = array.array("f")
-            null_impacts.extend(state["null_impacts"])
+            obs_impacts = _as_arr(state["obs_impacts"])
+            null_impacts = _as_arr(state["null_impacts"])
+            obs_kls = _as_arr(state.get("obs_kls", []))
+            null_kls = _as_arr(state.get("null_kls", []))
+            if per_category and "obs_impacts_cat" in state:
+                obs_impacts_cat = {
+                    c: _as_arr(state["obs_impacts_cat"].get(c, []))
+                    for c in CATEGORIES
+                }
+                obs_kls_cat = {
+                    c: _as_arr(state.get("obs_kls_cat", {}).get(c, []))
+                    for c in CATEGORIES
+                }
             processed_keys = state["processed_keys"]
             n_ok = state.get("n_ok", 0)
             print(f"Resuming from checkpoint: {len(processed_keys)} done.",
@@ -1306,13 +1472,23 @@ def run_faithfulness_calibration(
                   flush=True)
 
     def _snapshot() -> Dict[str, Any]:
-        return {
+        snap = {
             "signature": sig,
             "obs_impacts": list(obs_impacts),
             "null_impacts": list(null_impacts),
+            "obs_kls": list(obs_kls),
+            "null_kls": list(null_kls),
             "processed_keys": processed_keys,
             "n_ok": n_ok,
         }
+        if per_category:
+            snap["obs_impacts_cat"] = {
+                c: list(obs_impacts_cat[c]) for c in CATEGORIES
+            }
+            snap["obs_kls_cat"] = {
+                c: list(obs_kls_cat[c]) for c in CATEGORIES
+            }
+        return snap
 
     start = time.time()
     interrupted = False
@@ -1382,9 +1558,55 @@ def run_faithfulness_calibration(
                 for r in obs_abl:
                     if r.representation_impact is not None:
                         obs_impacts.append(abs(r.representation_impact))
+                    if r.kl_divergence is not None:
+                        obs_kls.append(abs(r.kl_divergence))
                 for r in null_abl:
                     if r.representation_impact is not None:
                         null_impacts.append(abs(r.representation_impact))
+                    if r.kl_divergence is not None:
+                        null_kls.append(abs(r.kl_divergence))
+
+                # Per-category: re-rank by BAR_C and ablate the top-K per
+                # category. The null pool stays shared with the combined run.
+                if per_category:
+                    cat_masks = _detect_per_category_indices(
+                        text, tokens, detector
+                    )
+                    if cat_masks is not None:
+                        for cat in CATEGORIES:
+                            mask_c = cat_masks[cat]
+                            n_c = int(mask_c.sum())
+                            if n_c == 0 or n_c >= len(tokens):
+                                continue
+                            biased_idx_c = set(
+                                int(i_) for i_, b in enumerate(mask_c) if b
+                            )
+                            metrics_c = analyzer.analyze_attention_to_bias(
+                                list(attentions), biased_idx_c, tokens
+                            )
+                            if not metrics_c:
+                                continue
+                            ranked_c = sorted(
+                                metrics_c,
+                                key=lambda m: m.bias_attention_ratio,
+                                reverse=True,
+                            )
+                            top_c = ranked_c[:k_max]
+                            obs_abl_c = batch_ablate_top_heads(
+                                encoder_model, lm_head_model, tokenizer,
+                                text, top_c, is_gpt2,
+                            )
+                            if not obs_abl_c:
+                                continue
+                            for r in obs_abl_c:
+                                if r.representation_impact is not None:
+                                    obs_impacts_cat[cat].append(
+                                        abs(r.representation_impact)
+                                    )
+                                if r.kl_divergence is not None:
+                                    obs_kls_cat[cat].append(
+                                        abs(r.kl_divergence)
+                                    )
 
                 n_ok += 1
                 processed_keys.add(key)
@@ -1405,8 +1627,34 @@ def run_faithfulness_calibration(
         return {"interrupted": True, "checkpoint": str(checkpoint_path),
                 "processed_so_far": len(processed_keys), "n_ok": n_ok}
 
-    obs_np = np.frombuffer(obs_impacts, dtype=np.float32) if len(obs_impacts) else np.empty(0, dtype=np.float32)
-    null_np = np.frombuffer(null_impacts, dtype=np.float32) if len(null_impacts) else np.empty(0, dtype=np.float32)
+    def _arr(a: "array.array") -> np.ndarray:
+        return np.frombuffer(a, dtype=np.float32) if len(a) else np.empty(0, dtype=np.float32)
+
+    def _pool_stats(arr: np.ndarray) -> Dict[str, Any]:
+        if arr.size == 0:
+            return {"n": 0, "mean": None, "median": None,
+                    "p80": None, "p95": None, "p99": None}
+        return {
+            "n": int(arr.size),
+            "mean": float(arr.mean()),
+            "median": float(np.percentile(arr, 50)),
+            "p80": float(np.percentile(arr, 80)),
+            "p95": float(np.percentile(arr, 95)),
+            "p99": float(np.percentile(arr, 99)),
+        }
+
+    obs_np = _arr(obs_impacts)
+    null_np = _arr(null_impacts)
+    obs_kl_np = _arr(obs_kls)
+    null_kl_np = _arr(null_kls)
+    obs_np_cat = (
+        {c: _arr(obs_impacts_cat[c]) for c in CATEGORIES}
+        if per_category else None
+    )
+    obs_kl_np_cat = (
+        {c: _arr(obs_kls_cat[c]) for c in CATEGORIES}
+        if per_category else None
+    )
 
     summary: Dict[str, Any] = {
         "n_sentences_attempted": len(biased_only),
@@ -1414,22 +1662,9 @@ def run_faithfulness_calibration(
         "model": model_name,
         "k_max": k_max,
         "current_default_high_impact": 0.05,
-        "obs_pool": {
-            "n": int(obs_np.size),
-            "mean": float(obs_np.mean()) if obs_np.size else None,
-            "median": float(np.percentile(obs_np, 50)) if obs_np.size else None,
-            "p80": float(np.percentile(obs_np, 80)) if obs_np.size else None,
-            "p95": float(np.percentile(obs_np, 95)) if obs_np.size else None,
-            "p99": float(np.percentile(obs_np, 99)) if obs_np.size else None,
-        },
-        "null_pool": {
-            "n": int(null_np.size),
-            "mean": float(null_np.mean()) if null_np.size else None,
-            "median": float(np.percentile(null_np, 50)) if null_np.size else None,
-            "p80": float(np.percentile(null_np, 80)) if null_np.size else None,
-            "p95": float(np.percentile(null_np, 95)) if null_np.size else None,
-            "p99": float(np.percentile(null_np, 99)) if null_np.size else None,
-        },
+        # ── representation_impact (norm of hidden-state delta) ────────
+        "obs_pool": _pool_stats(obs_np),
+        "null_pool": _pool_stats(null_np),
         "recommended_thresholds": {
             "above_noise_alpha_0.20": float(np.percentile(null_np, 80)) if null_np.size else None,
             "high_impact_alpha_0.05": float(np.percentile(null_np, 95)) if null_np.size else None,
@@ -1439,9 +1674,48 @@ def run_faithfulness_calibration(
             float((obs_np >= np.percentile(null_np, 95)).mean())
             if obs_np.size and null_np.size else None
         ),
+        # ── KL divergence on LM-head logits (alternative metric) ──────
+        # Tests whether the BERT/GPT-2 ~100x gap in representation_impact
+        # is a LayerNorm-scale artefact (KL is scale-invariant: a unit
+        # change in logit space gives the same KL regardless of the
+        # absolute hidden-state norm).
+        "obs_kl_pool": _pool_stats(obs_kl_np),
+        "null_kl_pool": _pool_stats(null_kl_np),
+        "recommended_kl_thresholds": {
+            "high_kl_alpha_0.05": float(np.percentile(null_kl_np, 95)) if null_kl_np.size else None,
+            "very_high_kl_alpha_0.01": float(np.percentile(null_kl_np, 99)) if null_kl_np.size else None,
+        },
+        "fraction_obs_kl_above_alpha_0.05": (
+            float((obs_kl_np >= np.percentile(null_kl_np, 95)).mean())
+            if obs_kl_np.size and null_kl_np.size else None
+        ),
     }
 
-    out_path = RESULTS_DIR / f"faithfulness_impact_{short}.json"
+    if per_category:
+        # The null pool is shared across categories (random ablations are
+        # the same distribution regardless of which category we compare
+        # against). Per-category we only have a different OBSERVED pool.
+        per_cat_summary: Dict[str, Any] = {}
+        for cat in CATEGORIES:
+            ocp = obs_np_cat[cat]
+            okp = obs_kl_np_cat[cat]
+            per_cat_summary[cat] = {
+                "obs_pool": _pool_stats(ocp),
+                "fraction_obs_above_alpha_0.05": (
+                    float((ocp >= np.percentile(null_np, 95)).mean())
+                    if ocp.size and null_np.size else None
+                ),
+                "obs_kl_pool": _pool_stats(okp),
+                "fraction_obs_kl_above_alpha_0.05": (
+                    float((okp >= np.percentile(null_kl_np, 95)).mean())
+                    if okp.size and null_kl_np.size else None
+                ),
+            }
+        summary["per_category"] = per_cat_summary
+
+    out_path = FAITHFULNESS_DIR / (
+        f"{short}_per_category.json" if per_category else f"{short}.json"
+    )
     out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                         encoding="utf-8")
     print(f"Saved {out_path}")
@@ -1450,31 +1724,61 @@ def run_faithfulness_calibration(
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        if obs_np.size and null_np.size:
-            fig, ax = plt.subplots(figsize=(8, 4.5))
-            # Cap range visually so the tail doesn't compress the bulk
-            xmax = float(np.percentile(np.concatenate([obs_np, null_np]), 99.5))
-            ax.hist(null_np, bins=80, range=(0, xmax), alpha=0.55,
+
+        def _hist_panel(ax, obs_arr: np.ndarray, null_arr: np.ndarray,
+                        metric_label: str, current_default: Optional[float]):
+            if obs_arr.size == 0 or null_arr.size == 0:
+                return
+            xmax = float(np.percentile(np.concatenate([obs_arr, null_arr]), 99.5))
+            if xmax <= 0:
+                xmax = max(float(obs_arr.max()), float(null_arr.max()), 1e-6)
+            ax.hist(null_arr, bins=80, range=(0, xmax), alpha=0.55,
                     color="#94a3b8", density=True,
-                    label=f"Null (random heads, n={null_np.size})")
-            ax.hist(obs_np, bins=80, range=(0, xmax), alpha=0.55,
+                    label=f"Null (random heads, n={null_arr.size})")
+            ax.hist(obs_arr, bins=80, range=(0, xmax), alpha=0.55,
                     color="#ff5ca9", density=True,
-                    label=f"Observed (top-{k_max} BAR heads, n={obs_np.size})")
-            p95 = float(np.percentile(null_np, 95))
-            p99 = float(np.percentile(null_np, 99))
+                    label=f"Observed (top-{k_max} BAR heads, n={obs_arr.size})")
+            p95 = float(np.percentile(null_arr, 95))
+            p99 = float(np.percentile(null_arr, 99))
             ax.axvline(p95, color="#16a34a", linestyle="--",
-                       label=f"95th null = {p95:.4f} (α=0.05)")
+                       label=f"95th null = {p95:.4g} (α=0.05)")
             ax.axvline(p99, color="#dc2626", linestyle="--",
-                       label=f"99th null = {p99:.4f} (α=0.01)")
-            ax.axvline(0.05, color="#1d4ed8", linestyle=":",
-                       label="Current default = 0.05")
-            ax.set_xlabel("|representation_impact|")
+                       label=f"99th null = {p99:.4g} (α=0.01)")
+            if current_default is not None:
+                ax.axvline(current_default, color="#1d4ed8", linestyle=":",
+                           label=f"Current default = {current_default}")
+            ax.set_xlabel(metric_label)
             ax.set_ylabel("Density")
+            ax.legend(fontsize=7)
+
+        has_impact = obs_np.size and null_np.size
+        has_kl = obs_kl_np.size and null_kl_np.size
+
+        if has_impact and has_kl:
+            fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+            _hist_panel(axes[0], obs_np, null_np,
+                        "|representation_impact|", 0.05)
+            axes[0].set_title("representation_impact (cosine-distance based)")
+            _hist_panel(axes[1], obs_kl_np, null_kl_np,
+                        "|KL divergence|", None)
+            axes[1].set_title("KL divergence (LM-head logits, scale-invariant)")
+            fig.suptitle(
+                f"Per-head ablation: BAR-ranked vs random null  -  {model_name}",
+                fontsize=11, y=1.02,
+            )
+        elif has_impact:
+            fig, ax = plt.subplots(figsize=(8, 4.5))
+            _hist_panel(ax, obs_np, null_np, "|representation_impact|", 0.05)
             ax.set_title(f"Per-head ablation impact ({model_name}): BAR-ranked vs random null")
-            ax.legend(fontsize=8)
+        else:
+            fig = None
+
+        if fig is not None:
             fig.tight_layout()
-            plot_path = RESULTS_DIR / f"faithfulness_impact_{short}.png"
-            fig.savefig(plot_path, dpi=120)
+            plot_path = FAITHFULNESS_DIR / (
+                f"{short}_per_category.png" if per_category else f"{short}.png"
+            )
+            fig.savefig(plot_path, dpi=120, bbox_inches="tight")
             plt.close(fig)
             print(f"Saved {plot_path}")
     except Exception as e:
@@ -1607,7 +1911,7 @@ def main() -> int:
                         help="Also compute BAR/BSR distributions per GUS-Net "
                              "category (GEN, UNFAIR, STEREO) with their own "
                              "permutation nulls. Output goes to "
-                             "bar_bsr_thresholds_per_category.json.")
+                             "bar_bsr/per_category.json.")
     parser.add_argument("--abl-n", type=_parse_n_arg, default=50,
                         help="Sentences for top-K ablation (int or 'all'; default 50).")
     parser.add_argument("--k-max", type=int, default=20,
@@ -1616,6 +1920,13 @@ def main() -> int:
                         default="both",
                         help="Which attention model(s) to ablate (default both). "
                              "Each model writes its own checkpoint + output JSON.")
+    parser.add_argument("--abl-per-category", action="store_true",
+                        help="Also compute per-category Top-K elbow curves "
+                             "(GEN, UNFAIR, STEREO) using category-specific BAR "
+                             "rankings. Output goes to "
+                             "topk_ablation/{model}_per_category.json. "
+                             "Approximately 3x slower because each sentence runs "
+                             "3 extra ablation batches.")
     parser.add_argument("--faith-n", type=_parse_n_arg, default=500,
                         help="Sentences for faithfulness calibration "
                              "(int or 'all'; default 500). Lower than --abl-n "
@@ -1624,6 +1935,11 @@ def main() -> int:
                         default="both",
                         help="Which attention model(s) for faithfulness calibration "
                              "(default both).")
+    parser.add_argument("--faith-per-category", action="store_true",
+                        help="Also collect per-category (GEN, UNFAIR, STEREO) "
+                             "observed pools, sharing the random-null pool with "
+                             "the combined run. Output goes to "
+                             "faithfulness/{model}_per_category.json. ~2.5x slower.")
     parser.add_argument("--max-tokens", type=int, default=None,
                         help="Skip sentences with more than this many whitespace "
                              "tokens (cheap filter to keep runtime bounded). "
@@ -1726,6 +2042,7 @@ def main() -> int:
                     max_tokens=args.max_tokens,
                     resume=resume,
                     checkpoint_every=max(1, args.checkpoint_every // 2),
+                    per_category=args.abl_per_category,
                 )
             except Exception:
                 traceback.print_exc()
@@ -1745,6 +2062,7 @@ def main() -> int:
                     max_tokens=args.max_tokens,
                     resume=resume,
                     checkpoint_every=max(1, args.checkpoint_every // 2),
+                    per_category=args.faith_per_category,
                 )
             except Exception:
                 traceback.print_exc()

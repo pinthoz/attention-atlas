@@ -7,6 +7,7 @@ Each renderer displays results from a specific explainability method.
 import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from typing import Optional
 
 import numpy as np
 from shiny import render, ui, reactive
@@ -83,22 +84,33 @@ def _rho_color_and_label(rho: float) -> tuple:
     return (pos_shades if rho >= 0 else neg_shades)[idx], label
 
 
-# ── Calibrated faithfulness thresholds (representation_impact) ───────────
+# ── Calibrated faithfulness thresholds ───────────────────────────────────
 # Empirical permutation-null thresholds from the faithfulness calibration
-# on the full v9 corpus (2026-06-05). Per-model because BERT and GPT-2
-# operate at completely different impact scales (BERT is ~100x larger).
-# See dataset/thresholds_results/faithfulness_impact_{bert,gpt2}.json
-# and the writeup in THRESHOLDS_CALIBRATION.md, section 14.
+# on the full v9 corpus (2026-06-06). Per-model because BERT and GPT-2
+# operate at different scales. Both metrics are stored: representation_impact
+# (cosine-distance on hidden states; sensitive to LayerNorm scaling) and
+# KL divergence on LM-head logits (scale-invariant via softmax).
+#
+# Key cross-metric finding: under representation_impact the BERT/GPT-2 gap
+# is 88x (artefact) and BAR ranking is NOT faithful for GPT-2 (3.59% > a=0.05);
+# under KL the gap drops to 8.2x and BAR is weakly faithful for GPT-2
+# (6.09% > a=0.05). See THRESHOLDS_CALIBRATION.md sections 13 and 14.
 IMPACT_THRESHOLDS = {
     "bert-base-uncased": {
         "high": 0.0093,        # null p95, alpha=0.05
         "very_high": 0.0190,   # null p99, alpha=0.01
-        "obs_above_alpha_05_pct": 9.37,  # fraction of obs above the high cutoff
+        "obs_above_alpha_05_pct": 9.37,
+        "kl_high": 0.0224,         # KL null p95
+        "kl_very_high": 0.0747,    # KL null p99
+        "kl_obs_above_alpha_05_pct": 8.77,
     },
     "gpt2": {
         "high": 0.000105,      # null p95, alpha=0.05
         "very_high": 0.0169,   # null p99, alpha=0.01
         "obs_above_alpha_05_pct": 3.59,
+        "kl_high": 0.00274,        # KL null p95
+        "kl_very_high": 0.00706,   # KL null p99
+        "kl_obs_above_alpha_05_pct": 6.09,
     },
 }
 
@@ -109,6 +121,110 @@ def _get_impact_thresholds(model_name: str) -> dict:
     if model_name and "gpt2" in model_name.lower():
         return IMPACT_THRESHOLDS["gpt2"]
     return IMPACT_THRESHOLDS["bert-base-uncased"]
+
+
+def _kl_color(kl: float, thresholds: dict) -> str:
+    """Pick a colour for KL divergence using the same 3-band scheme."""
+    if kl >= thresholds["kl_very_high"]:
+        return "#b91c1c"
+    if kl >= thresholds["kl_high"]:
+        return "#ff5ca9"
+    return "#64748b"
+
+
+def _render_live_elbow_block(
+    live_elbow: Optional[int],
+    slider_k: int,
+    global_default: int,   # kept for backward-compat; unused now
+    is_gpt2: bool,
+) -> str:
+    """Render the per-sentence elbow comparison block shown above the
+    ablation chart. Shows two values side-by-side (live elbow / slider K)
+    and a one-line interpretation of how the user's slider choice
+    compares to the elbow for THIS sentence."""
+    if live_elbow is None:
+        return (
+            '<div style="margin-bottom:14px;padding:10px 14px;text-align:center;'
+            'font-size:11px;color:#94a3b8;line-height:1.5;border:1px dashed #e2e8f0;'
+            'border-radius:8px;">'
+            '<b>*</b>&nbsp;Live elbow unavailable for this sentence '
+            '(no ablation impact accumulated).'
+            '</div>'
+        )
+
+    def _pill(label: str, value: str, accent: str, tone_bg: str) -> str:
+        return (
+            f'<div style="display:flex;flex-direction:column;align-items:center;'
+            f'background:{tone_bg};padding:8px 16px;border-radius:8px;min-width:90px;'
+            f'border:1px solid {accent}33;">'
+            f'<span style="font-size:9px;font-weight:700;color:{accent};'
+            f'text-transform:uppercase;letter-spacing:0.7px;line-height:1.1;">'
+            f'{label}</span>'
+            f'<span style="font-family:JetBrains Mono,monospace;font-size:18px;'
+            f'font-weight:700;color:{accent};margin-top:2px;">{value}</span>'
+            f'</div>'
+        )
+
+    diff = live_elbow - slider_k
+    if diff == 0:
+        note = (
+            f"The slider <b>matches</b> this sentence's elbow. "
+            f"You are seeing exactly the heads that carry the impact."
+        )
+    elif diff < 0:
+        # Elbow is lower than slider — user is showing more heads than needed.
+        excess = -diff
+        note = (
+            f"The slider shows <b>{excess}</b> more head{'s' if excess > 1 else ''} "
+            f"than this sentence needs. Real signal flattens at K={live_elbow}; "
+            f"rows {live_elbow + 1}..{slider_k} each contribute &lt;5% of the total."
+        )
+    else:
+        # Elbow is higher than slider — user is missing signal.
+        missing = diff
+        note = (
+            f"The slider is <b>{missing}</b> below this sentence's elbow. "
+            f"K={live_elbow} captures the full impact; the slider hides "
+            f"rows {slider_k + 1}..{live_elbow} that still matter."
+        )
+
+    return (
+        '<div style="margin-bottom:14px;text-align:center;">'
+        '<div style="display:inline-flex;gap:10px;align-items:stretch;">'
+        + _pill("Live elbow", str(live_elbow), "#16a34a", "rgba(22,163,74,0.10)")
+        + _pill("Slider K", str(slider_k), "#3b82f6", "rgba(59,130,246,0.10)")
+        + '</div>'
+        + f'<div style="margin-top:8px;font-size:11px;color:#64748b;line-height:1.5;">'
+        f'<b>*</b>&nbsp;{note}</div>'
+        + '</div>'
+    )
+
+
+def _compute_live_elbow(results_data, marginal_pct: float = 0.05) -> Optional[int]:
+    """Compute the per-sentence Top-K elbow.
+
+    Heuristic identical to ``run_topk_ablation``: rank heads by BAR
+    descending, accumulate |representation_impact| in that order, then
+    return the smallest K beyond which each additional head contributes
+    less than ``marginal_pct`` of the K=N total. Returns ``None`` when
+    the curve is empty or all impacts are zero.
+    """
+    if not results_data:
+        return None
+    ranked = sorted(results_data, key=lambda r: r.bar_original, reverse=True)
+    running = 0.0
+    cumulative = []
+    for r in ranked:
+        running += abs(getattr(r, "representation_impact", 0.0) or 0.0)
+        cumulative.append(running)
+    total = cumulative[-1]
+    if total <= 0 or len(cumulative) < 2:
+        return None
+    for k in range(2, len(cumulative) + 1):
+        marginal = cumulative[k - 1] - cumulative[k - 2]
+        if marginal < marginal_pct * total:
+            return k - 1
+    return len(cumulative)
 
 
 def _impact_color(impact: float, thresholds: dict) -> str:
@@ -175,6 +291,22 @@ def register_xai_handlers(
             thresholds = _get_impact_thresholds(model_name)
             is_gpt2 = "gpt2" in model_name.lower()
 
+            # Per-sentence Top-K elbow: smallest K beyond which each
+            # additional BAR-ranked head contributes <5% of the K=N total.
+            # This is the same heuristic the global calibration uses but
+            # computed on the current sentence's data, so the user sees
+            # how concentrated the bias signal is HERE vs the corpus
+            # average shown by the slider.
+            live_elbow = _compute_live_elbow(results_data)
+            try:
+                slider_k = int(input.bias_top_k())
+            except Exception:
+                slider_k = 5
+            global_default = 1 if is_gpt2 else 5
+            elbow_block_html = _render_live_elbow_block(
+                live_elbow, slider_k, global_default, is_gpt2,
+            )
+
             fig = create_ablation_impact_chart(results_data, bar_threshold=bar_threshold, selected_head=selected_head)
             c_id = f"ablation-chart-container{container_suffix}"
             chart_html = _deferred_plotly(fig, c_id)
@@ -182,6 +314,10 @@ def register_xai_handlers(
             table_rows = []
             for rank, r in enumerate(results_data, 1):
                 impact_color = _impact_color(r.representation_impact, thresholds)
+                kl_color = (
+                    _kl_color(r.kl_divergence, thresholds)
+                    if r.kl_divergence is not None else "#64748b"
+                )
                 kl_cell = f"{r.kl_divergence:.4f}" if r.kl_divergence is not None else "N/A"
                 specialized = "Yes" if r.bar_original > bar_threshold else "No"
                 row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
@@ -191,7 +327,7 @@ def register_xai_handlers(
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{impact_color};">{r.representation_impact:.4f}</td>'
-                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{kl_cell}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:{kl_color};">{kl_cell}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
                     f'</tr>'
@@ -227,21 +363,37 @@ def register_xai_handlers(
                 f'font-family:JetBrains Mono,monospace;">&ge; {thresholds["very_high"]:.4f}</span> '
                 f'very high impact (&alpha;=0.01).'
                 f'</div>'
+                f'<div style="margin-top:4px;font-size:11px;color:#64748b;line-height:1.6;text-align:center;">'
+                f'<b>*</b>&nbsp;KL divergence thresholds (scale-invariant alternative): '
+                f'<span style="color:{_kl_color(thresholds["kl_high"], thresholds)};font-weight:700;'
+                f'font-family:JetBrains Mono,monospace;">&ge; {thresholds["kl_high"]:.4f}</span> '
+                f'high (&alpha;=0.05) &middot; '
+                f'<span style="color:{_kl_color(thresholds["kl_very_high"], thresholds)};font-weight:700;'
+                f'font-family:JetBrains Mono,monospace;">&ge; {thresholds["kl_very_high"]:.4f}</span> '
+                f'very high (&alpha;=0.01).'
+                f'</div>'
             )
             warning_html = ""
             if is_gpt2:
                 warning_html = (
                     '<div style="margin-top:8px;font-size:11px;color:#78350f;line-height:1.6;text-align:center;">'
-                    '<b>*</b>&nbsp;<b>Caveat for GPT-2:</b> in our calibration the BAR '
-                    'ranking did <b>not</b> predict single-head causal impact. Random heads had '
-                    '~2.4x larger mean impact than top-BAR heads, and only 3.6% of BAR-ranked '
-                    'ablations crossed the &alpha;=0.05 cutoff (vs the 5% expected by chance). '
-                    'In other words, GPT-2 bias is encoded in a way that single-head ablation '
-                    'cannot localise; interpret the impact column as exploratory, not causal.'
+                    '<b>*</b>&nbsp;<b>Caveat for GPT-2:</b> the two metrics tell different stories, '
+                    'and per-category re-ranking changes the picture again. '
+                    'Under <code style="font-family:JetBrains Mono,monospace;color:#78350f;">'
+                    'representation_impact</code>, BAR_combined is below chance (3.6 % &gt; &alpha;=0.05) '
+                    'and only BAR_GEN crosses chance (6.3 %). Under '
+                    '<code style="font-family:JetBrains Mono,monospace;color:#78350f;">KL divergence</code> '
+                    'on the LM-head logits — scale-invariant on softmax outputs — '
+                    '<b>all three category-specific rankings are faithful</b>: '
+                    'BAR_GEN 6.9 %, <b>BAR_UNFAIR 12.6 %</b>, <b>BAR_STEREO 11.6 %</b>. '
+                    'For single-head causal claims in GPT-2: rank by BAR_C (per-category) and '
+                    'read the KL Div column — the Impact column under-reports causality for '
+                    'UNFAIR and STEREO because their head-level effects are direction-rather-than-magnitude.'
                     '</div>'
                 )
 
             return ui.div(
+                ui.HTML(elbow_block_html),
                 ui.HTML(chart_html),
                 ui.HTML(table_html),
                 ui.HTML(legend_html),
