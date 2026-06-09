@@ -1364,10 +1364,15 @@ def run_faithfulness_calibration(
 
     When ``per_category=True`` we additionally compute observed pools
     per GUS-Net category (GEN, UNFAIR, STEREO) by re-ranking heads
-    against the category-specific BAR. The null pool is shared with the
-    combined run (random heads give the same null regardless of which
-    category we are comparing against), so the per-category mode adds
-    ~3 extra observation batches per sentence (~2.5x total cost).
+    against the category-specific BAR. The random-null pool is also
+    **filtered per category** to include only impacts from sentences that
+    were eligible for that category (had at least one C-labelled token).
+    This addresses the audit finding that a single null over the full
+    biased corpus does not control for per-category sentence-pool and
+    mask-size differences. No extra ablations are needed, only per-sample
+    eligibility bookkeeping (~330 KB extra memory at v9 scale).
+    Per-category mode therefore adds ~3 extra observation batches per
+    sentence (~2.5x total cost rather than 4x).
 
     The current default in ``bias_xai.py`` is ``> 0.05`` for "high impact"
     coloring of an ablated head. That number is arbitrary. We make it
@@ -1422,7 +1427,10 @@ def run_faithfulness_calibration(
         else f"faithfulness_impact_{short}.pkl"
     )
     sig = _args_signature(
-        "faithfulness_v3_per_cat" if per_category else "faithfulness_v2",
+        # v4 bumps the signature because per-category mode now also tracks
+        # null-pool sentence eligibility per category, so the saved state
+        # is structurally different from v3.
+        "faithfulness_v4_per_cat" if per_category else "faithfulness_v2",
         model_name, k_max, max_tokens, per_category,
     )
 
@@ -1430,12 +1438,26 @@ def run_faithfulness_calibration(
     null_impacts = array.array("f")   # random heads' impacts
     obs_kls = array.array("f")        # BAR-ranked heads' KL divergence
     null_kls = array.array("f")       # random heads' KL divergence
-    # Per-category observed pools (null is shared with combined run).
+    # Per-category observed pools. The null pool is now FILTERED per category
+    # (not shared) by tracking, for each null sample, whether the source
+    # sentence was eligible for category C (has at least one C-labelled token).
+    # This addresses the "shared null pool" weakness flagged in the audit:
+    # category C's null is now the impact distribution of random heads on
+    # sentences eligible for C, not on the entire biased corpus.
     obs_impacts_cat: Dict[str, "array.array"] = (
         {c: array.array("f") for c in CATEGORIES} if per_category else None
     )
     obs_kls_cat: Dict[str, "array.array"] = (
         {c: array.array("f") for c in CATEGORIES} if per_category else None
+    )
+    # Per-sample eligibility flags for the null pool. Parallel to null_impacts
+    # and null_kls respectively (impacts and KLs may have different lengths
+    # since either can be None per ablation, so they need separate flags).
+    null_imp_elig_cat: Dict[str, "array.array"] = (
+        {c: array.array("B") for c in CATEGORIES} if per_category else None
+    )
+    null_kl_elig_cat: Dict[str, "array.array"] = (
+        {c: array.array("B") for c in CATEGORIES} if per_category else None
     )
     processed_keys: set = set()
     n_ok = 0
@@ -1443,6 +1465,12 @@ def run_faithfulness_calibration(
 
     def _as_arr(maybe_list) -> "array.array":
         a = array.array("f")
+        if maybe_list:
+            a.extend(maybe_list)
+        return a
+
+    def _as_arr_b(maybe_list) -> "array.array":
+        a = array.array("B")
         if maybe_list:
             a.extend(maybe_list)
         return a
@@ -1461,6 +1489,14 @@ def run_faithfulness_calibration(
                 }
                 obs_kls_cat = {
                     c: _as_arr(state.get("obs_kls_cat", {}).get(c, []))
+                    for c in CATEGORIES
+                }
+                null_imp_elig_cat = {
+                    c: _as_arr_b(state.get("null_imp_elig_cat", {}).get(c, []))
+                    for c in CATEGORIES
+                }
+                null_kl_elig_cat = {
+                    c: _as_arr_b(state.get("null_kl_elig_cat", {}).get(c, []))
                     for c in CATEGORIES
                 }
             processed_keys = state["processed_keys"]
@@ -1487,6 +1523,12 @@ def run_faithfulness_calibration(
             }
             snap["obs_kls_cat"] = {
                 c: list(obs_kls_cat[c]) for c in CATEGORIES
+            }
+            snap["null_imp_elig_cat"] = {
+                c: list(null_imp_elig_cat[c]) for c in CATEGORIES
+            }
+            snap["null_kl_elig_cat"] = {
+                c: list(null_kl_elig_cat[c]) for c in CATEGORIES
             }
         return snap
 
@@ -1560,18 +1602,42 @@ def run_faithfulness_calibration(
                         obs_impacts.append(abs(r.representation_impact))
                     if r.kl_divergence is not None:
                         obs_kls.append(abs(r.kl_divergence))
+
+                # Per-category mode: determine sentence eligibility for each
+                # category BEFORE processing null ablations, because we need
+                # to tag each null sample with whether the source sentence
+                # was eligible for category C. The eligibility array runs in
+                # parallel to null_impacts / null_kls.
+                cat_masks_sentence: Optional[Dict[str, np.ndarray]] = None
+                if per_category:
+                    cat_masks_sentence = _detect_per_category_indices(
+                        text, tokens, detector
+                    )
+                sent_elig: Dict[str, int] = {c: 0 for c in CATEGORIES}
+                if per_category and cat_masks_sentence is not None:
+                    seq_len = len(tokens)
+                    for cat in CATEGORIES:
+                        m = cat_masks_sentence[cat][:seq_len]
+                        n_c = int(m.sum())
+                        sent_elig[cat] = 1 if 0 < n_c < seq_len else 0
+
                 for r in null_abl:
                     if r.representation_impact is not None:
                         null_impacts.append(abs(r.representation_impact))
+                        if per_category:
+                            for cat in CATEGORIES:
+                                null_imp_elig_cat[cat].append(sent_elig[cat])
                     if r.kl_divergence is not None:
                         null_kls.append(abs(r.kl_divergence))
+                        if per_category:
+                            for cat in CATEGORIES:
+                                null_kl_elig_cat[cat].append(sent_elig[cat])
 
-                # Per-category: re-rank by BAR_C and ablate the top-K per
-                # category. The null pool stays shared with the combined run.
+                # Per-category obs: re-rank by BAR_C and ablate the top-K
+                # heads per category. We reuse the cat_masks computed above
+                # rather than recompute them.
                 if per_category:
-                    cat_masks = _detect_per_category_indices(
-                        text, tokens, detector
-                    )
+                    cat_masks = cat_masks_sentence
                     if cat_masks is not None:
                         for cat in CATEGORIES:
                             mask_c = cat_masks[cat]
@@ -1692,23 +1758,56 @@ def run_faithfulness_calibration(
     }
 
     if per_category:
-        # The null pool is shared across categories (random ablations are
-        # the same distribution regardless of which category we compare
-        # against). Per-category we only have a different OBSERVED pool.
+        # Category-specific nulls: filter the random-ablation pool to only
+        # those impacts whose source sentence was eligible for category C
+        # (had at least one C-labelled token). This addresses the audit
+        # finding that a shared null over the full biased corpus does not
+        # control for per-category sentence-pool and mask-size differences.
         per_cat_summary: Dict[str, Any] = {}
         for cat in CATEGORIES:
             ocp = obs_np_cat[cat]
             okp = obs_kl_np_cat[cat]
+            # Build the category-specific null arrays via boolean mask.
+            imp_elig = np.frombuffer(null_imp_elig_cat[cat], dtype=np.uint8).astype(bool) if len(null_imp_elig_cat[cat]) else np.empty(0, dtype=bool)
+            kl_elig = np.frombuffer(null_kl_elig_cat[cat], dtype=np.uint8).astype(bool) if len(null_kl_elig_cat[cat]) else np.empty(0, dtype=bool)
+            # Defensive sizing: arrays are appended in lock-step with
+            # null_np / null_kl_np, but defend against any size mismatch.
+            imp_mask = imp_elig[: null_np.size] if imp_elig.size else np.zeros(null_np.size, dtype=bool)
+            kl_mask = kl_elig[: null_kl_np.size] if kl_elig.size else np.zeros(null_kl_np.size, dtype=bool)
+            null_cat_np = null_np[imp_mask] if imp_mask.size and imp_mask.any() else np.empty(0, dtype=np.float32)
+            null_kl_cat_np = null_kl_np[kl_mask] if kl_mask.size and kl_mask.any() else np.empty(0, dtype=np.float32)
             per_cat_summary[cat] = {
                 "obs_pool": _pool_stats(ocp),
+                "null_pool": _pool_stats(null_cat_np),
+                "recommended_thresholds": {
+                    "high_impact_alpha_0.05": (
+                        float(np.percentile(null_cat_np, 95))
+                        if null_cat_np.size else None
+                    ),
+                    "very_high_impact_alpha_0.01": (
+                        float(np.percentile(null_cat_np, 99))
+                        if null_cat_np.size else None
+                    ),
+                },
                 "fraction_obs_above_alpha_0.05": (
-                    float((ocp >= np.percentile(null_np, 95)).mean())
-                    if ocp.size and null_np.size else None
+                    float((ocp >= np.percentile(null_cat_np, 95)).mean())
+                    if ocp.size and null_cat_np.size else None
                 ),
                 "obs_kl_pool": _pool_stats(okp),
+                "null_kl_pool": _pool_stats(null_kl_cat_np),
+                "recommended_kl_thresholds": {
+                    "high_kl_alpha_0.05": (
+                        float(np.percentile(null_kl_cat_np, 95))
+                        if null_kl_cat_np.size else None
+                    ),
+                    "very_high_kl_alpha_0.01": (
+                        float(np.percentile(null_kl_cat_np, 99))
+                        if null_kl_cat_np.size else None
+                    ),
+                },
                 "fraction_obs_kl_above_alpha_0.05": (
-                    float((okp >= np.percentile(null_kl_np, 95)).mean())
-                    if okp.size and null_kl_np.size else None
+                    float((okp >= np.percentile(null_kl_cat_np, 95)).mean())
+                    if okp.size and null_kl_cat_np.size else None
                 ),
             }
         summary["per_category"] = per_cat_summary

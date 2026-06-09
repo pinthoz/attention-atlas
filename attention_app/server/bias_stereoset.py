@@ -498,7 +498,15 @@ def register_stereoset_handlers(
                 '<div><div style="font-size:10px;font-weight:700;color:#22c55e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Least Stereotyped Targets (lowest SS)</div>'
                 '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead>'
                 f'<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;"><th style="{th_style}text-align:center;">Rank</th><th style="{th_style}text-align:left;">Target</th><th style="{th_style}text-align:center;">Category</th><th style="{th_style}text-align:right;">SS</th><th style="{th_style}text-align:center;">n</th></tr></thead>'
-                f'<tbody>{_build_target_rows(least_biased, "low")}</tbody></table></div></div>'
+                f'<tbody>{_build_target_rows(least_biased, "low")}</tbody></table></div>'
+                '<div style="font-size:10px;color:#94a3b8;font-style:italic;line-height:1.5;'
+                'padding:6px 10px;background:rgba(248,250,252,0.5);border-left:2px solid #cbd5e1;'
+                'border-radius:3px;">'
+                '<b>Note:</b> SS colour bands (<span style="color:#22c55e;">&lt; 40 anti-stereo</span>, '
+                '<span style="color:#eab308;">40&ndash;60 near-parity</span>, '
+                '<span style="color:#ef4444;">&gt; 60 stereo</span>) follow the Nadeem et al. (2021) '
+                'literature convention, with SS=50 as parity. Not empirically calibrated to v9.'
+                '</div></div>'
             )
             
             chart_grid = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">' + "".join([f'<div>{html}</div>' for html in charts]) + '</div>'
@@ -982,7 +990,9 @@ def register_stereoset_handlers(
                     '<div style="font-size:10px;color:#94a3b8;margin-bottom:8px;line-height:1.5;">'
                     'Attention feature values across all examples. '
                     '<span style="color:#ef4444;">●</span> Stereo &nbsp;'
-                    f'<span style="color:#22c55e;">●</span> Anti · p-values = Mann-Whitney{sub_extra}</div>'
+                    f'<span style="color:#22c55e;">●</span> Anti · p-values = Mann-Whitney{sub_extra} '
+                    '<span style="color:#94a3b8;font-style:italic;">(uncorrected display heuristic; '
+                    'apply a Bonferroni or BH-FDR correction for confirmation-grade claims)</span></div>'
                     + _chart_with_png_btn(
                         _deferred_plotly(
                             fig_dist,

@@ -383,11 +383,11 @@ def register_xai_handlers(
                     'representation_impact</code>, BAR_combined is below chance (3.6 % &gt; &alpha;=0.05) '
                     'and only BAR_GEN crosses chance (6.3 %). Under '
                     '<code style="font-family:JetBrains Mono,monospace;color:#78350f;">KL divergence</code> '
-                    'on the LM-head logits — scale-invariant on softmax outputs — '
+                    'on the LM-head logits, scale-invariant on softmax outputs, '
                     '<b>all three category-specific rankings are faithful</b>: '
-                    'BAR_GEN 6.9 %, <b>BAR_UNFAIR 12.6 %</b>, <b>BAR_STEREO 11.6 %</b>. '
+                    'BAR_GEN 6.9 %, <b>BAR_UNFAIR 12.75 %</b>, <b>BAR_STEREO 11.9 %</b>. '
                     'For single-head causal claims in GPT-2: rank by BAR_C (per-category) and '
-                    'read the KL Div column — the Impact column under-reports causality for '
+                    'read the KL Div column. The Impact column under-reports causality for '
                     'UNFAIR and STEREO because their head-level effects are direction-rather-than-magnitude.'
                     '</div>'
                 )
@@ -1181,23 +1181,40 @@ def register_xai_handlers(
 
             ig_attrs = ig_bundle.token_attributions if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else None
 
-            # Summary cards
+            # Summary cards — Cohen 1988 magnitude bands on the rho values.
             rho_ig = bundle.perturb_vs_ig_spearman
             mean_attn_rho = np.mean([r[2] for r in bundle.perturb_vs_attn_spearman]) if bundle.perturb_vs_attn_spearman else 0.0
             max_imp = max(r.importance for r in bundle.token_results) if bundle.token_results else 0.0
+            rho_ig_color, rho_ig_label = _rho_color_and_label(rho_ig)
+            mean_attn_color, mean_attn_label = _rho_color_and_label(mean_attn_rho)
+
+            def _rho_card(value: float, label: str, color: str, mag_label: str) -> str:
+                return (
+                    f'<div style="flex:1;min-width:120px;padding:12px;'
+                    f'background:{color}14;border:1px solid {color}33;'
+                    f'border-radius:8px;text-align:center;">'
+                    f'<div style="font-size:20px;font-weight:700;color:{color};'
+                    f'font-family:JetBrains Mono,monospace;">{value:.3f}</div>'
+                    f'<div style="font-size:9px;font-weight:700;color:{color};'
+                    f'opacity:0.75;text-transform:uppercase;letter-spacing:0.5px;'
+                    f'margin-top:2px;">{mag_label}</div>'
+                    f'<div style="font-size:10px;color:#64748b;margin-top:4px;">'
+                    f'{label}</div></div>'
+                )
 
             summary_html = (
                 f'<div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;">'
-                f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.15);border-radius:8px;text-align:center;">'
-                f'<div style="font-size:20px;font-weight:700;color:#f59e0b;font-family:JetBrains Mono,monospace;">{rho_ig:.3f}</div>'
-                f'<div style="font-size:10px;color:#64748b;margin-top:4px;">ρ(Perturb, IG)</div></div>'
-                f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(37,99,235,0.06);border:1px solid rgba(37,99,235,0.15);border-radius:8px;text-align:center;">'
-                f'<div style="font-size:20px;font-weight:700;color:#2563eb;font-family:JetBrains Mono,monospace;">{mean_attn_rho:.3f}</div>'
-                f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Mean ρ(Perturb, Attn)</div></div>'
-                f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.15);border-radius:8px;text-align:center;">'
-                f'<div style="font-size:20px;font-weight:700;color:#22c55e;font-family:JetBrains Mono,monospace;">{max_imp:.4f}</div>'
-                f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Max Perturbation Impact</div></div>'
-                f'</div>'
+                + _rho_card(rho_ig, "ρ(Perturb, IG)", rho_ig_color, rho_ig_label)
+                + _rho_card(mean_attn_rho, "Mean ρ(Perturb, Attn)",
+                            mean_attn_color, mean_attn_label)
+                + f'<div style="flex:1;min-width:120px;padding:12px;'
+                f'background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.15);'
+                f'border-radius:8px;text-align:center;">'
+                f'<div style="font-size:20px;font-weight:700;color:#22c55e;'
+                f'font-family:JetBrains Mono,monospace;">{max_imp:.4f}</div>'
+                f'<div style="font-size:10px;color:#64748b;margin-top:4px;">'
+                f'Max Perturbation Impact</div></div>'
+                + '</div>'
             )
 
             sections = [ui.HTML(summary_html)]
@@ -1394,19 +1411,32 @@ def register_xai_handlers(
             ig_attrs = ig_bundle.token_attributions if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else None
             ig_corrs = ig_bundle.correlations if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else []
 
-            # Summary cards
+            # Summary cards — Cohen 1988 magnitude bands on the rho values.
             rho_ig = bundle.lrp_vs_ig_spearman
             mean_attn_rho = np.mean([r[2] for r in bundle.correlations]) if bundle.correlations else 0.0
+            rho_ig_color, rho_ig_label = _rho_color_and_label(rho_ig)
+            mean_attn_color, mean_attn_label = _rho_color_and_label(mean_attn_rho)
+
+            def _rho_card(value: float, label: str, color: str, mag_label: str) -> str:
+                return (
+                    f'<div style="flex:1;min-width:120px;padding:12px;'
+                    f'background:{color}14;border:1px solid {color}33;'
+                    f'border-radius:8px;text-align:center;">'
+                    f'<div style="font-size:20px;font-weight:700;color:{color};'
+                    f'font-family:JetBrains Mono,monospace;">{value:.3f}</div>'
+                    f'<div style="font-size:9px;font-weight:700;color:{color};'
+                    f'opacity:0.75;text-transform:uppercase;letter-spacing:0.5px;'
+                    f'margin-top:2px;">{mag_label}</div>'
+                    f'<div style="font-size:10px;color:#64748b;margin-top:4px;">'
+                    f'{label}</div></div>'
+                )
 
             summary_html = (
                 f'<div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;">'
-                f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(139,92,246,0.06);border:1px solid rgba(139,92,246,0.15);border-radius:8px;text-align:center;">'
-                f'<div style="font-size:20px;font-weight:700;color:#8b5cf6;font-family:JetBrains Mono,monospace;">{rho_ig:.3f}</div>'
-                f'<div style="font-size:10px;color:#64748b;margin-top:4px;">ρ(LRP, IG)</div></div>'
-                f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(37,99,235,0.06);border:1px solid rgba(37,99,235,0.15);border-radius:8px;text-align:center;">'
-                f'<div style="font-size:20px;font-weight:700;color:#2563eb;font-family:JetBrains Mono,monospace;">{mean_attn_rho:.3f}</div>'
-                f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Mean ρ(LRP, Attn)</div></div>'
-                f'</div>'
+                + _rho_card(rho_ig, "ρ(LRP, IG)", rho_ig_color, rho_ig_label)
+                + _rho_card(mean_attn_rho, "Mean ρ(LRP, Attn)",
+                            mean_attn_color, mean_attn_label)
+                + '</div>'
             )
 
             sections = [ui.HTML(summary_html)]

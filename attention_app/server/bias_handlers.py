@@ -2309,6 +2309,57 @@ def bias_server_handlers(input, output, session):
 
     # ── Summary with explicit criteria ──
 
+    def _render_input_warnings(res_data) -> str:
+        """Return an HTML banner when the input is in a calibration edge case.
+
+        Three triggers, all derived from the bias summary already on hand:
+        - Very short input (< 8 tokens): BAR / BSR estimates become unstable.
+        - Possibly truncated (>= 510 tokens): the GUS-Net tokenizer caps at 512
+          so the tail may be silently dropped.
+        - Empty mask (0 biased tokens): downstream attention metrics return 0
+          by convention; the user should know nothing was flagged.
+
+        Returns empty string when no warning applies."""
+        try:
+            summary = res_data.get("bias_summary", {}) if res_data else {}
+        except Exception:
+            return ""
+        n_total = int(summary.get("total_tokens", 0) or 0)
+        n_biased = int(summary.get("biased_tokens", 0) or 0)
+        notes = []
+        if 0 < n_total < 8:
+            notes.append(
+                f"Very short input ({n_total} tokens). BAR / BSR estimates and "
+                f"the per-sentence elbow may be unstable; treat head-specialisation "
+                f"claims as suggestive only."
+            )
+        if n_total >= 510:
+            notes.append(
+                f"Input is close to the 512-token cap ({n_total} tokens). The "
+                f"GUS-Net tokenizer truncates at this length, so any text beyond "
+                f"the cap was silently dropped from the analysis."
+            )
+        if n_total > 0 and n_biased == 0:
+            notes.append(
+                "GUS-Net flagged no biased tokens for this input. BAR / BSR / "
+                "ablation metrics will read zero by convention; they are not "
+                "evidence against bias, just an empty mask."
+            )
+        if not notes:
+            return ""
+        bullets = "".join(
+            f'<li style="margin:4px 0;">{n}</li>' for n in notes
+        )
+        return (
+            f'<div style="margin-bottom:14px;padding:12px 16px;'
+            f'background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.40);'
+            f'border-left:4px solid #f59e0b;border-radius:8px;font-size:11.5px;'
+            f'color:#78350f;line-height:1.55;">'
+            f'<b style="color:#78350f;">Input-side caveat:</b>'
+            f'<ul style="margin:6px 0 0 18px;padding:0;">{bullets}</ul>'
+            f'</div>'
+        )
+
     @output
     @render.ui
     def bias_summary():
@@ -2532,11 +2583,19 @@ def bias_server_handlers(input, output, session):
                 f"<div style='{_TN}; margin-top:6px;'>High token density + low stereotype score → loaded language without group-specific targeting.</div>"
             )
 
-            return ui.div(
+            warn_A = _render_input_warnings(res)
+            warn_B = _render_input_warnings(res_B)
+            cards_grid = ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(ui.HTML(content_A), *header_args, style="margin-bottom:0; border: 2px solid #3b82f6; height: 100%;"),
                 _wrap_card(ui.HTML(content_B), *header_args, style="margin-bottom:0; border: 2px solid #ff5ca9; height: 100%;")
             )
+            if warn_A or warn_B:
+                return ui.div(
+                    ui.HTML(warn_A + warn_B),
+                    cards_grid,
+                )
+            return cards_grid
         else:
             header_args = (
                 "Bias Detection Summary",
@@ -2562,7 +2621,11 @@ def bias_server_handlers(input, output, session):
                 f"<span>Low &lt; 0.15 &nbsp;·&nbsp; Moderate 0.15–0.40 &nbsp;·&nbsp; High &ge; 0.40</span></div>"
                 f"<div style='{_TN}; margin-top:6px;'>High token density + low stereotype score → loaded language without group-specific targeting.</div>"
             )
-            return _wrap_card(ui.HTML(get_summary_cards(res, abl, ig)), *header_args, style="margin-bottom: 24px;")
+            warn_html = _render_input_warnings(res)
+            card = _wrap_card(ui.HTML(get_summary_cards(res, abl, ig)), *header_args, style="margin-bottom: 24px;")
+            if warn_html:
+                return ui.div(ui.HTML(warn_html), card)
+            return card
 
     # ── Inline bias view (primary) ──
 
@@ -3024,6 +3087,8 @@ def bias_server_handlers(input, output, session):
                         f"<div style='{_TR}'><span style='{_TD};color:#3b82f6;'>&#x25CF;</span>"
                         f"<span><b>Top Sensitive Heads</b>: attention heads with the largest total attention "
                         f"delta between original and counterfactual</span></div>"
+                        f"<hr style='{_TS}'/>"
+                        f"<div style='{_TN}'><b>Note:</b> the colour bands (cosine &ge; 0.9 stable, 0.7&ndash;0.9 moderate; concentration &le; 0.1 / 0.3; &Delta; &gt; 0.05 notable) are <b>display heuristics</b>, not empirically calibrated cutoffs. Use them as qualitative diagnostics rather than significance tests.</div>"
                     )
                     consistency_card = _wrap_card(
                         ui.HTML(cf_html),
@@ -3155,7 +3220,8 @@ def bias_server_handlers(input, output, session):
 
         man_header = (
             "Confidence Breakdown",
-            "Biased tokens grouped by confidence tier: Low (0.50–0.70), Medium (0.70–0.85), and High (0.85+).",
+            "Biased tokens grouped by confidence tier: Low (0.50–0.70), Medium (0.70–0.85), and High (0.85+). "
+            "These tier boundaries are display heuristics, not empirically calibrated cutoffs.",
         )
         _confidence_help = (
             f"<span style='{_TH}'>What this shows: GUS-Net (Powers et al., 2024)</span>"
@@ -3177,6 +3243,8 @@ def bias_server_handlers(input, output, session):
             f"<span>High-confidence spans are the primary evidence for bias presence in the text</span></div>"
             f"<hr style='{_TS}'/>"
             f"<div style='{_TN}'>Threshold (default 0.5): spans below this are suppressed entirely. Adjust via the toolbar to surface or hide borderline detections.</div>"
+            f"<hr style='{_TS}'/>"
+            f"<div style='{_TN}'><b>Note:</b> the tier boundaries 0.70 and 0.85 are <b>display heuristics</b>, not empirical calibration. Use them as qualitative grouping, not as significance cutoffs.</div>"
         )
 
         if (compare_models or compare_prompts) and res_B:
