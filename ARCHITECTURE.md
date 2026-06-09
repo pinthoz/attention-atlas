@@ -392,8 +392,9 @@ E = -Σ_{i,j}(A_ij · log(A_ij))
 ##### 4. Sparsity
 ```
 S = (1/n²) · Σ_{i,j} 𝟙(A_ij < τ)
-where τ = 0.01 (adaptive threshold)
+where τ = 1 / seq_len  (the uniform-attention baseline; adaptive per input)
 ```
+- **Why adaptive**: a fixed 0.01 cutoff penalises short sequences (where uniform attention assigns more mass per cell) and over-credits long ones. The `1/seq_len` baseline makes "sparse" mean "below what uniform attention would assign", which is comparable across input lengths.
 - **Range**: [0, 1]
 - **Interpretation**: Proportion of near-zero attention weights
 - **High values** (> 0.7): Sparse connections (many weak links)

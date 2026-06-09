@@ -222,7 +222,7 @@ Top-5: cat (48%), dog (22%), boy (12%), man (10%), bird (8%)
 | **Confidence (Max)** | `max(A)` | 0.6 - 0.9 | Peak attention strength |
 | **Confidence (Avg)** | `mean(max per row)` | 0.4 - 0.7 | Average peak strength |
 | **Focus (Entropy)** | `-Σ(A·log(A))` | 1.5 - 3.0 | Attention dispersion |
-| **Sparsity** | `% weights < 0.01` | 0.3 - 0.7 | Proportion of weak weights |
+| **Sparsity** | `% weights < τ` where `τ = 1/seq_len` (adaptive) | 0.3 - 0.7 | Proportion of weak weights below the uniform-attention baseline |
 | **Distribution (Median)** | `median(A)` | 0.05 - 0.15 | Robust central tendency |
 | **Uniformity** | `std(A)` | 0.1 - 0.3 | Weight variability |
 
