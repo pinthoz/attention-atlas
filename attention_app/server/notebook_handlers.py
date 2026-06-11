@@ -90,6 +90,14 @@ _CONTEXT_INPUTS = [
     ("bias_thresh_unfair_b",     "bias_thresh_unfair_b",   "Threshold (unfair, B)"),
     ("bias_thresh_gen_b",        "bias_thresh_gen_b",      "Threshold (generalisation, B)"),
     ("bias_thresh_stereo_b",     "bias_thresh_stereo_b",   "Threshold (stereotype, B)"),
+    # Calibrated operating thresholds (permutation-null derived; see
+    # dataset/thresholds_results/THRESHOLDS_CALIBRATION.md). These drive
+    # the head-specialisation colour bands and the ablation Top-K, so an
+    # audit entry is not reconstructable without them.
+    ("bias_bar_threshold",       "bias_bar_threshold",     "BAR specialisation threshold (calibrated α=0.05 default 2.5)"),
+    ("bias_top_k",               "bias_top_k",             "Top-K heads shown (calibrated elbow default 5)"),
+    ("bias_attn_layer",          "bias_attn_layer",        "Bias panel: selected layer"),
+    ("bias_attn_head",           "bias_attn_head",         "Bias panel: selected head"),
     ("bias_selected_tokens_A",   "bias_selected_tokens_a", "Selected tokens (A)"),
     ("bias_selected_tokens_B",   "bias_selected_tokens_b", "Selected tokens (B)"),
 ]
@@ -132,6 +140,10 @@ _NAVSET_INPUTS = {"active_tab"}
 _CLIENT_EVENT_INPUTS = {
     "att_layer", "att_head", "att_focus_token",
     "bias_selected_tokens_a", "bias_selected_tokens_b",
+    # Custom JS sliders in the bias toolbar (no native Shiny widget to
+    # target; restored by pushing the input value back to the browser).
+    "bias_bar_threshold", "bias_top_k",
+    "bias_attn_layer", "bias_attn_head",
 }
 
 # Computed-metric keys, grouped by side. These are *outputs* of the

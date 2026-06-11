@@ -53,13 +53,17 @@ def get_reproducibility_info(text: str, model_name: str | None = None) -> dict:
 
 
 def positional_encoding(position: int, d_model: int = 768) -> np.ndarray:
-    """Sinusoidal positional encodings to mimic transformer inputs."""
+    """Sinusoidal positional encodings to mimic transformer inputs.
+
+    Vectorised: the original double Python loop ran ~400k iterations for a
+    512x768 encoding on every heavy_compute call.
+    """
     pe = np.zeros((position, d_model))
-    for pos in range(position):
-        for i in range(0, d_model, 2):
-            pe[pos, i] = np.sin(pos / (10000 ** ((2 * i) / d_model)))
-            if i + 1 < d_model:
-                pe[pos, i + 1] = np.cos(pos / (10000 ** ((2 * i) / d_model)))
+    pos = np.arange(position)[:, np.newaxis]                  # (position, 1)
+    even_i = np.arange(0, d_model, 2)                         # even dims
+    div = 10000 ** ((2 * even_i) / d_model)                   # (d_model/2,)
+    pe[:, 0::2] = np.sin(pos / div)
+    pe[:, 1::2] = np.cos(pos / div[: pe[:, 1::2].shape[1]])
     return pe
 
 
@@ -278,27 +282,31 @@ def aggregate_data_to_words(res, filter_special=True):
         
     # 3. Aggregation
     
-    # New Tokens
+    # New Tokens. Two parallel lists:
+    #   - clean_words: the bare merged word, case preserved. Used for the
+    #     recomputed ISA / POS / specialization below, where injecting
+    #     display markers would corrupt nltk sentence-splitting and the
+    #     spaCy alignment.
+    #   - new_tokens: the display variant, with a " (*)" marker on words
+    #     merged from multiple sub-tokens (user-requested display feature).
+    clean_words = []
     new_tokens = []
     for group in word_groups:
-        # Construct clean text
-        # BERT: remove ##
-        # GPT-2: remove Ġ and Ċ, then lowercase
+        # Construct clean text (BERT: remove ##; GPT-2: remove Ġ and Ċ).
+        # Case is preserved for both tokenizers: GPT-2 is case-sensitive
+        # and lowercasing would lose information.
         text_parts = []
         for idx in group:
             clean = tokens[idx].replace("##", "").replace("Ġ", "").replace("Ċ", "")
             text_parts.append(clean)
 
         full_word = "".join(text_parts)
+        clean_words.append(full_word)
 
-        # GPT-2: convert to lowercase for display
-        if has_gpt2_markers:
-            full_word = full_word.lower()
-
-        count = len(group)
-        if count > 1:
-            full_word += " (*)" # User requested (*) instead of (count)
-        new_tokens.append(full_word)
+        display_word = full_word
+        if len(group) > 1:
+            display_word += " (*)" # User requested (*) instead of (count)
+        new_tokens.append(display_word)
         
     # Mappings for vector ops
     # We need to transform data structures.
@@ -377,22 +385,29 @@ def aggregate_data_to_words(res, filter_special=True):
     new_attentions = tuple(new_attentions)
     
     # Recompute derived metrics on aggregated data
-    # We do this here so visualizations downstream don't crash or show nothing
+    # We do this here so visualizations downstream don't crash or show nothing.
+    # IMPORTANT: use clean_words (no " (*)" display markers) for text-based
+    # recomputation — markers in the joined text would distort nltk
+    # sentence-splitting and the spaCy POS/NER alignment. clean_words and
+    # new_tokens are index-aligned, so ISA boundaries computed on clean_words
+    # remain valid for the display tokens.
     try:
         from .isa import compute_isa
         from .head_specialization import compute_all_heads_specialization, compute_head_clusters
-        
+
         # 1. ISA
         # reconstruct text for ISA (approximation)
-        agg_text = " ".join(new_tokens) # Basic joining
-        new_isa_data = compute_isa(new_attentions, new_tokens, agg_text, tokenizer, inputs)
-        
+        agg_text = " ".join(clean_words)
+        isa_model_type = "gpt" if has_gpt2_markers else "bert"
+        new_isa_data = compute_isa(new_attentions, clean_words, agg_text,
+                                   tokenizer, inputs, model_type=isa_model_type)
+
         # 2. Head Specialization
-        new_head_specialization = compute_all_heads_specialization(new_attentions, new_tokens, agg_text)
-        
+        new_head_specialization = compute_all_heads_specialization(new_attentions, clean_words, agg_text)
+
         # 3. Head Clusters
         new_head_clusters = compute_head_clusters(new_head_specialization)
-        
+
     except Exception as e:
         _logger.warning("Failed to recompute aggregated metrics: %s", e)
         new_isa_data = None

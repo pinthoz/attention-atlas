@@ -2786,8 +2786,12 @@ def head_specialization_radar(res, layer_idx, head_idx, mode, suffix=""):
 
     layer_metrics = head_specialization[layer_idx]
 
-    # Dimension names for radar chart
-    dimensions = ["Syntax", "Semantics", "CLS Focus", "Punctuation", "Entities", "Long-range", "Self-attention"]
+    # Dimension names for radar chart. GPT-2 has no [CLS] token: the "cls"
+    # metric there measures attention received by the FIRST token (the
+    # attention-sink position), so label it honestly.
+    _is_gpt_style = any("Ġ" in t for t in (tokens or []))
+    _cls_label = "First-token (sink) Focus" if _is_gpt_style else "CLS Focus"
+    dimensions = ["Syntax", "Semantics", _cls_label, "Punctuation", "Entities", "Long-range", "Self-attention"]
     dimension_keys = ["syntax", "semantics", "cls", "punct", "entities", "long_range", "self"]
 
     # Color palette - Attention Atlas colors (Blue/Pink theme)

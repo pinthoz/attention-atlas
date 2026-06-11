@@ -575,13 +575,18 @@ def server(input, output, session):
                 yield "No attention data available"
                 return
 
+            # Match the display path: GPT-2 has no [CLS] (balance -> N/A)
+            # and uses a causal mask (confidence/sparsity over the causal
+            # support). Without this the exported CSV disagrees with the UI.
+            has_cls = bool(tokens) and tokens[0] == "[CLS]"
+
             # Get metric names from first computation
             first_layer_att = attentions[0]
             if isinstance(first_layer_att, torch.Tensor):
                 sample_matrix = first_layer_att[0, 0].detach().cpu().numpy()
             else:
                 sample_matrix = first_layer_att[0, 0]
-            sample_metrics = compute_all_attention_metrics(sample_matrix)
+            sample_metrics = compute_all_attention_metrics(sample_matrix, has_cls=has_cls)
             metric_names = list(sample_metrics.keys())
 
             # Build CSV header
@@ -597,8 +602,8 @@ def server(input, output, session):
                 num_heads = layer_att_np.shape[0]
                 for head_idx in range(num_heads):
                     att_matrix = layer_att_np[head_idx]
-                    metrics = compute_all_attention_metrics(att_matrix)
-                    values = ",".join([f"{metrics.get(m, 0):.6f}" for m in metric_names])
+                    metrics = compute_all_attention_metrics(att_matrix, has_cls=has_cls)
+                    values = ",".join([f"{metrics[m]:.6f}" if metrics.get(m) is not None else "" for m in metric_names])
                     lines.append(f"{layer_idx},{head_idx},{values}")
 
             # Also add global metrics (averaged across all)
@@ -610,8 +615,8 @@ def server(input, output, session):
                 else:
                     all_weights.append(layer_att[0].mean(axis=0))
             global_matrix = np.mean(all_weights, axis=0)
-            global_metrics = compute_all_attention_metrics(global_matrix)
-            global_values = ",".join([f"{global_metrics.get(m, 0):.6f}" for m in metric_names])
+            global_metrics = compute_all_attention_metrics(global_matrix, has_cls=has_cls)
+            global_values = ",".join([f"{global_metrics[m]:.6f}" if global_metrics.get(m) is not None else "" for m in metric_names])
             lines.append(f"global,all,{global_values}")
 
             yield "\n".join(lines)
@@ -805,13 +810,16 @@ def server(input, output, session):
                 yield "No attention data available"
                 return
 
+            # Match the display path (see export_attention_metrics_single).
+            has_cls = bool(tokens) and tokens[0] == "[CLS]"
+
             # Get metric names from first computation
             first_layer_att = attentions[0]
             if isinstance(first_layer_att, torch.Tensor):
                 sample_matrix = first_layer_att[0, 0].detach().cpu().numpy()
             else:
                 sample_matrix = first_layer_att[0, 0]
-            sample_metrics = compute_all_attention_metrics(sample_matrix)
+            sample_metrics = compute_all_attention_metrics(sample_matrix, has_cls=has_cls)
             metric_names = list(sample_metrics.keys())
 
             lines = ["layer,head," + ",".join(metric_names)]
@@ -825,8 +833,8 @@ def server(input, output, session):
                 num_heads = layer_att_np.shape[0]
                 for head_idx in range(num_heads):
                     att_matrix = layer_att_np[head_idx]
-                    metrics = compute_all_attention_metrics(att_matrix)
-                    values = ",".join([f"{metrics.get(m, 0):.6f}" for m in metric_names])
+                    metrics = compute_all_attention_metrics(att_matrix, has_cls=has_cls)
+                    values = ",".join([f"{metrics[m]:.6f}" if metrics.get(m) is not None else "" for m in metric_names])
                     lines.append(f"{layer_idx},{head_idx},{values}")
 
             # Global metrics
@@ -837,8 +845,8 @@ def server(input, output, session):
                 else:
                     all_weights.append(layer_att[0].mean(axis=0))
             global_matrix = np.mean(all_weights, axis=0)
-            global_metrics = compute_all_attention_metrics(global_matrix)
-            global_values = ",".join([f"{global_metrics.get(m, 0):.6f}" for m in metric_names])
+            global_metrics = compute_all_attention_metrics(global_matrix, has_cls=has_cls)
+            global_values = ",".join([f"{global_metrics[m]:.6f}" if global_metrics.get(m) is not None else "" for m in metric_names])
             lines.append(f"global,all,{global_values}")
 
             yield "\\n".join(lines)

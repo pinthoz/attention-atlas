@@ -57,21 +57,35 @@ class ComputeResult:
 def tokenize_with_segments(text: str, tokenizer):
     """Tokenize text with automatic sentence segmentation.
 
+    For BERT-style tokenizers (those with a ``[SEP]`` token), multi-sentence
+    inputs are encoded as a sentence pair so the segment (token_type_ids)
+    machinery is exercised. The split point is the sentence boundary closest
+    to the middle of the text, so 3+ sentences produce balanced A/B segments
+    instead of A=first sentence, B=everything else.
+
+    GPT-2-style tokenizers have no segment semantics (``sep_token is None``):
+    pair encoding would silently concatenate the two texts with nothing in
+    between, so the text is tokenized whole.
+
     Args:
         text: Input text to tokenize
         tokenizer: HuggingFace tokenizer instance
 
     Returns:
-        Dict containing tokenized inputs with input_ids, attention_mask, and token_type_ids
+        Dict containing tokenized inputs with input_ids, attention_mask, and
+        (for BERT-style pairs) token_type_ids
     """
-    pattern = re.search(r"([.!?])\s+([A-Za-z])", text)
-    if pattern:
-        split_idx = pattern.end(1)
-        sentence_a = text[:split_idx].strip()
-        sentence_b = text[split_idx:].strip()
-        if sentence_a and sentence_b:
-            return tokenizer(sentence_a, sentence_b, return_tensors="pt",
-                             truncation=True, max_length=512)
+    has_pair_semantics = getattr(tokenizer, "sep_token", None) is not None
+    if has_pair_semantics:
+        boundaries = [m.end(1) for m in re.finditer(r"([.!?])\s+([A-Za-z])", text)]
+        if boundaries:
+            # Sentence boundary closest to the midpoint -> balanced segments.
+            split_idx = min(boundaries, key=lambda b: abs(b - len(text) // 2))
+            sentence_a = text[:split_idx].strip()
+            sentence_b = text[split_idx:].strip()
+            if sentence_a and sentence_b:
+                return tokenizer(sentence_a, sentence_b, return_tensors="pt",
+                                 truncation=True, max_length=512)
     return tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
 
 
@@ -129,11 +143,15 @@ def heavy_compute(text, model_name):
         except Exception as e:
             _logger.warning("Could not compute head clusters: %s", e)
 
-    # Compute ISA
+    # Compute ISA. Pass the correct model_type: GPT-2-style tokenisations
+    # carry the Ġ marker; compute_isa also auto-detects causality from the
+    # matrix, but the explicit flag keeps the metadata honest.
     isa_data = None
     try:
         _logger.debug("Computing ISA")
-        isa_data = compute_isa(attentions, tokens, text, tokenizer, inputs)
+        isa_model_type = "gpt" if any("Ġ" in t for t in tokens) else "bert"
+        isa_data = compute_isa(attentions, tokens, text, tokenizer, inputs,
+                               model_type=isa_model_type)
         _logger.debug("ISA complete")
     except Exception as e:
         _logger.warning("Could not compute ISA: %s", e)

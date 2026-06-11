@@ -144,9 +144,9 @@ def register_export_handlers(
         try:
             nltk.data.find("tokenizers/punkt")
         except LookupError:
-            nltk.download("punkt")
-            nltk.download("averaged_perceptron_tagger")
-            nltk.download("universal_tagset")
+            nltk.download("punkt", quiet=True)
+            nltk.download("averaged_perceptron_tagger", quiet=True)
+            nltk.download("universal_tagset", quiet=True)
 
         all_metrics = compute_all_heads_specialization(attentions, tokens, text)
         rows = []
