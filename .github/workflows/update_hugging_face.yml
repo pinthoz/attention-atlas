@@ -51,4 +51,16 @@ jobs:
           
           git add .
           git commit -m "Sync from GitHub: ${{ github.sha }}"
-          git push --force https://pinthoz:$HF_TOKEN@huggingface.co/spaces/pinthoz/attention-atlas main
+          
+          # Retry push up to 3 times with 60s delay (handles HF 429 rate-limit)
+          for attempt in 1 2 3; do
+            echo "Push attempt $attempt/3..."
+            git push --force https://pinthoz:$HF_TOKEN@huggingface.co/spaces/pinthoz/attention-atlas main && break
+            if [ $attempt -lt 3 ]; then
+              echo "Push failed (attempt $attempt). Waiting 60s before retry..."
+              sleep 60
+            else
+              echo "All push attempts failed."
+              exit 1
+            fi
+          done
