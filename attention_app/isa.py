@@ -8,12 +8,12 @@ from typing import List, Dict, Tuple, Optional
 try:
     nltk.data.find('tokenizers/punkt')
 except (LookupError, OSError):
-    nltk.download('punkt')
+    nltk.download('punkt', quiet=True)
 
 try:
     nltk.data.find('tokenizers/punkt_tab')
 except (LookupError, OSError):
-    nltk.download('punkt_tab')
+    nltk.download('punkt_tab', quiet=True)
 
 def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> Tuple[List[str], List[int]]:
     """
@@ -70,7 +70,7 @@ def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> 
         # Skip whitespace in text
         while current_text_pos < len(text) and text[current_text_pos].isspace():
             current_text_pos += 1
-        
+
         # Try to match token
         match_len = len(clean_tok)
         if current_text_pos + match_len <= len(text):
@@ -83,7 +83,19 @@ def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> 
                 token_to_sent.append(sent_idx)
                 current_text_pos += match_len
             else:
-                token_to_sent.append(-1)
+                # Resync: an exact match at the cursor failed (curly quote,
+                # accent normalisation, unicode artefact...). Without
+                # advancing, EVERY subsequent token would also fail — a
+                # cascade that silently degrades the whole mapping. Search
+                # ahead in a small window and resync the cursor if found.
+                found = text.lower().find(clean_tok.lower(), current_text_pos,
+                                          current_text_pos + 50 + match_len)
+                if found != -1:
+                    center_pos = found + match_len // 2
+                    token_to_sent.append(char_to_sent.get(center_pos, -1))
+                    current_text_pos = found + match_len
+                else:
+                    token_to_sent.append(-1)
         else:
             token_to_sent.append(-1)
     
@@ -179,7 +191,13 @@ def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs,
     # sentence_boundaries_ids gives start indices.
     # End index is the start of next sentence, or end of sequence.
     
-    ranges = []
+    # Build per-sentence token index lists, EXCLUDING special tokens.
+    # Contiguous ranges would otherwise sweep in [SEP] (both the final one
+    # and the mid-sequence one from sentence-pair encoding) — and attention
+    # to [SEP] is a well-documented sink (Clark et al., 2019), which would
+    # inflate the affected sentence's ISA row/column under max aggregation.
+    _special = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "<|endoftext|>", "<|pad|>"}
+    sent_indices: List[List[int]] = []
     for k in range(num_sentences):
         start = sentence_boundaries_ids[k]
         if k < num_sentences - 1:
@@ -187,26 +205,28 @@ def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs,
         else:
             # For the last sentence, go until the end of sequence
             end = len(tokens)
-        ranges.append((start, end))
-    
+        sent_indices.append(
+            [i for i in range(start, end) if tokens[i] not in _special]
+        )
+
     isa_matrix = np.zeros((num_sentences, num_sentences))
-    
-    for r_idx, (start_row, end_row) in enumerate(ranges):
-        for c_idx, (start_col, end_col) in enumerate(ranges):
-            if start_row >= end_row or start_col >= end_col:
+
+    for r_idx, row_ix in enumerate(sent_indices):
+        for c_idx, col_ix in enumerate(sent_indices):
+            if not row_ix or not col_ix:
                 continue
-            
+
             # Extract submatrix for this sentence pair: (H, Sa_len, Sb_len)
-            sub_att = A[:, start_row:end_row, start_col:end_col]
-            
+            sub_att = A[:, row_ix][:, :, col_ix]
+
             # Max over heads and token positions
             if sub_att.numel() > 0:
                 val = torch.max(sub_att).item()
             else:
                 val = 0.0
-            
+
             isa_matrix[r_idx, c_idx] = val
-    
+
     # Final safety check for NaNs
     isa_matrix = np.nan_to_num(isa_matrix, nan=0.0)
     
@@ -264,26 +284,29 @@ def get_sentence_token_attention(attentions, tokens: List[str], sent_x_idx: int,
     # Max over heads: A_max shape: (seq_len, seq_len)
     A_max = torch.max(A, dim=0)[0].cpu().numpy()
     
-    # Get token ranges for the two sentences
+    # Get token index lists for the two sentences, excluding special tokens
+    # so the drill-down stays consistent with the ISA matrix (which also
+    # excludes them; see compute_isa).
     num_sentences = len(sentence_boundaries_ids)
-    
-    def get_range(idx):
+    _special = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "<|endoftext|>", "<|pad|>"}
+
+    def get_indices(idx):
         start = sentence_boundaries_ids[idx]
         if idx < num_sentences - 1:
             end = sentence_boundaries_ids[idx + 1]
         else:
             end = len(tokens)
-        return start, end
-    
-    start_x, end_x = get_range(sent_x_idx)
-    start_y, end_y = get_range(sent_y_idx)
-    
+        return [i for i in range(start, end) if tokens[i] not in _special]
+
+    ix_x = get_indices(sent_x_idx)
+    ix_y = get_indices(sent_y_idx)
+
     # Extract submatrix: rows=sent_x (query), cols=sent_y (key)
-    sub_att = A_max[start_x:end_x, start_y:end_y]
-    
+    sub_att = A_max[np.ix_(ix_x, ix_y)] if ix_x and ix_y else np.zeros((0, 0))
+
     # Extract tokens
-    toks_x = tokens[start_x:end_x]
-    toks_y = tokens[start_y:end_y]
+    toks_x = [tokens[i] for i in ix_x]
+    toks_y = [tokens[i] for i in ix_y]
     
     # Combine tokens for visualization [sent_x_tokens, sent_y_tokens]
     tokens_combined = list(toks_x) + list(toks_y)
@@ -349,34 +372,38 @@ def compute_isa_with_aggregation(attentions, tokens: List[str], text: str, token
     else:
         raise ValueError(f"Unknown aggregation method: {aggregation_method}")
     
-    # Compute sentence ranges
-    ranges = []
+    # Per-sentence token index lists, excluding special tokens (see the
+    # matching comment in compute_isa for the [SEP]-sink rationale).
+    _special = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "<|endoftext|>", "<|pad|>"}
+    sent_indices = []
     for k in range(num_sentences):
         start = sentence_boundaries_ids[k]
         if k < num_sentences - 1:
             end = sentence_boundaries_ids[k+1]
         else:
             end = len(tokens)
-        ranges.append((start, end))
-    
+        sent_indices.append(
+            [i for i in range(start, end) if tokens[i] not in _special]
+        )
+
     isa_matrix = np.zeros((num_sentences, num_sentences))
-    
-    for r_idx, (start_row, end_row) in enumerate(ranges):
-        for c_idx, (start_col, end_col) in enumerate(ranges):
-            if start_row >= end_row or start_col >= end_col:
+
+    for r_idx, row_ix in enumerate(sent_indices):
+        for c_idx, col_ix in enumerate(sent_indices):
+            if not row_ix or not col_ix:
                 continue
-            
+
             # Extract submatrix: (num_heads, Sa_len, Sb_len)
-            sub_att = A[:, start_row:end_row, start_col:end_col]
-            
+            sub_att = A[:, row_ix][:, :, col_ix]
+
             # Max over heads and positions
             if sub_att.numel() > 0:
                 val = torch.max(sub_att).item()
             else:
                 val = 0.0
-            
+
             isa_matrix[r_idx, c_idx] = val
-    
+
     # Safety check
     isa_matrix = np.nan_to_num(isa_matrix, nan=0.0)
     

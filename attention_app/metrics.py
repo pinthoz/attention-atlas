@@ -3,15 +3,22 @@ from scipy.special import rel_entr
 from typing import Dict, List, Tuple, Optional, Union
 
 
-def calculate_confidence(attention_matrix):
+def calculate_confidence(attention_matrix, causal=False):
     """
     Attention Confidence (Eq. 5-6 from paper)
-    
+
     MaxA = max(aᵢⱼ) - Maximum attention weight in matrix
     AvgMaxA = (1/dₖ) × Σᵢ max_j(aᵢⱼ) - Average of row maxes
-    
+
     Higher values = more confident attention (head focuses strongly on specific tokens)
+
+    Causal-model handling: in a causal (GPT-2-style) attention matrix the
+    first row is degenerate — token 0 can only attend to itself, so its max
+    is 1.0 by construction, which makes the matrix-wide max meaningless and
+    inflates the row-max average. Pass ``causal=True`` to exclude row 0.
     """
+    if causal and attention_matrix.shape[0] > 1:
+        attention_matrix = attention_matrix[1:]
     max_weight = float(np.max(attention_matrix))
     avg_max_per_row = float(np.mean(np.max(attention_matrix, axis=1)))
     return max_weight, avg_max_per_row
@@ -22,9 +29,11 @@ def calculate_focus(attention_matrix):
     Attention Focus / Entropy (Eq. 8 from paper)
     
     E = -Σᵢⱼ aᵢⱼ × log(aᵢⱼ)
-    
+
     Returns raw entropy. Higher values = more dispersed attention.
-    Note: Should be normalized by caller using log(n²) for 0-1 range.
+    Note: each of the n rows sums to 1, so the matrix's total mass is n and
+    the maximum (uniform attention) is n·log(n). Callers normalise by
+    n·log(n) for a 0-1 range — NOT by log(n²).
     """
     epsilon = 1e-10  # avoid log(0)
     attn_flat = attention_matrix.flatten()
@@ -33,25 +42,34 @@ def calculate_focus(attention_matrix):
     return float(entropy)
 
 
-def calculate_sparsity(attention_matrix, threshold=None):
+def calculate_sparsity(attention_matrix, threshold=None, causal=False):
     """
     Attention Sparsity (Eq. 11 from paper)
-    
+
     S = Σᵢⱼ 𝟙(aᵢⱼ < τ) / (n²)
-    
+
     Uses ADAPTIVE threshold: τ = 1/seq_len (instead of fixed 0.01)
     This makes sparsity comparable across different sequence lengths.
-    
+
     Higher values = most tokens are ignored (more selective attention)
+
+    Causal-model handling: a causal mask zeroes the entire upper triangle
+    by construction, which inflates sparsity for GPT-2-style models and
+    makes it incomparable with bidirectional models. Pass ``causal=True``
+    to compute the proportion over the lower-triangular support only
+    (the cells the model can actually attend to).
     """
     seq_len = attention_matrix.shape[0]
-    
+
     # Adaptive threshold based on sequence length
     # For uniform distribution, each cell would have weight 1/n²
     # We use 1/n as threshold (slightly above uniform per-row)
     if threshold is None:
         threshold = 1.0 / seq_len
-    
+
+    if causal:
+        support = np.tril_indices(seq_len)
+        return float(np.mean(attention_matrix[support] < threshold))
     return float(np.mean(attention_matrix < threshold))
 
 
@@ -163,7 +181,7 @@ def calculate_balance(attention_matrix, cls_index=0, has_cls=True):
     return float(attn_to_cls / attn_total) if attn_total > 0 else 0.0
 
 
-def compute_all_attention_metrics(attention_matrix, has_cls=True):
+def compute_all_attention_metrics(attention_matrix, has_cls=True, causal=None):
     """
     Convenience wrapper for computing all attention metrics at once.
 
@@ -176,19 +194,28 @@ def compute_all_attention_metrics(attention_matrix, has_cls=True):
             other decoder-only models). When False, ``balance`` is returned
             as ``None`` so downstream code can render it as N/A instead of
             a misleading number.
+        causal: whether the model uses a causal attention mask (GPT-2-style).
+            Affects confidence (excludes the degenerate first row) and
+            sparsity (computed over the lower-triangular support only).
+            Defaults to ``not has_cls``, which is correct for the supported
+            model families (BERT has [CLS] and is bidirectional; GPT-2 lacks
+            [CLS] and is causal).
 
     Returns dict with:
     - confidence_max: Max attention weight (Eq. 5)
     - confidence_avg: Average of row maxes (Eq. 6)
-    - focus_entropy: Raw entropy (Eq. 8) - normalize with log(n²) for 0-1
+    - focus_entropy: Raw entropy (Eq. 8) — callers normalise with the
+      uniform-attention maximum n·log(n) for a 0-1 range
     - sparsity: Proportion below adaptive threshold (Eq. 11)
     - distribution_median: Median attention weight (Eq. 12)
     - uniformity: Standard deviation of weights (Eq. 15)
     - balance: CLS attention fraction (Eq. 16) — ``None`` when has_cls=False
     """
-    max_conf, avg_conf = calculate_confidence(attention_matrix)
+    if causal is None:
+        causal = not has_cls
+    max_conf, avg_conf = calculate_confidence(attention_matrix, causal=causal)
     focus = calculate_focus(attention_matrix)
-    sparsity = calculate_sparsity(attention_matrix)  # Now uses adaptive threshold
+    sparsity = calculate_sparsity(attention_matrix, causal=causal)  # adaptive threshold
     distribution = calculate_distribution_attributes(attention_matrix)
     uniformity = calculate_uniformity(attention_matrix)
     balance = calculate_balance(attention_matrix, has_cls=has_cls)

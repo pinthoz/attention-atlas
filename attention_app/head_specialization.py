@@ -132,71 +132,88 @@ def get_spacy_model():
     return _SPACY_NLP
 
 
-def align_spacy_to_bert_tokens(bert_tokens, spacy_doc):
+_SPECIAL_TOKENS = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "<|endoftext|>"}
+
+
+def align_spacy_to_bert_tokens(model_tokens, spacy_doc):
     """
-    Align spaCy word-level tags to BERT subword tokens.
-    
+    Align spaCy word-level tags to model subword tokens.
+
+    Handles both tokenizer conventions:
+      - BERT WordPiece: ``##`` prefix marks a continuation of the previous word.
+      - GPT-2 BPE: ``Ġ`` prefix marks the START of a new word; tokens without
+        it continue the previous word. ``Ċ`` is a newline marker.
+
     Args:
-        bert_tokens: List of BERT tokens (including subwords like '##ing')
-        spacy_doc: spaCy Doc object with POS and NER tags
-    
+        model_tokens: List of sub-tokens from the attention model's tokenizer.
+        spacy_doc: spaCy Doc object with POS and NER tags.
+
     Returns:
-        Tuple of (pos_tags, ner_tags) aligned to BERT tokens
+        Tuple of (pos_tags, ner_tags) aligned to model_tokens.
     """
     pos_tags = []
     ner_tags = []
-    
-    # Build mapping from spaCy words to their tags
+
     spacy_words = [token.text.lower() for token in spacy_doc]
     spacy_pos = [token.pos_ for token in spacy_doc]
     spacy_ner = [token.ent_type_ if token.ent_type_ else "O" for token in spacy_doc]
-    
+
+    is_gpt_style = any("Ġ" in tok for tok in model_tokens)
+
     spacy_idx = 0
-    current_word = ""
-    
-    for bert_token in bert_tokens:
-        # Skip special tokens
-        if bert_token in ["[CLS]", "[SEP]", "[PAD]", "[MASK]"]:
+
+    for raw_token in model_tokens:
+        if raw_token in _SPECIAL_TOKENS:
             pos_tags.append("X")  # Special tag
             ner_tags.append("O")
             continue
-        
-        # Handle subword tokens
-        if bert_token.startswith("##"):
-            # Continuation of previous word - use same tags
+
+        # Determine continuation vs new word per tokenizer convention, and
+        # strip the marker characters before matching against spaCy text.
+        if is_gpt_style:
+            is_continuation = "Ġ" not in raw_token and "Ċ" not in raw_token \
+                and len(pos_tags) > 0
+            clean_token = raw_token.replace("Ġ", "").replace("Ċ", "").lower()
+        else:
+            is_continuation = raw_token.startswith("##")
+            clean_token = raw_token.replace("##", "").lower()
+
+        if is_continuation:
+            # Continuation of previous word - inherit its tags
             if pos_tags:
                 pos_tags.append(pos_tags[-1])
                 ner_tags.append(ner_tags[-1])
             else:
                 pos_tags.append("X")
                 ner_tags.append("O")
-        else:
-            # New word - find corresponding spaCy token
-            clean_token = bert_token.lower()
-            
-            # Try to match with current spaCy word
-            if spacy_idx < len(spacy_words):
-                # Simple heuristic: if BERT token is prefix of spaCy word, it's a match
-                if spacy_words[spacy_idx].startswith(clean_token) or clean_token.startswith(spacy_words[spacy_idx]):
+            continue
+
+        if not clean_token:
+            # Pure marker token (e.g. a bare newline)
+            pos_tags.append("X")
+            ner_tags.append("O")
+            continue
+
+        # New word - find the corresponding spaCy token
+        if spacy_idx < len(spacy_words):
+            if (spacy_words[spacy_idx].startswith(clean_token)
+                    or clean_token.startswith(spacy_words[spacy_idx])):
+                pos_tags.append(spacy_pos[spacy_idx])
+                ner_tags.append(spacy_ner[spacy_idx])
+                if clean_token == spacy_words[spacy_idx]:
+                    spacy_idx += 1
+            else:
+                spacy_idx += 1
+                if spacy_idx < len(spacy_words):
                     pos_tags.append(spacy_pos[spacy_idx])
                     ner_tags.append(spacy_ner[spacy_idx])
-                    
-                    # Check if we've consumed the full spaCy word
-                    if clean_token == spacy_words[spacy_idx]:
-                        spacy_idx += 1
                 else:
-                    # Try next spaCy word
-                    spacy_idx += 1
-                    if spacy_idx < len(spacy_words):
-                        pos_tags.append(spacy_pos[spacy_idx])
-                        ner_tags.append(spacy_ner[spacy_idx])
-                    else:
-                        pos_tags.append("X")
-                        ner_tags.append("O")
-            else:
-                pos_tags.append("X")
-                ner_tags.append("O")
-    
+                    pos_tags.append("X")
+                    ner_tags.append("O")
+        else:
+            pos_tags.append("X")
+            ner_tags.append("O")
+
     return pos_tags, ner_tags
 
 
@@ -219,38 +236,61 @@ def get_linguistic_tags(tokens, text):
 def compute_head_metrics(attention_matrix, tokens, pos_tags, ner_tags):
     """
     Compute all 7 behavioral metrics for a single attention head.
-    
+
+    Causal-model handling: for GPT-2-style tokenisations (detected via the
+    ``Ġ`` marker) the first row of the attention matrix is degenerate —
+    token 0 can only attend to itself, with weight 1.0 by construction — so
+    the ``cls`` (first-token / sink focus) and ``self`` metrics exclude row 0
+    to avoid a constant inflation artefact. For GPT-2 the ``cls`` metric
+    measures attention received by the FIRST token (the attention-sink
+    position), not a [CLS] summary token, which GPT-2 does not have.
+
     Args:
         attention_matrix: numpy array of shape (seq_len, seq_len)
         tokens: List of token strings
         pos_tags: List of POS tags aligned to tokens
         ner_tags: List of NER tags aligned to tokens
-    
+
     Returns:
         Dict with keys: syntax, semantics, cls, punct, entities, long_range, self
     """
     seq_len = len(tokens)
-    
-    # 1. CLS focus - average attention to [CLS] token (index 0)
-    cls_focus = float(attention_matrix[:, 0].mean())
-    
-    # 2. Self-attention - diagonal mean
-    self_att = float(np.diag(attention_matrix).mean())
-    
+    is_gpt_style = any("Ġ" in tok for tok in tokens)
+
+    # 1. CLS / first-token focus - average attention to position 0.
+    #    For causal models, exclude the degenerate first row (always 1.0).
+    if is_gpt_style and seq_len > 1:
+        cls_focus = float(attention_matrix[1:, 0].mean())
+    else:
+        cls_focus = float(attention_matrix[:, 0].mean())
+
+    # 2. Self-attention - diagonal mean (excluding the forced 1.0 at row 0
+    #    for causal models).
+    diag = np.diag(attention_matrix)
+    if is_gpt_style and seq_len > 1:
+        self_att = float(diag[1:].mean())
+    else:
+        self_att = float(diag.mean())
+
     # 3. Long-range attention - distance >= 5
     long_range_mask = np.zeros((seq_len, seq_len), dtype=bool)
     for i in range(seq_len):
         for j in range(seq_len):
             if abs(i - j) >= 5:
                 long_range_mask[i, j] = True
-    
+
     if long_range_mask.any():
         long_range_att = float(attention_matrix[long_range_mask].mean())
     else:
         long_range_att = 0.0
-    
-    # 4. Punctuation focus
-    punct_indices = [i for i, tok in enumerate(tokens) if tok in string.punctuation]
+
+    # 4. Punctuation focus — strip tokenizer markers before checking, so
+    #    GPT-2 tokens like "Ġ," are recognised as punctuation.
+    def _is_punct(tok):
+        clean = tok.replace("Ġ", "").replace("Ċ", "").replace("##", "")
+        return bool(clean) and all(c in string.punctuation for c in clean)
+
+    punct_indices = [i for i, tok in enumerate(tokens) if _is_punct(tok)]
     if punct_indices:
         punct_focus = float(attention_matrix[:, punct_indices].sum() / attention_matrix.sum())
     else:

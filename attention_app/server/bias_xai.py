@@ -188,6 +188,12 @@ def _render_live_elbow_block(
             f"rows {slider_k + 1}..{live_elbow} that still matter."
         )
 
+    metric_note = (
+        "Elbow computed on <b>KL divergence</b> (the trustworthy causal metric "
+        "for GPT-2; representation_impact under-reports here)."
+        if is_gpt2 else
+        "Elbow computed on <b>representation_impact</b>."
+    )
     return (
         '<div style="margin-bottom:14px;text-align:center;">'
         '<div style="display:inline-flex;gap:10px;align-items:stretch;">'
@@ -195,19 +201,27 @@ def _render_live_elbow_block(
         + _pill("Slider K", str(slider_k), "#3b82f6", "rgba(59,130,246,0.10)")
         + '</div>'
         + f'<div style="margin-top:8px;font-size:11px;color:#64748b;line-height:1.5;">'
-        f'<b>*</b>&nbsp;{note}</div>'
+        f'<b>*</b>&nbsp;{note} {metric_note}</div>'
         + '</div>'
     )
 
 
-def _compute_live_elbow(results_data, marginal_pct: float = 0.05) -> Optional[int]:
+def _compute_live_elbow(results_data, marginal_pct: float = 0.05,
+                        use_kl: bool = False) -> Optional[int]:
     """Compute the per-sentence Top-K elbow.
 
     Heuristic identical to ``run_topk_ablation``: rank heads by BAR
-    descending, accumulate |representation_impact| in that order, then
+    descending, accumulate the per-head impact in that order, then
     return the smallest K beyond which each additional head contributes
     less than ``marginal_pct`` of the K=N total. Returns ``None`` when
     the curve is empty or all impacts are zero.
+
+    ``use_kl=True`` accumulates ``|kl_divergence|`` instead of
+    ``|representation_impact|``. For GPT-2 this is the right metric: the
+    faithfulness calibration (THRESHOLDS_CALIBRATION.md sections 14 and
+    16) showed representation_impact under-reports causal contribution
+    in GPT-2, so an elbow computed on it would track noise. Falls back
+    to representation_impact per head when KL is unavailable.
     """
     if not results_data:
         return None
@@ -215,7 +229,11 @@ def _compute_live_elbow(results_data, marginal_pct: float = 0.05) -> Optional[in
     running = 0.0
     cumulative = []
     for r in ranked:
-        running += abs(getattr(r, "representation_impact", 0.0) or 0.0)
+        if use_kl and getattr(r, "kl_divergence", None) is not None:
+            val = abs(r.kl_divergence)
+        else:
+            val = abs(getattr(r, "representation_impact", 0.0) or 0.0)
+        running += val
         cumulative.append(running)
     total = cumulative[-1]
     if total <= 0 or len(cumulative) < 2:
@@ -291,13 +309,21 @@ def register_xai_handlers(
             thresholds = _get_impact_thresholds(model_name)
             is_gpt2 = "gpt2" in model_name.lower()
 
+            # Active head-ranking variant (set by the dropdown above the card).
+            try:
+                rank_by = str(input.bias_ablation_rank_by())
+            except Exception:
+                rank_by = "combined"
+
             # Per-sentence Top-K elbow: smallest K beyond which each
             # additional BAR-ranked head contributes <5% of the K=N total.
             # This is the same heuristic the global calibration uses but
             # computed on the current sentence's data, so the user sees
             # how concentrated the bias signal is HERE vs the corpus
             # average shown by the slider.
-            live_elbow = _compute_live_elbow(results_data)
+            # GPT-2 uses the KL metric for the elbow: representation_impact
+            # under-reports causal contribution there (calibration MD §14/§16).
+            live_elbow = _compute_live_elbow(results_data, use_kl=is_gpt2)
             try:
                 slider_k = int(input.bias_top_k())
             except Exception:
@@ -306,6 +332,17 @@ def register_xai_handlers(
             elbow_block_html = _render_live_elbow_block(
                 live_elbow, slider_k, global_default, is_gpt2,
             )
+            # When a per-category ranking is active, say so explicitly: the
+            # BAR column below is then BAR_C, not the combined value.
+            if rank_by in ("GEN", "UNFAIR", "STEREO"):
+                elbow_block_html = (
+                    f'<div style="margin-bottom:10px;text-align:center;'
+                    f'font-size:11.5px;color:#16a34a;font-weight:600;">'
+                    f'Heads ranked by BAR_{rank_by} (category-specific). '
+                    f'The BAR column shows BAR_{rank_by} values; sentences '
+                    f'without {rank_by} tokens fall back to the combined ranking.'
+                    f'</div>'
+                ) + elbow_block_html
 
             fig = create_ablation_impact_chart(results_data, bar_threshold=bar_threshold, selected_head=selected_head)
             c_id = f"ablation-chart-container{container_suffix}"
@@ -374,7 +411,7 @@ def register_xai_handlers(
                 f'</div>'
             )
             warning_html = ""
-            if is_gpt2:
+            if is_gpt2 and rank_by == "combined":
                 warning_html = (
                     '<div style="margin-top:8px;font-size:11px;color:#78350f;line-height:1.6;text-align:center;">'
                     '<b>*</b>&nbsp;<b>Caveat for GPT-2:</b> the two metrics tell different stories, '
@@ -386,9 +423,19 @@ def register_xai_handlers(
                     'on the LM-head logits, scale-invariant on softmax outputs, '
                     '<b>all three category-specific rankings are faithful</b>: '
                     'BAR_GEN 6.9 %, <b>BAR_UNFAIR 12.75 %</b>, <b>BAR_STEREO 11.9 %</b>. '
-                    'For single-head causal claims in GPT-2: rank by BAR_C (per-category) and '
-                    'read the KL Div column. The Impact column under-reports causality for '
-                    'UNFAIR and STEREO because their head-level effects are direction-rather-than-magnitude.'
+                    'For single-head causal claims in GPT-2: switch the <b>Rank heads by</b> '
+                    'selector above to a per-category ranking (BAR_C) and read the KL Div '
+                    'column. The Impact column under-reports causality for UNFAIR and STEREO '
+                    'because their head-level effects are direction-rather-than-magnitude.'
+                    '</div>'
+                )
+            elif is_gpt2:
+                warning_html = (
+                    '<div style="margin-top:8px;font-size:11px;color:#166534;line-height:1.6;text-align:center;">'
+                    f'<b>*</b>&nbsp;You are using the <b>BAR_{rank_by}</b> per-category ranking, the '
+                    'recommended setup for GPT-2 single-head causal claims. Read the '
+                    '<b>KL Div</b> column: it is the trustworthy causal metric here '
+                    '(representation_impact under-reports for UNFAIR and STEREO).'
                     '</div>'
                 )
 

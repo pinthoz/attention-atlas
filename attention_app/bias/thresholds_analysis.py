@@ -419,6 +419,117 @@ def _detect_biased_indices_for_attention_tokens(
 CATEGORIES = ("GEN", "UNFAIR", "STEREO")
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Audited gold labels (human token-level audit of 300-sample, n=125)
+# ──────────────────────────────────────────────────────────────────────
+# The audit set replaces GUS-Net's live predictions with human-verified
+# token labels, so re-running BAR/BSR and faithfulness against it
+# quantifies how much the calibrated thresholds depend on GUS-Net label
+# noise. Labels are per whitespace token, multi-label via "+"
+# (e.g. "GEN+STEREO"); alignment to attention sub-tokens reuses the
+# whole-word strategy from _detect_biased_indices_for_attention_tokens.
+
+AUDITED_LABELS_DEFAULT = ROOT / "dataset" / "human_token_labels_v9_300.jsonl"
+
+
+def _clean_word(tok: str) -> str:
+    """Normalise a whitespace token for whole-word matching: lowercase
+    and strip leading/trailing punctuation (audit tokens keep attached
+    punctuation, e.g. ``"drivers."``)."""
+    return tok.strip().strip(".,!?;:\"'()[]{}").lower()
+
+
+def load_audited_labels(path: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:
+    """Load the human-audited token labels into a lookup keyed by text hash.
+
+    Returns ``{text_hash: {"entry": <v9-like dict>, "biased_words": set,
+    "cat_words": {GEN|UNFAIR|STEREO: set}}}``. Only records with
+    ``audited=True`` are included.
+    """
+    path = path or AUDITED_LABELS_DEFAULT
+    lookup: Dict[str, Dict[str, Any]] = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            if not rec.get("audited"):
+                continue
+            text = (rec.get("text") or "").strip()
+            if not text:
+                continue
+            biased_words: set = set()
+            cat_words: Dict[str, set] = {c: set() for c in CATEGORIES}
+            for tok, lab in zip(rec.get("tokens", []), rec.get("labels", [])):
+                if not lab or lab.strip() == "O":
+                    continue
+                word = _clean_word(tok)
+                if not word:
+                    continue
+                biased_words.add(word)
+                for part in lab.replace(",", "+").split("+"):
+                    part = part.strip()
+                    if part in cat_words:
+                        cat_words[part].add(word)
+            lookup[_text_hash(text)] = {
+                "entry": {
+                    "id": rec.get("id"),
+                    "text": text,
+                    "has_bias": rec.get("has_bias", False),
+                    "bias_type": rec.get("bias_type"),
+                },
+                "biased_words": biased_words,
+                "cat_words": cat_words,
+            }
+    return lookup
+
+
+def _mask_from_word_set(words: set, attention_tokens: List[str]) -> Optional[np.ndarray]:
+    """Boolean mask over attention sub-tokens whose merged whole word is
+    in ``words``. Returns None when the mask comes out empty."""
+    if not words:
+        return None
+    n = len(attention_tokens)
+    mask = np.zeros(n, dtype=bool)
+    for word, sub_ix in _merge_subtokens_to_words(list(attention_tokens)):
+        if word and word in words:
+            for s in sub_ix:
+                if 0 <= s < n:
+                    mask[s] = True
+    return mask if mask.any() else None
+
+
+def _make_audited_mask_fns(audited_lookup: Dict[str, Dict[str, Any]]):
+    """Return drop-in replacements for the two GUS-Net mask functions that
+    read from the audited gold labels instead. Same signatures (the
+    ``detector`` argument is accepted and ignored)."""
+
+    def detect_combined(text: str, attention_tokens: List[str], detector=None):
+        rec = audited_lookup.get(_text_hash((text or "").strip()))
+        if rec is None:
+            return None
+        return _mask_from_word_set(rec["biased_words"], attention_tokens)
+
+    def detect_per_category(text: str, attention_tokens: List[str], detector=None):
+        rec = audited_lookup.get(_text_hash((text or "").strip()))
+        if rec is None:
+            return None
+        n = len(attention_tokens)
+        cat_masks = {}
+        any_hit = False
+        for c in CATEGORIES:
+            m = _mask_from_word_set(rec["cat_words"][c], attention_tokens)
+            if m is None:
+                m = np.zeros(n, dtype=bool)
+            elif m.any():
+                any_hit = True
+            cat_masks[c] = m
+        return cat_masks if any_hit else None
+
+    return detect_combined, detect_per_category
+
+
 def _detect_per_category_indices(
     text: str, attention_tokens: List[str], detector
 ) -> Optional[Dict[str, np.ndarray]]:
@@ -488,7 +599,8 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
                          max_tokens: Optional[int] = None,
                          resume: bool = True,
                          checkpoint_every: int = 20,
-                         per_category: bool = False) -> Dict[str, Any]:
+                         per_category: bool = False,
+                         audited_labels: Optional[Path] = None) -> Dict[str, Any]:
     """Compute observed and permutation-null BAR/BSR across a v9 subsample.
 
     Supports resumable runs: periodic checkpoints are written to
@@ -504,10 +616,24 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
     """
     if models is None:
         models = ["bert-base-uncased", "gpt2"]
-    sample = load_v9_stratified(n_sentences, max_tokens=max_tokens)
+
+    # Audited mode: restrict the corpus to the human-audited sentences and
+    # swap the GUS-Net mask function for gold-label lookups.
+    audited_lookup = None
+    detect_combined_fn = _detect_biased_indices_for_attention_tokens
+    detect_per_cat_fn = _detect_per_category_indices
+    if audited_labels is not None:
+        audited_lookup = load_audited_labels(audited_labels)
+        detect_combined_fn, detect_per_cat_fn = _make_audited_mask_fns(audited_lookup)
+        sample = [rec["entry"] for rec in audited_lookup.values()]
+        print(f"AUDITED mode: {len(sample)} gold-labelled sentences "
+              f"from {audited_labels}", flush=True)
+    else:
+        sample = load_v9_stratified(n_sentences, max_tokens=max_tokens)
     print(f"BAR/BSR: {len(sample)} sentences x {len(models)} models, "
           f"{n_permutations} permutations per (sentence, head)"
-          f"{' [per-category mode]' if per_category else ''}", flush=True)
+          f"{' [per-category mode]' if per_category else ''}"
+          f"{' [audited labels]' if audited_labels else ''}", flush=True)
 
     heavy_compute = _get_heavy_compute()
     GusNetDetector = _get_gusnet_detector()
@@ -515,12 +641,15 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
     rng = np.random.default_rng(42)
     detector_cache: Dict[str, Any] = {}
 
+    _aud_tag = "_audited" if audited_labels else ""
     checkpoint_path = CHECKPOINT_DIR / (
-        "bar_bsr_per_category.pkl" if per_category else "bar_bsr.pkl"
+        f"bar_bsr_per_category{_aud_tag}.pkl" if per_category
+        else f"bar_bsr{_aud_tag}.pkl"
     )
     sig = _args_signature(
         "bar_bsr_v2" if per_category else "bar_bsr_v1",
         tuple(models), n_permutations, max_tokens, per_category,
+        str(audited_labels) if audited_labels else None,
     )
 
     # Per-model aggregates + bookkeeping. ``array.array('f')`` stores
@@ -634,7 +763,7 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
                         n_skipped += 1
                         processed_keys.add(key)
                         continue
-                    biased_mask = _detect_biased_indices_for_attention_tokens(
+                    biased_mask = detect_combined_fn(
                         text, tokens, detector
                     )
                     if biased_mask is None:
@@ -652,7 +781,7 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
                     cat_masks = None
                     cat_n: Dict[str, int] = {}
                     if per_category:
-                        cat_masks = _detect_per_category_indices(
+                        cat_masks = detect_per_cat_fn(
                             text, tokens, detector
                         )
                         if cat_masks is not None:
@@ -819,7 +948,8 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
         }
 
     out_path = BAR_BSR_DIR / (
-        "per_category.json" if per_category else "thresholds.json"
+        f"per_category{_aud_tag}.json" if per_category
+        else f"thresholds{_aud_tag}.json"
     )
     out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                         encoding="utf-8")
@@ -865,7 +995,7 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
             ax.set_title(f"{name}: observed vs permutation-null")
             ax.legend(fontsize=8)
         fig.tight_layout()
-        plot_path = BAR_BSR_DIR / "distribution.png"
+        plot_path = BAR_BSR_DIR / f"distribution{_aud_tag}.png"
         fig.savefig(plot_path, dpi=120)
         plt.close(fig)
         print(f"Saved {plot_path}")
@@ -1027,6 +1157,190 @@ def run_gusnet_calibration(model_keys: Optional[List[str]] = None) -> Dict[str, 
     out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                         encoding="utf-8")
     print(f"Saved {out_path}")
+    return summary
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Analysis 2b — GUS-Net per-category TOKEN-level threshold calibration
+# against the human-audited gold labels
+# ──────────────────────────────────────────────────────────────────────
+
+def run_gusnet_token_calibration(
+    audited_labels: Optional[Path] = None,
+    model_keys: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Re-derive GUS-Net's per-category thresholds on the audited gold set.
+
+    The registry ``optimized_thresholds`` arrays were tuned during GUS-Net
+    training on the Powers et al. validation split (see MD section 18).
+    This function derives audit-grounded alternatives: for each category
+    C, the per-token score is ``max(B-prob, I-prob)`` (matching the
+    detector's ``apply_thresholds`` logic) and the threshold is swept over
+    the precision-recall curve against the gold token labels.
+
+    Alignment: gold labels live on whitespace tokens; GUS-Net predictions
+    live on its own sub-tokens. Both sides are merged to whole words
+    (section 6 machinery) and aligned positionally with
+    ``difflib.SequenceMatcher`` so repeated words are handled correctly.
+    Sub-tokens of unmatched words are excluded from the sweep.
+
+    The gold labels are flat category sets per token (no BIO structure),
+    so the sweep is per-category, not per-BIO-tag: one threshold per
+    category, applied to both its B- and I- probabilities.
+
+    Saves ``gusnet/token_thresholds_audited.json``.
+    """
+    import difflib
+
+    if model_keys is None:
+        model_keys = ["gusnet-bert", "gusnet-gpt2"]
+    path = audited_labels or AUDITED_LABELS_DEFAULT
+    recs = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rec = json.loads(line)
+                if rec.get("audited"):
+                    recs.append(rec)
+    print(f"GUS-Net token calibration: {len(recs)} audited sentences")
+
+    GusNetDetector = _get_gusnet_detector()
+    try:
+        from sklearn.metrics import precision_recall_curve, roc_auc_score
+    except Exception as e:
+        raise RuntimeError("scikit-learn is required for calibration") from e
+
+    def _gold_words(rec) -> List[Tuple[str, set]]:
+        """Cleaned gold whole words with their category sets, in order."""
+        out = []
+        for tok, lab in zip(rec.get("tokens", []), rec.get("labels", [])):
+            w = _clean_word(tok)
+            if not w:
+                continue
+            cats = set()
+            if lab and lab.strip() != "O":
+                for part in lab.replace(",", "+").split("+"):
+                    part = part.strip()
+                    if part in CATEGORIES:
+                        cats.add(part)
+            out.append((w, cats))
+        return out
+
+    summary: Dict[str, Any] = {
+        "n_sentences": len(recs),
+        "audited_labels": str(path),
+        "note": ("Per-category thresholds swept on gold token labels. "
+                 "Score per token = max(B-prob, I-prob), matching "
+                 "GusNetDetector.apply_thresholds."),
+        "models": {},
+    }
+
+    for model_key in model_keys:
+        print(f"\n── {model_key} ──", flush=True)
+        try:
+            detector = GusNetDetector(model_key=model_key)
+        except Exception as e:
+            print(f"Skipping {model_key}: {e}")
+            continue
+        cfg = detector.config
+        cat_idx = cfg["category_indices"]
+        special = set(cfg["special_tokens"])
+        registry_opt = cfg.get("optimized_thresholds")
+
+        scores: Dict[str, List[float]] = {c: [] for c in CATEGORIES}
+        golds: Dict[str, List[int]] = {c: [] for c in CATEGORIES}
+        n_aligned_words = 0
+        n_gold_words = 0
+        start = time.time()
+
+        for i, rec in enumerate(recs):
+            if i % 50 == 0:
+                print(f"  [{i+1}/{len(recs)}] elapsed {time.time()-start:.0f}s",
+                      flush=True)
+            text = (rec.get("text") or "").strip()
+            if not text:
+                continue
+            try:
+                g_tokens, g_probs = detector.predict_proba(text)
+            except Exception as e:
+                _logger.debug("predict_proba failed: %s", e)
+                continue
+            arr = (g_probs.detach().cpu().numpy()
+                   if hasattr(g_probs, "detach") else np.asarray(g_probs))
+
+            # Merge GUS-Net sub-tokens to whole words; per-word score per
+            # category = max over the word's sub-tokens of max(B, I).
+            gus_words = _merge_subtokens_to_words(list(g_tokens), special)
+            gus_seq = [w for w, _ in gus_words]
+            gold = _gold_words(rec)
+            gold_seq = [w for w, _ in gold]
+            n_gold_words += len(gold_seq)
+
+            sm = difflib.SequenceMatcher(a=gold_seq, b=gus_seq, autojunk=False)
+            for block in sm.get_matching_blocks():
+                for off in range(block.size):
+                    gold_w, gold_cats = gold[block.a + off]
+                    _, sub_ix = gus_words[block.b + off]
+                    valid_ix = [s for s in sub_ix if s < arr.shape[0]]
+                    if not valid_ix:
+                        continue
+                    n_aligned_words += 1
+                    for c in CATEGORIES:
+                        idxs = cat_idx[c]
+                        word_score = float(
+                            max(arr[s, j] for s in valid_ix for j in idxs)
+                        )
+                        scores[c].append(word_score)
+                        golds[c].append(1 if c in gold_cats else 0)
+
+        model_result: Dict[str, Any] = {
+            "n_aligned_words": n_aligned_words,
+            "n_gold_words": n_gold_words,
+            "alignment_rate": (round(n_aligned_words / n_gold_words, 4)
+                               if n_gold_words else None),
+        }
+        for c in CATEGORIES:
+            y = np.asarray(golds[c])
+            s = np.asarray(scores[c], dtype=np.float64)
+            if y.sum() == 0 or y.sum() == len(y):
+                model_result[c] = {"note": "degenerate gold distribution"}
+                continue
+            precision, recall, ths = precision_recall_curve(y, s)
+            f1 = 2 * precision * recall / (precision + recall + 1e-9)
+            f1_aligned = f1[:-1]
+            best_idx = int(np.argmax(f1_aligned)) if len(f1_aligned) else 0
+            # Metrics at the registry threshold for comparison: use the
+            # B-tag entry (apply_thresholds checks each prob against its
+            # own per-label cut, but B and I share the category here).
+            reg_th = None
+            reg_f1 = None
+            if registry_opt is not None:
+                reg_th = float(min(registry_opt[j] for j in cat_idx[c]))
+                pred = (s >= reg_th).astype(int)
+                tp = int(((pred == 1) & (y == 1)).sum())
+                fp = int(((pred == 1) & (y == 0)).sum())
+                fn = int(((pred == 0) & (y == 1)).sum())
+                p_ = tp / max(1, tp + fp)
+                r_ = tp / max(1, tp + fn)
+                reg_f1 = 2 * p_ * r_ / max(1e-9, p_ + r_)
+            model_result[c] = {
+                "n_words": int(len(y)),
+                "n_positive": int(y.sum()),
+                "audit_threshold_f1_opt": float(ths[best_idx]),
+                "audit_best_f1": float(f1_aligned[best_idx]),
+                "audit_precision_at_opt": float(precision[best_idx]),
+                "audit_recall_at_opt": float(recall[best_idx]),
+                "auc_roc": float(roc_auc_score(y, s)),
+                "registry_threshold_min_BI": reg_th,
+                "registry_f1_on_audit": reg_f1,
+            }
+        summary["models"][model_key] = model_result
+
+    out_path = GUSNET_DIR / "token_thresholds_audited.json"
+    out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
+                        encoding="utf-8")
+    print(f"\nSaved {out_path}")
     return summary
 
 
@@ -1357,6 +1671,7 @@ def run_faithfulness_calibration(
     resume: bool = True,
     checkpoint_every: int = 10,
     per_category: bool = False,
+    audited_labels: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Calibrate the dashboard's ``representation_impact`` cut-off AND
     test whether the BERT-vs-GPT-2 magnitude gap is a normalisation
@@ -1403,10 +1718,23 @@ def run_faithfulness_calibration(
     pools) and a 2-panel histogram. Checkpoint:
     ``checkpoints/faithfulness_impact_{model_short}.pkl``.
     """
-    sample = load_v9_stratified(n_sentences, max_tokens=max_tokens)
+    # Audited mode: restrict the corpus to the human-audited sentences and
+    # swap the GUS-Net mask functions for gold-label lookups.
+    audited_lookup = None
+    detect_combined_fn = _detect_biased_indices_for_attention_tokens
+    detect_per_cat_fn = _detect_per_category_indices
+    if audited_labels is not None:
+        audited_lookup = load_audited_labels(audited_labels)
+        detect_combined_fn, detect_per_cat_fn = _make_audited_mask_fns(audited_lookup)
+        sample = [rec["entry"] for rec in audited_lookup.values()]
+        print(f"AUDITED mode: {len(sample)} gold-labelled sentences "
+              f"from {audited_labels}", flush=True)
+    else:
+        sample = load_v9_stratified(n_sentences, max_tokens=max_tokens)
     biased_only = [e for e in sample if e.get("has_bias")]
     print(f"Faithfulness calibration: {len(biased_only)} biased sentences, "
-          f"K={k_max}, model={model_name}")
+          f"K={k_max}, model={model_name}"
+          f"{' [audited labels]' if audited_labels else ''}")
     if not biased_only:
         return {"note": "no biased sentences in subsample"}
 
@@ -1422,9 +1750,10 @@ def run_faithfulness_calibration(
     is_gpt2 = "gpt2" in model_name.lower()
 
     short = _model_short(model_name)
+    _aud_tag = "_audited" if audited_labels else ""
     checkpoint_path = CHECKPOINT_DIR / (
-        f"faithfulness_per_category_{short}.pkl" if per_category
-        else f"faithfulness_impact_{short}.pkl"
+        f"faithfulness_per_category_{short}{_aud_tag}.pkl" if per_category
+        else f"faithfulness_impact_{short}{_aud_tag}.pkl"
     )
     sig = _args_signature(
         # v4 bumps the signature because per-category mode now also tracks
@@ -1432,6 +1761,7 @@ def run_faithfulness_calibration(
         # is structurally different from v3.
         "faithfulness_v4_per_cat" if per_category else "faithfulness_v2",
         model_name, k_max, max_tokens, per_category,
+        str(audited_labels) if audited_labels else None,
     )
 
     obs_impacts = array.array("f")    # BAR-ranked heads' impacts
@@ -1558,7 +1888,7 @@ def run_faithfulness_calibration(
                 if attentions is None or not tokens:
                     processed_keys.add(key)
                     continue
-                biased_mask = _detect_biased_indices_for_attention_tokens(
+                biased_mask = detect_combined_fn(
                     text, tokens, detector
                 )
                 if biased_mask is None or biased_mask.sum() == 0:
@@ -1610,7 +1940,7 @@ def run_faithfulness_calibration(
                 # parallel to null_impacts / null_kls.
                 cat_masks_sentence: Optional[Dict[str, np.ndarray]] = None
                 if per_category:
-                    cat_masks_sentence = _detect_per_category_indices(
+                    cat_masks_sentence = detect_per_cat_fn(
                         text, tokens, detector
                     )
                 sent_elig: Dict[str, int] = {c: 0 for c in CATEGORIES}
@@ -1813,7 +2143,8 @@ def run_faithfulness_calibration(
         summary["per_category"] = per_cat_summary
 
     out_path = FAITHFULNESS_DIR / (
-        f"{short}_per_category.json" if per_category else f"{short}.json"
+        f"{short}_per_category{_aud_tag}.json" if per_category
+        else f"{short}{_aud_tag}.json"
     )
     out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                         encoding="utf-8")
@@ -1875,7 +2206,8 @@ def run_faithfulness_calibration(
         if fig is not None:
             fig.tight_layout()
             plot_path = FAITHFULNESS_DIR / (
-                f"{short}_per_category.png" if per_category else f"{short}.png"
+                f"{short}_per_category{_aud_tag}.png" if per_category
+                else f"{short}{_aud_tag}.png"
             )
             fig.savefig(plot_path, dpi=120, bbox_inches="tight")
             plt.close(fig)
@@ -1994,6 +2326,11 @@ def main() -> int:
                         help="Run BAR/BSR permutation-null analysis.")
     parser.add_argument("--gusnet", action="store_true",
                         help="Run GUS-Net per-category threshold calibration.")
+    parser.add_argument("--gusnet-token", action="store_true",
+                        help="Re-derive GUS-Net per-category thresholds at the "
+                             "TOKEN level against the human-audited gold labels "
+                             "(uses --audited-labels path or its default). "
+                             "Output: gusnet/token_thresholds_audited.json.")
     parser.add_argument("--ablation", action="store_true",
                         help="Run top-K head ablation cumulative-impact analysis.")
     parser.add_argument("--faithfulness", action="store_true",
@@ -2039,6 +2376,15 @@ def main() -> int:
                              "observed pools, sharing the random-null pool with "
                              "the combined run. Output goes to "
                              "faithfulness/{model}_per_category.json. ~2.5x slower.")
+    parser.add_argument("--audited-labels", nargs="?", type=Path,
+                        const=AUDITED_LABELS_DEFAULT, default=None,
+                        metavar="PATH",
+                        help="Use the human-audited token labels instead of "
+                             "GUS-Net live predictions for the biased masks, "
+                             "restricting the corpus to the audited sentences. "
+                             "Applies to --bar and --faithfulness. Optional PATH "
+                             f"defaults to {AUDITED_LABELS_DEFAULT.name}. "
+                             "Outputs get an _audited suffix.")
     parser.add_argument("--max-tokens", type=int, default=None,
                         help="Skip sentences with more than this many whitespace "
                              "tokens (cheap filter to keep runtime bounded). "
@@ -2060,7 +2406,8 @@ def main() -> int:
 
     if args.all:
         args.bar = args.gusnet = args.ablation = args.faithfulness = True
-    if not (args.bar or args.gusnet or args.ablation or args.faithfulness):
+    if not (args.bar or args.gusnet or args.gusnet_token or args.ablation
+            or args.faithfulness):
         parser.print_help()
         return 1
 
@@ -2116,6 +2463,7 @@ def main() -> int:
                 resume=resume,
                 checkpoint_every=args.checkpoint_every,
                 per_category=args.bar_per_category,
+                audited_labels=args.audited_labels,
             )
         except Exception:
             traceback.print_exc()
@@ -2123,6 +2471,12 @@ def main() -> int:
         print("\n========== GUS-Net calibration ==========")
         try:
             run_gusnet_calibration()
+        except Exception:
+            traceback.print_exc()
+    if args.gusnet_token:
+        print("\n========== GUS-Net token-level calibration (audited) ==========")
+        try:
+            run_gusnet_token_calibration(audited_labels=args.audited_labels)
         except Exception:
             traceback.print_exc()
     if args.ablation:
@@ -2162,6 +2516,7 @@ def main() -> int:
                     resume=resume,
                     checkpoint_every=max(1, args.checkpoint_every // 2),
                     per_category=args.faith_per_category,
+                    audited_labels=args.audited_labels,
                 )
             except Exception:
                 traceback.print_exc()

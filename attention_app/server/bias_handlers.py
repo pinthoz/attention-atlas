@@ -3858,6 +3858,11 @@ def bias_server_handlers(input, output, session):
         try:
             try: k = int(input.bias_top_k())
             except Exception: k = 5
+            # Which BAR variant ranks the heads to ablate. Per-category
+            # rankings (BAR_C) recover causal signal that the combined
+            # ranking dilutes, especially in GPT-2 (calibration MD §15-16).
+            try: rank_by = str(input.bias_ablation_rank_by())
+            except Exception: rank_by = "combined"
 
             # Define helper for single computation
             def _compute_single(r):
@@ -3865,7 +3870,25 @@ def bias_server_handlers(input, output, session):
                 metrics = r.get("attention_metrics", [])
                 if not metrics: return None
 
-                # Use top heads from THIS result
+                if rank_by in ("GEN", "UNFAIR", "STEREO"):
+                    # Re-rank against the category-specific mask: recompute
+                    # BAR with only the tokens GUS-Net labelled with this
+                    # category. Falls back to the combined ranking when the
+                    # sentence has no tokens of that category.
+                    cat_indices = [
+                        lab["index"] for lab in r.get("token_labels", [])
+                        if rank_by in (lab.get("bias_types") or [])
+                    ]
+                    attentions = r.get("attentions")
+                    tokens = r.get("tokens", [])
+                    if cat_indices and attentions:
+                        metrics_c = AttentionBiasAnalyzer().analyze_attention_to_bias(
+                            list(attentions), cat_indices, tokens
+                        )
+                        if metrics_c:
+                            metrics = metrics_c
+
+                # Use top heads from THIS result (by the selected ranking)
                 top_heads_local = sorted(
                     metrics, key=lambda m: m.bias_attention_ratio, reverse=True
                 )[:k]
@@ -3874,7 +3897,7 @@ def bias_server_handlers(input, output, session):
                 is_g = "gpt2" in model_name
 
                 tokenizer, encoder_model, lm_head_model = ModelManager.get_model(model_name)
-                
+
                 # We need to run sync code in executor
                 return (encoder_model, lm_head_model, tokenizer, text, top_heads_local, is_g)
 
