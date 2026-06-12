@@ -26,15 +26,20 @@ def _manual_silhouette_score(X, labels):
     for i in range(n_samples):
         point = X[i]
         label = labels[i]
-        
-        # a: mean dist to same cluster
+
+        # a: mean dist to OTHER members of the same cluster. Per Rousseeuw
+        # (1987) — and sklearn — a singleton cluster has silhouette 0, and
+        # the point itself is excluded from the mean (otherwise small
+        # clusters get inflated scores and auto-K is biased toward many
+        # tiny clusters: a singleton would score a=0 → s=1.0).
         same_mask = labels == label
-        other_in_cluster = X[same_mask]
-        if len(other_in_cluster) > 1:
-            a = np.mean(np.sqrt(np.sum((other_in_cluster - point)**2, axis=1)))
-        else:
-            a = 0.0
-            
+        n_same = int(np.sum(same_mask))
+        if n_same <= 1:
+            silhouette_vals.append(0.0)
+            continue
+        dists_same = np.sqrt(np.sum((X[same_mask] - point) ** 2, axis=1))
+        a = float(dists_same.sum()) / (n_same - 1)
+
         # b: mean dist to nearest other cluster
         b = float('inf')
         for l in unique_labels:
@@ -233,7 +238,7 @@ def get_linguistic_tags(tokens, text):
     return align_spacy_to_bert_tokens(tokens, doc)
 
 
-def compute_head_metrics(attention_matrix, tokens, pos_tags, ner_tags):
+def compute_head_metrics(attention_matrix, tokens, pos_tags, ner_tags, is_gpt_style=None):
     """
     Compute all 7 behavioral metrics for a single attention head.
 
@@ -255,7 +260,11 @@ def compute_head_metrics(attention_matrix, tokens, pos_tags, ner_tags):
         Dict with keys: syntax, semantics, cls, punct, entities, long_range, self
     """
     seq_len = len(tokens)
-    is_gpt_style = any("Ġ" in tok for tok in tokens)
+    # Auto-detect from the Ġ marker unless the caller passes the flag
+    # explicitly — word-aggregated tokens have the marker stripped, so the
+    # aggregated path must pass is_gpt_style itself.
+    if is_gpt_style is None:
+        is_gpt_style = any("Ġ" in tok for tok in tokens)
 
     # 1. CLS / first-token focus - average attention to position 0.
     #    For causal models, exclude the degenerate first row (always 1.0).
@@ -374,68 +383,95 @@ def normalize_metrics(all_head_metrics):
     return normalized
 
 
-def compute_all_heads_specialization(attentions, tokens, text):
+def compute_all_heads_specialization(attentions, tokens, text, is_gpt_style=None):
     """
     Compute normalized specialization metrics for all heads in all layers.
-    
+
     Args:
         attentions: List of attention tensors from BERT (one per layer)
         tokens: List of BERT tokens
         text: Original input text
-    
+        is_gpt_style: True for causal models (row-0 exclusion in cls/self).
+                      None = auto-detect from the Ġ marker; pass explicitly
+                      for word-aggregated tokens where the marker is stripped.
+
     Returns:
         Dict of {layer_idx: {head_idx: normalized_metrics_dict}}
     """
     # Get linguistic tags once for all heads
     pos_tags, ner_tags = get_linguistic_tags(tokens, text)
-    
+
     all_layers = {}
-    
+
     for layer_idx, layer_attention in enumerate(attentions):
         # layer_attention shape: (batch, num_heads, seq_len, seq_len)
         num_heads = layer_attention.shape[1]
-        
+
         # Compute raw metrics for all heads in this layer
         layer_metrics = {}
         for head_idx in range(num_heads):
             att_matrix = layer_attention[0, head_idx].cpu().numpy()
-            metrics = compute_head_metrics(att_matrix, tokens, pos_tags, ner_tags)
+            metrics = compute_head_metrics(att_matrix, tokens, pos_tags, ner_tags,
+                                           is_gpt_style=is_gpt_style)
             layer_metrics[head_idx] = metrics
         
         # Normalize across heads in this layer
         normalized_metrics = normalize_metrics(layer_metrics)
+        # Keep the raw (un-normalised) values alongside under flat
+        # ``raw_<dim>`` keys. The per-layer min-max values only carry rank
+        # information WITHIN a layer; cross-layer views (head clustering)
+        # need absolute behaviour, otherwise every layer is forced to span
+        # [0, 1] per dimension and clusters reflect within-layer rank
+        # instead of head function.
+        for h_idx, raw in layer_metrics.items():
+            for dim, val in raw.items():
+                normalized_metrics[h_idx][f"raw_{dim}"] = float(val)
         all_layers[layer_idx] = normalized_metrics
-    
+
     return all_layers
 
 
 
-def _assign_cluster_names(results):
+def _assign_cluster_names(results, is_gpt_style=False):
     """
     Analyze cluster centroids and assign descriptive names based on dominant metrics.
+
+    Naming happens in global z-score space (``z_metrics``) when available:
+    a dimension is "dominant" if the cluster centroid stands out against the
+    average head of the whole model, independent of each dimension's raw
+    scale. Falls back to the per-layer-normalised ``metrics`` for cached
+    results that predate ``z_metrics``.
     """
     if not results: return results
-    
+
     import numpy as np
-    
+
+    # Use z-scores when every result carries them (post-2026-06 pipeline).
+    use_z = all(r.get('z_metrics') for r in results)
+    # "No dimension stands out" cutoff: z < 0.3 ≈ less than 0.3 SD above the
+    # average head (Cohen-style small effect). The legacy cutoff of 0.25 was
+    # tuned for the per-layer min-max scale.
+    diffuse_cutoff = 0.3 if use_z else 0.25
+
     # 1. Group by cluster
     clusters = {}
     for r in results:
         c_id = r['cluster']
         if c_id not in clusters: clusters[c_id] = []
-        clusters[c_id].append(r['metrics'])
-        
+        clusters[c_id].append(r['z_metrics'] if use_z else r['metrics'])
+
     # 2. Compute Centroids
     cluster_names = {}
-    
-    # Metric to Label mapping (Priority order)
-    # If score > 0.4 implies significance
+
+    # Metric to Label mapping (Priority order). GPT-2 has no [CLS] token:
+    # the "cls" metric there measures attention received by the first token
+    # (the attention-sink position), so label it honestly.
     metric_labels = {
         "self": "Self-Attention",
         "punct": "Separator/Punctuation",
-        "cls": "CLS/Global",
+        "cls": "First-Token (Sink)" if is_gpt_style else "CLS/Global",
         "syntax": "Syntactic",
-        "position": "Positional/Locality",
+        "entities": "Entity",
         "semantics": "Semantic",
         "long_range": "Long-Range"
     }
@@ -448,7 +484,6 @@ def _assign_cluster_names(results):
         if dim == "semantics": return "Semantic"
         if dim == "struct": return "Structural"
         if dim == "diffuse": return "Diffuse"
-        if dim in ["cls", "sep", "punct"]: return "Token Ops"
         return metric_labels.get(dim, dim.title())
 
     # Temporary storage for name candidates
@@ -485,28 +520,28 @@ def _assign_cluster_names(results):
             # Unique primary - simple name
             c_id = c_ids[0]
             data = candidates[c_id]
-            if data["p_score"] < 0.25:
+            if data["p_score"] < diffuse_cutoff:
                 name = "Diffuse/Noise"
             else:
                 name = get_dim_name(p_dim) + " Specialists"
             cluster_names[c_id] = name
         else:
             # Collision - use secondary dimension
-            # Sort colliding clusters by their secondary score to differentiate? 
+            # Sort colliding clusters by their secondary score to differentiate?
             # Or just name them by secondary.
             for c_id in c_ids:
                 data = candidates[c_id]
                 base_name = get_dim_name(p_dim)
                 sec_name = get_dim_name(data["s_dim"])
-                
+
                 # Check variance - if secondary is also close?
-                if data["p_score"] < 0.25:
+                if data["p_score"] < diffuse_cutoff:
                      name = f"Diffuse ({sec_name})"
-                elif data["s_score"] > 0.6 * data["p_score"]: # Strong secondary
+                elif data["s_score"] > 0.6 * data["p_score"] and data["s_score"] > 0: # Strong secondary
                      name = f"{base_name} & {sec_name}"
                 else:
                      name = f"{base_name} ({sec_name})"
-                     
+
                 cluster_names[c_id] = name
     
     # Final cleanup: Check for exact string duplicates again (rare but possible if secondary same)
@@ -527,14 +562,17 @@ def _assign_cluster_names(results):
         
     return results
 
-def compute_head_clusters(head_specialization_data):
+def compute_head_clusters(head_specialization_data, is_gpt_style=False):
     """
     Compute t-SNE coordinates and K-Means clusters for attention heads.
-    
+
     Args:
         head_specialization_data: Output from compute_all_heads_specialization
                                  Dict {layer_idx: {head_idx: metrics_dict}}
-    
+        is_gpt_style: True for causal models without a [CLS] token — only
+                      affects cluster naming (the "cls" dimension is labelled
+                      as first-token sink focus).
+
     Returns:
         List of dicts: [{'layer': l, 'head': h, 'x': x, 'y': y, 'cluster': c, 'metrics': ...}, ...]
     """
@@ -545,17 +583,38 @@ def compute_head_clusters(head_specialization_data):
     heads = []
     features = []
     dimensions = ["syntax", "semantics", "cls", "punct", "entities", "long_range", "self"]
-    
+
+    # Cluster on the RAW metrics (absolute behaviour) with a single global
+    # standardisation below — not on the per-layer min-max values, which
+    # encode rank within a layer and destroy cross-layer comparability.
+    # ``raw_<dim>`` keys are written by compute_all_heads_specialization;
+    # fall back to the normalised values for cached results that predate them.
     for l_idx, heads_map in head_specialization_data.items():
         for h_idx, metrics in heads_map.items():
-            heads.append({'layer': l_idx, 'head': h_idx, 'metrics': metrics})
-            row = [metrics[dim] for dim in dimensions]
+            # Keep only the 7 display dimensions in the result payload so
+            # downstream consumers (hover "Dominant" lookup) are unaffected.
+            heads.append({
+                'layer': l_idx,
+                'head': h_idx,
+                'metrics': {dim: metrics[dim] for dim in dimensions},
+            })
+            row = [metrics.get(f"raw_{dim}", metrics[dim]) for dim in dimensions]
             features.append(row)
-            
+
     if not features:
         return []
-        
+
     X = np.array(features)
+
+    # Global z-scores: used for cluster naming so "dominant dimension" means
+    # "stands out against the average head of the whole model", independent
+    # of each dimension's raw scale.
+    _mean = X.mean(axis=0)
+    _std = X.std(axis=0)
+    _std[_std == 0] = 1
+    X_z = (X - _mean) / _std
+    for i, head_info in enumerate(heads):
+        head_info['z_metrics'] = {dim: float(X_z[i, j]) for j, dim in enumerate(dimensions)}
     
     
     
@@ -629,12 +688,13 @@ def compute_head_clusters(head_specialization_data):
                 'x': float(X_embedded[i, 0]),
                 'y': float(X_embedded[i, 1]),
                 'cluster': int(cluster_labels[i]),
-                'metrics': head_info['metrics']
+                'metrics': head_info['metrics'],
+                'z_metrics': head_info.get('z_metrics'),
             })
             
     # 6. Assign Semantic Names
-    results = _assign_cluster_names(results)
-        
+    results = _assign_cluster_names(results, is_gpt_style=is_gpt_style)
+
     return results
 
 
@@ -650,9 +710,10 @@ def compute_head_specialization_metrics(tokens, attentions, layer_idx, head_idx,
     # 2. Get matrix
     # attentions is list of tensors (batch, num_heads, seq_len, seq_len)
     att_matrix = attentions[layer_idx][0, head_idx].cpu().numpy()
-    
+
     # 3. Compute
-    return compute_head_metrics(att_matrix, tokens, pos_tags, ner_tags)
+    return compute_head_metrics(att_matrix, tokens, pos_tags, ner_tags,
+                                is_gpt_style=is_gpt2 or None)
 
 
 __all__ = ["compute_all_heads_specialization", "get_linguistic_tags", "compute_head_clusters", "compute_head_specialization_metrics"]

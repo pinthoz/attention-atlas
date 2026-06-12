@@ -7,6 +7,8 @@ the example explorer with attention heatmaps.
 """
 
 import html as _html
+
+from .csv_utils import csv_safe as _csv_safe
 import logging
 
 import numpy as np
@@ -1160,7 +1162,7 @@ def register_stereoset_handlers(
 
         table_rows = []
         for i, ex in enumerate(examples[:100]):
-            ctx = ex.get("context", "")[:80]
+            ctx = _html.escape(ex.get("context", "")[:80])
             cat = ex.get("category", "")
             bs = ex.get("bias_score", 0)
             cat_color = STEREOSET_CAT_COLORS.get(cat, "#94a3b8")
@@ -1692,7 +1694,7 @@ def register_stereoset_handlers(
                      # So mat[last_idx][i]
                      try:
                          val = float(mat[last_idx][i])
-                         rows.append(f"{lbl},{i},{toks[i]},{val:.6f}")
+                         rows.append(f"{lbl},{i},{_csv_safe(toks[i])},{val:.6f}")
                      except Exception:
                          _logger.debug("Suppressed exception", exc_info=True)
                          pass
@@ -1803,7 +1805,7 @@ def register_stereoset_handlers(
                 if i < len(a_tok) and s_tok[i] != a_tok[i]:
                     tok = f"{s_tok[i]}/{a_tok[i]}"
                     
-                yield f"{i},{tok},{val_s:.6f},{val_a:.6f},{diff:.6f}"
+                yield f"{i},{_csv_safe(tok)},{val_s:.6f},{val_a:.6f},{diff:.6f}"
             except Exception:
                 _logger.debug("Suppressed exception", exc_info=True)
                 pass

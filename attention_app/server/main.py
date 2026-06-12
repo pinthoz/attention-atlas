@@ -741,7 +741,7 @@ def server(input, output, session):
                         for j in range(seq_len):
                             val = att_matrix[i, j]
                             if val > 1e-4:
-                                lines.append(f"{l_idx},{h_idx},{i},{j},{tokens[i]},{tokens[j]},{val:.6f}")
+                                lines.append(f"{l_idx},{h_idx},{i},{j},{_csv_safe(tokens[i])},{_csv_safe(tokens[j])},{val:.6f}")
 
             # Export global rollout
             rollout_matrix = compute_attention_rollout(attentions)
@@ -749,7 +749,7 @@ def server(input, output, session):
                 for j in range(seq_len):
                     val = rollout_matrix[i, j]
                     if val > 1e-4:
-                        lines.append(f"global,rollout,{i},{j},{tokens[i]},{tokens[j]},{val:.6f}")
+                        lines.append(f"global,rollout,{i},{j},{_csv_safe(tokens[i])},{_csv_safe(tokens[j])},{val:.6f}")
 
             yield "\n".join(lines)
         except Exception as e:
@@ -887,14 +887,14 @@ def server(input, output, session):
                         for j in range(seq_len):
                             val = att_matrix[i, j]
                             if val > 1e-4:
-                                lines.append(f"{l_idx},{h_idx},{i},{j},{tokens[i]},{tokens[j]},{val:.6f}")
+                                lines.append(f"{l_idx},{h_idx},{i},{j},{_csv_safe(tokens[i])},{_csv_safe(tokens[j])},{val:.6f}")
 
             rollout_matrix = compute_attention_rollout(attentions)
             for i in range(seq_len):
                 for j in range(seq_len):
                     val = rollout_matrix[i, j]
                     if val > 1e-4:
-                        lines.append(f"global,rollout,{i},{j},{tokens[i]},{tokens[j]},{val:.6f}")
+                        lines.append(f"global,rollout,{i},{j},{_csv_safe(tokens[i])},{_csv_safe(tokens[j])},{val:.6f}")
 
             yield "\\n".join(lines)
         except Exception as e:
@@ -955,7 +955,7 @@ def server(input, output, session):
 
     # Update Baselines when model changes
     @reactive.Effect
-    def update_baselines():
+    async def update_baselines():
         res = cached_result.get()
         if not res:
             return
@@ -976,7 +976,20 @@ def server(input, output, session):
             tokenizer = res.tokenizer
             model = res.encoder_model
             is_gpt2 = not hasattr(model, "encoder")
-            stats = compute_baselines(model, tokenizer, is_gpt2)
+            # compute_baselines runs ~10 forward passes; off the event loop
+            # so model switches don't freeze the whole UI while it runs.
+            loop = asyncio.get_running_loop()
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                stats = await loop.run_in_executor(
+                    pool, compute_baselines, model, tokenizer, is_gpt2
+                )
+            # The model may have changed again while we were computing —
+            # don't overwrite newer state with stale baselines.
+            try:
+                if input.model_name() != model_name:
+                    return
+            except Exception:
+                pass
             baseline_stats.set(stats)
             current_baseline_model.set(model_name)
             _logger.debug(f"Baselines updated for {model_name}")
@@ -2287,7 +2300,7 @@ def server(input, output, session):
         # Restore live preview (Safe now that dashboard is isolated)
         t = _html.escape(input.text_input().strip())
         if t:
-            return ui.HTML(f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{t}"</div>')
+            return ui.HTML(f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{_html.escape(t)}"</div>')
         else:
             return ui.HTML('<div style="color:#9ca3af;font-size:12px;">Type a sentence above and click Generate All.</div>')
 
@@ -2306,7 +2319,7 @@ def server(input, output, session):
             
         t = _html.escape(input.text_input().strip())
         if t:
-            return ui.HTML(f'<div style="font-family:monospace;color:#3b82f6;font-size:14px;">"{t}"</div>')
+            return ui.HTML(f'<div style="font-family:monospace;color:#3b82f6;font-size:14px;">"{_html.escape(t)}"</div>')
         else:
             return ui.HTML('<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Go to Prompt B.</div>')
 
@@ -2327,7 +2340,7 @@ def server(input, output, session):
         except Exception: t = ""
 
         if t:
-            return ui.HTML(f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{t}"</div>')
+            return ui.HTML(f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{_html.escape(t)}"</div>')
         else:
             return ui.HTML('<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>')
 
@@ -2342,7 +2355,7 @@ def server(input, output, session):
             color_hex = "#ff5ca9"
 
         if not res:
-            return ui.HTML(f'<div style="font-family:monospace;color:#6b7280;font-size:14px; min-height: 48px; display: flex; align-items: center;">"{t}"</div>' if t else f'<div style="color:#9ca3af;font-size:12px; min-height: 48px; display: flex; align-items: center;">Model {model_suffix.replace("_", "") or "A"} not loaded.</div>')
+            return ui.HTML(f'<div style="font-family:monospace;color:#6b7280;font-size:14px; min-height: 48px; display: flex; align-items: center;">"{_html.escape(t)}"</div>' if t else f'<div style="color:#9ca3af;font-size:12px; min-height: 48px; display: flex; align-items: center;">Model {model_suffix.replace("_", "") or "A"} not loaded.</div>')
             
         tokens, attentions = res.tokens, res.attentions
         if attentions is None or len(attentions) == 0:
@@ -2496,7 +2509,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Sum & Layer Normalization"),
-            ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable), then applies Layer Normalization to stabilize the activation distribution before entering the first Transformer block.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here — it applies LayerNorm inside each block (ln_1).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_sum_layernorm_view(res, encoder_model)
         )
 
@@ -3334,7 +3347,7 @@ def server(input, output, session):
                     {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable), then applies Layer Normalization to stabilize the activation distribution before entering the first Transformer block.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here — it applies LayerNorm inside each block (ln_1).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
                     ),
                     arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
                     ui.div(
@@ -3401,7 +3414,7 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable), then applies Layer Normalization to stabilize the activation distribution before entering the first Transformer block.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here — it applies LayerNorm inside each block (ln_1).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
                 ),
                 ui.div(
                     {"style": "position: relative; display: flex; align-items: center; justify-content: center;"},
@@ -3795,7 +3808,7 @@ def server(input, output, session):
 
             t = _html.escape(input.text_input().strip())
             # Placeholder changed to '(input)' per user request
-            preview_html = f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{t}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">(input)</div>'
+            preview_html = f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{_html.escape(t)}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">(input)</div>'
 
             if not live_compare:
                 # Single mode live preview - NOW DUAL ARCHITECTURE WITH HIGHLIGHTING
@@ -4117,7 +4130,7 @@ def server(input, output, session):
 
                  # Sum & Norm
                  rows.append(ui.div(paired_arrows("Positional Embeddings", "Sum & Layer Normalization"), class_="arrow-row"))
-                 sum_desc = "Computes the element-wise sum of token, positional, and segment embeddings (where applicable), then applies Layer Normalization to stabilize the activation distribution before entering the first Transformer block."
+                 sum_desc = "Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here — it applies LayerNorm inside each block (ln_1)."
                  rows.append(ui.layout_columns(
                      make_card("Sum & Layer Normalization", sum_desc, get_sum_layernorm_view(res_A, encoder_model_A), "a"),
                      make_card("Sum & Layer Normalization", sum_desc, get_sum_layernorm_view(res_B, encoder_model_B, suffix="_B"), "b"),
@@ -4497,11 +4510,12 @@ def server(input, output, session):
         # Prepare styled ticks
         styled_tokens = []
         for i, tok in enumerate(cleaned_tokens):
+            safe_tok = _html.escape(tok)
             if i in selected_indices:
                 # Highlight selected token label (Pink & Bold)
-                styled_tokens.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
+                styled_tokens.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{safe_tok}</span>")
             else:
-                styled_tokens.append(tok)
+                styled_tokens.append(safe_tok)
 
         # Highlight Row/Column Shapes for ALL selected tokens
         for selected_idx in selected_indices:
@@ -5814,10 +5828,11 @@ def server(input, output, session):
         # Prepare styled ticks
         styled_tokens = []
         for i, tok in enumerate(cleaned_tokens):
+            safe_tok = _html.escape(tok)
             if i in selected_indices:
-                styled_tokens.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{tok}</span>")
+                styled_tokens.append(f"<span style='color:#ec4899; font-weight:bold; font-size:12px'>{safe_tok}</span>")
             else:
-                styled_tokens.append(tok)
+                styled_tokens.append(safe_tok)
 
         # Highlight Row/Column Shapes for ALL selected tokens
         for selected_idx in selected_indices:

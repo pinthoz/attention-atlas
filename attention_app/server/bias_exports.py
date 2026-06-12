@@ -71,9 +71,12 @@ def csv_combined(res, l_idx=0, h_idx=0):
         return "No attention data"
     tokens = res["tokens"]
     attn = atts[l_idx][0, h_idx].cpu().numpy()
-    header = "query_token," + ",".join(tokens)
+    # Tokens must be CSV-escaped: "," is itself a frequent token and would
+    # otherwise shift every column in the row.
+    safe_tokens = [_csv_safe(t) for t in tokens]
+    header = "query_token," + ",".join(safe_tokens)
     lines = [header]
-    for i, tok in enumerate(tokens):
+    for i, tok in enumerate(safe_tokens):
         vals = ",".join(f"{attn[i,j]:.6f}" for j in range(len(tokens)))
         lines.append(f"{tok},{vals}")
     return "\n".join(lines)
@@ -90,12 +93,21 @@ def csv_matrix(res):
 
 
 def csv_propagation(res):
+    # layer_propagation is a list of per-layer mean BARs (floats), not
+    # dicts — the previous dict indexing made this export raise on every
+    # click. Per-layer max/min are derived from the per-head metrics.
     prop = res["propagation_analysis"]["layer_propagation"]
     if not prop:
         return "No propagation data"
+    by_layer = {}
+    for m in res.get("attention_metrics", []):
+        by_layer.setdefault(m.layer, []).append(m.bias_attention_ratio)
     lines = ["layer,mean_bar,max_bar,min_bar"]
-    for p in prop:
-        lines.append(f"{p['layer']},{p['mean_ratio']:.4f},{p['max_ratio']:.4f},{p['min_ratio']:.4f}")
+    for layer, mean_bar in enumerate(prop):
+        bars = by_layer.get(layer, [])
+        mx = max(bars) if bars else mean_bar
+        mn = min(bars) if bars else mean_bar
+        lines.append(f"{layer},{mean_bar:.4f},{mx:.4f},{mn:.4f}")
     return "\n".join(lines)
 
 

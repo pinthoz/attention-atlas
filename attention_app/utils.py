@@ -402,11 +402,14 @@ def aggregate_data_to_words(res, filter_special=True):
         new_isa_data = compute_isa(new_attentions, clean_words, agg_text,
                                    tokenizer, inputs, model_type=isa_model_type)
 
-        # 2. Head Specialization
-        new_head_specialization = compute_all_heads_specialization(new_attentions, clean_words, agg_text)
+        # 2. Head Specialization — clean_words have tokenizer markers
+        # stripped, so causal-model detection must be passed explicitly.
+        new_head_specialization = compute_all_heads_specialization(
+            new_attentions, clean_words, agg_text, is_gpt_style=has_gpt2_markers)
 
         # 3. Head Clusters
-        new_head_clusters = compute_head_clusters(new_head_specialization)
+        new_head_clusters = compute_head_clusters(
+            new_head_specialization, is_gpt_style=has_gpt2_markers)
 
     except Exception as e:
         _logger.warning("Failed to recompute aggregated metrics: %s", e)

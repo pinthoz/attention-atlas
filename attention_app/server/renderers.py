@@ -34,20 +34,31 @@ def get_layer_block(model, layer_idx):
 
 
 def extract_qkv(layer_block, hidden_states):
-    """Extract Q, K, V from a layer block given hidden states."""
+    """Extract Q, K, V from a layer block given the layer's INPUT hidden states.
+
+    Architecture note: BERT is post-LN — BertSelfAttention applies the
+    query/key/value projections directly to the layer input, so projecting
+    ``hidden_states`` reproduces the model's computation exactly. GPT-2 is
+    pre-LN — the block applies ``ln_1`` BEFORE ``c_attn``, so the
+    normalisation must be applied here too. Skipping it produces vectors
+    that are nearly orthogonal to the real ones (measured cosine ≈ 0.10,
+    norms ≈ 135× off on gpt2 layer 3).
+    """
     with torch.no_grad():
-        if hasattr(layer_block, "attention"): # BERT
+        if hasattr(layer_block, "attention"): # BERT (post-LN)
             # layer_block is BertLayer
             self_attn = layer_block.attention.self
             Q = self_attn.query(hidden_states)[0].cpu().numpy()
             K = self_attn.key(hidden_states)[0].cpu().numpy()
             V = self_attn.value(hidden_states)[0].cpu().numpy()
-        elif hasattr(layer_block, "attn"): # GPT-2
-            # layer_block is GPT2Block
+        elif hasattr(layer_block, "attn"): # GPT-2 (pre-LN)
+            # layer_block is GPT2Block: the model computes
+            # c_attn(ln_1(hidden_states)) in its forward pass.
             attn = layer_block.attn
+            normed = layer_block.ln_1(hidden_states)
             # c_attn projects to 3 * hidden_size
             # shape: (batch, seq_len, 3 * hidden_size)
-            c_attn_out = attn.c_attn(hidden_states)
+            c_attn_out = attn.c_attn(normed)
 
             # Split
             # c_attn_out is (batch, seq_len, 3*hidden)
@@ -61,6 +72,46 @@ def extract_qkv(layer_block, hidden_states):
         else:
             raise ValueError("Unknown layer type")
     return Q, K, V
+
+
+def compute_sublayer_states(layer_block, hidden_states_in):
+    """Recompute the mid-layer (post-attention) state and the true FFN
+    activations for one layer, faithfully to each architecture.
+
+    ``hidden_states`` from the model only exposes LAYER boundaries; the
+    state between the attention and FFN sublayers is never returned, so the
+    Deep Dive sublayer cards must recompute it. Architectures differ:
+
+    - BERT (post-LN): mid = BertAttention(x) — self-attention followed by
+      the Add & Norm inside ``BertSelfOutput``. The FFN consumes ``mid``
+      directly.
+    - GPT-2 (pre-LN): mid = x + attn(ln_1(x)); the FFN consumes
+      ``ln_2(mid)``, NOT ``mid`` itself.
+
+    Args:
+        layer_block: BertLayer or GPT2Block.
+        hidden_states_in: layer input WITH batch dim, shape (1, seq, hidden).
+
+    Returns:
+        (mid, ffn_inter_act, ffn_proj) — all (1, seq, ...) torch tensors:
+        the post-attention residual state, the FFN intermediate activation,
+        and the FFN output projection (before the final residual).
+    """
+    with torch.no_grad():
+        if hasattr(layer_block, "attention"):  # BERT (post-LN)
+            mid = layer_block.attention(hidden_states_in)[0]
+            inter_act = layer_block.intermediate(mid)
+            proj = layer_block.output.dense(inter_act)
+        elif hasattr(layer_block, "attn"):  # GPT-2 (pre-LN)
+            attn_out = layer_block.attn(layer_block.ln_1(hidden_states_in))[0]
+            mid = hidden_states_in + attn_out
+            ffn_in = layer_block.ln_2(mid)
+            inter = layer_block.mlp.c_fc(ffn_in)
+            inter_act = layer_block.mlp.act(inter)
+            proj = layer_block.mlp.c_proj(inter_act)
+        else:
+            raise ValueError("Unknown layer type")
+    return mid, inter_act, proj
 
 
 def arrow(from_section, to_section, direction="horizontal", suffix="", model_type=None, **kwargs):
@@ -1850,11 +1901,16 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, 
 
 
 def get_add_norm_view(res, layer_idx, suffix=""):
+    """Post-attention Add & Norm: layer input → mid-layer (post-attention)
+    state. The mid state is recomputed via compute_sublayer_states because
+    the model only exposes layer boundaries."""
     tokens, hidden_states = res.tokens, res.hidden_states
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
     hs_in = hidden_states[layer_idx][0].cpu().numpy()
-    hs_out = hidden_states[layer_idx + 1][0].cpu().numpy()
+    layer_block = get_layer_block(res.encoder_model, layer_idx)
+    mid, _, _ = compute_sublayer_states(layer_block, hidden_states[layer_idx])
+    hs_out = mid[0].cpu().numpy()
     unique_id = f"addnorm_{layer_idx}{suffix}"
     
     # 1. Change View (Bars)
@@ -1891,24 +1947,19 @@ def get_add_norm_view(res, layer_idx, suffix=""):
 
 
 def get_ffn_view(res, layer_idx, suffix=""):
+    """FFN activations computed on the TRUE FFN input: the post-attention
+    state (BERT) / ln_2 of the post-attention residual (GPT-2). Feeding the
+    raw layer input into the FFN weights — the pre-2026-06-12 behaviour —
+    skips the whole attention sublayer and shows activations the model
+    never produces."""
     tokens, hidden_states, encoder_model = res.tokens, res.hidden_states, res.encoder_model
     if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
     unique_id = f"ffn_{layer_idx}{suffix}"
     layer_block = get_layer_block(encoder_model, layer_idx)
-    hs_in = hidden_states[layer_idx][0]
-    with torch.no_grad():
-        if hasattr(layer_block, "intermediate"): # BERT
-            inter = layer_block.intermediate.dense(hs_in)
-            inter_act = layer_block.intermediate.intermediate_act_fn(inter)
-            proj = layer_block.output.dense(inter_act)
-        else: # GPT-2
-            # GPT-2: mlp.c_fc -> act -> mlp.c_proj
-            inter = layer_block.mlp.c_fc(hs_in)
-            inter_act = layer_block.mlp.act(inter)
-            proj = layer_block.mlp.c_proj(inter_act)
-    inter_np = inter_act.cpu().numpy()
-    proj_np = proj.cpu().numpy()
+    _, inter_act, proj = compute_sublayer_states(layer_block, hidden_states[layer_idx])
+    inter_np = inter_act[0].cpu().numpy()
+    proj_np = proj[0].cpu().numpy()
     
     rows = []
     header = "<tr><th style='text-align:left;padding-left:8px;'>Token</th><th>Activation</th><th>Projection</th></tr>"
@@ -1930,11 +1981,16 @@ def get_ffn_view(res, layer_idx, suffix=""):
 
 
 def get_add_norm_post_ffn_view(res, layer_idx, suffix=""):
+    """Post-FFN Add & Norm of THIS layer: mid-layer (post-attention) state →
+    layer output. Previously this card showed hidden[l+1] → hidden[l+2],
+    i.e. the change across the entire NEXT layer."""
     tokens, hidden_states = res.tokens, res.hidden_states
-    if layer_idx + 2 >= len(hidden_states):
+    if layer_idx + 1 >= len(hidden_states):
         return ui.HTML("")
-    hs_mid = hidden_states[layer_idx + 1][0].cpu().numpy()
-    hs_out = hidden_states[layer_idx + 2][0].cpu().numpy()
+    layer_block = get_layer_block(res.encoder_model, layer_idx)
+    mid, _, _ = compute_sublayer_states(layer_block, hidden_states[layer_idx])
+    hs_mid = mid[0].cpu().numpy()
+    hs_out = hidden_states[layer_idx + 1][0].cpu().numpy()
     unique_id = f"addnormpost_{layer_idx}{suffix}"
     
     # 1. Change View (Bars)
@@ -3302,10 +3358,19 @@ def get_isa_scatter_view(res, suffix="", vertical_layout=False, plot_only=False,
                 ui.div(ui.output_ui(f"isa_detail_info{suffix}"), style="flex: 0 0 auto; margin-bottom: 10px;"),
                 ui.div(
                     {"id": f"isa-token-container{suffix}"},
+                    # Until a cell is clicked there is no token heatmap to
+                    # export — grey the button out instead of letting the
+                    # click die silently in a console.error.
+                    ui.tags.style(
+                        f"#isa-token-container{suffix}:not(:has(.js-plotly-plot)) "
+                        f".isa-token-png-btn {{ opacity: 0.4; pointer-events: none; }}"
+                    ),
                     ui.div(
                         {"style": "display: flex; justify-content: flex-end; margin-bottom: 4px;"},
                         ui.tags.button(
                             "Token PNG",
+                            {"class": "isa-token-png-btn",
+                             "title": "Click a cell in the ISA matrix first to generate the token-level heatmap"},
                             onclick=f"downloadPlotlyPNG('isa-token-container{suffix}', '{token_png_filename}')",
                             style="padding: 2px 6px; font-size: 9px; height: 20px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer;"
                         ),

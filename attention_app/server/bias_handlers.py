@@ -19,6 +19,7 @@ from .bias_helpers import (
     _deferred_plotly, _wrap_card, _chart_with_png_btn,
     _align_gusnet_to_attention_tokens,
     _get_bias_model_label, _process_raw_bias_result, _build_batch_report,
+    visible_errors,
 )
 from .bias_styles import (
     BTN_STYLE_CSV as _BTN_STYLE_CSV, BTN_STYLE_PNG as _BTN_STYLE_PNG,
@@ -1954,6 +1955,7 @@ def bias_server_handlers(input, output, session):
 
     @output
     @render.ui
+    @visible_errors("Bias Detection dashboard")
     def bias_dashboard_content():
         res = bias_results.get()
         res_B = bias_results_B.get()
@@ -2362,6 +2364,7 @@ def bias_server_handlers(input, output, session):
 
     @output
     @render.ui
+    @visible_errors("Overview & Detection summary")
     def bias_summary():
         res = bias_results.get()
         if not res:
@@ -2580,7 +2583,10 @@ def bias_server_handlers(input, output, session):
                 f"<span style='{_TH}'>Thresholds</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
                 f"<span>Low &lt; 0.15 &nbsp;·&nbsp; Moderate 0.15–0.40 &nbsp;·&nbsp; High &ge; 0.40</span></div>"
+                f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
+                f"<span>Each category component saturates once &ge; 20% of tokens carry it (ratio × 5, capped at 1).</span></div>"
                 f"<div style='{_TN}; margin-top:6px;'>High token density + low stereotype score → loaded language without group-specific targeting.</div>"
+                f"<div style='{_TN}; margin-top:6px;'>The composite level is a communication aid, not a calibrated metric — token-level detection uses the calibrated GUS-Net thresholds.</div>"
             )
 
             warn_A = _render_input_warnings(res)
@@ -2619,7 +2625,10 @@ def bias_server_handlers(input, output, session):
                 f"<span style='{_TH}'>Thresholds</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
                 f"<span>Low &lt; 0.15 &nbsp;·&nbsp; Moderate 0.15–0.40 &nbsp;·&nbsp; High &ge; 0.40</span></div>"
+                f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
+                f"<span>Each category component saturates once &ge; 20% of tokens carry it (ratio × 5, capped at 1).</span></div>"
                 f"<div style='{_TN}; margin-top:6px;'>High token density + low stereotype score → loaded language without group-specific targeting.</div>"
+                f"<div style='{_TN}; margin-top:6px;'>The composite level is a communication aid, not a calibrated metric — token-level detection uses the calibrated GUS-Net thresholds.</div>"
             )
             warn_html = _render_input_warnings(res)
             card = _wrap_card(ui.HTML(get_summary_cards(res, abl, ig)), *header_args, style="margin-bottom: 24px;")
@@ -2722,7 +2731,7 @@ def bias_server_handlers(input, output, session):
                 f'<div class="bias-span-item">'
                 f'<div style="display:flex;justify-content:space-between;align-items:center;">'
                 f'<span style="font-family:JetBrains Mono,monospace;font-size:12px;'
-                f'color:#e2e8f0;font-weight:600;">{text}</span>'
+                f'color:#e2e8f0;font-weight:600;">{_html.escape(text)}</span>'
                 f'<span style="color:{score_color};font-weight:600;font-size:11px;'
                 f'font-family:JetBrains Mono,monospace;">{score:.2f}</span></div>'
                 f'<div style="margin-top:3px;">{cats_html}</div>'
@@ -2895,6 +2904,7 @@ def bias_server_handlers(input, output, session):
 
     @output
     @render.ui
+    @visible_errors("Detected Bias Tokens")
     def bias_spans_table():
         res = bias_results.get()
         if not res: return None
@@ -3131,6 +3141,7 @@ def bias_server_handlers(input, output, session):
 
     @output
     @render.ui
+    @visible_errors("Token-Level Bias Strip")
     def token_bias_strip():
         res = bias_results.get()
         if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
@@ -3193,6 +3204,7 @@ def bias_server_handlers(input, output, session):
 
     @output
     @render.ui
+    @visible_errors("Confidence Breakdown")
     def confidence_breakdown():
         res = bias_results.get()
         if not res:
@@ -3257,6 +3269,7 @@ def bias_server_handlers(input, output, session):
 
     @output
     @render.ui
+    @visible_errors("Token-Level Bias Distribution")
     def combined_bias_view():
         res = bias_results.get()
         if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
@@ -3393,6 +3406,7 @@ def bias_server_handlers(input, output, session):
 
     @output
     @render.ui
+    @visible_errors("Attention × Bias Matrix")
     def attention_bias_matrix():
         res = bias_results.get()
         if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
@@ -3542,6 +3556,7 @@ def bias_server_handlers(input, output, session):
 
     @output
     @render.ui
+    @visible_errors("Bias Propagation")
     def bias_propagation_plot():
         res = bias_results.get()
         if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;">No results.</div>')
@@ -3696,6 +3711,7 @@ def bias_server_handlers(input, output, session):
 
     @output
     @render.ui
+    @visible_errors("Bias-Focused Attention Heads")
     def bias_focused_heads_table():
         res = bias_results.get()
         if not res: return None

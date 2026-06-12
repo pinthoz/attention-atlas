@@ -119,10 +119,33 @@ def heavy_compute(text, model_name):
     _logger.debug("Model inference complete")
 
     tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
-    embeddings = outputs.last_hidden_state[0].cpu().numpy()
+    # Token embeddings for the Deep Dive "Token Embeddings" card: the
+    # context-independent vocabulary vectors (word_embeddings / wte), as the
+    # card text claims. The previous behaviour exposed last_hidden_state —
+    # the OUTPUT of the final layer, maximally contextual — which is still
+    # available as hidden_states[-1] where needed.
+    with torch.no_grad():
+        if hasattr(encoder_model, "embeddings"):  # BERT
+            emb_layer = encoder_model.embeddings.word_embeddings
+        else:  # GPT-2
+            emb_layer = encoder_model.wte
+        embeddings = emb_layer(inputs["input_ids"])[0].cpu().numpy()
     attentions = outputs.attentions
     hidden_states = outputs.hidden_states
-    pos_enc = positional_encoding(len(tokens), embeddings.shape[1])
+    # Positional embeddings: show the model's REAL learned position
+    # embeddings (BERT: embeddings.position_embeddings; GPT-2: wpe). Both
+    # models learn them — the Deep Dive card says so explicitly — so the
+    # sinusoidal formula from the original Transformer (previous behaviour)
+    # displayed values the models never use. Kept as a fallback only.
+    try:
+        if hasattr(encoder_model, "embeddings"):  # BERT
+            pe_weight = encoder_model.embeddings.position_embeddings.weight
+        else:  # GPT-2
+            pe_weight = encoder_model.wpe.weight
+        pos_enc = pe_weight[: len(tokens)].detach().cpu().numpy()
+    except Exception:
+        _logger.warning("Falling back to sinusoidal positional encoding")
+        pos_enc = positional_encoding(len(tokens), embeddings.shape[1])
 
     # Compute head specialization metrics
     head_specialization = None
@@ -138,7 +161,10 @@ def heavy_compute(text, model_name):
     if head_specialization:
         try:
             _logger.debug("Computing head clusters")
-            head_clusters = compute_head_clusters(head_specialization)
+            head_clusters = compute_head_clusters(
+                head_specialization,
+                is_gpt_style=any("Ġ" in t for t in tokens),
+            )
             _logger.debug("Head clusters complete")
         except Exception as e:
             _logger.warning("Could not compute head clusters: %s", e)

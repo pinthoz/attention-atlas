@@ -84,15 +84,31 @@ def _run_single_ablation(
     """
     head_dim = _get_head_dim(encoder_model, is_gpt2)
     attn_module = _get_attention_module(encoder_model, layer_idx, is_gpt2)
+    start = head_idx * head_dim
+    end = start + head_dim
 
-    def ablation_hook(module, input, output):
-        modified = output[0].clone()
-        start = head_idx * head_dim
-        end = start + head_dim
-        modified[:, :, start:end] = 0.0
-        return (modified,) + output[1:]
+    if is_gpt2:
+        # GPT2Attention's module OUTPUT is post-c_proj: head channels are
+        # already mixed across the hidden dim there, so zeroing a slice of
+        # it does NOT ablate head h. Zero the head BEFORE the output
+        # projection instead — the input of c_proj is merge_heads(context),
+        # where head h occupies the contiguous slice [start:end].
+        def ablation_pre_hook(module, args):
+            x = args[0].clone()
+            x[:, :, start:end] = 0.0
+            return (x,) + tuple(args[1:])
 
-    handle = attn_module.register_forward_hook(ablation_hook)
+        handle = attn_module.c_proj.register_forward_pre_hook(ablation_pre_hook)
+    else:
+        # BertSelfAttention's output IS the pre-projection per-head context
+        # (BertSelfOutput.dense is applied afterwards), so zeroing the slice
+        # here removes exactly head h's contribution.
+        def ablation_hook(module, input, output):
+            modified = output[0].clone()
+            modified[:, :, start:end] = 0.0
+            return (modified,) + output[1:]
+
+        handle = attn_module.register_forward_hook(ablation_hook)
     try:
         with torch.no_grad():
             ablated_outputs = encoder_model(**inputs)

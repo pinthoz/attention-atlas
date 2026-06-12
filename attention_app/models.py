@@ -90,6 +90,10 @@ class ModelManager:
                 tokenizer = GPT2TokenizerFast.from_pretrained(model_name)
                 if tokenizer.pad_token is None:
                     tokenizer.pad_token = tokenizer.eos_token
+                # GPT-2 has no sep/cls/mask tokens; transformers logs
+                # "Using sep_token, but it is not set yet." on every
+                # internal access unless verbose is off. Pure log noise.
+                tokenizer.verbose = False
 
                 encoder = GPT2Model.from_pretrained(
                     model_name,

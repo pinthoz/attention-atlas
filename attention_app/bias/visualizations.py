@@ -455,13 +455,14 @@ def create_combined_bias_visualization(
     # ── HTML-styled tick labels ──
     styled = []
     for i, tok in enumerate(cleaned):
+        safe_tok = html_lib.escape(tok)
         if i in selected_indices:
             color = sel_hl_map[i]["border"]
             styled.append(
-                f"<span style='color:{color};font-weight:bold'>{tok}</span>"
+                f"<span style='color:{color};font-weight:bold'>{safe_tok}</span>"
             )
         else:
-            styled.append(tok)
+            styled.append(safe_tok)
 
     # ── Attention colorscale (matches attention tab) ──
     att_colorscale = [
@@ -3345,7 +3346,7 @@ def create_stereoset_example_html(
             f'border-left:3px solid {color};margin-bottom:6px;">'
             f'<span style="font-size:9px;font-weight:700;color:{color};text-transform:uppercase;'
             f'min-width:70px;padding-top:2px;">{label}</span>'
-            f'<span style="font-size:12px;color:#e2e8f0;flex:1;font-weight:400;line-height:1.4;">{text}</span>'
+            f'<span style="font-size:12px;color:#e2e8f0;flex:1;font-weight:400;line-height:1.4;">{html_lib.escape(text)}</span>'
             f'{score_html}'
             f'</div>'
         )

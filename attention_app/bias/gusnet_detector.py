@@ -316,6 +316,10 @@ class GusNetDetector:
                 )
                 if tokenizer.pad_token is None:
                     tokenizer.pad_token = tokenizer.eos_token
+                # Silence "Using sep_token, but it is not set yet." —
+                # GPT-2 has no sep/cls/mask tokens and transformers logs
+                # this on every internal special-token access otherwise.
+                tokenizer.verbose = False
                 model = GPT2ForTokenClassification.from_pretrained(model_path)
             else:
                 # BERT: use tokenizer from registry (model repo may lack one)

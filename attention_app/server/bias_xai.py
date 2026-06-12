@@ -33,7 +33,7 @@ from ..bias import (
     create_cross_method_agreement_chart,
 )
 
-from .bias_helpers import _deferred_plotly, _wrap_card, _chart_with_png_btn, _source_badge_html
+from .bias_helpers import _deferred_plotly, _wrap_card, _chart_with_png_btn, _source_badge_html, visible_errors
 from .bias_styles import (
     BTN_STYLE_CSV as _BTN_STYLE_CSV, BTN_STYLE_PNG as _BTN_STYLE_PNG,
     TH as _TH, TR as _TR, TD as _TD, TC as _TC, TS as _TS,
@@ -86,15 +86,18 @@ def _rho_color_and_label(rho: float) -> tuple:
 
 # ── Calibrated faithfulness thresholds ───────────────────────────────────
 # Empirical permutation-null thresholds from the faithfulness calibration
-# on the full v9 corpus (2026-06-06). Per-model because BERT and GPT-2
-# operate at different scales. Both metrics are stored: representation_impact
-# (cosine-distance on hidden states; sensitive to LayerNorm scaling) and
-# KL divergence on LM-head logits (scale-invariant via softmax).
+# on the full v9 corpus. BERT: 2026-06-06 run. GPT-2: re-calibrated
+# 2026-06-12 with the CORRECTED head-ablation mechanism (the previous run
+# zeroed a post-c_proj slice, not the head — see THRESHOLDS_CALIBRATION.md
+# §21). Per-model because BERT and GPT-2 operate at different scales.
+# Both metrics are stored: representation_impact (cosine-distance on hidden
+# states; sensitive to LayerNorm scaling) and KL divergence on LM-head
+# logits (scale-invariant via softmax).
 #
-# Key cross-metric finding: under representation_impact the BERT/GPT-2 gap
-# is 88x (artefact) and BAR ranking is NOT faithful for GPT-2 (3.59% > a=0.05);
-# under KL the gap drops to 8.2x and BAR is weakly faithful for GPT-2
-# (6.09% > a=0.05). See THRESHOLDS_CALIBRATION.md sections 13 and 14.
+# Post-correction picture (combined masks): GPT-2 BAR ranking is marginally
+# faithful under both metrics (rep 5.90%, KL 6.55% > a=0.05); the strong
+# signal is per-category — UNFAIR/STEREO reach 11-13% under KL and 8.6-10.1%
+# under rep_impact (see §16 + §21 addendum).
 IMPACT_THRESHOLDS = {
     "bert-base-uncased": {
         "high": 0.0093,        # null p95, alpha=0.05
@@ -105,12 +108,12 @@ IMPACT_THRESHOLDS = {
         "kl_obs_above_alpha_05_pct": 8.77,
     },
     "gpt2": {
-        "high": 0.000105,      # null p95, alpha=0.05
-        "very_high": 0.0169,   # null p99, alpha=0.01
-        "obs_above_alpha_05_pct": 3.59,
-        "kl_high": 0.00274,        # KL null p95
-        "kl_very_high": 0.00706,   # KL null p99
-        "kl_obs_above_alpha_05_pct": 6.09,
+        "high": 0.000965,      # null p95, alpha=0.05 (2026-06-12 re-run)
+        "very_high": 0.00756,  # null p99, alpha=0.01
+        "obs_above_alpha_05_pct": 5.90,
+        "kl_high": 0.0433,         # KL null p95
+        "kl_very_high": 0.3079,    # KL null p99
+        "kl_obs_above_alpha_05_pct": 6.55,
     },
 }
 
@@ -189,8 +192,9 @@ def _render_live_elbow_block(
         )
 
     metric_note = (
-        "Elbow computed on <b>KL divergence</b> (the trustworthy causal metric "
-        "for GPT-2; representation_impact under-reports here)."
+        "Elbow computed on <b>KL divergence</b> (the preferred causal metric "
+        "for GPT-2; it shows the per-category signal more strongly than "
+        "representation_impact)."
         if is_gpt2 else
         "Elbow computed on <b>representation_impact</b>."
     )
@@ -217,11 +221,11 @@ def _compute_live_elbow(results_data, marginal_pct: float = 0.05,
     the curve is empty or all impacts are zero.
 
     ``use_kl=True`` accumulates ``|kl_divergence|`` instead of
-    ``|representation_impact|``. For GPT-2 this is the right metric: the
-    faithfulness calibration (THRESHOLDS_CALIBRATION.md sections 14 and
-    16) showed representation_impact under-reports causal contribution
-    in GPT-2, so an elbow computed on it would track noise. Falls back
-    to representation_impact per head when KL is unavailable.
+    ``|representation_impact|``. For GPT-2 this is the preferred metric:
+    the faithfulness calibration (THRESHOLDS_CALIBRATION.md sections 14,
+    16 and the §21 mechanism-corrected re-run) shows KL carries the
+    per-category causal signal more strongly than representation_impact.
+    Falls back to representation_impact per head when KL is unavailable.
     """
     if not results_data:
         return None
@@ -271,6 +275,7 @@ def register_xai_handlers(
 
     @output
     @render.ui
+    @visible_errors("Causal Head Intervention (ablation)")
     def ablation_results_display():
         running = ablation_running.get()
         results_A = ablation_results.get()
@@ -321,14 +326,19 @@ def register_xai_handlers(
             # computed on the current sentence's data, so the user sees
             # how concentrated the bias signal is HERE vs the corpus
             # average shown by the slider.
-            # GPT-2 uses the KL metric for the elbow: representation_impact
-            # under-reports causal contribution there (calibration MD §14/§16).
+            # GPT-2 uses the KL metric for the elbow: it carries the
+            # per-category causal signal more strongly than
+            # representation_impact (calibration MD §14/§16/§21).
             live_elbow = _compute_live_elbow(results_data, use_kl=is_gpt2)
             try:
                 slider_k = int(input.bias_top_k())
             except Exception:
                 slider_k = 5
-            global_default = 1 if is_gpt2 else 5
+            # Calibrated corpus elbows: BERT K=5 (§11); GPT-2 K=3 — re-run
+            # 2026-06-12 with the corrected ablation mechanism (was K=1
+            # under the old mechanism, which over-concentrated the impact
+            # in the single top head; see MD §21).
+            global_default = 3 if is_gpt2 else 5
             elbow_block_html = _render_live_elbow_block(
                 live_elbow, slider_k, global_default, is_gpt2,
             )
@@ -412,30 +422,31 @@ def register_xai_handlers(
             )
             warning_html = ""
             if is_gpt2 and rank_by == "combined":
+                # Numbers from the 2026-06-12 re-calibration with the
+                # corrected head-ablation mechanism (MD §16 addendum / §21).
                 warning_html = (
                     '<div style="margin-top:8px;font-size:11px;color:#78350f;line-height:1.6;text-align:center;">'
-                    '<b>*</b>&nbsp;<b>Caveat for GPT-2:</b> the two metrics tell different stories, '
-                    'and per-category re-ranking changes the picture again. '
-                    'Under <code style="font-family:JetBrains Mono,monospace;color:#78350f;">'
-                    'representation_impact</code>, BAR_combined is below chance (3.6 % &gt; &alpha;=0.05) '
-                    'and only BAR_GEN crosses chance (6.3 %). Under '
-                    '<code style="font-family:JetBrains Mono,monospace;color:#78350f;">KL divergence</code> '
-                    'on the LM-head logits, scale-invariant on softmax outputs, '
-                    '<b>all three category-specific rankings are faithful</b>: '
-                    'BAR_GEN 6.9 %, <b>BAR_UNFAIR 12.75 %</b>, <b>BAR_STEREO 11.9 %</b>. '
-                    'For single-head causal claims in GPT-2: switch the <b>Rank heads by</b> '
-                    'selector above to a per-category ranking (BAR_C) and read the KL Div '
-                    'column. The Impact column under-reports causality for UNFAIR and STEREO '
-                    'because their head-level effects are direction-rather-than-magnitude.'
+                    '<b>*</b>&nbsp;<b>Caveat for GPT-2:</b> the combined BAR ranking is only '
+                    'marginally faithful (5.9 % &gt; &alpha;=0.05 under '
+                    '<code style="font-family:JetBrains Mono,monospace;color:#78350f;">'
+                    'representation_impact</code>, 6.6 % under '
+                    '<code style="font-family:JetBrains Mono,monospace;color:#78350f;">KL</code>) '
+                    'because it mixes incompatible category signals. The per-category rankings '
+                    'are where the causal signal lives: <b>BAR_UNFAIR 11.4 %</b> and '
+                    '<b>BAR_STEREO 12.8 %</b> under KL (8.6 % / 10.1 % under representation_impact), '
+                    'with BAR_GEN at chance (5.5 %). For single-head causal claims in GPT-2: '
+                    'switch the <b>Rank heads by</b> selector above to a per-category ranking '
+                    '(BAR_C) and prefer the KL Div column, which shows the signal more strongly.'
                     '</div>'
                 )
             elif is_gpt2:
                 warning_html = (
                     '<div style="margin-top:8px;font-size:11px;color:#166534;line-height:1.6;text-align:center;">'
                     f'<b>*</b>&nbsp;You are using the <b>BAR_{rank_by}</b> per-category ranking, the '
-                    'recommended setup for GPT-2 single-head causal claims. Read the '
-                    '<b>KL Div</b> column: it is the trustworthy causal metric here '
-                    '(representation_impact under-reports for UNFAIR and STEREO).'
+                    'recommended setup for GPT-2 single-head causal claims. Prefer the '
+                    '<b>KL Div</b> column: both metrics show the per-category signal, '
+                    'but KL shows it more strongly (UNFAIR 11.4 % / STEREO 12.8 % vs '
+                    '8.6 % / 10.1 % under representation_impact).'
                     '</div>'
                 )
 
@@ -1207,6 +1218,7 @@ def register_xai_handlers(
 
     @output
     @render.ui
+    @visible_errors("Perturbation and Minimality")
     def perturbation_results_display():
         running = perturbation_running.get()
         bundle_A = perturbation_results.get()
@@ -1432,6 +1444,7 @@ def register_xai_handlers(
 
     @output
     @render.ui
+    @visible_errors("Cross-Validation with LRP / DeepLift")
     def lrp_results_display():
         running = lrp_running.get()
         bundle_A = lrp_results.get()
@@ -1485,6 +1498,21 @@ def register_xai_handlers(
                             mean_attn_color, mean_attn_label)
                 + '</div>'
             )
+
+            # DeepLift can fail and silently fall back to IG — in that case
+            # ρ(LRP, IG) compares IG with itself and proves nothing. Say so.
+            if getattr(bundle, "method", "DeepLift") == "IG-fallback":
+                summary_html += (
+                    '<div style="margin-top:12px;padding:10px 14px;'
+                    'background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.40);'
+                    'border-left:4px solid #f59e0b;border-radius:8px;font-size:11.5px;'
+                    'color:#78350f;line-height:1.5;">'
+                    '<b>DeepLift failed for this model</b> — the attributions shown '
+                    'are an Integrated Gradients fallback, so the &rho;(LRP, IG) '
+                    'agreement above is NOT an independent cross-validation. '
+                    'Rely on the Perturbation panel for convergent evidence instead.'
+                    '</div>'
+                )
 
             sections = [ui.HTML(summary_html)]
 

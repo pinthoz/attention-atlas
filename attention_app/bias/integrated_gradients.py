@@ -160,6 +160,11 @@ class LRPAnalysisBundle:
     tokens: List[str]
     lrp_vs_ig_spearman: float
     correlations: List[tuple]
+    # Which attribution method actually produced token_attributions:
+    # "DeepLift", or "IG-fallback" when DeepLift failed. In the fallback
+    # case lrp_vs_ig_spearman compares IG with IG and is NOT an
+    # independent cross-validation — renderers must surface this.
+    method: str = "DeepLift"
 
 
 def _get_embedding_layer(encoder_model, is_gpt2):
@@ -167,6 +172,38 @@ def _get_embedding_layer(encoder_model, is_gpt2):
     if is_gpt2:
         return encoder_model.wte
     return encoder_model.embeddings.word_embeddings
+
+
+def _baseline_token_id(tokenizer) -> int:
+    """Neutral baseline token id for IG / DeepLift.
+
+    BERT has a real [PAD] token. GPT-2 has none — ``pad_token_id`` is None,
+    and falling through to vocabulary id 0 would make the baseline a
+    sequence of ``"!"`` tokens. Use ``<|endoftext|>`` instead: it is the
+    closest thing GPT-2 has to a semantic "no information" reference.
+    """
+    if tokenizer.pad_token_id is not None:
+        return tokenizer.pad_token_id
+    eos = getattr(tokenizer, "eos_token_id", None)
+    if eos is not None:
+        return eos
+    return 0
+
+
+def _attention_token_importance(attn_matrix: np.ndarray) -> np.ndarray:
+    """Per-token importance = mean attention RECEIVED by each position.
+
+    For causal matrices (upper triangle structurally zero) position j can
+    only receive attention from queries i ≥ j, so the plain column mean
+    divides by the full N and systematically deflates later positions —
+    a positional artefact, not model behaviour. Divide by the number of
+    valid queries instead. Bidirectional matrices keep the plain mean.
+    """
+    n = attn_matrix.shape[0]
+    if n > 1 and float(np.triu(attn_matrix, k=1).sum()) < 1e-6:
+        valid_queries = n - np.arange(n)
+        return attn_matrix.sum(axis=0) / valid_queries
+    return attn_matrix.mean(axis=0)
 
 
 def compute_token_attributions(
@@ -211,9 +248,8 @@ def compute_token_attributions(
     embedding_layer = _get_embedding_layer(encoder_model, is_gpt2)
     lig = LayerIntegratedGradients(forward_fn, embedding_layer)
 
-    # Baseline: PAD-token ids (semantic "no information" reference)
-    pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
-    baseline_ids = torch.full_like(input_ids, pad_id)
+    # Baseline: PAD (BERT) / <|endoftext|> (GPT-2) — see _baseline_token_id
+    baseline_ids = torch.full_like(input_ids, _baseline_token_id(tokenizer))
 
     # Captum handles gradient enablement internally
     attributions = lig.attribute(
@@ -260,9 +296,10 @@ def compute_ig_attention_correlation(
     for layer_idx, layer_attn in enumerate(attentions):
         num_heads = layer_attn.shape[1]
         for head_idx in range(num_heads):
-            # Attention-based token importance: column mean
+            # Attention-based token importance: mean attention received,
+            # causal-support-aware (see _attention_token_importance)
             attn_matrix = layer_attn[0, head_idx].cpu().numpy()  # [seq, seq]
-            attn_imp = attn_matrix.mean(axis=0)  # [seq]
+            attn_imp = _attention_token_importance(attn_matrix)  # [seq]
 
             # Ensure same length (should be, but guard)
             min_len = min(len(attn_imp), len(ig_imp))
@@ -418,7 +455,7 @@ def compute_topk_overlap(
         num_heads = layer_attn.shape[1]
         for head_idx in range(num_heads):
             attn_matrix = layer_attn[0, head_idx].cpu().numpy()
-            attn_imp = attn_matrix.mean(axis=0)
+            attn_imp = _attention_token_importance(attn_matrix)
 
             min_len = min(len(attn_imp), len(ig_imp))
             attn_topk_indices = set(np.argsort(attn_imp[:min_len])[-actual_k:].tolist())
@@ -553,7 +590,7 @@ def compute_perturbation_correlations(
         num_heads = layer_attn.shape[1]
         for head_idx in range(num_heads):
             attn_matrix = layer_attn[0, head_idx].cpu().numpy()
-            attn_imp = attn_matrix.mean(axis=0)
+            attn_imp = _attention_token_importance(attn_matrix)
 
             ml = min(len(perturb_imp), len(attn_imp))
             a = attn_imp[:ml]
@@ -633,8 +670,9 @@ def compute_lrp_attributions(
 
     Returns
     -------
-    (np.ndarray, list[str])
-        Absolute LRP attribution per token [seq_len] and token strings.
+    (np.ndarray, list[str], str)
+        Absolute attribution per token [seq_len], token strings, and the
+        method that produced them ("DeepLift" or "IG-fallback").
     """
     device = next(encoder_model.parameters()).device
     inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=128)
@@ -656,8 +694,7 @@ def compute_lrp_attributions(
 
     try:
         ldl = LayerDeepLift(forward_fn, embedding_layer)
-        pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
-        baseline_ids = torch.full_like(input_ids, pad_id)
+        baseline_ids = torch.full_like(input_ids, _baseline_token_id(tokenizer))
 
         attributions = ldl.attribute(
             inputs=input_ids,
@@ -665,13 +702,14 @@ def compute_lrp_attributions(
             additional_forward_args=(attention_mask,),
         )
         token_attrs = attributions.squeeze(0).sum(dim=-1).abs()
-        return token_attrs.detach().cpu().numpy(), tokens
+        return token_attrs.detach().cpu().numpy(), tokens, "DeepLift"
     except Exception:
-        # Final fallback: use IG (already proven to work)
+        # Final fallback: reuse IG. The caller MUST surface this — the
+        # "LRP vs IG" agreement is then IG-vs-IG and proves nothing.
         token_attrs = compute_token_attributions(
             encoder_model, tokenizer, text, is_gpt2, n_steps=20,
         )
-        return token_attrs, tokens
+        return token_attrs, tokens, "IG-fallback"
 
 
 def batch_compute_lrp(
@@ -700,7 +738,7 @@ def batch_compute_lrp(
     -------
     LRPAnalysisBundle
     """
-    lrp_attrs, tokens = compute_lrp_attributions(
+    lrp_attrs, tokens, method = compute_lrp_attributions(
         encoder_model, tokenizer, text, is_gpt2,
     )
 
@@ -722,7 +760,7 @@ def batch_compute_lrp(
         num_heads = layer_attn.shape[1]
         for head_idx in range(num_heads):
             attn_matrix = layer_attn[0, head_idx].cpu().numpy()
-            attn_imp = attn_matrix.mean(axis=0)
+            attn_imp = _attention_token_importance(attn_matrix)
 
             ml = min(len(lrp_attrs), len(attn_imp))
             a = attn_imp[:ml]
@@ -742,6 +780,7 @@ def batch_compute_lrp(
         tokens=tokens,
         lrp_vs_ig_spearman=float(lrp_vs_ig),
         correlations=correlations,
+        method=method,
     )
 
 

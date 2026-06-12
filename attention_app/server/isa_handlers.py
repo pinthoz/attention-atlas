@@ -5,6 +5,7 @@ renderers, token-to-token heatmaps, detail info cards, and click-event
 handlers for the ISA section.
 """
 
+import html as _html
 import json
 import logging
 
@@ -163,13 +164,14 @@ def register_isa_handlers(
         def style_ticks(toks, hl_set):
             out = []
             for i, tok in enumerate(toks):
+                safe_tok = _html.escape(tok)
                 if i in hl_set:
                     out.append(
                         f"<span style='color:#ec4899;font-weight:bold;"
-                        f"font-size:12px'>{tok}</span>"
+                        f"font-size:12px'>{safe_tok}</span>"
                     )
                 else:
-                    out.append(tok)
+                    out.append(safe_tok)
             return out
 
         styled_target = style_ticks(toks_target, target_hl)

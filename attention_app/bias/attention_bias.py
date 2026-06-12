@@ -149,8 +149,19 @@ class AttentionBiasAnalyzer:
         # ν₀ = |B| / N  (same expected baseline)
         amplification_score = nu_observed / mu_expected if mu_expected > 0 else 0.0
 
-        # Maximum single attention weight to any biased key
-        max_bias_attention = float(attention_matrix[:, biased_mask].max())
+        # Maximum single attention weight to any biased key.
+        # Causal models: α_00 = 1.0 by construction (token 0 can only attend
+        # to itself), so exclude row 0 from the max — otherwise the hover
+        # shows a structural 1.0 for every head whenever the first token is
+        # flagged (common in GPT-2, which has no [CLS]). NOTE: BAR/BSR above
+        # deliberately keep row 0 — the calibrated thresholds were derived
+        # with that exact estimator and must stay consistent with it.
+        is_causal = seq_len > 1 and float(np.triu(attention_matrix, k=1).sum()) < 1e-6
+        if is_causal:
+            sub = attention_matrix[1:, biased_mask]
+            max_bias_attention = float(sub.max()) if sub.size else 0.0
+        else:
+            max_bias_attention = float(attention_matrix[:, biased_mask].max())
 
         # Specialisation flag: BAR > threshold
         specialized_for_bias = bias_attention_ratio > bar_threshold

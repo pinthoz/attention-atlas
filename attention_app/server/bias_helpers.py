@@ -4,6 +4,9 @@ These functions have **no reactive dependencies** and can be imported and
 tested independently of the Shiny server closure.
 """
 
+import functools
+import html as _html_lib
+import inspect
 import json
 import logging
 import re as _re
@@ -18,6 +21,50 @@ from ..models import ModelManager
 from ..ui.components import viz_header
 
 _logger = logging.getLogger(__name__)
+
+
+def _error_panel_html(panel_name, exc):
+    """Visible failure block shown in place of a panel that raised."""
+    msg = _html_lib.escape(f"{type(exc).__name__}: {exc}"[:300])
+    return ui.HTML(
+        f'<div style="padding:14px 16px;border:1px solid rgba(239,68,68,0.4);'
+        f'border-left:4px solid #ef4444;border-radius:8px;'
+        f'background:rgba(239,68,68,0.06);font-size:12px;color:#7f1d1d;">'
+        f'<b>{_html_lib.escape(panel_name)} failed to compute.</b>'
+        f'<div style="margin-top:6px;font-family:JetBrains Mono,monospace;'
+        f'font-size:10.5px;color:#991b1b;word-break:break-word;">{msg}</div>'
+        f'<div style="margin-top:6px;color:#9ca3af;">'
+        f'See the server log for the full traceback.</div>'
+        f'</div>'
+    )
+
+
+def visible_errors(panel_name):
+    """Decorator for renderers: uncaught exceptions become a visible error
+    panel instead of a blank output, so a failed panel is distinguishable
+    from a confusing one (essential during the user study). Supports both
+    sync and async renderers; the full traceback still goes to the log.
+    """
+    def deco(fn):
+        if inspect.iscoroutinefunction(fn):
+            @functools.wraps(fn)
+            async def awrapper(*args, **kwargs):
+                try:
+                    return await fn(*args, **kwargs)
+                except Exception as e:
+                    _logger.exception("Renderer %s failed", panel_name)
+                    return _error_panel_html(panel_name, e)
+            return awrapper
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except Exception as e:
+                _logger.exception("Renderer %s failed", panel_name)
+                return _error_panel_html(panel_name, e)
+        return wrapper
+    return deco
 
 
 # ── GUS-Net model mapping constants ──────────────────────────────────────
