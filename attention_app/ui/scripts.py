@@ -1100,31 +1100,26 @@ JS_TRANSITION_MODAL = """
                             <p>Given sentences Sₐ and Sᵦ with token indices [iₐ, iₐ₊₁) and [iᵦ, iᵦ₊₁):</p>
                             
                             <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #ff5ca9;">
-                                <strong style="color:#ff5ca9;">Step 1 - Layer Integration:</strong><br>
-                                A(i,j) = max<sub>l∈L</sub> α<sub>l</sub>(i,j)<br><br>
-                                <span style="color:#94a3b8;">where α<sub>l</sub>(i,j) = softmax(Q<sub>l,i</sub>K<sub>l,j</sub><sup>T</sup>/√d<sub>k</sub>)</span>
-                            </div>
-                            
-                            <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #3b82f6;">
-                                <strong style="color:#3b82f6;">Step 2 - Token Pair Aggregation:</strong><br>
-                                β<sub>h</sub>(Sₐ, Sᵦ) = max<sub>(i,j)∈Sₐ×Sᵦ</sub> A(i,j)<br><br>
-                                <span style="color:#94a3b8;">Maximum attention between any token pair from the two sentences</span>
-                            </div>
-                            
-                            <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #8b5cf6;">
-                                <strong style="color:#8b5cf6;">Step 3 - Head Aggregation:</strong><br>
-                                ISA(Sₐ, Sᵦ) = max<sub>h∈H</sub> β<sub>h</sub>(Sₐ, Sᵦ)<br><br>
-                                <span style="color:#94a3b8;">Maximum across all attention heads to preserve specialized patterns</span>
+                                <strong style="color:#ff5ca9;">Step 1 - Layer & Head Averaging:</strong><br>
+                                ᾱ(i,j) = mean<sub>l∈L, h∈H</sub> α<sub>l,h</sub>(i,j)<br><br>
+                                <span style="color:#94a3b8;">where α<sub>l,h</sub>(i,j) = softmax(Q<sub>l,h,i</sub>K<sub>l,h,j</sub><sup>T</sup>/√d<sub>k</sub>)</span>
                             </div>
 
-                            <h4 style="color: #ff5ca9; margin-top: 16px;">Why Maximum Aggregation?</h4>
-                            <p>We use <strong>max</strong> rather than averaging to preserve strong signals from individual attention heads. Research shows different heads specialize in capturing specific linguistic patterns (Clark et al., 2019), so averaging would dilute these specialized relationships.</p>
+                            <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #3b82f6;">
+                                <strong style="color:#3b82f6;">Step 2 - Attention Mass per Sentence Pair:</strong><br>
+                                ISA(Sₐ, Sᵦ) = (1/|Sₐ|) Σ<sub>i∈Sₐ</sub> Σ<sub>j∈Sᵦ</sub> ᾱ(i,j)<br><br>
+                                <span style="color:#94a3b8;">The average fraction of Sₐ's attention that lands on Sᵦ. Bounded [0, 1]. Attention to special tokens ([CLS]/[SEP] sink mass) is excluded, so rows sum to less than 1.</span>
+                            </div>
+
+                            <h4 style="color: #ff5ca9; margin-top: 16px;">Why Mean (Attention Mass)?</h4>
+                            <p>ISA reports <strong>average coupling</strong>: how much of one sentence's attention budget the other sentence receives. A max-of-max aggregation (used before 2026-06) measures only whether <em>any single strong token link</em> exists — one co-reference link sets the whole pair's score, making values outlier-dominated and hard to compare. Mass is robust, interpretable as a share, and the token drill-down (click a cell) shows exactly which token pairs carry it.</p>
 
                             <h4 style="color: #ff5ca9; margin-top: 16px;">BERT Properties (Bidirectional)</h4>
                             <ul style="padding-left: 20px; margin-bottom: 12px;">
                                 <li><strong>Full Attention:</strong> Every token can attend to all other tokens (no causal mask)</li>
-                                <li><strong>Near-Symmetric Matrix:</strong> ISA(Sₐ,Sᵦ) ≈ ISA(Sᵦ,Sₐ)</li>
-                                <li><strong>Interpretation:</strong> Measures mutual semantic/syntactic relationship strength</li>
+                                <li><strong>Directional Rows:</strong> row Sₐ gives the share of Sₐ's attention spent on each sentence; ISA(Sₐ,Sᵦ) and ISA(Sᵦ,Sₐ) are generally similar but not equal</li>
+                                <li><strong>Diagonal Dominance:</strong> most attention stays within the sentence, so Sₐ→Sₐ is the largest cell of each row; the interesting signal is in the off-diagonal shares</li>
+                                <li><strong>Interpretation:</strong> Measures mutual semantic/syntactic coupling strength</li>
                             </ul>
                             
                             <p style="font-size: 11px; color: #64748b; margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">📚 Reference: Seo, S., Yoo, S., Lee, H., Jang, Y., Park, J.H., & Kim, J. (2024). "A Sentence-Level Visualization of Attention in Large Language Models." SAVIS: <a href="https://pypi.org/project/savis" target="_blank" style="color:#ff5ca9;">pypi.org/project/savis</a></p>
@@ -1145,20 +1140,15 @@ JS_TRANSITION_MODAL = """
                             <h4 style="color: #ff5ca9; margin-top: 16px;">Causal ISA Computation</h4>
                             
                             <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #ff5ca9;">
-                                <strong style="color:#ff5ca9;">Step 1 - Layer Integration (with causal mask):</strong><br>
-                                A(i,j) = max<sub>l∈L</sub> α<sub>l</sub>(i,j) &nbsp;&nbsp;<strong style="color:#ef4444;">if i ≥ j, else 0</strong><br><br>
+                                <strong style="color:#ff5ca9;">Step 1 - Layer & Head Averaging (with causal mask):</strong><br>
+                                ᾱ(i,j) = mean<sub>l∈L, h∈H</sub> α<sub>l,h</sub>(i,j) &nbsp;&nbsp;<strong style="color:#ef4444;">= 0 when j &gt; i</strong><br><br>
                                 <span style="color:#94a3b8;">Causal constraint: future tokens are masked (attention = 0)</span>
                             </div>
-                            
+
                             <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #3b82f6;">
-                                <strong style="color:#3b82f6;">Step 2 - Token Pair Aggregation (valid pairs only):</strong><br>
-                                β<sub>h</sub>(Sₐ, Sᵦ) = max<sub>(i,j)∈Sₐ×Sᵦ, i≥j</sub> A(i,j)<br><br>
-                                <span style="color:#94a3b8;">Only token pairs where query position ≥ key position</span>
-                            </div>
-                            
-                            <div style="background: rgba(255,255,255,0.05); padding: 14px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin: 12px 0; border-left: 3px solid #8b5cf6;">
-                                <strong style="color:#8b5cf6;">Step 3 - Head Aggregation:</strong><br>
-                                ISA(Sₐ, Sᵦ) = max<sub>h∈H</sub> β<sub>h</sub>(Sₐ, Sᵦ)
+                                <strong style="color:#3b82f6;">Step 2 - Attention Mass per Sentence Pair:</strong><br>
+                                ISA(Sₐ, Sᵦ) = (1/|Sₐ|) Σ<sub>i∈Sₐ</sub> Σ<sub>j∈Sᵦ</sub> ᾱ(i,j)<br><br>
+                                <span style="color:#94a3b8;">The average fraction of Sₐ's attention that lands on Sᵦ. For sentences after Sₐ this is structurally 0.</span>
                             </div>
 
                             <h4 style="color: #ff5ca9; margin-top: 16px;">GPT-2 Properties (Unidirectional)</h4>
@@ -1166,6 +1156,7 @@ JS_TRANSITION_MODAL = """
                                 <li><strong>Causal Mask:</strong> Tokens only attend to previous tokens (left context)</li>
                                 <li><strong>Lower Triangular Matrix:</strong> ISA(Sₐ,Sᵦ) = 0 when Sₐ comes before Sᵦ</li>
                                 <li><strong>Asymmetric:</strong> ISA(Sₐ,Sᵦ) ≠ ISA(Sᵦ,Sₐ) - directionality matters!</li>
+                                <li><strong>First-Sentence Inflation:</strong> GPT-2 parks "spare" attention on the first token (attention sink, Clark et al. 2019), so the first sentence's column absorbs that mass - compare later columns against each other</li>
                                 <li><strong>Interpretation:</strong> Measures how much later sentence Sₐ <em>depends on</em> earlier sentence Sᵦ</li>
                             </ul>
                             
@@ -1506,14 +1497,14 @@ JS_TRANSITION_MODAL = """
                     <p>Quantifies attention flow between distinct text segments - reduces token-level complexity O(n²) to sentence-level O(m²).</p>
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #ff5ca9;">
-                        <strong style="color:#ff5ca9;">Three-Level Max Pooling:</strong><br>
-                        <code style="font-size:10px;">ISA(S<sub>a</sub>,S<sub>b</sub>) = max<sub>heads</sub>(max<sub>tokens∈S<sub>a</sub>×S<sub>b</sub></sub>(max<sub>layers</sub>(α<sub>ij</sub>)))</code>
+                        <strong style="color:#ff5ca9;">Attention Mass (mean aggregation):</strong><br>
+                        <code style="font-size:10px;">ISA(S<sub>a</sub>,S<sub>b</sub>) = (1/|S<sub>a</sub>|) Σ<sub>i∈S<sub>a</sub></sub> Σ<sub>j∈S<sub>b</sub></sub> mean<sub>layers,heads</sub>(α<sub>ij</sub>)</code>
                     </div>
 
                     <ul style="font-size:13px;">
-                        <li><strong>&gt;0.8:</strong> Strong cross-sentence coupling</li>
-                        <li><strong>0.4-0.8:</strong> Moderate interaction</li>
-                        <li><strong>&lt;0.4:</strong> Independent processing</li>
+                        <li><strong>Value:</strong> the average share of S<sub>a</sub>'s attention received by S<sub>b</sub> (range 0-1)</li>
+                        <li><strong>Diagonal dominates:</strong> most attention stays within a sentence - read the off-diagonal cells relative to each other, not against fixed cutoffs</li>
+                        <li><strong>Rows sum to &lt;1:</strong> attention to special tokens ([CLS]/[SEP] sink) is excluded</li>
                     </ul>
 
                     <p style="font-size:12px; color:#94a3b8;"><strong>BERT:</strong> Symmetric matrix (bidirectional)<br>

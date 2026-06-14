@@ -54,7 +54,9 @@ def isa_overlay_modal():
                     {"class": "isa-explanation", "style": "margin-bottom: 20px; font-size: 13px; line-height: 1.8; color: #cbd5e1;"},
                     ui.tags.h4({"style": "color: #ff5ca9; font-size: 14px; margin-bottom: 8px;"}, "What does this represent?"),
                     ui.tags.p(
-                        "This value represents the maximum attention strength between any token in Sentence X and any token in Sentence Y, aggregated across all heads and layers."
+                        "This value is the average fraction of Sentence X's attention that lands on Sentence Y, "
+                        "with attention averaged over all layers and heads and attention to special tokens excluded. "
+                        "It ranges from 0 to 1 and reads as a share of X's attention budget."
                     ),
                     ui.tags.h4({"style": "color: #ff5ca9; font-size: 14px; margin-bottom: 8px; margin-top: 16px;"}, "Interpretation"),
                     ui.tags.ul(

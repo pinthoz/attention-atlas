@@ -3161,7 +3161,12 @@ def get_isa_scatter_view(res, suffix="", vertical_layout=False, plot_only=False,
 
     customdata = list(zip(y_flat, x_flat))
 
-    sizes = np.clip(np.array(scores) * 40 + 12, 12, 80).tolist()
+    # Size bubbles relative to the matrix maximum: ISA mass values are
+    # absolute shares (diagonal ~0.5-0.8, off-diagonal often <0.2), so a
+    # fixed absolute scale would make off-diagonal bubbles unreadably small.
+    _scores_arr = np.array(scores)
+    _max_score = float(_scores_arr.max()) if _scores_arr.size and _scores_arr.max() > 0 else 1.0
+    sizes = np.clip((_scores_arr / _max_score) * 48 + 12, 12, 80).tolist()
 
     # Custom colorscale matching the app's theme (Pink/Blue/Purple)
     custom_colorscale = [
@@ -3303,18 +3308,19 @@ def get_isa_scatter_view(res, suffix="", vertical_layout=False, plot_only=False,
         {"class": "card"},
         viz_header(
             "Inter-Sentence Attention (ISA)",
-            "Heatmap of sentence-pair attention scores computed via three-level max pooling (layers \u2192 heads \u2192 tokens).",
+            "Heatmap of sentence-pair attention mass: the average share of each sentence's attention received by every other sentence.",
             """
             <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Inter-Sentence Attention (ISA)</strong>
-            <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Measures attention strength between sentence pairs-indicates cross-sentence attention flow, not semantic similarity.</p>
-            <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>max<sub>layers</sub>(max<sub>heads</sub>(max<sub>tokens</sub>(\u03b1<sub>ij</sub>)))</code></p>
+            <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> The average fraction of the row sentence's attention that lands on the column sentence-indicates cross-sentence attention flow, not semantic similarity.</p>
+            <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> <code style='font-size:10px;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px'>ISA(S<sub>a</sub>,S<sub>b</sub>) = (1/|S<sub>a</sub>|) \u03a3<sub>i\u2208S<sub>a</sub></sub> \u03a3<sub>j\u2208S<sub>b</sub></sub> mean<sub>layers,heads</sub>(\u03b1<sub>ij</sub>)</code></p>
 
             <div style='background:rgba(255,255,255,0.05);border-radius:6px;padding:10px;margin-top:8px'>
                 <strong style='color:#8b5cf6;font-size:11px'>Score Interpretation:</strong>
-                <div style='display:flex;justify-content:space-between;margin-top:6px;font-size:11px'>
-                    <span style='color:#22c55e'>\u25cf &gt;0.8: Strong coupling</span>
-                    <span style='color:#eab308'>\u25cf 0.4-0.8: Moderate</span>
-                    <span style='color:#ef4444'>\u25cf &lt;0.4: Independent</span>
+                <div style='margin-top:6px;font-size:11px;color:#94a3b8;line-height:1.6'>
+                    Values are shares in [0,1]. Most attention stays within the sentence, so the diagonal dominates -
+                    read the off-diagonal cells <em>relative to each other</em>, not against fixed cutoffs.
+                    Rows sum to &lt;1 because attention to special tokens ([CLS]/[SEP] sink) is excluded
+                    (in word-level aggregation the matrix is renormalised over content words, so rows sum to ≈1).
                 </div>
             </div>
             """ + (

@@ -915,6 +915,9 @@ def create_bias_sidebar():
                     var el = document.getElementById(data.id);
                     if (el) {
                         el.value = data.value;
+                        // Fire the native input event so the value label next to
+                        // the slider updates too (restores previously left it stale).
+                        try { el.dispatchEvent(new Event('input', {bubbles: true})); } catch (e) {}
                         if (data.inputId) {
                             Shiny.setInputValue(data.inputId, data.value, {priority: 'event'});
                         }

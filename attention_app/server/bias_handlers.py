@@ -896,6 +896,12 @@ def bias_server_handlers(input, output, session):
         except Exception:
             _logger.debug("Suppressed exception", exc_info=True)
             pass
+        # BAR specialisation threshold (calibrated; user may have moved it)
+        try:
+            data["bias_bar_threshold"] = float(input.bias_bar_threshold())
+        except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
+            pass
 
         # Reproducibility metadata
         try:
@@ -982,6 +988,11 @@ def bias_server_handlers(input, output, session):
                 top_k = int(data["bias_top_k"])
                 await session.send_custom_message("bias_set_slider",
                     {"id": "bias-topk-slider", "value": top_k, "inputId": "bias_top_k"})
+            if "bias_bar_threshold" in data:
+                await session.send_custom_message("bias_set_slider",
+                    {"id": "bias-bar-threshold-slider",
+                     "value": float(data["bias_bar_threshold"]),
+                     "inputId": "bias_bar_threshold"})
 
             ui.notification_show("Bias session loaded successfully.", type="message", duration=3)
 

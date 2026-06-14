@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import nltk
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 
 # Ensure nltk data is downloaded
 # Ensure nltk data is downloaded
@@ -116,11 +116,88 @@ def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> 
     return sentences, final_boundaries
 
 
-def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs, 
-                model_type: str = "bert") -> Dict:
+_ISA_SPECIAL = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "<|endoftext|>", "<|pad|>"}
+
+
+def _stack_attentions(attentions) -> torch.Tensor:
+    """Stack per-layer attention tensors into (layers, heads, seq, seq)."""
+    if isinstance(attentions[0], tuple):
+        return torch.stack([att[0] for att in attentions], dim=0)
+    if len(attentions[0].shape) == 4:  # (batch, heads, seq, seq)
+        return torch.stack([att[0] for att in attentions], dim=0)
+    return torch.stack(attentions, dim=0)
+
+
+def _sentence_token_indices(tokens: List[str], sentence_boundaries_ids: List[int],
+                            num_sentences: int) -> List[List[int]]:
+    """Per-sentence token index lists, EXCLUDING special tokens.
+
+    Contiguous ranges would otherwise sweep in [SEP] (both the final one and
+    the mid-sequence one from sentence-pair encoding) — and attention to
+    [SEP] is a well-documented sink (Clark et al., 2019), which would
+    distort the affected sentence's ISA row/column.
+    """
+    sent_indices: List[List[int]] = []
+    for k in range(num_sentences):
+        start = sentence_boundaries_ids[k]
+        end = sentence_boundaries_ids[k + 1] if k < num_sentences - 1 else len(tokens)
+        sent_indices.append(
+            [i for i in range(start, end) if tokens[i] not in _ISA_SPECIAL]
+        )
+    return sent_indices
+
+
+def _isa_pair_score(stacked: torch.Tensor, row_ix: List[int], col_ix: List[int],
+                    aggregation_method: str) -> float:
+    """Score one sentence pair (Sa=row queries, Sb=col keys).
+
+    "mean" (default since 2026-06-12) — attention MASS:
+        ᾱ = mean over layers and heads → (seq, seq)
+        ISA(Sa, Sb) = (1/|Sa|) Σ_{i∈Sa} Σ_{j∈Sb} ᾱ[i, j]
+        = the average fraction of Sa's attention that lands on Sb.
+        Bounded [0, 1], robust, directly interpretable. Rows do not sum
+        to 1 across sentences because attention to special tokens (the
+        [CLS]/[SEP] sink mass) is deliberately excluded.
+
+    "max" — legacy salience measure (pre-2026-06-12 default):
+        ISA(Sa, Sb) = max over layers, heads and token pairs of α.
+        A single strong token link sets the whole pair's score; kept as
+        an explicit option for "does ANY strong link exist?" questions.
+
+    "last_layer" — mass computed on the last layer only (mean over heads).
+    """
+    if not row_ix or not col_ix:
+        return 0.0
+    if aggregation_method == "max":
+        A = torch.max(stacked, dim=0)[0]            # (heads, seq, seq)
+        sub = A[:, row_ix][:, :, col_ix]
+        return float(torch.max(sub).item()) if sub.numel() else 0.0
+    if aggregation_method == "last_layer":
+        A = stacked[-1].mean(dim=0)                 # (seq, seq)
+    elif aggregation_method == "mean":
+        A = stacked.mean(dim=(0, 1))                # (seq, seq)
+    else:
+        raise ValueError(f"Unknown aggregation method: {aggregation_method}")
+    sub = A[row_ix][:, col_ix]
+    if sub.numel() == 0:
+        return 0.0
+    # Mass: sum over keys (Sb), mean over queries (Sa).
+    return float(sub.sum(dim=1).mean().item())
+
+
+def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs,
+                model_type: str = "bert",
+                aggregation_method: str = "mean") -> Dict:
     """
     Compute Inter-Sentence Attention (ISA) matrix.
-    
+
+    Default aggregation is attention MASS ("mean", since 2026-06-12):
+    ISA(Sa, Sb) = average fraction of Sa's attention received by Sb,
+    with attention to special tokens excluded. The previous default
+    ("max": max over layers, heads and token pairs) is available via
+    ``aggregation_method="max"`` — it measures the existence of a single
+    strong link, not coupling, and is outlier-dominated by construction.
+
     Args:
         attentions: Tuple of tensors (num_layers, batch, num_heads, seq_len, seq_len)
                    or list of tensors.
@@ -129,14 +206,16 @@ def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs,
         tokenizer: The tokenizer used.
         inputs: The inputs dict (optional, for offset mapping if we could use it).
         model_type: "bert" for bidirectional models, "gpt" for causal models
-        
+        aggregation_method: "mean" (default), "max", or "last_layer"
+
     Returns:
         dict: {
             "sentence_texts": List[str],
             "sentence_boundaries_ids": List[int],
             "sentence_attention_matrix": np.ndarray (num_sentences, num_sentences),
             "model_type": str,
-            "is_causal": bool
+            "is_causal": bool,
+            "aggregation_method": str
         }
     """
     # 1. Sentence Segmentation
@@ -150,86 +229,38 @@ def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs,
             "sentence_boundaries_ids": sentence_boundaries_ids,
             "sentence_attention_matrix": np.zeros((0, 0)),
             "model_type": model_type,
-            "is_causal": model_type == "gpt"
+            "is_causal": model_type == "gpt",
+            "aggregation_method": aggregation_method
         }
-    
+
     if num_sentences == 1:
-        # If only one sentence, return trivial result
+        # If only one sentence, return trivial result (display convention)
         return {
             "sentence_texts": sentence_texts,
             "sentence_boundaries_ids": sentence_boundaries_ids,
             "sentence_attention_matrix": np.ones((1, 1)),
             "model_type": model_type,
-            "is_causal": model_type == "gpt"
+            "is_causal": model_type == "gpt",
+            "aggregation_method": aggregation_method
         }
 
-    # 2. Integrate Token-Level Attention (Layer Aggregation)
-    # Stack attentions: (num_layers, num_heads, seq_len, seq_len)
-    # attentions is usually a tuple of tensors, each (batch, num_heads, seq_len, seq_len)
-    # We assume batch_size=1
-    
-    # Handle different attention formats
-    if isinstance(attentions[0], tuple):
-        # For some models, attentions might be nested
-        stacked_attentions = torch.stack([att[0] for att in attentions], dim=0)
-    else:
-        # Standard format: just stack directly (removing batch dimension if needed)
-        if len(attentions[0].shape) == 4:  # (batch, heads, seq, seq)
-            stacked_attentions = torch.stack([att[0] for att in attentions], dim=0)
-        else:  # Already (heads, seq, seq)
-            stacked_attentions = torch.stack(attentions, dim=0)
-    
-    # stacked_attentions shape: (num_layers, num_heads, seq_len, seq_len)
-    
-    # Max across layers - A shape: (num_heads, seq_len, seq_len)
-    A = torch.max(stacked_attentions, dim=0)[0]
-    
+    # 2. Stack attentions: (num_layers, num_heads, seq_len, seq_len)
+    stacked_attentions = _stack_attentions(attentions)
+
     # 3. Aggregate Token Attention -> Sentence Attention
-    # ISA(Sa, Sb) = max_h max_{i in Sa, j in Sb} A[h, i, j]
-    
-    # We need token ranges for each sentence.
-    # sentence_boundaries_ids gives start indices.
-    # End index is the start of next sentence, or end of sequence.
-    
-    # Build per-sentence token index lists, EXCLUDING special tokens.
-    # Contiguous ranges would otherwise sweep in [SEP] (both the final one
-    # and the mid-sequence one from sentence-pair encoding) — and attention
-    # to [SEP] is a well-documented sink (Clark et al., 2019), which would
-    # inflate the affected sentence's ISA row/column under max aggregation.
-    _special = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "<|endoftext|>", "<|pad|>"}
-    sent_indices: List[List[int]] = []
-    for k in range(num_sentences):
-        start = sentence_boundaries_ids[k]
-        if k < num_sentences - 1:
-            end = sentence_boundaries_ids[k+1]
-        else:
-            # For the last sentence, go until the end of sequence
-            end = len(tokens)
-        sent_indices.append(
-            [i for i in range(start, end) if tokens[i] not in _special]
-        )
+    #    (see _isa_pair_score for the per-method definitions)
+    sent_indices = _sentence_token_indices(tokens, sentence_boundaries_ids, num_sentences)
 
     isa_matrix = np.zeros((num_sentences, num_sentences))
-
     for r_idx, row_ix in enumerate(sent_indices):
         for c_idx, col_ix in enumerate(sent_indices):
-            if not row_ix or not col_ix:
-                continue
-
-            # Extract submatrix for this sentence pair: (H, Sa_len, Sb_len)
-            sub_att = A[:, row_ix][:, :, col_ix]
-
-            # Max over heads and token positions
-            if sub_att.numel() > 0:
-                val = torch.max(sub_att).item()
-            else:
-                val = 0.0
-
-            isa_matrix[r_idx, c_idx] = val
+            isa_matrix[r_idx, c_idx] = _isa_pair_score(
+                stacked_attentions, row_ix, col_ix, aggregation_method
+            )
 
     # Final safety check for NaNs
     isa_matrix = np.nan_to_num(isa_matrix, nan=0.0)
-    
+
     # Add metadata about causality
     # For causal models (GPT), the upper triangle should be mostly zeros
     # We can detect this automatically
@@ -239,56 +270,57 @@ def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs,
         upper_triangle = np.triu(isa_matrix, k=1)
         if np.mean(upper_triangle) < 0.01:  # Threshold for "mostly zero"
             is_causal = True
-    
+
     return {
         "sentence_texts": sentence_texts,
         "sentence_boundaries_ids": sentence_boundaries_ids,
         "sentence_attention_matrix": isa_matrix,
         "model_type": model_type,
-        "is_causal": is_causal
+        "is_causal": is_causal,
+        "aggregation_method": aggregation_method
     }
 
 
-def get_sentence_token_attention(attentions, tokens: List[str], sent_x_idx: int, sent_y_idx: int, 
-                                   sentence_boundaries_ids: List[int]) -> Tuple[np.ndarray, List[str], int]:
+def get_sentence_token_attention(attentions, tokens: List[str], sent_x_idx: int, sent_y_idx: int,
+                                   sentence_boundaries_ids: List[int],
+                                   aggregation_method: str = "mean") -> Tuple[np.ndarray, List[str], int]:
     """
     Extract token-level attention for a specific sentence pair.
     Works for both bidirectional (BERT) and causal (GPT) models.
-    
+
+    The token matrix uses the SAME layer/head aggregation as the ISA matrix
+    (default: mean over layers and heads), so the drill-down explains the
+    cell the user clicked. ``aggregation_method="max"`` reproduces the
+    legacy max-over-layers-and-heads view.
+
     Args:
         attentions: Tuple of attention tensors (num_layers, batch, num_heads, seq_len, seq_len)
         tokens: List of token strings
         sent_x_idx: Index of source sentence X (target/query)
         sent_y_idx: Index of source sentence Y (source/key)
         sentence_boundaries_ids: List of sentence start indices
-        
+        aggregation_method: "mean" (default), "max", or "last_layer"
+
     Returns:
-        attention_data: numpy array (len(sent_x_tokens), len(sent_y_tokens)) - max attention across layers & heads
+        attention_data: numpy array (len(sent_x_tokens), len(sent_y_tokens))
         tokens_combined: concatenated list of [sent_x_tokens, sent_y_tokens]
         sentence_b_start: index where sent_y tokens start in tokens_combined
     """
-    # Handle different attention formats
-    if isinstance(attentions[0], tuple):
-        stacked_attentions = torch.stack([att[0] for att in attentions], dim=0)
-    else:
-        if len(attentions[0].shape) == 4:
-            stacked_attentions = torch.stack([att[0] for att in attentions], dim=0)
-        else:
-            stacked_attentions = torch.stack(attentions, dim=0)
-    
+    stacked_attentions = _stack_attentions(attentions)
     # stacked_attentions shape: (num_layers, num_heads, seq_len, seq_len)
-    
-    # Max over layers: A shape: (num_heads, seq_len, seq_len)
-    A = torch.max(stacked_attentions, dim=0)[0]
-    
-    # Max over heads: A_max shape: (seq_len, seq_len)
-    A_max = torch.max(A, dim=0)[0].cpu().numpy()
-    
+
+    if aggregation_method == "max":
+        # Legacy: max over layers, then heads
+        A_tok = torch.max(torch.max(stacked_attentions, dim=0)[0], dim=0)[0].cpu().numpy()
+    elif aggregation_method == "last_layer":
+        A_tok = stacked_attentions[-1].mean(dim=0).cpu().numpy()
+    else:  # "mean"
+        A_tok = stacked_attentions.mean(dim=(0, 1)).cpu().numpy()
+
     # Get token index lists for the two sentences, excluding special tokens
     # so the drill-down stays consistent with the ISA matrix (which also
     # excludes them; see compute_isa).
     num_sentences = len(sentence_boundaries_ids)
-    _special = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "<|endoftext|>", "<|pad|>"}
 
     def get_indices(idx):
         start = sentence_boundaries_ids[idx]
@@ -296,13 +328,13 @@ def get_sentence_token_attention(attentions, tokens: List[str], sent_x_idx: int,
             end = sentence_boundaries_ids[idx + 1]
         else:
             end = len(tokens)
-        return [i for i in range(start, end) if tokens[i] not in _special]
+        return [i for i in range(start, end) if tokens[i] not in _ISA_SPECIAL]
 
     ix_x = get_indices(sent_x_idx)
     ix_y = get_indices(sent_y_idx)
 
     # Extract submatrix: rows=sent_x (query), cols=sent_y (key)
-    sub_att = A_max[np.ix_(ix_x, ix_y)] if ix_x and ix_y else np.zeros((0, 0))
+    sub_att = A_tok[np.ix_(ix_x, ix_y)] if ix_x and ix_y else np.zeros((0, 0))
 
     # Extract tokens
     toks_x = [tokens[i] for i in ix_x]
@@ -318,110 +350,23 @@ def get_sentence_token_attention(attentions, tokens: List[str], sent_x_idx: int,
 # Additional utility functions for GPT-specific analysis
 
 def compute_isa_with_aggregation(attentions, tokens: List[str], text: str, tokenizer, inputs,
-                                  model_type: str = "bert", 
-                                  aggregation_method: str = "max") -> Dict:
+                                  model_type: str = "bert",
+                                  aggregation_method: str = "mean") -> Dict:
     """
-    Compute ISA with different aggregation methods.
-    
+    Compute ISA with an explicit aggregation method.
+
+    Thin wrapper over compute_isa, kept for backward compatibility. The
+    methods now have honest semantics (see _isa_pair_score): the previous
+    implementation's "mean" averaged over layers only and still took the
+    max over heads and token pairs.
+
     Args:
-        attentions: Attention tensors
-        tokens: Token strings
-        text: Original text
-        tokenizer: Tokenizer
-        inputs: Input dict
-        model_type: "bert" or "gpt"
-        aggregation_method: "max" (default), "mean", or "last_layer"
-        
-    Returns:
-        ISA result dictionary with aggregation_method field
+        aggregation_method: "mean" (default; attention mass), "max"
+            (legacy salience), or "last_layer" (mass on last layer).
     """
-    sentence_texts, sentence_boundaries_ids = get_sentence_boundaries(text, tokens, tokenizer, inputs)
-    num_sentences = len(sentence_texts)
-    
-    if num_sentences < 1:
-        return {
-            "sentence_texts": sentence_texts,
-            "sentence_boundaries_ids": sentence_boundaries_ids,
-            "sentence_attention_matrix": np.zeros((0, 0)),
-            "model_type": model_type,
-            "is_causal": model_type == "gpt",
-            "aggregation_method": aggregation_method
-        }
-    
-    # Handle different attention formats
-    if isinstance(attentions[0], tuple):
-        stacked_attentions = torch.stack([att[0] for att in attentions], dim=0)
-    else:
-        if len(attentions[0].shape) == 4:
-            stacked_attentions = torch.stack([att[0] for att in attentions], dim=0)
-        else:
-            stacked_attentions = torch.stack(attentions, dim=0)
-    
-    # stacked_attentions shape: (num_layers, num_heads, seq_len, seq_len)
-    
-    # Apply aggregation method
-    if aggregation_method == "max":
-        # Max across layers, then heads
-        A = torch.max(stacked_attentions, dim=0)[0]  # (num_heads, seq_len, seq_len)
-    elif aggregation_method == "mean":
-        # Mean across layers and heads
-        A = stacked_attentions.mean(dim=0)  # (num_heads, seq_len, seq_len)
-    elif aggregation_method == "last_layer":
-        # Only use last layer
-        A = stacked_attentions[-1]  # (num_heads, seq_len, seq_len)
-    else:
-        raise ValueError(f"Unknown aggregation method: {aggregation_method}")
-    
-    # Per-sentence token index lists, excluding special tokens (see the
-    # matching comment in compute_isa for the [SEP]-sink rationale).
-    _special = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "<|endoftext|>", "<|pad|>"}
-    sent_indices = []
-    for k in range(num_sentences):
-        start = sentence_boundaries_ids[k]
-        if k < num_sentences - 1:
-            end = sentence_boundaries_ids[k+1]
-        else:
-            end = len(tokens)
-        sent_indices.append(
-            [i for i in range(start, end) if tokens[i] not in _special]
-        )
-
-    isa_matrix = np.zeros((num_sentences, num_sentences))
-
-    for r_idx, row_ix in enumerate(sent_indices):
-        for c_idx, col_ix in enumerate(sent_indices):
-            if not row_ix or not col_ix:
-                continue
-
-            # Extract submatrix: (num_heads, Sa_len, Sb_len)
-            sub_att = A[:, row_ix][:, :, col_ix]
-
-            # Max over heads and positions
-            if sub_att.numel() > 0:
-                val = torch.max(sub_att).item()
-            else:
-                val = 0.0
-
-            isa_matrix[r_idx, c_idx] = val
-
-    # Safety check
-    isa_matrix = np.nan_to_num(isa_matrix, nan=0.0)
-    
-    # Detect causality
-    is_causal = False
-    if num_sentences > 1:
-        upper_triangle = np.triu(isa_matrix, k=1)
-        if np.mean(upper_triangle) < 0.01:
-            is_causal = True
-    
-    return {
-        "sentence_texts": sentence_texts,
-        "sentence_boundaries_ids": sentence_boundaries_ids,
-        "sentence_attention_matrix": isa_matrix,
-        "model_type": model_type,
-        "is_causal": is_causal,
-        "aggregation_method": aggregation_method
-    }
+    return compute_isa(attentions, tokens, text, tokenizer, inputs,
+                       model_type=model_type,
+                       aggregation_method=aggregation_method)
 
 
 def analyze_sentence_dependencies(isa_result: Dict) -> Dict:
