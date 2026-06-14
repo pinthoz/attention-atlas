@@ -1507,7 +1507,7 @@ JS_TRANSITION_MODAL = """
                         <li><strong>Rows sum to &lt;1:</strong> attention to special tokens ([CLS]/[SEP] sink) is excluded</li>
                     </ul>
 
-                    <p style="font-size:12px; color:#94a3b8;"><strong>BERT:</strong> Symmetric matrix (bidirectional)<br>
+                    <p style="font-size:12px; color:#94a3b8;"><strong>BERT:</strong> Directional rows, near-symmetric but not equal (rows are normalised by source-sentence length)<br>
                     <strong>GPT-2:</strong> Lower triangular (causal - later→earlier only)</p>
                 `,
                 'Positional Embeddings_Sum & Layer Normalization': `
