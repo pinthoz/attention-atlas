@@ -240,23 +240,31 @@ Computes **6 quantitative metrics** aggregated across layers/heads:
 - **Specialized Architectures**: Utilizes GUS-Net (fine-tuned BERT and GPT-2 models) trained specifically for token-level bias classification.
 - **Dual-Pipeline Comparison**: Side-by-side architecture processing allowing direct comparison between different models (e.g., BERT vs. GPT-2) or different prompts.
 
-#### Overview & Detection
-- **Token-Level Bias Classification**: Detects and highlights tokens belonging to Generalization (GEN), Unfairness (UNFAIR), and Stereotypes (STEREO) categories.
-- **Bias Confidence Breakdown**: Detailed statistical bar charts and scatter plots showing model confidence for detected biased tokens.
-- **Interactive Thresholds**: Real-time adjustment of sensitivity thresholds tracking biases > 0.05 probability.
+The bias section is organised as an accordion with **five panels**:
 
-#### Technical Analysis
-- **Attention × Bias Correlation**: Interactive BAR heatmaps, combined attention+bias views, and propagation analyses showing which heads amplify or suppress biased tokens.
-- **Faithfulness Metrics**: Integrated Gradients, perturbation analysis, LRP-style cross-checks, and head ablation to test whether salient attention patterns align with attribution evidence.
+#### 1. Overview & Detection
+- **Token-Level Bias Classification**: GUS-Net tags each token as `O` (none), `GEN` (generalisation), `UNFAIR` (unfair language), or `STEREO` (stereotype).
+- **Detected Bias Tokens**: Ranked list of flagged tokens with per-category confidence.
+- **Interactive Thresholds**: Real-time adjustment of per-category sensitivity thresholds.
 
-#### Counterfactuals, Comparison, and Batch Analysis
-- **Counterfactual Probes**: Generate lexical demographic swaps to compare original and counterfactual prompts side by side.
-- **Compare Modes**: Compare models, prompts, or attention sources (base encoder vs GUS-Net) inside the same bias workflow.
-- **Batch Reports**: Run the full pipeline over CSV/JSON inputs and export structured reports for downstream analysis.
+#### 2. Technical Analysis
+- **Token-Level Bias Strip**: Inline view of the bias signal across the full token sequence.
+- **Confidence Breakdown**: Bar charts and scatter plots of model confidence for the detected tokens.
 
-#### StereoSet Evaluation
-- **Systematic Benchmark Dashboard**: Built-in evaluation using the StereoSet benchmark suite.
-- **Stereodependent vs. Stereotypical**: Scatter plots validating the model's performance on stereotype detection against general language modeling capability.
+#### 3. Attention × Bias Correlation
+- **Bias–Attention Ratio (BAR) heatmaps**: Head-level view of which heads attend to biased tokens, plus a combined attention + bias view.
+- **Propagation across layers** and a table of the most bias-focused heads.
+
+#### 4. Faithfulness Validation
+- **Gradient Agreement**: Integrated Gradients as the primary attribution baseline.
+- **Causal Head Intervention**: Head ablation (Combined / GEN / UNFAIR / STEREO rankings) testing whether bias-focused heads are causally relevant.
+- **Perturbation & Minimality** and **cross-validation** with LRP / DeepLift.
+
+#### 5. StereoSet Evaluation
+- **Benchmark Overview**: LMS / SS / ICAT scores.
+- **Category Breakdown, Demographic Slices, Sensitive Heads**, and an **Example Explorer**.
+
+Compare-mode runs two models or two prompts side by side throughout the bias workflow. Counterfactual probes (lexical demographic swaps) and batch CSV/JSON reports are also available.
 
 ---
 
@@ -297,7 +305,7 @@ Attention Atlas supports multiple Transformer architectures with automatic UI ad
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/attention-atlas.git
+git clone https://github.com/pinthoz/attention-atlas.git
 cd attention-atlas
 
 # 2. Create a virtual environment (recommended)
@@ -520,7 +528,9 @@ attention-atlas/
 │       ├── attention_bias.py           # AttentionBiasAnalyzer class
 │       ├── gusnet_detector.py          # GUS-Net model loading + token bias detection
 │       ├── visualizations.py           # Bias visualization renderers
-│       ├── train_model.py              # Model training utilities
+│       ├── integrated_gradients.py     # IG attribution + faithfulness
+│       ├── head_ablation.py            # Causal head intervention
+│       ├── gus_net_training.py         # GUS-Net training utilities
 │       ├── feature_extraction.py       # Feature extraction for classifiers
 │       └── [notebooks]                 # BERT/GPT-2 bias classification analysis
 │

@@ -133,7 +133,7 @@ Ethical AI analysis and bias quantification using specialized GUS-Net models:
 - **Discourse Understanding**: Cross-sentence dependency analysis via ISA
 - **Model Comparison**: Side-by-side architectural behavior analysis
 - **Educational Tool**: Teaching transformer architecture and attention mechanisms
-- **Bias Detection**: Ethical AI auditing and bias quantification (coming soon)
+- **Bias Detection**: Ethical AI auditing and bias quantification (GUS-Net token classification, attention–bias correlation, faithfulness validation, StereoSet)
 
 ---
 
@@ -155,9 +155,9 @@ Based on: **Golshanrad & Faghih (2024)**, *From Attention to Assurance: Enhancin
 
 ## Documentation
 
-- **[README.md](https://github.com/yourusername/attention-atlas/blob/main/README.md)**: Complete feature documentation, installation guide, usage instructions
-- **[ARCHITECTURE.md](https://github.com/yourusername/attention-atlas/blob/main/ARCHITECTURE.md)**: Technical deep dive into BERT/GPT-2 processing pipeline with Mermaid diagrams
-- **[APP_VISUALIZATION.md](https://github.com/yourusername/attention-atlas/blob/main/APP_VISUALIZATION.md)**: User guide with interaction workflows and visualization interpretations
+- **[README.md](https://github.com/pinthoz/attention-atlas/blob/main/README.md)**: Complete feature documentation, installation guide, usage instructions
+- **[ARCHITECTURE.md](https://github.com/pinthoz/attention-atlas/blob/main/ARCHITECTURE.md)**: Technical deep dive into BERT/GPT-2 processing pipeline with Mermaid diagrams
+- **[APP_VISUALIZATION.md](https://github.com/pinthoz/attention-atlas/blob/main/APP_VISUALIZATION.md)**: User guide with interaction workflows and visualization interpretations
 
 ---
 
@@ -202,8 +202,8 @@ If you use Attention Atlas in your research, please cite:
 ```bibtex
 @mastersthesis{attentionatlas2025,
   title={Interpretable Large Language Models through Attention Mechanism Visualization},
-  author={[Your Name]},
-  year={2025},
+  author={Pinto, Ana},
+  year={2026},
   school={[Your University]},
   type={Master's Thesis}
 }
