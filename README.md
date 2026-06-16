@@ -4,6 +4,8 @@
 
 An interactive research platform for exploring and analyzing Transformer architectures (BERT, GPT-2) with comprehensive attention mechanism visualization, mechanistic interpretability tools, and bias detection capabilities.
 
+**🚀 [Live demo on Hugging Face Spaces](https://huggingface.co/spaces/pinthoz/attention-atlas)**
+
 ![Attention Atlas Architecture](static/images/architecture.png)
 
 ---
@@ -12,7 +14,7 @@ An interactive research platform for exploring and analyzing Transformer archite
 
 Attention Atlas is a Master's thesis project dedicated to advancing **interpretable AI** through systematic visualization and analysis of attention mechanisms in Transformer-based language models. The application provides researchers, educators, and practitioners with an interactive environment to explore multi-head attention dynamics, linguistic feature extraction, architectural processing pipelines, and ethical considerations in model behavior.
 
-This platform bridges the gap between theoretical understanding of attention mechanisms and practical mechanistic interpretability by offering:
+It connects the theory of attention mechanisms with practical mechanistic interpretability by offering:
 
 - **Complete architectural transparency**: Every component from input embeddings to output predictions visualized
 - **Quantitative analysis**: 6 attention metrics + 7 head specialization metrics grounded in scientific literature
@@ -43,7 +45,7 @@ This platform bridges the gap between theoretical understanding of attention mec
 
 ## Application Structure
 
-Attention Atlas organizes its analysis capabilities into **three progressive exploration levels**, each designed to address different research questions and levels of detail:
+Attention Atlas organizes its analysis capabilities into **four progressive sections**: three attention-exploration levels plus a self-contained bias-detection section. Each addresses different research questions and levels of detail:
 
 ```mermaid
 flowchart TD
@@ -84,9 +86,9 @@ flowchart TD
 
 ### Navigation Philosophy
 
-1. **Overview**: Start here to understand model behavior at a glance—global metrics, predictions, and aggregate attention patterns across all heads
-2. **Explore Attention**: Interactive deep-dive into attention mechanisms—which tokens attend to which, multi-hop dependencies, cross-sentence relationships
-3. **Deep Dive**: Inspect the complete Transformer pipeline component-by-component—embeddings, projections, activations, and architectural transformations
+1. **Overview**: Start here to understand model behavior at a glance: global metrics, predictions, and aggregate attention patterns across all heads
+2. **Explore Attention**: Interactive deep-dive into attention mechanisms, showing which tokens attend to which, multi-hop dependencies, and cross-sentence relationships
+3. **Deep Dive**: Inspect the complete Transformer pipeline component by component: embeddings, projections, activations, and architectural transformations
 4. **Bias Detection**: Detect stereotypes, unfairness, and generalisations at token level, inspect attention-bias interactions, and validate explanations with faithfulness analyses
 
 ---
@@ -108,7 +110,7 @@ Computes **6 quantitative metrics** aggregated across layers/heads:
 
 | Metric | Formula | Interpretation |
 |--------|---------|----------------|
-| **Confidence (Max)** | `C_max = max(A_ij)` | Highest attention weight—indicates strong focus |
+| **Confidence (Max)** | `C_max = max(A_ij)` | Highest attention weight, indicates strong focus |
 | **Confidence (Avg)** | `C_avg = (1/n) · Σ max_j(A_ij)` | Average peak attention per query token |
 | **Focus (Entropy)** | `E = -Σ(A_ij · log(A_ij))` | Attention dispersion (low = focused, high = dispersed) |
 | **Sparsity** | `S = (1/n²) · Σ 𝟙(A_ij < 0.01)` | Proportion of near-zero attention weights |
@@ -232,7 +234,7 @@ Computes **6 quantitative metrics** aggregated across layers/heads:
 
 ### 4. Bias Detection
 
-**Purpose**: Ethical AI analysis—detect, quantify, and understand how attention mechanisms process biased content using specialized models.
+**Purpose**: Ethical AI analysis to detect, quantify, and understand how attention mechanisms process biased content using specialized models.
 
 ![Attention Atlas Bias Architecture](static/images/architecture_bias.png)
 
@@ -252,7 +254,7 @@ The bias section is organised as an accordion with **five panels**:
 - **Confidence Breakdown**: Bar charts and scatter plots of model confidence for the detected tokens.
 
 #### 3. Attention × Bias Correlation
-- **Bias–Attention Ratio (BAR) heatmaps**: Head-level view of which heads attend to biased tokens, plus a combined attention + bias view.
+- **Bias-Attention Ratio (BAR) heatmaps**: Head-level view of which heads attend to biased tokens, plus a combined attention + bias view.
 - **Propagation across layers** and a table of the most bias-focused heads.
 
 #### 4. Faithfulness Validation
@@ -289,7 +291,7 @@ Attention Atlas supports multiple Transformer architectures with automatic UI ad
 | **GPT-2 Large** | 36 | 20 | 1,280 | 5,120 | 50,257 | ~774M |
 | **GPT-2 XL** | 48 | 25 | 1,600 | 6,400 | 50,257 | ~1.5B |
 
-**Model Selection**: Use the sidebar dropdown—all visualizations, metrics, and analyses automatically adapt to the selected architecture.
+**Model Selection**: Use the sidebar dropdown. All visualizations, metrics, and analyses automatically adapt to the selected architecture.
 
 ---
 
@@ -592,4 +594,4 @@ MIT License - See LICENSE file for details.
 
 ---
 
-**Attention Atlas** — Making Transformer attention mechanisms interpretable, one head at a time.
+**Attention Atlas**: making Transformer attention mechanisms interpretable.

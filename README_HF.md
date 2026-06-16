@@ -22,9 +22,9 @@ An interactive research platform for exploring Transformer architectures (BERT, 
 
 Attention Atlas is a Master's thesis project dedicated to advancing **interpretable AI** by providing systematic visualization and analysis of attention mechanisms in Transformer-based language models. The platform offers researchers, educators, and practitioners an interactive environment to explore multi-head attention dynamics, linguistic feature extraction, and ethical considerations in model behavior.
 
-### Three-Level Exploration Structure
+### Exploration Structure
 
-The application organizes analysis into **three progressive levels** for comprehensive model understanding:
+The application organizes analysis into **four progressive sections**: three attention-exploration levels plus a self-contained bias-detection section.
 
 #### 🔍 **Overview Section**
 High-level model behavior at a glance:
@@ -55,11 +55,11 @@ Ethical AI analysis and bias quantification using specialized GUS-Net models:
 
 ![Attention Atlas Bias Architecture](static/images/architecture_bias.png)
 
-- **Token-level bias classification**: Detects Generalization, Unfairness, and Stereotypes.
-- **Attention × Bias correlation**: Interactive heatmaps correlating attention heads with bias scores.
-- **Faithfulness metrics**: Evaluates the faithfulness of the attention mechanism's explanations.
-- **Dual-Pipeline Comparison**: Side-by-side architecture comparison between models or different prompts.
-- **StereoSet evaluation**: Scatter plots validating performance on stereotype detection.
+- **Token-level bias classification**: GUS-Net tags each token as `O`, `GEN` (generalisation), `UNFAIR` (unfair language), or `STEREO` (stereotype), with adjustable per-category thresholds.
+- **Attention × Bias correlation**: Bias-Attention Ratio (BAR) heatmaps showing which heads attend to biased tokens, plus propagation across layers.
+- **Faithfulness validation**: Integrated Gradients agreement, causal head ablation, perturbation/minimality, and LRP/DeepLift cross-checks.
+- **Dual-pipeline comparison**: Side-by-side analysis of two models or two prompts throughout the bias workflow.
+- **StereoSet evaluation**: LMS / SS / ICAT scores with category breakdown, demographic slices, and an example explorer.
 
 ---
 
@@ -79,8 +79,8 @@ Ethical AI analysis and bias quantification using specialized GUS-Net models:
 
 ### Multi-Model Support
 - **BERT Family**: base-uncased, large-uncased, multilingual (104 languages)
-- **GPT-2 Family**: Small, Medium, Large (causal/decoder-only architectures)
-- **Automatic Adaptation**: UI adjusts to model architecture (12/24 layers, 12/16/20 heads)
+- **GPT-2 Family**: Small, Medium, Large, XL (causal/decoder-only architectures)
+- **Automatic Adaptation**: UI adjusts to model architecture (12 to 48 layers, 12 to 25 heads)
 
 ### Educational Value
 - **Mathematical Formulas**: LaTeX-style formatting with detailed explanations
@@ -133,7 +133,7 @@ Ethical AI analysis and bias quantification using specialized GUS-Net models:
 - **Discourse Understanding**: Cross-sentence dependency analysis via ISA
 - **Model Comparison**: Side-by-side architectural behavior analysis
 - **Educational Tool**: Teaching transformer architecture and attention mechanisms
-- **Bias Detection**: Ethical AI auditing and bias quantification (GUS-Net token classification, attention–bias correlation, faithfulness validation, StereoSet)
+- **Bias Detection**: Ethical AI auditing and bias quantification (GUS-Net token classification, attention-bias correlation, faithfulness validation, StereoSet)
 
 ---
 
@@ -217,6 +217,6 @@ MIT License - See [LICENSE](LICENSE) file for details.
 
 ---
 
-**Attention Atlas** — Making Transformer attention mechanisms interpretable, one head at a time.
+**Attention Atlas**: making Transformer attention mechanisms interpretable.
 
-*Part of a Master's thesis on Interpretable AI*
+*Part of a Master's thesis on interpretable AI.*
