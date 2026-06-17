@@ -526,6 +526,11 @@ def _disconfirming_keys(ctx: Dict[str, Any]) -> set:
       tokens ([CLS]/[SEP]/[PAD]) — a known "attention sink" failure
       mode that undermines any claim that the head encodes linguistic
       content.
+    - In compare mode, a counterfactual or cross-model contrast in which
+      the bias signal barely moves (the deltas in biased-token count,
+      strongest-token score, and mean confidence are all near zero). The
+      swap was expected to change the model's behaviour; a non-result is
+      disconfirming for a group-dependent reading of the flagged bias.
     """
     flagged: set = set()
     agree = ctx.get("bias_metric_methods_top1_agree")
@@ -548,6 +553,35 @@ def _disconfirming_keys(ctx: Dict[str, Any]) -> set:
             flagged.add("att_metric_head_special_mass")
     except Exception:
         pass
+
+    # Compare-mode "no movement" check: a counterfactual or cross-model
+    # contrast is run expecting the bias signal to shift. If every captured
+    # delta is negligible, the swap did not change the model's behaviour,
+    # which is disconfirming for a group-dependent reading. Flag the delta
+    # rows so the non-result is surfaced rather than passed over.
+    delta_keys = (
+        "bias_metric_delta_n_biased",
+        "bias_metric_delta_strongest_score",
+        "bias_metric_delta_mean_confidence",
+    )
+    present_deltas = [k for k in delta_keys if ctx.get(k) is not None]
+    if present_deltas:
+        try:
+            moved = False
+            dn = ctx.get("bias_metric_delta_n_biased")
+            if dn is not None and abs(float(dn)) >= 1:
+                moved = True
+            ds = ctx.get("bias_metric_delta_strongest_score")
+            if ds is not None and abs(float(ds)) >= 0.10:
+                moved = True
+            dc = ctx.get("bias_metric_delta_mean_confidence")
+            if dc is not None and abs(float(dc)) >= 0.05:
+                moved = True
+            if not moved:
+                flagged.update(present_deltas)
+        except Exception:
+            pass
+
     return flagged
 
 
