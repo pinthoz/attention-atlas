@@ -87,10 +87,16 @@ NOTEBOOK_CSS = """
 /* ── Slide-in drawer ──────────────────────────────────────────── */
 .nb-drawer {
     position: fixed;
+    /* Pin to top AND bottom (like .nb-drawer-backdrop's inset:0) instead of
+       using height:100vh. Under the responsive `body { zoom }` hack for short
+       screens, a 100vh element is computed against the unzoomed viewport and
+       then scaled down, so it stops short of the bottom (visible on Hugging
+       Face, whose iframe is shorter and triggers the zoom). Edge-pinning fills
+       correctly regardless of the zoom factor. */
     top: 0;
+    bottom: 0;
     right: 0;
     width: min(560px, 92vw);
-    height: 100vh;
     background: #f0f4f8;
     box-shadow: -12px 0 32px rgba(15, 23, 42, 0.18);
     z-index: 9999;
