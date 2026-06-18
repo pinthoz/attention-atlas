@@ -588,6 +588,7 @@ CSS = """
         .floating-control-bar .token-sentence {
             display: flex;
             align-items: flex-start;
+            justify-content: center;
             flex-wrap: wrap;
             gap: 3px;
             padding: 3px 6px;

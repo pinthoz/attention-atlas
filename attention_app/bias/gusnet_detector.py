@@ -95,6 +95,86 @@ CATEGORY_INDICES = {
 O_INDEX = 0
 
 
+# ── GPT-2 tokenizer compatibility shim ───────────────────────────────────────
+
+# Cache of downgraded tokenizer dirs, keyed by source model path, so we only
+# rewrite the JSON once per process.
+_DOWNGRADED_TOK_DIRS: Dict[str, str] = {}
+
+
+def _is_tokenizer_format_error(exc: Exception) -> bool:
+    """True when a tokenizer.json was written by a newer `tokenizers` than the
+    one installed, so the Rust deserializer rejects it."""
+    msg = str(exc)
+    return "did not match any variant" in msg and "ModelWrapper" in msg
+
+
+def _load_gpt2_tokenizer_compat(model_path: str, **kwargs):
+    """Load a GPT-2 fast tokenizer, downgrading the tokenizer.json format if the
+    installed `tokenizers` is too old to parse it.
+
+    Newer `tokenizers` (>= 0.20) serialise BPE merges as `[a, b]` pairs and add
+    an `ignore_merges` field (>= 0.15). Older runtimes (e.g. 0.13.x, pinned by
+    transformers 4.28) only understand space-joined `"a b"` merges and reject
+    the extra field. The vocab/merges are semantically identical, so we rewrite
+    a compatible copy into a temp dir and load from there. The original model
+    artefact is left untouched."""
+    try:
+        return AutoTokenizer.from_pretrained(model_path, **kwargs)
+    except Exception as exc:
+        if not _is_tokenizer_format_error(exc):
+            raise
+
+        import os
+        import json
+        import shutil
+        import tempfile
+
+        cached = _DOWNGRADED_TOK_DIRS.get(model_path)
+        if cached is None:
+            if not os.path.isdir(model_path):
+                # Repo id / cached snapshot: resolve the real files on disk.
+                from transformers.utils import cached_file
+                src_json = cached_file(model_path, "tokenizer.json", local_files_only=True)
+                src_cfg = cached_file(
+                    model_path, "tokenizer_config.json",
+                    local_files_only=True, _raise_exceptions_for_missing_entries=False,
+                )
+                src_dir = os.path.dirname(src_json)
+            else:
+                src_dir = model_path
+                src_json = os.path.join(src_dir, "tokenizer.json")
+
+            with open(src_json, encoding="utf-8") as f:
+                tok = json.load(f)
+            model = tok.get("model", {})
+            # `ignore_merges` (tokenizers >= 0.15) is unknown to older runtimes.
+            model.pop("ignore_merges", None)
+            merges = model.get("merges")
+            if merges and isinstance(merges[0], list):
+                # `[a, b]` pairs -> "a b" strings.
+                model["merges"] = [" ".join(pair) for pair in merges]
+
+            tmp_dir = tempfile.mkdtemp(prefix="gusnet_tok_")
+            with open(os.path.join(tmp_dir, "tokenizer.json"), "w", encoding="utf-8") as f:
+                json.dump(tok, f, ensure_ascii=False)
+            # Carry the config so pad/bos/eos special tokens are preserved.
+            for fname in ("tokenizer_config.json", "special_tokens_map.json"):
+                src_extra = os.path.join(src_dir, fname)
+                if os.path.isfile(src_extra):
+                    shutil.copy(src_extra, os.path.join(tmp_dir, fname))
+
+            _DOWNGRADED_TOK_DIRS[model_path] = tmp_dir
+            cached = tmp_dir
+            _logger.warning(
+                "[GUS-Net] Rewrote %s tokenizer.json to a format compatible "
+                "with the installed tokenizers; loading from %s.",
+                model_path, tmp_dir,
+            )
+
+        return AutoTokenizer.from_pretrained(cached, **kwargs)
+
+
 # ── Model registry ───────────────────────────────────────────────────────────
 
 # Version: 2026-02-09-v2 - Models now loaded from HuggingFace Hub
@@ -311,7 +391,7 @@ class GusNetDetector:
 
         try:
             if arch == "gpt2":
-                tokenizer = AutoTokenizer.from_pretrained(
+                tokenizer = _load_gpt2_tokenizer_compat(
                     model_path, add_prefix_space=True,
                 )
                 if tokenizer.pad_token is None:

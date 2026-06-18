@@ -2361,15 +2361,13 @@ def bias_server_handlers(input, output, session):
         if not notes:
             return ""
         bullets = "".join(
-            f'<li style="margin:4px 0;">{n}</li>' for n in notes
+            f'<li style="margin:3px 0;">{n}</li>' for n in notes
         )
         return (
-            f'<div style="margin-bottom:14px;padding:12px 16px;'
-            f'background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.40);'
-            f'border-left:4px solid #f59e0b;border-radius:8px;font-size:11.5px;'
-            f'color:#78350f;line-height:1.55;">'
-            f'<b style="color:#78350f;">Input-side caveat:</b>'
-            f'<ul style="margin:6px 0 0 18px;padding:0;">{bullets}</ul>'
+            f'<div style="margin-top:14px;font-size:11px;'
+            f'color:#94a3b8;line-height:1.5;">'
+            f'<b style="color:#94a3b8;">Input-side caveat:</b>'
+            f'<ul style="margin:5px 0 0 16px;padding:0;">{bullets}</ul>'
             f'</div>'
         )
 
@@ -2569,8 +2567,8 @@ def bias_server_handlers(input, output, session):
             return criteria_html + cards + bench_cards
 
         if (compare_models or compare_prompts) and res_B:
-            content_A = get_summary_cards(res, abl, ig)
-            content_B = get_summary_cards(res_B, abl_B, ig_B)
+            content_A = get_summary_cards(res, abl, ig) + _render_input_warnings(res)
+            content_B = get_summary_cards(res_B, abl_B, ig_B) + _render_input_warnings(res_B)
 
             header_args = (
                 "Bias Detection Summary",
@@ -2600,18 +2598,11 @@ def bias_server_handlers(input, output, session):
                 f"<div style='{_TN}; margin-top:6px;'>The composite level is a communication aid, not a calibrated metric — token-level detection uses the calibrated GUS-Net thresholds.</div>"
             )
 
-            warn_A = _render_input_warnings(res)
-            warn_B = _render_input_warnings(res_B)
             cards_grid = ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(ui.HTML(content_A), *header_args, style="margin-bottom:0; border: 2px solid #3b82f6; height: 100%;"),
                 _wrap_card(ui.HTML(content_B), *header_args, style="margin-bottom:0; border: 2px solid #ff5ca9; height: 100%;")
             )
-            if warn_A or warn_B:
-                return ui.div(
-                    ui.HTML(warn_A + warn_B),
-                    cards_grid,
-                )
             return cards_grid
         else:
             header_args = (
@@ -2641,10 +2632,8 @@ def bias_server_handlers(input, output, session):
                 f"<div style='{_TN}; margin-top:6px;'>High token density + low stereotype score → loaded language without group-specific targeting.</div>"
                 f"<div style='{_TN}; margin-top:6px;'>The composite level is a communication aid, not a calibrated metric — token-level detection uses the calibrated GUS-Net thresholds.</div>"
             )
-            warn_html = _render_input_warnings(res)
-            card = _wrap_card(ui.HTML(get_summary_cards(res, abl, ig)), *header_args, style="margin-bottom: 24px;")
-            if warn_html:
-                return ui.div(ui.HTML(warn_html), card)
+            body = get_summary_cards(res, abl, ig) + _render_input_warnings(res)
+            card = _wrap_card(ui.HTML(body), *header_args, style="margin-bottom: 24px;")
             return card
 
     # ── Inline bias view (primary) ──
