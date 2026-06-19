@@ -1583,28 +1583,11 @@ def create_bias_accordion():
                           "padding:16px 20px;margin-bottom:16px;"},
                 # Definition (now without its own outer card)
                 ui.output_ui("bias_ratio_formula"),
-                # Feature 1: live alpha control (left) + head-survival readout (right),
-                # on the same line, inside the same card
+                # Feature 1: head-survival readout. The alpha slider that drives it
+                # lives in the floating toolbar (α button, like Weights).
                 ui.div(
-                    {"style": "display:flex;gap:18px;align-items:center;"
-                              "border-top:1px solid #e2e8f0;margin-top:14px;padding-top:12px;"},
-                    # Left: significance slider
-                    ui.div(
-                        {"style": "flex:0 0 240px;"},
-                        ui.input_slider(
-                            "bias_alpha",
-                            "Significance level α",
-                            min=0.01,
-                            max=0.20,
-                            value=0.05,
-                            step=0.01,
-                        ),
-                    ),
-                    # Right: heads specialised readout
-                    ui.div(
-                        {"style": "flex:1;min-width:0;"},
-                        ui.output_ui("alpha_head_survival"),
-                    ),
+                    {"style": "border-top:1px solid #e2e8f0;margin-top:14px;padding-top:12px;"},
+                    ui.output_ui("alpha_head_survival"),
                 ),
             ),
             # Hidden selects (driven by the floating toolbar)
@@ -1796,12 +1779,17 @@ def create_floating_bias_toolbar():
                     # Weights: button above + sliders below (column layout)
                     ui.div(
                         {"class": "cw-section"},
-                        ui.tags.button(
-                            "Weights",
-                            id="cw-toggle-btn",
-                            class_="btn-global",
-                            title="Change Composite Score Weights",
-                            onclick="(function(ev){var p=document.getElementById('cw-inline-panel');var b=document.getElementById('cw-toggle-btn');var left=b.closest('.bias-bar-left');p.classList.toggle('open');b.classList.toggle('active');if(left)left.classList.toggle('cw-active');ev.stopPropagation();})(event)",
+                        ui.div(
+                            {"class": "cw-btn-col"},
+                            ui.span("COMP SCORE", class_="control-label",
+                                    **{"data-short": "WEIGHTS"}),
+                            ui.tags.button(
+                                "Weights",
+                                id="cw-toggle-btn",
+                                class_="btn-global",
+                                title="Change Composite Score Weights",
+                                onclick="(function(ev){var p=document.getElementById('cw-inline-panel');var b=document.getElementById('cw-toggle-btn');var left=b.closest('.bias-bar-left');p.classList.toggle('open');b.classList.toggle('active');if(left)left.classList.toggle('cw-active');ev.stopPropagation();})(event)",
+                            ),
                         ),
                         # Vertical sliders row (hidden by default)
                         ui.div(
@@ -1918,9 +1906,45 @@ def create_floating_bias_toolbar():
                     {"id": "bias-tokens-row"},
                     ui.output_ui("bias_toolbar_tokens"),
                 ),
-                # ── RIGHT GROUP: Source + BAR + Top-K ──
+                # ── RIGHT GROUP: alpha + Source + BAR + Top-K ──
                 ui.div(
                     {"class": "bias-bar-right"},
+
+                    # Significance level alpha: button reveals a slider (like Weights)
+                    ui.div(
+                        {"class": "control-group alpha-section"},
+                        ui.div(
+                            {"class": "alpha-btn-col"},
+                            ui.span("CHANGE α", class_="control-label alpha-label",
+                                    **{"data-short": "α"}),
+                            ui.tags.button(
+                                "α",
+                                id="alpha-toggle-btn",
+                                class_="btn-global",
+                                title="Change significance level α",
+                                onclick="(function(ev){var p=document.getElementById('alpha-inline-panel');var b=document.getElementById('alpha-toggle-btn');p.classList.toggle('open');b.classList.toggle('active');ev.stopPropagation();})(event)",
+                            ),
+                        ),
+                        ui.div(
+                            {"id": "alpha-inline-panel", "class": "alpha-inline-panel"},
+                            ui.tags.input(
+                                type="range", id="bias_alpha",
+                                min="0.01", max="0.20", value="0.05", step="0.01",
+                                class_="alpha-range",
+                                oninput="Shiny.setInputValue('bias_alpha', this.value, {priority:'event'}); var d=document.getElementById('alpha_val_input'); if(d) d.value=(+this.value).toFixed(2)",
+                            ),
+                            # Editable number: click to type a custom alpha (can go below 0.01)
+                            ui.tags.input(
+                                type="number", id="alpha_val_input",
+                                value="0.05", min="0", max="0.20", step="0.001",
+                                class_="alpha-val alpha-val-input",
+                                title="Click to type a custom α (can go below 0.01)",
+                                oninput="var v=parseFloat(this.value); if(isNaN(v)) return; var c=Math.max(0,Math.min(0.5,v)); Shiny.setInputValue('bias_alpha', String(c), {priority:'event'}); var s=document.getElementById('bias_alpha'); if(s) s.value=Math.min(0.20,Math.max(0.01,c));",
+                                onchange="var v=parseFloat(this.value); if(isNaN(v)){this.value='0.05';return;} var c=Math.max(0,Math.min(0.5,v)); this.value=(c>=0.01?c.toFixed(2):c.toFixed(3));",
+                            ),
+                        ),
+                    ),
+
                     # Attention Source toggle
                     ui.div(
                         {"class": "control-group"},
@@ -2024,9 +2048,83 @@ def create_floating_bias_toolbar():
         # ── Extra styles (only for bias-specific additions) ──
         ui.tags.style("""
             /* ── Composite Score Weights: floating section ── */
+            /* ── Significance level alpha: toolbar button + inline slider ── */
+            .alpha-section {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-shrink: 0;
+            }
+            .alpha-btn-col {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 2px;
+                flex-shrink: 0;
+            }
+            .alpha-label {
+                text-transform: none !important;   /* keep lowercase α in the label */
+            }
+            #alpha-toggle-btn {
+                white-space: nowrap;
+                font-size: 13px;
+                font-weight: 400;   /* α not bold */
+                text-transform: none;   /* keep lowercase α (uppercase turns it into "A") */
+                flex-shrink: 0;
+            }
+            .alpha-inline-panel {
+                display: none;
+                align-items: center;
+                justify-content: center;   /* centre the slider + value */
+                gap: 6px;
+                animation: cwPopUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            .alpha-inline-panel.open {
+                display: flex;
+            }
+            #bias-floating-toolbar input[type="range"].alpha-range {
+                width: 38px !important;   /* a bit smaller */
+            }
+            .alpha-val {
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 9px;
+                font-weight: 700;
+                color: #fff;
+                background: rgba(0, 0, 0, 0.35);
+                border-radius: 3px;
+                padding: 0 3px;
+                min-width: 26px;
+                text-align: center;
+            }
+            /* editable number box for alpha */
+            .alpha-val-input {
+                width: 44px;
+                height: 16px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                outline: none;
+                cursor: text;
+                -moz-appearance: textfield;
+            }
+            .alpha-val-input:focus {
+                border-color: var(--primary-color);
+            }
+            .alpha-val-input::-webkit-outer-spin-button,
+            .alpha-val-input::-webkit-inner-spin-button {
+                -webkit-appearance: none;
+                margin: 0;
+            }
+
             .cw-section {
                 display: flex;
                 align-items: center;
+                flex-shrink: 0;
+                margin-right: 24px;   /* push Layer away so Weights sits more centred */
+            }
+            .cw-btn-col {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 2px;
                 flex-shrink: 0;
             }
             #cw-toggle-btn {
@@ -2136,24 +2234,46 @@ def create_floating_bias_toolbar():
                 text-shadow: 0 1px 3px rgba(0,0,0,0.8);
             }
 
-            /* Layer & Head shrink a little (not much) when the weights panel
-               opens, freeing room so the left group stays within its track. */
+            /* Layer & Head: 60px when there is room. When the weights panel is
+               open they SHRINK (down to nothing) to absorb the extra width, so
+               the whole left group always fits inside the bar and nothing — not
+               the button, not Layer/Head — ever spills out or over the tokens. */
             .bias-lh-group input[type="range"] {
                 transition: width 0.2s ease;
             }
             .bias-bar-left.cw-active .bias-lh-group input[type="range"] {
-                width: 60px !important;
+                width: 60px !important;   /* basis only; flex-shrink takes over */
+                min-width: 0 !important;
+                flex-shrink: 1;
             }
-            /* While the panel is open: keep Layer/Head at their set width (don't
-               let flexbox crush them), tighten spacing, and push any overflow
-               LEFT (flex-end) so it never shoves the centred token row. */
+            /* While the panel is open: anchor the group LEFT (button never leaves
+               the bar), tighten spacing, and hide the COMP SCORE label. */
             .bias-bar-left.cw-active {
                 gap: 6px;
-                justify-content: flex-end;
+                justify-content: flex-start;
             }
-            .bias-bar-left.cw-active .bias-lh-group,
+            .bias-bar-left.cw-active .cw-btn-col .control-label {
+                display: none;
+            }
+            /* Button + sliders panel stay intact; Layer/Head are the ones that give. */
             .bias-bar-left.cw-active .cw-section {
                 flex-shrink: 0;
+            }
+            .bias-bar-left.cw-active .bias-lh-group {
+                flex-shrink: 1;
+                min-width: 0;
+            }
+            /* Centre Layer+Head in the free space between the sliders panel and
+               the tokens: equal auto-margins before Layer and after Head, so the
+               gap STEREO->Layer matches the gap Head->tokens. */
+            .bias-bar-left.cw-active .cw-section + .bias-lh-group {
+                margin-left: auto;
+            }
+            .bias-bar-left.cw-active .bias-lh-group:last-child {
+                margin-right: auto;
+            }
+            .bias-bar-left.cw-active .bias-lh-group .slider-container {
+                min-width: 0;
             }
             .bias-lh-group .slider-value {
                 transition: all 0.2s ease;
@@ -2170,15 +2290,25 @@ def create_floating_bias_toolbar():
                 to { transform: translateY(0); opacity: 1; }
             }
 
-            /* Grid layout: left | center | right - center is truly centered.
-               minmax(0, 1fr) caps the side tracks so a wide left group (weights
-               panel open) cannot grow its track and shove the centred tokens. */
+            /* Grid layout: left | tokens | right. Equal 1fr side tracks keep the
+               token box always perfectly centred (it never shifts). */
             #bias-controls-row {
                 display: grid !important;
                 grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
                 align-items: center;
                 gap: 12px;
                 width: 100%;
+            }
+            /* Only when space is tight (narrower than a wide monitor): if the
+               Weights or alpha panel is open, shrink the token box so the
+               expanded controls fit and nothing leaves the bar. The token stays
+               centred (equal side tracks). On wide monitors there is room, so it
+               does not shrink. */
+            @media (max-width: 1599px) {
+                #bias-controls-row:has(.cw-inline-panel.open) #bias-tokens-row .token-sentence,
+                #bias-controls-row:has(.alpha-inline-panel.open) #bias-tokens-row .token-sentence {
+                    max-width: 200px !important;
+                }
             }
 
             /* Left group: centered in its column */
@@ -2187,6 +2317,7 @@ def create_floating_bias_toolbar():
                 align-items: center;
                 gap: 10px;
                 justify-content: center;
+                min-width: 0;   /* allow the flex children to shrink to fit the track */
             }
 
             /* Right group: centered in its column */
@@ -2215,7 +2346,7 @@ def create_floating_bias_toolbar():
                 width: 60px;
             }
             .bias-bar-right input[type="range"] {
-                width: 48px;
+                width: 42px;
             }
             #bias-floating-toolbar .slider-value {
                 min-width: 18px;
@@ -2248,8 +2379,8 @@ def create_floating_bias_toolbar():
                     font-size: 9px;
                 }
                 #bias-tokens-row .token-sentence {
-                    max-width: 760px !important;
-                    max-height: 64px;
+                    max-width: 380px !important;   /* smaller box, stays centred */
+                    max-height: 54px;
                     gap: 4px;
                     padding: 4px 8px;
                 }
@@ -2305,21 +2436,27 @@ def create_floating_bias_toolbar():
                     white-space: nowrap;
                 }
 
-                /* Keep the original 3-col grid (left | tokens | right) */
+                /* Stack the three groups vertically so nothing overlaps:
+                   left group, then the tokens box, then the right group. */
                 #bias-controls-row {
-                    gap: 6px !important;
-                    grid-template-columns: auto minmax(120px, 1fr) auto !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                    align-items: center !important;
+                    gap: 10px !important;
                 }
-                /* Tokens row: ensure it's centered and has a minimum width
-                   so chips show up like in the attention tab */
+                /* Tokens get their own centred row, narrow box that wraps the
+                   chips onto several lines (2, 3, 4 ...) like the attention tab. */
                 #bias-tokens-row {
-                    min-width: 120px !important;
-                    flex: 1 1 auto !important;
+                    order: 2;
+                    width: 100% !important;
+                    display: flex !important;
+                    justify-content: center !important;
                 }
                 #bias-tokens-row .token-sentence {
-                    max-width: 100% !important;
+                    width: 100% !important;
+                    max-width: 360px !important;   /* narrower horizontally */
                     min-width: 0 !important;
-                    max-height: 54px !important;
+                    max-height: 150px !important;   /* taller: many wrapped lines */
                     overflow-y: auto !important;
                     overflow-x: hidden !important;
                     flex-wrap: wrap !important;
@@ -2347,11 +2484,15 @@ def create_floating_bias_toolbar():
                     gap: 8px !important;
                 }
 
-                /* Layer + Head stacked: label ON TOP of slider for each */
+                /* Left group: one compact centred row (Weights | Layer | Head),
+                   wraps if needed. Sits above the tokens. */
                 .bias-bar-left {
-                    flex-direction: column !important;
-                    align-items: stretch !important;
-                    gap: 0 !important;
+                    order: 1;
+                    flex-direction: row !important;
+                    flex-wrap: wrap !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    gap: 10px !important;
                 }
                 .bias-bar-left .control-group {
                     flex-direction: column !important;
@@ -2360,8 +2501,9 @@ def create_floating_bias_toolbar():
                     line-height: 1 !important;
                 }
 
-                /* Right group: SRC ATT (col 1) | BAR/TOP-K stacked (col 2) */
+                /* Right group: below the tokens; SRC ATT (col 1) | BAR/TOP-K stacked (col 2) */
                 .bias-bar-right {
+                    order: 3;
                     display: grid !important;
                     grid-template-columns: auto auto !important;
                     grid-template-rows: auto auto !important;
@@ -2369,20 +2511,26 @@ def create_floating_bias_toolbar():
                     row-gap: 0 !important;
                     align-items: center !important;
                 }
+                /* alpha button (col1 row1) | SRC ATT (col1 row2) */
                 .bias-bar-right > .control-group:nth-child(1) {
                     grid-column: 1 / 2;
-                    grid-row: 1 / 3;
+                    grid-row: 1 / 2;
                 }
                 .bias-bar-right > .control-group:nth-child(2) {
+                    grid-column: 1 / 2;
+                    grid-row: 2 / 3;
+                }
+                /* BAR (col2 row1) | Top-K (col2 row2) */
+                .bias-bar-right > .control-group:nth-child(3) {
                     grid-column: 2 / 3;
                     grid-row: 1 / 2;
                 }
-                .bias-bar-right > .control-group:nth-child(3) {
+                .bias-bar-right > .control-group:nth-child(4) {
                     grid-column: 2 / 3;
                     grid-row: 2 / 3;
                 }
-                .bias-bar-right > .control-group:nth-child(2),
-                .bias-bar-right > .control-group:nth-child(3) {
+                .bias-bar-right > .control-group:nth-child(3),
+                .bias-bar-right > .control-group:nth-child(4) {
                     flex-direction: column !important;
                     align-items: center !important;
                     gap: 0 !important;
@@ -2487,6 +2635,19 @@ def create_floating_bias_toolbar():
                 btn.classList.remove('active');
                 var left = btn.closest('.bias-bar-left');
                 if (left) left.classList.remove('cw-active');
+            });
+        })();
+
+        // ── Significance alpha inline panel: close on outside click ──
+        (function() {
+            document.addEventListener('click', function(e) {
+                var pop = document.getElementById('alpha-inline-panel');
+                var btn = document.getElementById('alpha-toggle-btn');
+                if (!pop || !btn) return;
+                if (!pop.classList.contains('open')) return;
+                if (pop.contains(e.target) || btn.contains(e.target)) return;
+                pop.classList.remove('open');
+                btn.classList.remove('active');
             });
         })();
 

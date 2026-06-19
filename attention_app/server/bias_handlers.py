@@ -2740,12 +2740,14 @@ def bias_server_handlers(input, output, session):
         exp_fp = alpha * n_heads
         frac = (n_surv / n_heads) if n_heads else 0.0
         n_perm_eff = int(null.size / n_heads) if n_heads else 0
+        # 2 decimals when alpha >= 0.01, otherwise 3 (for sub-0.01 custom values)
+        alpha_disp = f"{alpha:.2f}" if alpha >= 0.01 else f"{alpha:.3f}"
 
         return ui.HTML(
             f'<div style="padding:0;margin:0;">'
             f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;">'
             f'<div><span style="font-size:13px;color:#64748b;">Heads specialised in bias at </span>'
-            f'<span style="font-weight:700;color:#0f172a;">&alpha; = {alpha:.2f}</span></div>'
+            f'<span style="font-weight:700;color:#0f172a;">&alpha; = {alpha_disp}</span></div>'
             f'<div style="font-size:28px;font-weight:800;color:#ff5ca9;line-height:1;">{n_surv}'
             f'<span style="font-size:14px;color:#94a3b8;font-weight:600;"> / {n_heads}</span></div>'
             f'</div>'

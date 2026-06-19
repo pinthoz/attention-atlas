@@ -3461,7 +3461,7 @@ __all__ = ["CSS"]
         
         /* Bias tokens - single mode uses .token-sentence, compare uses .token-row-split */
         #bias-tokens-row .token-sentence {
-            max-width: 560px !important;
+            max-width: 380px !important;   /* smaller box; chips wrap to more lines */
             min-width: 0 !important;
             flex: 0 1 auto !important;
             margin-top: 0 !important;

@@ -1434,7 +1434,7 @@ def create_bias_criteria_html(summary: Dict, weights: Optional[Dict] = None) -> 
             f'<div style="width:{pct_width:.0f}%;height:100%;background:{bar_color};border-radius:4px;'
             f'transition:width 0.4s;"></div></div>'
             f'<span style="width:75px;font-size:11px;color:#475569;font-family:JetBrains Mono,monospace;">'
-            f'{value:.2f} <small style="color:#94a3b8;">x{weight:.2f}</small></span></div>'
+            f'{value:.2f} <small style="color:#ff5ca9;font-weight:700;">x{weight:.2f}</small></span></div>'
         )
 
     # Breakdown reasons
