@@ -2391,10 +2391,32 @@ def bias_server_handlers(input, output, session):
         abl_B = ablation_results_B.get()
         ig_B = ig_results_B.get()
 
+        # Composite-score weights, tunable from the sidebar sliders (feature 3).
+        # Each weight falls back to its calibrated default if the slider has not
+        # been touched, and the set is renormalised to sum to 1 so the
+        # Low/Moderate/High bands stay meaningful.
+        def _cw(key, default):
+            try:
+                v = input[key]()
+            except Exception:
+                return default
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return default
+        _cw_raw = {
+            "pct": _cw("cw_pct", 0.30),
+            "gen": _cw("cw_gen", 0.20),
+            "unfair": _cw("cw_unfair", 0.25),
+            "stereo": _cw("cw_stereo", 0.25),
+        }
+        _cw_sum = sum(_cw_raw.values()) or 1.0
+        composite_weights = {k: v / _cw_sum for k, v in _cw_raw.items()}
+
         def get_summary_cards(res_data, abl_data=None, ig_bundle=None):
             summary = res_data["bias_summary"]
             # Criteria breakdown
-            criteria_html = create_bias_criteria_html(summary)
+            criteria_html = create_bias_criteria_html(summary, composite_weights)
             # Metric cards
             cards = f"""
             <div class="metrics-grid" style="margin-top:16px;">
@@ -2672,6 +2694,77 @@ def bias_server_handlers(input, output, session):
     @render.ui
     def bias_ratio_formula():
         return ui.HTML(create_ratio_formula_html())
+
+    # ── Live significance (alpha) control over head specialisation (feature 1) ──
+
+    @output
+    @render.ui
+    @visible_errors("Significance (alpha) head survival")
+    def alpha_head_survival():
+        res = bias_results.get()
+        if not res or not res.get("attentions"):
+            return ui.HTML('<div style="color:#94a3b8;font-size:12px;padding:8px;">'
+                           'Run "Analyze Bias" to use the significance control.</div>')
+
+        attn = res.get("attention_metrics", [])
+        labels = res.get("token_labels", [])
+        if not attn or not labels:
+            return ui.HTML('<div style="color:#94a3b8;font-size:12px;padding:8px;">'
+                           'No per-head BAR available for this prompt.</div>')
+
+        specials = ("[CLS]", "[SEP]", "[PAD]")
+        valid = [l["index"] for l in labels if l.get("token") not in specials]
+        biased = [l["index"] for l in labels
+                  if l.get("is_biased") and l.get("token") not in specials]
+        n_biased = len(biased)
+        n_heads = len(attn)
+        observed = np.array([m.bias_attention_ratio for m in attn], dtype=float)
+
+        try:
+            alpha = float(input.bias_alpha())
+        except Exception:
+            alpha = 0.05
+
+        if n_biased == 0:
+            return ui.HTML('<div style="color:#94a3b8;font-size:12px;padding:8px;">'
+                           'No biased tokens in this prompt, so head specialisation is undefined.</div>')
+
+        from ..bias.attention_bias import bar_permutation_null
+        null = bar_permutation_null(res["attentions"], n_biased, valid, n_perm=300)
+        if null.size == 0:
+            return ui.HTML('<div style="color:#94a3b8;font-size:12px;padding:8px;">'
+                           'Not enough room to permute the bias mask for this prompt.</div>')
+
+        tau = float(np.percentile(null, 100.0 * (1.0 - alpha)))
+        n_surv = int((observed > tau).sum())
+        exp_fp = alpha * n_heads
+        frac = (n_surv / n_heads) if n_heads else 0.0
+        n_perm_eff = int(null.size / n_heads) if n_heads else 0
+
+        return ui.HTML(
+            f'<div style="padding:0;margin:0;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;">'
+            f'<div><span style="font-size:13px;color:#64748b;">Heads specialised in bias at </span>'
+            f'<span style="font-weight:700;color:#0f172a;">&alpha; = {alpha:.2f}</span></div>'
+            f'<div style="font-size:28px;font-weight:800;color:#ff5ca9;line-height:1;">{n_surv}'
+            f'<span style="font-size:14px;color:#94a3b8;font-weight:600;"> / {n_heads}</span></div>'
+            f'</div>'
+            f'<div style="font-size:11px;color:#64748b;margin-top:8px;">'
+            f'BAR threshold (per-prompt null, {n_perm_eff} permutations): '
+            f'<b style="font-family:monospace;color:#334155;">{tau:.2f}</b> &nbsp;&middot;&nbsp; '
+            f'Expected by chance under the null: <b style="color:#dc2626;">&asymp; {exp_fp:.1f}</b> '
+            f'(&alpha; &times; {n_heads})</div>'
+            f'<div style="margin-top:10px;height:8px;background:#fee2e2;border-radius:4px;position:relative;overflow:hidden;">'
+            f'<div style="position:absolute;left:0;top:0;height:100%;width:{min(frac*100,100):.1f}%;'
+            f'background:#ff5ca9;border-radius:4px;"></div></div>'
+            f'<div style="position:relative;height:0;">'
+            f'<div style="position:absolute;left:{min(exp_fp/max(n_heads,1)*100,100):.1f}%;top:-16px;'
+            f'height:12px;width:2px;background:#dc2626;"></div></div>'
+            f'<div style="font-size:10px;color:#94a3b8;margin-top:8px;font-style:italic;">'
+            f'The red mark is the count expected to pass by chance ({exp_fp:.1f}); heads beyond it are above the false-positive floor. '
+            f'No multiplicity correction is applied: this is a per-instance significance level.</div>'
+            f'</div>'
+        )
 
     # ── Update layer/head selectors ──
 

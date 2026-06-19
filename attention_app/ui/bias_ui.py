@@ -25,9 +25,7 @@ def _build_model_options(default_key: str):
             if model_path.is_absolute() and not model_path.exists():
                 continue
         attrs = {"selected": "selected"} if key == default_key else {}
-        options.append(
-            ui.tags.option(cfg["display_name"], value=key, **attrs)
-        )
+        options.append(ui.tags.option(cfg["display_name"], value=key, **attrs))
     return options
 
 
@@ -37,13 +35,14 @@ def create_bias_sidebar():
 
     return ui.div(
         {"class": "sidebar"},
-        
         # Collaborative Logic: Inject CSS when Compare Mode is active - REMOVED because style tags are global
         # We now handle this via JS class toggling on the container.
-        
         # ── Header ──
         ui.div(
-            {"class": "app-title", "style": "display: flex; align-items: center; justify-content: space-between; width: 100%;"},
+            {
+                "class": "app-title",
+                "style": "display: flex; align-items: center; justify-content: space-between; width: 100%;",
+            },
             ui.div(
                 {"style": "display: flex; align-items: center; gap: 8px;"},
                 ui.tags.img(src=ICON_DATA_URL or "/favicon.ico", alt="Logo"),
@@ -53,32 +52,46 @@ def create_bias_sidebar():
             ui.div(
                 {"id": "bias-back-button-container", "style": "display: none;"},
                 ui.HTML(
-                    '<div onclick="Shiny.setInputValue(\'bias_go_back\',Date.now(),{priority:\'event\'});"'
+                    "<div onclick=\"Shiny.setInputValue('bias_go_back',Date.now(),{priority:'event'});\""
                     ' class="sidebar-back-btn" title="Back to previous analysis">'
                     '<i class="fa-solid fa-arrow-left" style="font-size: 10px;"></i> Back'
-                    '</div>'
-                )
+                    "</div>"
+                ),
             ),
         ),
         ui.div(
-            {"class": "app-subtitle", "style": "margin-bottom: 12px; padding-bottom: 12px;"},
-            "Detect and analyze social bias in text using GUS-Net neural NER."
+            {
+                "class": "app-subtitle",
+                "style": "margin-bottom: 12px; padding-bottom: 12px;",
+            },
+            "Detect and analyze social bias in text using GUS-Net neural NER.",
         ),
-
         # ── Compare Modes Section ──
         ui.div(
-            {"class": "sidebar-section", "style": "margin-top: 0; padding-bottom: 10px;"},
+            {
+                "class": "sidebar-section",
+                "style": "margin-top: 0; padding-bottom: 10px;",
+            },
             # Header
-            ui.tags.span("Compare Modes", id="bias-cmp-modes-label", class_="sidebar-label"),
+            ui.tags.span(
+                "Compare Modes", id="bias-cmp-modes-label", class_="sidebar-label"
+            ),
             # Switches Row
             # Switches Row
             ui.div(
                 {"id": "bias-compare-modes-container"},
-                ui.input_switch("bias_compare_mode", ui.span("Models", class_="compare-label"), value=False),
-                ui.input_switch("bias_compare_prompts_mode", ui.span("Prompts", class_="compare-label"), value=False)
+                ui.input_switch(
+                    "bias_compare_mode",
+                    ui.span("Models", class_="compare-label"),
+                    value=False,
+                ),
+                ui.input_switch(
+                    "bias_compare_prompts_mode",
+                    ui.span("Prompts", class_="compare-label"),
+                    value=False,
+                ),
             ),
         ),
-
         # Compare Modes Styling
         ui.tags.style("""
             #bias-cmp-modes-label {
@@ -169,19 +182,27 @@ def create_bias_sidebar():
                 color: #ff74b8;
             }
         """),
-
         # ── Models Container (A and B side by side when compare mode) ──
         ui.div(
             {"id": "bias-models-container", "style": "display: flex; gap: 12px;"},
-
             # Model A Panel
             ui.div(
                 {"id": "bias-model-a-panel", "style": "flex: 1;"},
                 ui.div(
-                    {"class": "sidebar-section", "style": "margin-top: 4px; margin-bottom: 4px;"},
-                    ui.tags.span("Bias Detection Model", id="bias-model-a-label", class_="sidebar-label"),
+                    {
+                        "class": "sidebar-section",
+                        "style": "margin-top: 4px; margin-bottom: 4px;",
+                    },
+                    ui.tags.span(
+                        "Bias Detection Model",
+                        id="bias-model-a-label",
+                        class_="sidebar-label",
+                    ),
                     ui.div(
-                        {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
+                        {
+                            "class": "bias-model-selector-wrap",
+                            "style": "margin-top: 8px;",
+                        },
                         ui.tags.select(
                             *_build_model_options("gusnet-bert"),
                             id="bias_model_key",
@@ -191,15 +212,25 @@ def create_bias_sidebar():
                     ),
                 ),
             ),
-
             # Model B Panel (hidden by default)
             ui.div(
                 {"id": "bias-model-b-panel", "style": "flex: 1; display: none;"},
                 ui.div(
-                    {"class": "sidebar-section", "style": "margin-top: 4px; margin-bottom: 4px;"},
-                    ui.tags.span("Detect Model - B", id="bias-model-b-label", class_="sidebar-label", style="color: #ff5ca9;"),
+                    {
+                        "class": "sidebar-section",
+                        "style": "margin-top: 4px; margin-bottom: 4px;",
+                    },
+                    ui.tags.span(
+                        "Detect Model - B",
+                        id="bias-model-b-label",
+                        class_="sidebar-label",
+                        style="color: #ff5ca9;",
+                    ),
                     ui.div(
-                        {"class": "bias-model-selector-wrap", "style": "margin-top: 8px;"},
+                        {
+                            "class": "bias-model-selector-wrap",
+                            "style": "margin-top: 8px;",
+                        },
                         ui.tags.select(
                             *_build_model_options("gusnet-gpt2"),
                             id="bias_model_key_B",
@@ -210,7 +241,6 @@ def create_bias_sidebar():
                 ),
             ),
         ),
-
         # ── Styles for model selects and toggle switches ──
         ui.tags.style("""
             .bias-model-select {
@@ -322,10 +352,8 @@ def create_bias_sidebar():
                 background-color: white;
             }
         """),
-
         # ── Spacer ──
         ui.div(style="flex-grow: 1; min-height: 24px;"),
-
         # ── Sensitivity Thresholds (styled like the floating toolbar sliders) ──
         ui.tags.style("""
             .sidebar-thresh-group {
@@ -405,13 +433,14 @@ def create_bias_sidebar():
         """),
         # ── Sensitivity Thresholds ──
         ui.div(
-            {"class": "sidebar-section", "style": "margin-top: 0; padding-bottom: 10px;"},
+            {
+                "class": "sidebar-section",
+                "style": "margin-top: 0; padding-bottom: 10px;",
+            },
             ui.tags.span("Sensitivity Threshold", class_="sidebar-label"),
-            
             # Container for A/B columns
             ui.div(
                 {"style": "display: flex; gap: 8px; margin-top: 6px;"},
-                
                 # Column A (Always visible, takes full width if single, or half if compare)
                 ui.div(
                     {"style": "flex: 1;", "id": "bias-thresh-col-a"},
@@ -419,77 +448,166 @@ def create_bias_sidebar():
                     ui.div(
                         {"class": "sidebar-thresh-group"},
                         ui.span("UNFAIR", class_="thresh-label thresh-label-a"),
-                        ui.tags.input(type="range", id="bias-thresh-unfair", min="0.01", max="0.99", value="0.5", step="0.01"),
-                        ui.tags.span("0.50", id="bias-thresh-unfair-val", class_="thresh-val"),
+                        ui.tags.input(
+                            type="range",
+                            id="bias-thresh-unfair",
+                            min="0.01",
+                            max="0.99",
+                            value="0.5",
+                            step="0.01",
+                        ),
+                        ui.tags.span(
+                            "0.50", id="bias-thresh-unfair-val", class_="thresh-val"
+                        ),
                     ),
                     # GEN A
                     ui.div(
                         {"class": "sidebar-thresh-group"},
                         ui.span("GEN", class_="thresh-label thresh-label-a"),
-                        ui.tags.input(type="range", id="bias-thresh-gen", min="0.01", max="0.99", value="0.5", step="0.01"),
-                        ui.tags.span("0.50", id="bias-thresh-gen-val", class_="thresh-val"),
+                        ui.tags.input(
+                            type="range",
+                            id="bias-thresh-gen",
+                            min="0.01",
+                            max="0.99",
+                            value="0.5",
+                            step="0.01",
+                        ),
+                        ui.tags.span(
+                            "0.50", id="bias-thresh-gen-val", class_="thresh-val"
+                        ),
                     ),
                     # STEREO A
                     ui.div(
                         {"class": "sidebar-thresh-group"},
                         ui.span("STEREO", class_="thresh-label thresh-label-a"),
-                        ui.tags.input(type="range", id="bias-thresh-stereo", min="0.01", max="0.99", value="0.5", step="0.01"),
-                        ui.tags.span("0.50", id="bias-thresh-stereo-val", class_="thresh-val"),
+                        ui.tags.input(
+                            type="range",
+                            id="bias-thresh-stereo",
+                            min="0.01",
+                            max="0.99",
+                            value="0.5",
+                            step="0.01",
+                        ),
+                        ui.tags.span(
+                            "0.50", id="bias-thresh-stereo-val", class_="thresh-val"
+                        ),
                     ),
                 ),
-
                 # Column B (Conditional on Compare Models only)
                 ui.panel_conditional(
                     "input.bias_compare_mode",
                     ui.div(
-                        {"class": "bias-thresh-col-b", "style": "flex: 1; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1);"},
+                        {
+                            "class": "bias-thresh-col-b",
+                            "style": "flex: 1; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1);",
+                        },
                         # UNFAIR B
                         ui.div(
                             {"class": "sidebar-thresh-group"},
-                            ui.span("UNFAIR", class_="thresh-label", style="color: #ff5ca9;"), # Pink label for B
-                            ui.tags.input(type="range", id="bias-thresh-unfair-b", min="0.01", max="0.99", value="0.5", step="0.01"),
-                            ui.tags.span("0.50", id="bias-thresh-unfair-b-val", class_="thresh-val"),
+                            ui.span(
+                                "UNFAIR", class_="thresh-label", style="color: #ff5ca9;"
+                            ),  # Pink label for B
+                            ui.tags.input(
+                                type="range",
+                                id="bias-thresh-unfair-b",
+                                min="0.01",
+                                max="0.99",
+                                value="0.5",
+                                step="0.01",
+                            ),
+                            ui.tags.span(
+                                "0.50",
+                                id="bias-thresh-unfair-b-val",
+                                class_="thresh-val",
+                            ),
                         ),
                         # GEN B
                         ui.div(
                             {"class": "sidebar-thresh-group"},
-                            ui.span("GEN", class_="thresh-label", style="color: #ff5ca9;"),
-                            ui.tags.input(type="range", id="bias-thresh-gen-b", min="0.01", max="0.99", value="0.5", step="0.01"),
-                            ui.tags.span("0.50", id="bias-thresh-gen-b-val", class_="thresh-val"),
+                            ui.span(
+                                "GEN", class_="thresh-label", style="color: #ff5ca9;"
+                            ),
+                            ui.tags.input(
+                                type="range",
+                                id="bias-thresh-gen-b",
+                                min="0.01",
+                                max="0.99",
+                                value="0.5",
+                                step="0.01",
+                            ),
+                            ui.tags.span(
+                                "0.50", id="bias-thresh-gen-b-val", class_="thresh-val"
+                            ),
                         ),
                         # STEREO B
                         ui.div(
                             {"class": "sidebar-thresh-group"},
-                            ui.span("STEREO", class_="thresh-label", style="color: #ff5ca9;"),
-                            ui.tags.input(type="range", id="bias-thresh-stereo-b", min="0.01", max="0.99", value="0.5", step="0.01"),
-                            ui.tags.span("0.50", id="bias-thresh-stereo-b-val", class_="thresh-val"),
+                            ui.span(
+                                "STEREO", class_="thresh-label", style="color: #ff5ca9;"
+                            ),
+                            ui.tags.input(
+                                type="range",
+                                id="bias-thresh-stereo-b",
+                                min="0.01",
+                                max="0.99",
+                                value="0.5",
+                                step="0.01",
+                            ),
+                            ui.tags.span(
+                                "0.50",
+                                id="bias-thresh-stereo-b-val",
+                                class_="thresh-val",
+                            ),
                         ),
-                    )
-                )
+                    ),
+                ),
             ),
         ),
-
+        # Composite Score Weights moved to the floating toolbar (left end),
+        # see create_floating_bias_toolbar() -> #cw-popover.
         # ── Input Text Area ──
         ui.div(
             {"class": "sidebar-section", "style": "padding-top: 16px;"},
             ui.tags.span("Input Text", class_="sidebar-label"),
-
             ui.div(
                 {"class": "custom-input-container", "id": "bias-input-container"},
                 ui.div(
                     {"class": "tabs-row"},
                     ui.div(
-                        {"class": "history-tab", "onclick": "toggleBiasHistory()", "title": "History"},
-                        ui.HTML("""<svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 448 512" fill="white"><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg>"""),
+                        {
+                            "class": "history-tab",
+                            "onclick": "toggleBiasHistory()",
+                            "title": "History",
+                        },
+                        ui.HTML(
+                            """<svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 448 512" fill="white"><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg>"""
+                        ),
                     ),
                     # Compare Prompts Tabs (hidden by default)
                     ui.div(
-                        {"class": "bias-compare-tabs-inline", "id": "bias-prompt-tabs", "style": "display: none; gap: 2px; margin-right: 8px;"},
-                        ui.tags.button("A", id="bias-prompt-tab-a", class_="bias-prompt-tab active", onclick="window.switchBiasPromptTab && window.switchBiasPromptTab('A');"),
-                        ui.tags.button("B", id="bias-prompt-tab-b", class_="bias-prompt-tab", onclick="window.switchBiasPromptTab && window.switchBiasPromptTab('B');"),
+                        {
+                            "class": "bias-compare-tabs-inline",
+                            "id": "bias-prompt-tabs",
+                            "style": "display: none; gap: 2px; margin-right: 8px;",
+                        },
+                        ui.tags.button(
+                            "A",
+                            id="bias-prompt-tab-a",
+                            class_="bias-prompt-tab active",
+                            onclick="window.switchBiasPromptTab && window.switchBiasPromptTab('A');",
+                        ),
+                        ui.tags.button(
+                            "B",
+                            id="bias-prompt-tab-b",
+                            class_="bias-prompt-tab",
+                            onclick="window.switchBiasPromptTab && window.switchBiasPromptTab('B');",
+                        ),
                     ),
                     ui.div(
-                        {"class": "session-controls", "style": "display: flex; gap: 4px; align-items: flex-end; margin-left: auto;"},
+                        {
+                            "class": "session-controls",
+                            "style": "display: flex; gap: 4px; align-items: flex-end; margin-left: auto;",
+                        },
                         ui.tags.button(
                             ui.HTML('<i class="fa-solid fa-chart-pie"></i>'),
                             id="bias_batch_mode_btn",
@@ -497,16 +615,53 @@ def create_bias_sidebar():
                             title="Batch Mode",
                             onclick="window.toggleBatchMode && window.toggleBatchMode();",
                         ),
-                        ui.tags.label(ui.HTML('<i class="fa-solid fa-folder-open"></i>'), {"class": "session-btn-custom", "title": "Load Session", "for": "load_bias_session_upload"}),
-                        ui.div(ui.input_file("load_bias_session_upload", None, accept=[".json"], multiple=False), style="display: none;"),
-                        ui.download_button("save_bias_session", label=None, icon=ui.tags.i(class_="fa-solid fa-floppy-disk"), class_="session-btn-custom"),
+                        ui.tags.label(
+                            ui.HTML('<i class="fa-solid fa-folder-open"></i>'),
+                            {
+                                "class": "session-btn-custom",
+                                "title": "Load Session",
+                                "for": "load_bias_session_upload",
+                            },
+                        ),
+                        ui.div(
+                            ui.input_file(
+                                "load_bias_session_upload",
+                                None,
+                                accept=[".json"],
+                                multiple=False,
+                            ),
+                            style="display: none;",
+                        ),
+                        ui.download_button(
+                            "save_bias_session",
+                            label=None,
+                            icon=ui.tags.i(class_="fa-solid fa-floppy-disk"),
+                            class_="session-btn-custom",
+                        ),
                     ),
                 ),
-                ui.div({"id": "bias-history-dropdown", "class": "history-dropdown"}, ui.output_ui("bias_history_list")),
+                ui.div(
+                    {"id": "bias-history-dropdown", "class": "history-dropdown"},
+                    ui.output_ui("bias_history_list"),
+                ),
                 # Text Input A
-                ui.tags.textarea("All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.", id="bias_input_text", class_="custom-textarea", rows=6, oninput="Shiny.setInputValue('bias_input_text', this.value, {priority: 'event'})"),
+                ui.tags.textarea(
+                    "All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.",
+                    id="bias_input_text",
+                    class_="custom-textarea",
+                    rows=6,
+                    oninput="Shiny.setInputValue('bias_input_text', this.value, {priority: 'event'})",
+                ),
                 # Text Input B (hidden by default)
-                ui.tags.textarea("Programmers are logical and rigorous. Artists are creative and emotional.", id="bias_input_text_B", class_="custom-textarea", rows=6, style="display: none;", oninput="Shiny.setInputValue('bias_input_text_B', this.value, {priority: 'event'})", placeholder="Enter second text for comparison..."),
+                ui.tags.textarea(
+                    "Programmers are logical and rigorous. Artists are creative and emotional.",
+                    id="bias_input_text_B",
+                    class_="custom-textarea",
+                    rows=6,
+                    style="display: none;",
+                    oninput="Shiny.setInputValue('bias_input_text_B', this.value, {priority: 'event'})",
+                    placeholder="Enter second text for comparison...",
+                ),
                 # Batch Upload Section (hidden by default)
                 ui.div(
                     {"id": "batch-upload-section", "style": "display: none;"},
@@ -514,26 +669,60 @@ def create_bias_sidebar():
                         {"class": "batch-upload-container"},
                         ui.div(
                             {"class": "batch-header"},
-                            ui.HTML('<i class="fa-solid fa-chart-pie" style="margin-right: 6px;"></i>'),
-                            ui.tags.span("Batch Mode", style="font-weight: 600; font-size: 13px;"),
-                            ui.tags.span("Upload a CSV or JSON to analyse multiple sentences at once", style="font-weight: 400; font-size: 11px; opacity: 0.85; margin-left: 4px; text-align: center;"),
+                            ui.HTML(
+                                '<i class="fa-solid fa-chart-pie" style="margin-right: 6px;"></i>'
+                            ),
+                            ui.tags.span(
+                                "Batch Mode", style="font-weight: 600; font-size: 13px;"
+                            ),
+                            ui.tags.span(
+                                "Upload a CSV or JSON to analyse multiple sentences at once",
+                                style="font-weight: 400; font-size: 11px; opacity: 0.85; margin-left: 4px; text-align: center;",
+                            ),
                         ),
                         ui.div(
-                            {"class": "batch-dropzone", "id": "batch-dropzone", "onclick": "document.getElementById('batch_file_upload').click();"},
-                            ui.HTML('<i class="fa-solid fa-cloud-arrow-up batch-dropzone-icon" style="font-size: 20px; color: #94a3b8; margin-bottom: 4px;"></i>'),
-                            ui.tags.div("Drop CSV or JSON file here, or click to browse", id="batch-dropzone-label", style="color: #94a3b8; font-size: 12px; font-weight: 500; text-align: center;"),
+                            {
+                                "class": "batch-dropzone",
+                                "id": "batch-dropzone",
+                                "onclick": "document.getElementById('batch_file_upload').click();",
+                            },
+                            ui.HTML(
+                                '<i class="fa-solid fa-cloud-arrow-up batch-dropzone-icon" style="font-size: 20px; color: #94a3b8; margin-bottom: 4px;"></i>'
+                            ),
+                            ui.tags.div(
+                                "Drop CSV or JSON file here, or click to browse",
+                                id="batch-dropzone-label",
+                                style="color: #94a3b8; font-size: 12px; font-weight: 500; text-align: center;",
+                            ),
                             ui.div(
-                                {"id": "batch-file-info", "class": "batch-file-info", "style": "display: none;"},
-                                ui.HTML('<i class="fa-solid fa-file-lines" style="margin-right: 6px;"></i>'),
+                                {
+                                    "id": "batch-file-info",
+                                    "class": "batch-file-info",
+                                    "style": "display: none;",
+                                },
+                                ui.HTML(
+                                    '<i class="fa-solid fa-file-lines" style="margin-right: 6px;"></i>'
+                                ),
                                 ui.tags.span("", id="batch-file-name"),
-                                ui.tags.span("", id="batch-file-count", style="margin-left: 8px; font-weight: 600;"),
+                                ui.tags.span(
+                                    "",
+                                    id="batch-file-count",
+                                    style="margin-left: 8px; font-weight: 600;",
+                                ),
                             ),
                         ),
                     ),
-                    ui.div(ui.input_file("batch_file_upload", None, accept=[".csv", ".json"], multiple=False), style="display: none;"),
+                    ui.div(
+                        ui.input_file(
+                            "batch_file_upload",
+                            None,
+                            accept=[".csv", ".json"],
+                            multiple=False,
+                        ),
+                        style="display: none;",
+                    ),
                 ),
             ),
-
             # Prompt tabs styling
             ui.tags.style("""
                 .bias-compare-tabs-inline {
@@ -653,13 +842,15 @@ def create_bias_sidebar():
                     border-radius: 4px;
                 }
             """),
-
-
             ui.div(
                 {"style": "margin-top: 12px; margin-bottom: 14px;"},
-                ui.input_action_button("analyze_bias_btn", "Analyze Bias", class_="btn-primary", style="padding-top: 6px; padding-bottom: 6px; min-height: 0; height: auto;"),
+                ui.input_action_button(
+                    "analyze_bias_btn",
+                    "Analyze Bias",
+                    class_="btn-primary",
+                    style="padding-top: 6px; padding-bottom: 6px; min-height: 0; height: auto;",
+                ),
             ),
-
             # JavaScript for compare modes
             ui.tags.script("""
                 function toggleBiasHistory() {
@@ -1251,7 +1442,7 @@ def create_bias_sidebar():
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
                 });
-            """)
+            """),
         ),
     )
 
@@ -1265,7 +1456,6 @@ def create_bias_content():
     """
     return ui.div(
         {"class": "content bias-content", "style": "margin-top: 19px !important;"},
-
         # Accordion badge styles (shared with dynamic content)
         ui.tags.style("""
             .accordion-panel-badge {
@@ -1316,7 +1506,6 @@ def create_bias_content():
                 /* padding-bottom: 0 removed to allow global styles.py padding-bottom: 110px */
             }
         """),
-
         ui.tags.style("""
             #bias_dashboard_content {
                 margin-bottom: 0 !important;
@@ -1345,29 +1534,41 @@ def create_bias_accordion():
 
     def subsection_header(title: str, body: str | None = None):
         nodes = [
-            ui.h5(title, style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #f8fafc; letter-spacing: 0.2px;")
+            ui.h5(
+                title,
+                style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #f8fafc; letter-spacing: 0.2px;",
+            )
         ]
         if body:
-            nodes.append(ui.p(body, style="margin: 0 0 10px 0; font-size: 12px; line-height: 1.5; color: #94a3b8;"))
+            nodes.append(
+                ui.p(
+                    body,
+                    style="margin: 0 0 10px 0; font-size: 12px; line-height: 1.5; color: #94a3b8;",
+                )
+            )
         return ui.div({"style": "margin: 12px 0 8px;"}, *nodes)
 
     return ui.accordion(
         # Panel 1: Overview & Detection
         ui.accordion_panel(
-            ui.span("Overview & Detection", ui.span({"class": "accordion-panel-badge essential"}, "Essential")),
+            ui.span(
+                "Overview & Detection",
+                ui.span({"class": "accordion-panel-badge essential"}, "Essential"),
+            ),
             ui.output_ui("bias_summary"),
             ui.output_ui("bias_spans_table"),
-            value="overview"
+            value="overview",
         ),
-
         # Panel 2: Technical Analysis
         ui.accordion_panel(
-            ui.span("Technical Analysis", ui.span({"class": "accordion-panel-badge technical"}, "Technical")),
+            ui.span(
+                "Technical Analysis",
+                ui.span({"class": "accordion-panel-badge technical"}, "Technical"),
+            ),
             ui.output_ui("token_bias_strip"),
             ui.output_ui("confidence_breakdown"),
-            value="technical"
+            value="technical",
         ),
-
         # Panel 3: Attention x Bias Correlation
         ui.accordion_panel(
             ui.span(
@@ -1375,8 +1576,37 @@ def create_bias_accordion():
                 ui.span("Attention × Bias Corr", class_="panel-title-short"),
                 ui.span({"class": "accordion-panel-badge explore"}, "Exploration"),
             ),
-            # Formula definition panel
-            ui.output_ui("bias_ratio_formula"),
+            # Formula definition + live significance (alpha) control, in ONE card
+            ui.div(
+                {"style": "background:linear-gradient(135deg,#f8fafc,#f0f4f8);"
+                          "border:1px solid #e2e8f0;border-radius:12px;"
+                          "padding:16px 20px;margin-bottom:16px;"},
+                # Definition (now without its own outer card)
+                ui.output_ui("bias_ratio_formula"),
+                # Feature 1: live alpha control (left) + head-survival readout (right),
+                # on the same line, inside the same card
+                ui.div(
+                    {"style": "display:flex;gap:18px;align-items:center;"
+                              "border-top:1px solid #e2e8f0;margin-top:14px;padding-top:12px;"},
+                    # Left: significance slider
+                    ui.div(
+                        {"style": "flex:0 0 240px;"},
+                        ui.input_slider(
+                            "bias_alpha",
+                            "Significance level α",
+                            min=0.01,
+                            max=0.20,
+                            value=0.05,
+                            step=0.01,
+                        ),
+                    ),
+                    # Right: heads specialised readout
+                    ui.div(
+                        {"style": "flex:1;min-width:0;"},
+                        ui.output_ui("alpha_head_survival"),
+                    ),
+                ),
+            ),
             # Hidden selects (driven by the floating toolbar)
             ui.div(
                 {"style": "display:none;"},
@@ -1385,14 +1615,12 @@ def create_bias_accordion():
             ),
             # Combined Attention & Bias View (controlled by toolbar)
             ui.output_ui("combined_bias_view"),
-            
             # Using custom output_ui for these to handle layout internally (single vs dual columns)
             ui.output_ui("attention_bias_matrix"),
             ui.output_ui("bias_propagation_plot"),
             ui.output_ui("bias_focused_heads_table"),
-            value="attention_bias"
+            value="attention_bias",
         ),
-
         # Panel 4: Faithfulness & Ablation
         ui.accordion_panel(
             ui.span(
@@ -1406,13 +1634,11 @@ def create_bias_accordion():
                     "It asks whether attention is only visually plausible or whether it aligns with "
                     "gradient-based attributions, perturbation tests, and causal interventions.",
                 ),
-
                 subsection_header(
                     "Gradient Agreement",
                     "Integrated Gradients is used as the primary attribution baseline. These outputs show whether heads that focus on biased tokens also align with gradient-based token importance.",
                 ),
                 ui.output_ui("ig_results_display"),
-
                 subsection_header(
                     "Causal Head Intervention",
                     "Head ablation tests whether heads that appear bias-focused actually change the model representation when removed. This is the most directly causal part of the validation panel.",
@@ -1422,41 +1648,48 @@ def create_bias_accordion():
                 # that the combined ranking dilutes, especially in GPT-2
                 # (THRESHOLDS_CALIBRATION.md sections 15-16).
                 ui.div(
-                    {"style": "display:flex;justify-content:center;align-items:center;gap:14px;margin:0 0 16px 0;"},
+                    {
+                        "style": "display:flex;justify-content:center;align-items:center;gap:14px;margin:0 0 16px 0;"
+                    },
                     ui.span(
                         "Rank heads by",
                         style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;",
                     ),
                     ui.div(
-                        {"style": "display:inline-flex;gap:8px;align-items:stretch;", "id": "ablation-rank-pills"},
+                        {
+                            "style": "display:inline-flex;gap:8px;align-items:stretch;",
+                            "id": "ablation-rank-pills",
+                        },
                         ui.HTML(
                             # Combined (blue) - active by default
                             '<div class="ablation-pill active" data-value="combined" title="Combined BAR (all biased tokens)" '
                             'style="--pill-color:#ff5ca9;--pill-bg:rgba(255,92,169,0.14);--pill-border:#ff5ca933;">'
                             '<span class="ablation-pill-label">Combined</span>'
                             '<span class="ablation-pill-sub">all biased</span>'
-                            '</div>'
+                            "</div>"
                             # GEN (yellow)
                             '<div class="ablation-pill" data-value="GEN" title="BAR_GEN (generalisation tokens)" '
                             'style="--pill-color:#f59e0b;--pill-bg:rgba(245,158,11,0.14);--pill-border:#f59e0b33;">'
                             '<span class="ablation-pill-label">GEN</span>'
                             '<span class="ablation-pill-sub">generalisation</span>'
-                            '</div>'
+                            "</div>"
                             # UNFAIR (red)
                             '<div class="ablation-pill" data-value="UNFAIR" title="BAR_UNFAIR (unfair-language tokens)" '
                             'style="--pill-color:#ef4444;--pill-bg:rgba(239,68,68,0.14);--pill-border:#ef444433;">'
                             '<span class="ablation-pill-label">UNFAIR</span>'
                             '<span class="ablation-pill-sub">unfair language</span>'
-                            '</div>'
+                            "</div>"
                             # STEREO (purple)
                             '<div class="ablation-pill" data-value="STEREO" title="BAR_STEREO (stereotype tokens)" '
                             'style="--pill-color:#a78bfa;--pill-bg:rgba(167,139,250,0.14);--pill-border:#a78bfa33;">'
                             '<span class="ablation-pill-label">STEREO</span>'
                             '<span class="ablation-pill-sub">stereotype</span>'
-                            '</div>'
+                            "</div>"
                         ),
                     ),
-                    ui.tags.input(type="hidden", id="bias_ablation_rank_by", value="combined"),
+                    ui.tags.input(
+                        type="hidden", id="bias_ablation_rank_by", value="combined"
+                    ),
                 ),
                 # Pill styles + JS
                 ui.tags.style("""
@@ -1496,13 +1729,11 @@ def create_bias_accordion():
                     })();
                 """),
                 ui.output_ui("ablation_results_display"),
-
                 subsection_header(
                     "Perturbation and Minimality",
                     "Perturbation analysis checks whether token importance is stable under masking or removal. This helps test whether the model truly depends on the same content that the explanations highlight.",
                 ),
                 ui.output_ui("perturbation_results_display"),
-
                 subsection_header(
                     "Cross-Validation With LRP / DeepLift",
                     "This final block tests convergent validity. If LRP or DeepLift agrees with Integrated Gradients, the faithfulness claim becomes more robust than relying on a single baseline.",
@@ -1511,7 +1742,6 @@ def create_bias_accordion():
             ),
             value="ablation",
         ),
-
         # Panel 5: StereoSet Evaluation
         ui.accordion_panel(
             ui.span(
@@ -1524,24 +1754,20 @@ def create_bias_accordion():
                 "StereoSet evaluates whether the models exhibit stereotypical preferences "
                 "on a standardized bias benchmark.",
             ),
-
             subsection_header(
                 "Benchmark Overview",
                 "Use LMS, SS, and ICAT together. SS measures stereotype preference, LMS measures language-model quality, and ICAT rewards the balance between the two.",
             ),
             ui.output_ui("stereoset_overview"),
-
             ui.output_ui("stereoset_category_header"),
             ui.output_ui("stereoset_category_breakdown"),
             ui.output_ui("stereoset_demographic_slices"),
-
             subsection_header(
                 "Sensitive Heads and Attention Mechanisms",
                 "This block reconnects StereoSet to the main Attention Atlas contribution. It identifies which heads are most sensitive on the benchmark and how benchmark behavior relates back to attention structure.",
             ),
             ui.output_ui("stereoset_head_sensitivity"),
             ui.output_ui("stereoset_attention_bias_link"),
-
             subsection_header(
                 "Example Explorer",
                 "Use this final section for qualitative inspection. It is best suited for case studies where you want to connect benchmark scores to concrete prompts and attention patterns.",
@@ -1561,105 +1787,381 @@ def create_floating_bias_toolbar():
         # Main Bar - reuses .floating-control-bar from styles.py
         ui.div(
             {"class": "floating-control-bar", "id": "bias-floating-toolbar"},
-
             ui.span("CONFIGURATIONS", class_="bar-title"),
-
             ui.div(
                 {"class": "controls-row", "id": "bias-controls-row"},
-
-                # ── LEFT GROUP: Layer & Head ──
+                # ── LEFT GROUP: Weights section + Layer & Head ──
                 ui.div(
                     {"class": "bias-bar-left"},
+                    # Weights: button above + sliders below (column layout)
                     ui.div(
-                        {"class": "control-group"},
+                        {"class": "cw-section"},
+                        ui.tags.button(
+                            "Weights",
+                            id="cw-toggle-btn",
+                            class_="btn-global",
+                            title="Change Composite Score Weights",
+                            onclick="(function(ev){var p=document.getElementById('cw-inline-panel');var b=document.getElementById('cw-toggle-btn');var left=b.closest('.bias-bar-left');p.classList.toggle('open');b.classList.toggle('active');if(left)left.classList.toggle('cw-active');ev.stopPropagation();})(event)",
+                        ),
+                        # Vertical sliders row (hidden by default)
+                        ui.div(
+                            {"id": "cw-inline-panel", "class": "cw-inline-panel"},
+                            ui.div(
+                                {"class": "cw-slider-col"},
+                                ui.tags.span("0.30", id="cw_pct_val", class_="cw-val"),
+                                ui.tags.input(
+                                    type="range",
+                                    id="cw_pct",
+                                    min="0",
+                                    max="1",
+                                    value="0.30",
+                                    step="0.05",
+                                    class_="cw-vert",
+                                    orient="vertical",
+                                    oninput="window.cwOnInput && window.cwOnInput('cw_pct')",
+                                ),
+                                ui.tags.span("DENS", class_="cw-name"),
+                            ),
+                            ui.div(
+                                {"class": "cw-slider-col"},
+                                ui.tags.span("0.20", id="cw_gen_val", class_="cw-val"),
+                                ui.tags.input(
+                                    type="range",
+                                    id="cw_gen",
+                                    min="0",
+                                    max="1",
+                                    value="0.20",
+                                    step="0.05",
+                                    class_="cw-vert",
+                                    orient="vertical",
+                                    oninput="window.cwOnInput && window.cwOnInput('cw_gen')",
+                                ),
+                                ui.tags.span("GEN", class_="cw-name"),
+                            ),
+                            ui.div(
+                                {"class": "cw-slider-col"},
+                                ui.tags.span(
+                                    "0.25", id="cw_unfair_val", class_="cw-val"
+                                ),
+                                ui.tags.input(
+                                    type="range",
+                                    id="cw_unfair",
+                                    min="0",
+                                    max="1",
+                                    value="0.25",
+                                    step="0.05",
+                                    class_="cw-vert",
+                                    orient="vertical",
+                                    oninput="window.cwOnInput && window.cwOnInput('cw_unfair')",
+                                ),
+                                ui.tags.span("UNFAIR", class_="cw-name"),
+                            ),
+                            ui.div(
+                                {"class": "cw-slider-col"},
+                                ui.tags.span(
+                                    "0.25", id="cw_stereo_val", class_="cw-val"
+                                ),
+                                ui.tags.input(
+                                    type="range",
+                                    id="cw_stereo",
+                                    min="0",
+                                    max="1",
+                                    value="0.25",
+                                    step="0.05",
+                                    class_="cw-vert",
+                                    orient="vertical",
+                                    oninput="window.cwOnInput && window.cwOnInput('cw_stereo')",
+                                ),
+                                ui.tags.span("STEREO", class_="cw-name"),
+                            ),
+                        ),
+                    ),
+                    ui.div(
+                        {"class": "control-group bias-lh-group"},
                         ui.span("Layer", class_="control-label"),
                         ui.div(
                             {"class": "slider-container"},
-                            ui.tags.span("0", id="bias-layer-value", class_="slider-value"),
-                            ui.tags.input(type="range", id="bias-layer-slider", min="0", max="11", value="0", step="1"),
+                            ui.tags.span(
+                                "0", id="bias-layer-value", class_="slider-value"
+                            ),
+                            ui.tags.input(
+                                type="range",
+                                id="bias-layer-slider",
+                                min="0",
+                                max="11",
+                                value="0",
+                                step="1",
+                            ),
                         ),
                     ),
                     ui.div(
-                        {"class": "control-group"},
+                        {"class": "control-group bias-lh-group"},
                         ui.span("Head", class_="control-label"),
                         ui.div(
                             {"class": "slider-container"},
-                            ui.tags.span("0", id="bias-head-value", class_="slider-value"),
-                            ui.tags.input(type="range", id="bias-head-slider", min="0", max="11", value="0", step="1"),
+                            ui.tags.span(
+                                "0", id="bias-head-value", class_="slider-value"
+                            ),
+                            ui.tags.input(
+                                type="range",
+                                id="bias-head-slider",
+                                min="0",
+                                max="11",
+                                value="0",
+                                step="1",
+                            ),
                         ),
                     ),
                 ),
-
                 # ── CENTER: Bias Tokens ──
                 ui.div(
                     {"id": "bias-tokens-row"},
                     ui.output_ui("bias_toolbar_tokens"),
                 ),
-
                 # ── RIGHT GROUP: Source + BAR + Top-K ──
                 ui.div(
                     {"class": "bias-bar-right"},
                     # Attention Source toggle
                     ui.div(
                         {"class": "control-group"},
-                        ui.span("Source Attention", class_="control-label", **{"data-short": "SRC ATT"}),
+                        ui.span(
+                            "Source Attention",
+                            class_="control-label",
+                            **{"data-short": "SRC ATT"},
+                        ),
                         ui.div(
                             {"class": "radio-group", "id": "bias-source-radio-group"},
-                            ui.span("GUS-Net", class_="radio-option active",
-                                    id="bias-src-gusnet",
-                                    title="Attention from the fine-tuned GUS-Net encoder",
-                                    **{"data-value": "gusnet"}),
-                            ui.span("Base", class_="radio-option",
-                                    id="bias-src-base",
-                                    title="Attention from the original pretrained base encoder",
-                                    **{"data-value": "base"}),
-                            ui.span("Compare", class_="radio-option",
-                                    id="bias-src-compare",
-                                    title="Side-by-side Base Encoder vs GUS-Net",
-                                    **{"data-value": "compare"}),
+                            ui.span(
+                                "GUS-Net",
+                                class_="radio-option active",
+                                id="bias-src-gusnet",
+                                title="Attention from the fine-tuned GUS-Net encoder",
+                                **{"data-value": "gusnet"},
+                            ),
+                            ui.span(
+                                "Base",
+                                class_="radio-option",
+                                id="bias-src-base",
+                                title="Attention from the original pretrained base encoder",
+                                **{"data-value": "base"},
+                            ),
+                            ui.span(
+                                "Compare",
+                                class_="radio-option",
+                                id="bias-src-compare",
+                                title="Side-by-side Base Encoder vs GUS-Net",
+                                **{"data-value": "compare"},
+                            ),
                         ),
-                        ui.tags.input(type="hidden", id="bias_attn_source", value="gusnet"),
+                        ui.tags.input(
+                            type="hidden", id="bias_attn_source", value="gusnet"
+                        ),
                     ),
                     # BAR Threshold
                     ui.div(
-                        {"class": "control-group",
-                         "title": "Bias Attention Ratio (BAR) specialization threshold.\n"
-                                  "BAR = observed attention to biased tokens / expected under uniform.\n"
-                                  "Heads with BAR above this value are marked as 'specialized'.\n"
-                                  "= 1.0: head attends uniformly (no bias focus)\n"
-                                  "> 2.5: head over-attends to biased tokens (default: empirical α=0.05 from permutation null on v9)\n"
-                                  "Lower values detect subtler patterns; higher values are stricter."},
-                        ui.span("BAR Threshold", class_="control-label", **{"data-short": "BAR"}),
+                        {
+                            "class": "control-group",
+                            "title": "Bias Attention Ratio (BAR) specialization threshold.\n"
+                            "BAR = observed attention to biased tokens / expected under uniform.\n"
+                            "Heads with BAR above this value are marked as 'specialized'.\n"
+                            "= 1.0: head attends uniformly (no bias focus)\n"
+                            "> 2.5: head over-attends to biased tokens (default: empirical α=0.05 from permutation null on v9)\n"
+                            "Lower values detect subtler patterns; higher values are stricter.",
+                        },
+                        ui.span(
+                            "BAR Threshold",
+                            class_="control-label",
+                            **{"data-short": "BAR"},
+                        ),
                         ui.div(
                             {"class": "slider-container"},
-                            ui.tags.span("2.5", id="bias-bar-threshold-value", class_="slider-value"),
-                            ui.tags.input(type="range", id="bias-bar-threshold-slider", min="1.0", max="5.0", value="2.5", step="0.1"),
+                            ui.tags.span(
+                                "2.5",
+                                id="bias-bar-threshold-value",
+                                class_="slider-value",
+                            ),
+                            ui.tags.input(
+                                type="range",
+                                id="bias-bar-threshold-slider",
+                                min="1.0",
+                                max="5.0",
+                                value="2.5",
+                                step="0.1",
+                            ),
                         ),
                     ),
                     # Top-K slider
                     ui.div(
-                        {"class": "control-group",
-                         "title": "How many top heads (ranked by BAR) to display.\n"
-                                  "Default 5 comes from the cumulative ablation curve on v9: "
-                                  "BERT reaches ~66% of its total head-level bias impact at K=5, "
-                                  "GPT-2 has a near-flat curve so K=1 captures almost everything.\n"
-                                  "Drag up to 20 to inspect the full distribution of bias-relevant heads."},
+                        {
+                            "class": "control-group",
+                            "title": "How many top heads (ranked by BAR) to display.\n"
+                            "Default 5 comes from the cumulative ablation curve on v9: "
+                            "BERT reaches ~66% of its total head-level bias impact at K=5, "
+                            "GPT-2 has a near-flat curve so K=1 captures almost everything.\n"
+                            "Drag up to 20 to inspect the full distribution of bias-relevant heads.",
+                        },
                         ui.span("Top-K", class_="control-label"),
                         ui.div(
                             {"class": "slider-container"},
-                            ui.tags.span("5", id="bias-topk-value", class_="slider-value"),
-                            ui.tags.input(type="range", id="bias-topk-slider", min="1", max="20", value="5", step="1"),
+                            ui.tags.span(
+                                "5", id="bias-topk-value", class_="slider-value"
+                            ),
+                            ui.tags.input(
+                                type="range",
+                                id="bias-topk-slider",
+                                min="1",
+                                max="20",
+                                value="5",
+                                step="1",
+                            ),
                         ),
                     ),
                 ),
             ),
         ),
-
         # Plotly CDN (needed for deferred plots that don't use to_html with include_plotlyjs)
         ui.tags.script(src="https://cdn.plot.ly/plotly-2.35.2.min.js"),
-
         # ── Extra styles (only for bias-specific additions) ──
         ui.tags.style("""
+            /* ── Composite Score Weights: floating section ── */
+            .cw-section {
+                display: flex;
+                align-items: center;
+                flex-shrink: 0;
+            }
+            #cw-toggle-btn {
+                white-space: nowrap;
+                font-size: 8px;
+                letter-spacing: 0.5px;
+                flex-shrink: 0;
+            }
+            /* Sliders live INSIDE the bar, in-flow next to the button. They are
+               kept short so they fit within the bar's existing height (the
+               centred token row already makes the bar tall enough). */
+            .cw-inline-panel {
+                display: none;
+                align-items: center;
+                gap: 16px;                 /* spaced, but tight enough to fit the left track */
+                margin-left: 10px;
+                animation: cwPopUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            .cw-inline-panel.open {
+                display: flex;
+            }
+            @keyframes cwPopUp {
+                from { opacity: 0; transform: translateY(6px); }
+                to   { opacity: 1; transform: translateY(0); }
+            }
+            .cw-slider-col {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 1px;
+                flex-shrink: 0;
+            }
+            .cw-val {
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 9px;
+                font-weight: 700;
+                color: #fff;
+                background: rgba(0, 0, 0, 0.35);
+                border-radius: 3px;
+                padding: 0px 3px;
+                min-width: 22px;
+                text-align: center;
+                line-height: 1.4;
+            }
+            /* Modern vertical range: appearance:none + writing-mode (NOT the
+               legacy slider-vertical, which forces an unstylable white track).
+               The element's own background IS the dark track. */
+            #bias-floating-toolbar input[type="range"].cw-vert {
+                -webkit-appearance: none !important;
+                appearance: none !important;
+                writing-mode: vertical-lr;
+                direction: rtl;
+                width: 5px !important;            /* thin track */
+                height: 38px !important;          /* longer travel, stays within bar height */
+                background: linear-gradient(180deg, #334155 0%, #1e293b 100%) !important;
+                border-radius: 3px !important;
+                cursor: pointer;
+                box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4) !important;
+            }
+            /* Webkit: keep the runnable track transparent so only the element's
+               dark background shows (no white), and centre the thumb. */
+            #bias-floating-toolbar input[type="range"].cw-vert::-webkit-slider-runnable-track {
+                -webkit-appearance: none;
+                background: transparent !important;
+                border: 0 !important;
+                box-shadow: none !important;
+            }
+            #bias-floating-toolbar input[type="range"].cw-vert::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                width: 13px !important;
+                height: 13px !important;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%) !important;
+                border: 2px solid rgba(255, 255, 255, 0.2) !important;
+                cursor: pointer;
+                box-shadow: 0 2px 6px rgba(255, 92, 169, 0.4) !important;
+                margin: 0 !important;
+            }
+            #bias-floating-toolbar input[type="range"].cw-vert::-webkit-slider-thumb:hover {
+                transform: scale(1.15);
+                box-shadow: 0 3px 8px rgba(255, 92, 169, 0.6) !important;
+            }
+            /* Firefox */
+            #bias-floating-toolbar input[type="range"].cw-vert::-moz-range-track {
+                width: 5px !important;
+                background: transparent !important;
+                border: 0;
+                box-shadow: none !important;
+            }
+            #bias-floating-toolbar input[type="range"].cw-vert::-moz-range-thumb {
+                width: 13px !important;
+                height: 13px !important;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%) !important;
+                border: 2px solid rgba(255, 255, 255, 0.2) !important;
+                cursor: pointer;
+                box-shadow: 0 2px 6px rgba(255, 92, 169, 0.4) !important;
+            }
+            .cw-name {
+                font-size: 7px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.3px;
+                color: #e2e8f0;
+                white-space: nowrap;
+                line-height: 1;
+                text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+            }
+
+            /* Layer & Head shrink a little (not much) when the weights panel
+               opens, freeing room so the left group stays within its track. */
+            .bias-lh-group input[type="range"] {
+                transition: width 0.2s ease;
+            }
+            .bias-bar-left.cw-active .bias-lh-group input[type="range"] {
+                width: 60px !important;
+            }
+            /* While the panel is open: keep Layer/Head at their set width (don't
+               let flexbox crush them), tighten spacing, and push any overflow
+               LEFT (flex-end) so it never shoves the centred token row. */
+            .bias-bar-left.cw-active {
+                gap: 6px;
+                justify-content: flex-end;
+            }
+            .bias-bar-left.cw-active .bias-lh-group,
+            .bias-bar-left.cw-active .cw-section {
+                flex-shrink: 0;
+            }
+            .bias-lh-group .slider-value {
+                transition: all 0.2s ease;
+            }
+            .bias-lh-group .control-label {
+                transition: font-size 0.2s ease;
+            }
+
             #bias-floating-toolbar {
                 animation: biasBarSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
             }
@@ -1668,10 +2170,12 @@ def create_floating_bias_toolbar():
                 to { transform: translateY(0); opacity: 1; }
             }
 
-            /* Grid layout: left | center | right - center is truly centered */
+            /* Grid layout: left | center | right - center is truly centered.
+               minmax(0, 1fr) caps the side tracks so a wide left group (weights
+               panel open) cannot grow its track and shove the centred tokens. */
             #bias-controls-row {
                 display: grid !important;
-                grid-template-columns: 1fr auto 1fr;
+                grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
                 align-items: center;
                 gap: 12px;
                 width: 100%;
@@ -1706,8 +2210,8 @@ def create_floating_bias_toolbar():
                 min-width: 0;
             }
 
-            /* Sliders: left group larger, right group compact */
-            .bias-bar-left input[type="range"] {
+            /* Sliders: left group normal, right group compact */
+            .bias-bar-left input[type="range"]:not(.cw-vert) {
                 width: 60px;
             }
             .bias-bar-right input[type="range"] {
@@ -1729,7 +2233,7 @@ def create_floating_bias_toolbar():
                 .bias-bar-left, .bias-bar-right {
                     gap: 16px;
                 }
-                .bias-bar-left input[type="range"] {
+                .bias-bar-left input[type="range"]:not(.cw-vert) {
                     width: 90px;
                 }
                 .bias-bar-right input[type="range"] {
@@ -1829,6 +2333,18 @@ def create_floating_bias_toolbar():
                     position: relative !important;
                     margin-bottom: 6px !important;
                     text-align: center;
+                }
+
+                /* Composite Weights: smaller on mobile */
+                #cw-toggle-btn {
+                    font-size: 7px !important;
+                    padding: 2px 6px !important;
+                }
+                #bias-floating-toolbar input[type="range"].cw-vert {
+                    height: 40px !important;
+                }
+                .cw-inline-panel {
+                    gap: 8px !important;
                 }
 
                 /* Layer + Head stacked: label ON TOP of slider for each */
@@ -1934,9 +2450,46 @@ def create_floating_bias_toolbar():
                 max-width: 100% !important;
             }
         """),
-
         # ── Script ──
         ui.tags.script("""
+        // ── Composite Weights: keep the four sliders' sum <= 1 ──
+        window.cwOnInput = function(id) {
+            var ids = ['cw_pct', 'cw_gen', 'cw_unfair', 'cw_stereo'];
+            var el = document.getElementById(id);
+            if (!el) return;
+            var sum = 0, others = 0;
+            ids.forEach(function(k) {
+                var v = parseFloat((document.getElementById(k) || {}).value) || 0;
+                sum += v;
+                if (k !== id) others += v;
+            });
+            // If the total would exceed 1, cap the slider being dragged.
+            if (sum > 1) {
+                var capped = Math.max(0, Math.round((1 - others) / 0.05) * 0.05);
+                el.value = capped;
+            }
+            var val = parseFloat(el.value) || 0;
+            var disp = document.getElementById(id + '_val');
+            if (disp) disp.innerText = val.toFixed(2);
+            Shiny.setInputValue(id, String(val), {priority: 'event'});
+        };
+
+        // ── Composite Weights inline panel: close on outside click ──
+        (function() {
+            document.addEventListener('click', function(e) {
+                var pop = document.getElementById('cw-inline-panel');
+                var btn = document.getElementById('cw-toggle-btn');
+                if (!pop || !btn) return;
+                if (!pop.classList.contains('open')) return;
+                // If click is inside the panel or on the button, do nothing
+                if (pop.contains(e.target) || btn.contains(e.target)) return;
+                pop.classList.remove('open');
+                btn.classList.remove('active');
+                var left = btn.closest('.bias-bar-left');
+                if (left) left.classList.remove('cw-active');
+            });
+        })();
+
         // ── Attention Source toggle (radio-group pattern) ──
         (function() {
             if (window._biasAttnSourceReady) return;
@@ -2312,4 +2865,9 @@ def create_floating_bias_toolbar():
     )
 
 
-__all__ = ["create_bias_sidebar", "create_bias_content", "create_bias_accordion", "create_floating_bias_toolbar"]
+__all__ = [
+    "create_bias_sidebar",
+    "create_bias_content",
+    "create_bias_accordion",
+    "create_floating_bias_toolbar",
+]

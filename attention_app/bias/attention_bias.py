@@ -341,4 +341,41 @@ class AttentionBiasAnalyzer:
         }
 
 
-__all__ = ["AttentionBiasAnalyzer", "HeadBiasMetrics"]
+def bar_permutation_null(attention_weights, n_biased, valid_positions,
+                         n_perm=300, rng=None):
+    """Pooled permutation null of the BAR over all heads, for one prompt.
+
+    For each of ``n_perm`` draws we pick a random subset of ``n_biased``
+    key positions (from ``valid_positions``, i.e. the non-special tokens)
+    and compute the BAR of every (layer, head) under that random mask,
+    using the same estimator as :meth:`AttentionBiasAnalyzer._compute_head_metrics`
+    (BAR = mass into the chosen columns / ``n_biased``). The returned 1-D
+    array pools all ``n_perm * n_heads`` null BAR values, so an empirical
+    quantile gives a per-prompt significance threshold for a given alpha.
+
+    Returns an empty array when the prompt has no room to permute
+    (no biased tokens, or the biased set already fills every valid slot).
+    """
+    if rng is None:
+        rng = np.random.default_rng(0)
+
+    layers = []
+    for lw in attention_weights:
+        arr = lw.detach().cpu().numpy() if hasattr(lw, "detach") else np.asarray(lw)
+        layers.append(arr[0])  # drop batch -> [H, N, N]
+    A = np.stack(layers)       # [L, H, N, N]
+    L, H, N, _ = A.shape
+
+    valid = np.asarray(valid_positions, dtype=int)
+    if n_biased <= 0 or valid.size == 0 or n_biased >= valid.size:
+        return np.array([])
+
+    null = np.empty((n_perm, L * H), dtype=np.float64)
+    for p in range(n_perm):
+        cols = rng.choice(valid, size=n_biased, replace=False)
+        bar = A[:, :, :, cols].sum(axis=(2, 3)) / n_biased  # [L, H]
+        null[p] = bar.reshape(-1)
+    return null.reshape(-1)
+
+
+__all__ = ["AttentionBiasAnalyzer", "HeadBiasMetrics", "bar_permutation_null"]

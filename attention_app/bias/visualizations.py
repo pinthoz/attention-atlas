@@ -1022,10 +1022,9 @@ def create_ratio_formula_html() -> str:
         f'and are not distinguishable from chance.</div>'
     )
 
+    # NOTE: no outer card here — the caller (bias_ratio_formula) wraps this
+    # content together with the alpha control in a single shared card.
     return (
-        '<div style="background:linear-gradient(135deg,#f8fafc,#f0f4f8);'
-        'border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;margin-bottom:16px;">'
-
         # ── Title with hover (i) info icon (matches other bias tooltips) ──
         '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 14px 0;">'
         '<h4 style="margin:0;font-size:18px;font-weight:600;color:#0f172a;text-align:center;">Bias Attention Ratio - Definition</h4>'
@@ -1114,7 +1113,6 @@ def create_ratio_formula_html() -> str:
         '<code style="background:#fecaca;padding:1px 6px;border-radius:3px;'
         'font-size:10px;color:#7f1d1d;">&gt; 5.3</code> '
         '<b>Strongly specialised</b> at &alpha;=0.01 - extreme concentration on biased tokens'
-        '</div>'
         '</div>'
     )
 
