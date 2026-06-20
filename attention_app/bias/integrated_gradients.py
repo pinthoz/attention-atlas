@@ -166,6 +166,10 @@ class LRPAnalysisBundle:
     # lrp_vs_ig_spearman compares IG with IG and is NOT an independent
     # cross-validation — renderers must surface this.
     method: str = "AttnLRP"
+    # Optional alternate-method bundle (e.g. Chefer-LRP when this one is
+    # AttnLRP), so the panel can show both ρ(method, IG) and switch charts
+    # between the two LRP variants. None when only one method was available.
+    alt: Optional["LRPAnalysisBundle"] = None
 
 
 def _get_embedding_layer(encoder_model, is_gpt2):
@@ -729,7 +733,8 @@ def compute_lrp_attributions(
     tokenizer,
     text: str,
     is_gpt2: bool,
-) -> Tuple[np.ndarray, List[str], str]:
+    force: Optional[str] = None,
+) -> Optional[Tuple[np.ndarray, List[str], str]]:
     """Compute per-token transformer-LRP attributions for the IG cross-check.
 
     Three methods are tried in order of rigour, and the one that succeeds is
@@ -758,10 +763,13 @@ def compute_lrp_attributions(
     attention_mask = inputs["attention_mask"].to(device)
     tokens = tokenizer.convert_ids_to_tokens(input_ids[0].tolist())
 
-    # 1) AttnLRP (most rigorous) when lxt is available and compatible.
-    _attn = _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2)
-    if _attn is not None:
-        return _attn[0], _attn[1], "AttnLRP"
+    # 1) AttnLRP (most rigorous) when lxt is available, unless Chefer is forced.
+    if force != "chefer":
+        _attn = _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2)
+        if _attn is not None:
+            return _attn[0], _attn[1], "AttnLRP"
+        if force == "attnlrp":
+            return None  # AttnLRP explicitly requested but unavailable
 
     # 2) Chefer transformer-LRP (always available).
     try:
@@ -839,50 +847,65 @@ def batch_compute_lrp(
     -------
     LRPAnalysisBundle
     """
-    lrp_attrs, tokens, method = compute_lrp_attributions(
-        encoder_model, tokenizer, text, is_gpt2,
-    )
-
-    # LRP vs IG correlation
-    min_len = min(len(lrp_attrs), len(ig_attrs))
-    l = lrp_attrs[:min_len]
-    g = ig_attrs[:min_len]
-
-    if np.std(l) < 1e-10 or np.std(g) < 1e-10:
-        lrp_vs_ig = 0.0
-    else:
-        lrp_vs_ig, _ = spearmanr(l, g)
-        if np.isnan(lrp_vs_ig):
+    def _build(lrp_attrs, tokens, method):
+        # LRP vs IG correlation
+        min_len = min(len(lrp_attrs), len(ig_attrs))
+        l = lrp_attrs[:min_len]
+        g = ig_attrs[:min_len]
+        if np.std(l) < 1e-10 or np.std(g) < 1e-10:
             lrp_vs_ig = 0.0
+        else:
+            lrp_vs_ig, _ = spearmanr(l, g)
+            if np.isnan(lrp_vs_ig):
+                lrp_vs_ig = 0.0
 
-    # LRP vs attention per head (reuse same pattern as IG correlation)
-    correlations = []
-    for layer_idx, layer_attn in enumerate(attentions):
-        num_heads = layer_attn.shape[1]
-        for head_idx in range(num_heads):
-            attn_matrix = layer_attn[0, head_idx].cpu().numpy()
-            attn_imp = _attention_token_importance(attn_matrix)
-
-            ml = min(len(lrp_attrs), len(attn_imp))
-            a = attn_imp[:ml]
-            lr = lrp_attrs[:ml]
-
-            if np.std(a) < 1e-10 or np.std(lr) < 1e-10:
-                rho = 0.0
-            else:
-                rho, _ = spearmanr(lr, a)
-                if np.isnan(rho):
+        # LRP vs attention per head (reuse same pattern as IG correlation)
+        correlations = []
+        for layer_idx, layer_attn in enumerate(attentions):
+            num_heads = layer_attn.shape[1]
+            for head_idx in range(num_heads):
+                attn_matrix = layer_attn[0, head_idx].detach().cpu().numpy()
+                attn_imp = _attention_token_importance(attn_matrix)
+                ml = min(len(lrp_attrs), len(attn_imp))
+                a = attn_imp[:ml]
+                lr = lrp_attrs[:ml]
+                if np.std(a) < 1e-10 or np.std(lr) < 1e-10:
                     rho = 0.0
+                else:
+                    rho, _ = spearmanr(lr, a)
+                    if np.isnan(rho):
+                        rho = 0.0
+                correlations.append((layer_idx, head_idx, float(rho)))
 
-            correlations.append((layer_idx, head_idx, float(rho)))
+        return LRPAnalysisBundle(
+            token_attributions=lrp_attrs,
+            tokens=tokens,
+            lrp_vs_ig_spearman=float(lrp_vs_ig),
+            correlations=correlations,
+            method=method,
+        )
 
-    return LRPAnalysisBundle(
-        token_attributions=lrp_attrs,
-        tokens=tokens,
-        lrp_vs_ig_spearman=float(lrp_vs_ig),
-        correlations=correlations,
-        method=method,
-    )
+    # Compute AttnLRP (preferred) and Chefer separately, so the panel can show
+    # both ρ(method, IG) and let the user check whether the two LRP variants
+    # agree with IG. AttnLRP returns None when lxt is unavailable; Chefer always
+    # produces a result (or the IG fallback as the last resort).
+    attn = compute_lrp_attributions(encoder_model, tokenizer, text, is_gpt2, force="attnlrp")
+    chef = compute_lrp_attributions(encoder_model, tokenizer, text, is_gpt2, force="chefer")
+
+    bundles = []
+    if attn is not None:
+        bundles.append(_build(attn[0], attn[1], attn[2]))
+    if chef is not None:
+        bundles.append(_build(chef[0], chef[1], chef[2]))
+
+    if not bundles:
+        d = compute_lrp_attributions(encoder_model, tokenizer, text, is_gpt2)
+        return _build(d[0], d[1], d[2])
+
+    primary = bundles[0]
+    if len(bundles) > 1:
+        primary.alt = bundles[1]
+    return primary
 
 
 __all__ = [

@@ -1514,12 +1514,6 @@ def register_xai_handlers(
             ig_attrs = ig_bundle.token_attributions if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else None
             ig_corrs = ig_bundle.correlations if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else []
 
-            # Summary cards — Cohen 1988 magnitude bands on the rho values.
-            rho_ig = bundle.lrp_vs_ig_spearman
-            mean_attn_rho = np.mean([r[2] for r in bundle.correlations]) if bundle.correlations else 0.0
-            rho_ig_color, rho_ig_label = _rho_color_and_label(rho_ig)
-            mean_attn_color, mean_attn_label = _rho_color_and_label(mean_attn_rho)
-
             def _rho_card(value: float, label: str, color: str, mag_label: str) -> str:
                 return (
                     f'<div style="flex:1;min-width:120px;padding:12px;'
@@ -1534,27 +1528,77 @@ def register_xai_handlers(
                     f'{label}</div></div>'
                 )
 
-            _method = getattr(bundle, "method", "AttnLRP")
-            _method_label = {
-                "AttnLRP": "AttnLRP &middot; Achtibat et al. 2024",
-                "Chefer-LRP": "Chefer-LRP &middot; Chefer et al. 2021",
-                "IG-fallback": "Integrated Gradients fallback",
-            }.get(_method, _method)
-            _method_badge = (
-                f'<div style="display:inline-block;margin-top:12px;padding:3px 10px;'
-                f'background:#ede9fe;border:1px solid #ddd6fe;border-radius:999px;'
-                f'font-size:11px;font-weight:600;color:#6d28d9;">'
-                f'LRP method: {_method_label}</div>'
-            )
+            _disp_names = {"AttnLRP": "AttnLRP", "Chefer-LRP": "Chefer", "IG-fallback": "IG (fallback)"}
 
+            # When both LRP variants were computed, offer a selector that switches
+            # which one drives the cards and charts, and show both ρ(method, IG)
+            # so their agreement with IG is visible at a glance.
+            _alt = getattr(bundle, "alt", None)
+            _by_method = {bundle.method: bundle}
+            if _alt is not None:
+                _by_method[_alt.method] = _alt
+            try:
+                _sel = str(input.bias_lrp_method())
+            except Exception:
+                _sel = bundle.method
+            displayed = _by_method.get(_sel, bundle)
+
+            rho_ig = displayed.lrp_vs_ig_spearman
+            mean_attn_rho = np.mean([r[2] for r in displayed.correlations]) if displayed.correlations else 0.0
+            rho_ig_color, rho_ig_label = _rho_color_and_label(rho_ig)
+            mean_attn_color, mean_attn_label = _rho_color_and_label(mean_attn_rho)
+
+            if _alt is not None:
+                _pills = ""
+                for mb in (bundle, _alt):
+                    _is_active = (mb.method == displayed.method)
+                    _bg = "#6d28d9" if _is_active else "#ede9fe"
+                    _fg = "#ffffff" if _is_active else "#6d28d9"
+                    _oc = ("Shiny.setInputValue('bias_lrp_method','" + mb.method + "',{priority:'event'});")
+                    _pills += (
+                        f'<div onclick="{_oc}" title="Use {mb.method} for the cards and charts below" '
+                        f'style="cursor:pointer;padding:6px 14px;border-radius:8px;background:{_bg};'
+                        f'border:1px solid #ddd6fe;display:flex;flex-direction:column;align-items:center;'
+                        f'gap:1px;min-width:120px;transition:all 0.15s ease;">'
+                        f'<span style="font-size:11px;font-weight:700;color:{_fg};">{_disp_names.get(mb.method, mb.method)}</span>'
+                        f'<span style="font-size:10px;color:{_fg};opacity:0.85;font-family:JetBrains Mono,monospace;">'
+                        f'&rho;(IG) = {mb.lrp_vs_ig_spearman:.3f}</span></div>'
+                    )
+                _band1 = _rho_color_and_label(bundle.lrp_vs_ig_spearman)[1]
+                _band2 = _rho_color_and_label(_alt.lrp_vs_ig_spearman)[1]
+                _agree = ("Both LRP variants agree with IG at a similar level, so the cross-validation is robust to the choice of method."
+                          if _band1 == _band2 else
+                          "The two LRP variants disagree on how strongly they match IG, so read the agreement with care.")
+                _header_block = (
+                    '<div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;'
+                    'letter-spacing:0.6px;margin:2px 0 6px;text-align:center;">Cross-validate with (click to switch the charts)</div>'
+                    f'<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">{_pills}</div>'
+                    f'<div style="font-size:10.5px;color:#64748b;margin-top:8px;font-style:italic;text-align:center;">{_agree}</div>'
+                )
+            else:
+                _method_label = {
+                    "AttnLRP": "AttnLRP &middot; Achtibat et al. 2024",
+                    "Chefer-LRP": "Chefer-LRP &middot; Chefer et al. 2021",
+                    "IG-fallback": "Integrated Gradients fallback",
+                }.get(displayed.method, displayed.method)
+                _header_block = (
+                    f'<div style="display:inline-block;margin-top:4px;padding:3px 10px;'
+                    f'background:#ede9fe;border:1px solid #ddd6fe;border-radius:999px;'
+                    f'font-size:11px;font-weight:600;color:#6d28d9;">LRP method: {_method_label}</div>'
+                )
+
+            _dn = _disp_names.get(displayed.method, "LRP")
             summary_html = (
-                _method_badge
-                + f'<div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;">'
-                + _rho_card(rho_ig, "ρ(LRP, IG)", rho_ig_color, rho_ig_label)
-                + _rho_card(mean_attn_rho, "Mean ρ(LRP, Attn)",
+                _header_block
+                + '<div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;">'
+                + _rho_card(rho_ig, f"&rho;({_dn}, IG)", rho_ig_color, rho_ig_label)
+                + _rho_card(mean_attn_rho, f"Mean &rho;({_dn}, Attn)",
                             mean_attn_color, mean_attn_label)
                 + '</div>'
             )
+
+            # Downstream cards/charts use the SELECTED bundle.
+            bundle = displayed
 
             # Transformer-LRP can still fail and fall back to IG — in that case
             # ρ(LRP, IG) compares IG with itself and proves nothing. Say so.
