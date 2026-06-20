@@ -120,6 +120,38 @@ from ..ui.components import viz_header
 # bias_styles, and bias_exports.
 #
 
+# ── Multiplicity correction for per-head BAR significance (feature 2) ──
+# Permutations for the per-prompt, per-head BAR null. The null is alpha- and
+# correction-independent, so it is computed once per prompt and cached. 30k
+# resolves the Bonferroni tail (p ~ alpha/144) exactly; FDR needs far fewer.
+# Measured ~3s once per prompt (no forward pass, reused attention).
+_N_PERM_NULL = 30000
+
+
+def _perm_pvalues(observed, null_2d):
+    """Per-head one-sided permutation p-values with add-one smoothing.
+
+    ``observed`` is ``[n_heads]`` and ``null_2d`` is ``[n_perm, n_heads]``.
+    Returns ``p_h = (1 + #{null >= obs}) / (1 + n_perm)`` (Phipson & Smyth
+    2010), which avoids p = 0 and is slightly conservative at the tail.
+    """
+    n_perm = null_2d.shape[0]
+    ge = (null_2d >= observed[None, :]).sum(axis=0)
+    return (1.0 + ge) / (1.0 + n_perm)
+
+
+def _bh_reject(pvals, alpha):
+    """Benjamini-Hochberg FDR control. Returns ``(reject_mask, p_cutoff)``."""
+    m = len(pvals)
+    sorted_p = np.sort(pvals)
+    thresh = alpha * (np.arange(1, m + 1) / m)
+    below = sorted_p <= thresh
+    if not below.any():
+        return np.zeros(m, dtype=bool), 0.0
+    p_cut = float(sorted_p[np.max(np.nonzero(below)[0])])  # largest passing rank
+    return pvals <= p_cut, p_cut
+
+
 def _release_snapshot_bias(snap):
     """Drop references to a bias snapshot's tensors and force a collection.
     Mirrors ``_release_snapshot`` in ``main`` (kept local to avoid a circular
@@ -2696,21 +2728,21 @@ def bias_server_handlers(input, output, session):
         return ui.HTML(create_ratio_formula_html())
 
     # ── Live significance (alpha) control over head specialisation (feature 1) ──
+    #
+    # The per-head BAR permutation null depends only on the analysed prompt
+    # (not on alpha or the chosen correction), so it is computed once and cached
+    # in this reactive.calc. The alpha slider and the None/FDR/Bonferroni toggle
+    # are then instant post-processing of the cached p-values (feature 2).
 
-    @output
-    @render.ui
-    @visible_errors("Significance (alpha) head survival")
-    def alpha_head_survival():
+    @reactive.calc
+    def _bias_head_pvalues():
         res = bias_results.get()
         if not res or not res.get("attentions"):
-            return ui.HTML('<div style="color:#94a3b8;font-size:12px;padding:8px;">'
-                           'Run "Analyze Bias" to use the significance control.</div>')
-
+            return None
         attn = res.get("attention_metrics", [])
         labels = res.get("token_labels", [])
         if not attn or not labels:
-            return ui.HTML('<div style="color:#94a3b8;font-size:12px;padding:8px;">'
-                           'No per-head BAR available for this prompt.</div>')
+            return None
 
         specials = ("[CLS]", "[SEP]", "[PAD]")
         valid = [l["index"] for l in labels if l.get("token") not in specials]
@@ -2720,51 +2752,119 @@ def bias_server_handlers(input, output, session):
         n_heads = len(attn)
         observed = np.array([m.bias_attention_ratio for m in attn], dtype=float)
 
+        if n_biased == 0:
+            return {"status": "no_biased", "n_heads": n_heads}
+
+        from ..bias.attention_bias import bar_permutation_null
+        null2d = bar_permutation_null(res["attentions"], n_biased, valid,
+                                      n_perm=_N_PERM_NULL, flatten=False)
+        if getattr(null2d, "size", 0) == 0 or null2d.ndim != 2:
+            return {"status": "no_room", "n_heads": n_heads}
+
+        pvals = _perm_pvalues(observed, null2d)
+        return {
+            "status": "ok",
+            "observed": observed,
+            "pvals": pvals,
+            "n_heads": n_heads,
+            "n_biased": n_biased,
+            "n_perm": int(null2d.shape[0]),
+        }
+
+    @output
+    @render.ui
+    @visible_errors("Significance (alpha) head survival")
+    def alpha_head_survival():
+        data = _bias_head_pvalues()
+        _msg = lambda t: ui.HTML(f'<div style="color:#94a3b8;font-size:12px;padding:8px;">{t}</div>')
+        if data is None:
+            return _msg('Run "Analyze Bias" to use the significance control.')
+        if data["status"] == "no_biased":
+            return _msg('No biased tokens in this prompt, so head specialisation is undefined.')
+        if data["status"] == "no_room":
+            return _msg('Not enough room to permute the bias mask for this prompt.')
+
+        observed = data["observed"]
+        pvals = data["pvals"]
+        n_heads = data["n_heads"]
+        n_perm = data["n_perm"]
+
         try:
             alpha = float(input.bias_alpha())
         except Exception:
             alpha = 0.05
+        try:
+            correction = str(input.bias_correction())
+        except Exception:
+            correction = "fdr"
 
-        if n_biased == 0:
-            return ui.HTML('<div style="color:#94a3b8;font-size:12px;padding:8px;">'
-                           'No biased tokens in this prompt, so head specialisation is undefined.</div>')
+        # Counts under each correction, so the user sees the set shrink.
+        n_none = int((pvals <= alpha).sum())
+        _fdr_reject, _fdr_cut = _bh_reject(pvals, alpha)
+        n_fdr = int(_fdr_reject.sum())
+        _bonf_cut = alpha / n_heads
+        n_bonf = int((pvals <= _bonf_cut).sum())
 
-        from ..bias.attention_bias import bar_permutation_null
-        null = bar_permutation_null(res["attentions"], n_biased, valid, n_perm=300)
-        if null.size == 0:
-            return ui.HTML('<div style="color:#94a3b8;font-size:12px;padding:8px;">'
-                           'Not enough room to permute the bias mask for this prompt.</div>')
+        if correction == "bonferroni":
+            reject = pvals <= _bonf_cut
+            corr_label = "Bonferroni"
+            cutoff_txt = f'p &le; &alpha;/{n_heads} = <b style="font-family:monospace;color:#334155;">{_bonf_cut:.2g}</b>'
+        elif correction == "none":
+            reject = pvals <= alpha
+            corr_label = "None (per-instance)"
+            cutoff_txt = f'p &le; &alpha; = <b style="font-family:monospace;color:#334155;">{alpha:.2g}</b>'
+        else:  # fdr (default)
+            reject = _fdr_reject
+            corr_label = "FDR (Benjamini-Hochberg)"
+            cutoff_txt = (f'BH cutoff p &le; <b style="font-family:monospace;color:#334155;">{_fdr_cut:.2g}</b>'
+                          if _fdr_cut > 0 else 'BH cutoff: <b style="color:#334155;">none pass</b>')
 
-        tau = float(np.percentile(null, 100.0 * (1.0 - alpha)))
-        n_surv = int((observed > tau).sum())
-        exp_fp = alpha * n_heads
+        n_surv = int(reject.sum())
         frac = (n_surv / n_heads) if n_heads else 0.0
-        n_perm_eff = int(null.size / n_heads) if n_heads else 0
-        # 2 decimals when alpha >= 0.01, otherwise 3 (for sub-0.01 custom values)
+        exp_fp = alpha * n_heads
         alpha_disp = f"{alpha:.2f}" if alpha >= 0.01 else f"{alpha:.3f}"
+
+        def _chip(label, n, active):
+            bg = "#ff5ca9" if active else "#f1f5f9"
+            col = "#fff" if active else "#64748b"
+            return (f'<span style="background:{bg};color:{col};border-radius:999px;'
+                    f'padding:2px 9px;font-size:10px;font-weight:700;font-family:JetBrains Mono,monospace;">'
+                    f'{label} {n}</span>')
+
+        chips = (
+            _chip("None", n_none, correction == "none")
+            + "&nbsp;&rarr;&nbsp;" + _chip("FDR", n_fdr, correction == "fdr")
+            + "&nbsp;&rarr;&nbsp;" + _chip("Bonf", n_bonf, correction == "bonferroni")
+        )
+
+        if correction == "none":
+            note = (f'No multiplicity correction: with {n_heads} heads tested at &alpha; = {alpha_disp}, '
+                    f'about <b style="color:#dc2626;">{exp_fp:.1f}</b> would pass by chance alone. '
+                    f'FDR / Bonferroni control for this.')
+        elif correction == "fdr":
+            note = (f'Benjamini-Hochberg controls the expected <i>false discovery rate</i> at &alpha; = {alpha_disp} '
+                    f'across all {n_heads} heads (the right default at {n_perm:,} permutations).')
+        else:
+            note = (f'Bonferroni controls the family-wise error rate (p &le; &alpha;/{n_heads}); the strictest '
+                    f'view. {n_perm:,} permutations resolve the tail near &alpha;/{n_heads}; an EVT tail fit '
+                    f'(Knijnenburg et al. 2009) is the lighter alternative if the budget has to drop.')
 
         return ui.HTML(
             f'<div style="padding:0;margin:0;">'
             f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;">'
             f'<div><span style="font-size:13px;color:#64748b;">Heads specialised in bias at </span>'
-            f'<span style="font-weight:700;color:#0f172a;">&alpha; = {alpha_disp}</span></div>'
+            f'<span style="font-weight:700;color:#0f172a;">&alpha; = {alpha_disp}</span>'
+            f'<span style="font-size:11px;color:#94a3b8;"> &middot; {corr_label}</span></div>'
             f'<div style="font-size:28px;font-weight:800;color:#ff5ca9;line-height:1;">{n_surv}'
             f'<span style="font-size:14px;color:#94a3b8;font-weight:600;"> / {n_heads}</span></div>'
             f'</div>'
             f'<div style="font-size:11px;color:#64748b;margin-top:8px;">'
-            f'BAR threshold (per-prompt null, {n_perm_eff} permutations): '
-            f'<b style="font-family:monospace;color:#334155;">{tau:.2f}</b> &nbsp;&middot;&nbsp; '
-            f'Expected by chance under the null: <b style="color:#dc2626;">&asymp; {exp_fp:.1f}</b> '
-            f'(&alpha; &times; {n_heads})</div>'
+            f'{cutoff_txt} &nbsp;&middot;&nbsp; per-prompt null, {n_perm:,} permutations</div>'
+            f'<div style="display:flex;align-items:center;gap:4px;margin-top:10px;">{chips}</div>'
             f'<div style="margin-top:10px;height:8px;background:#fee2e2;border-radius:4px;position:relative;overflow:hidden;">'
             f'<div style="position:absolute;left:0;top:0;height:100%;width:{min(frac*100,100):.1f}%;'
             f'background:#ff5ca9;border-radius:4px;"></div></div>'
-            f'<div style="position:relative;height:0;">'
-            f'<div style="position:absolute;left:{min(exp_fp/max(n_heads,1)*100,100):.1f}%;top:-16px;'
-            f'height:12px;width:2px;background:#dc2626;"></div></div>'
-            f'<div style="font-size:10px;color:#94a3b8;margin-top:8px;font-style:italic;">'
-            f'The red mark is the count expected to pass by chance ({exp_fp:.1f}); heads beyond it are above the false-positive floor. '
-            f'No multiplicity correction is applied: this is a per-instance significance level.</div>'
+            f'<div style="font-size:10px;color:#94a3b8;margin-top:8px;font-style:italic;">{note}</div>'
             f'</div>'
         )
 

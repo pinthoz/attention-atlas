@@ -342,16 +342,23 @@ class AttentionBiasAnalyzer:
 
 
 def bar_permutation_null(attention_weights, n_biased, valid_positions,
-                         n_perm=300, rng=None):
-    """Pooled permutation null of the BAR over all heads, for one prompt.
+                         n_perm=300, rng=None, flatten=True):
+    """Permutation null of the BAR over all heads, for one prompt.
 
     For each of ``n_perm`` draws we pick a random subset of ``n_biased``
     key positions (from ``valid_positions``, i.e. the non-special tokens)
     and compute the BAR of every (layer, head) under that random mask,
     using the same estimator as :meth:`AttentionBiasAnalyzer._compute_head_metrics`
-    (BAR = mass into the chosen columns / ``n_biased``). The returned 1-D
-    array pools all ``n_perm * n_heads`` null BAR values, so an empirical
-    quantile gives a per-prompt significance threshold for a given alpha.
+    (BAR = mass into the chosen columns / ``n_biased``).
+
+    Because each draw scores *every* head at once, one pass yields the full
+    per-head null. With ``flatten=True`` (default) the ``n_perm * n_heads``
+    values are pooled into a 1-D array (an empirical quantile then gives a
+    single per-prompt threshold). With ``flatten=False`` the 2-D matrix
+    ``[n_perm, n_heads]`` is returned, so each head keeps its own null column
+    for per-head p-values (None / FDR / Bonferroni multiplicity correction).
+    The head order matches ``AttentionBiasAnalyzer.analyze_attention_to_bias``
+    (layer-major: layer 0 heads 0..H-1, then layer 1 ...).
 
     Returns an empty array when the prompt has no room to permute
     (no biased tokens, or the biased set already fills every valid slot).
@@ -375,7 +382,7 @@ def bar_permutation_null(attention_weights, n_biased, valid_positions,
         cols = rng.choice(valid, size=n_biased, replace=False)
         bar = A[:, :, :, cols].sum(axis=(2, 3)) / n_biased  # [L, H]
         null[p] = bar.reshape(-1)
-    return null.reshape(-1)
+    return null.reshape(-1) if flatten else null
 
 
 __all__ = ["AttentionBiasAnalyzer", "HeadBiasMetrics", "bar_permutation_null"]

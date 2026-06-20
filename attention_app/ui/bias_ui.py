@@ -1583,8 +1583,9 @@ def create_bias_accordion():
                           "padding:16px 20px;margin-bottom:16px;"},
                 # Definition (now without its own outer card)
                 ui.output_ui("bias_ratio_formula"),
-                # Feature 1: head-survival readout. The alpha slider that drives it
-                # lives in the floating toolbar (α button, like Weights).
+                # Feature 1 + 2: head-survival readout. The alpha slider and the
+                # multiplicity-correction toggle live in the floating toolbar
+                # (alpha button + Correction radio group, next to Source Attention).
                 ui.div(
                     {"style": "border-top:1px solid #e2e8f0;margin-top:14px;padding-top:12px;"},
                     ui.output_ui("alpha_head_survival"),
@@ -1945,6 +1946,41 @@ def create_floating_bias_toolbar():
                         ),
                     ),
 
+                    # Multiplicity correction toggle (radio-group, like Source Attention)
+                    ui.div(
+                        {"class": "control-group"},
+                        ui.span(
+                            "Correction",
+                            class_="control-label",
+                            **{"data-short": "CORR"},
+                        ),
+                        ui.div(
+                            {"class": "radio-group", "id": "bias-correction-radio-group"},
+                            ui.span(
+                                "None",
+                                class_="radio-option",
+                                id="bias-corr-none",
+                                title="No multiplicity correction (per-instance significance level)",
+                                **{"data-value": "none"},
+                            ),
+                            ui.span(
+                                "FDR",
+                                class_="radio-option active",
+                                id="bias-corr-fdr",
+                                title="Benjamini-Hochberg false discovery rate (default)",
+                                **{"data-value": "fdr"},
+                            ),
+                            ui.span(
+                                "Bonf",
+                                class_="radio-option",
+                                id="bias-corr-bonferroni",
+                                title="Bonferroni family-wise error rate (strictest)",
+                                **{"data-value": "bonferroni"},
+                            ),
+                        ),
+                        ui.tags.input(type="hidden", id="bias_correction", value="fdr"),
+                    ),
+
                     # Attention Source toggle
                     ui.div(
                         {"class": "control-group"},
@@ -2299,12 +2335,18 @@ def create_floating_bias_toolbar():
                 gap: 12px;
                 width: 100%;
             }
-            /* Only when space is tight (narrower than a wide monitor): if the
-               Weights or alpha panel is open, shrink the token box so the
-               expanded controls fit and nothing leaves the bar. The token stays
-               centred (equal side tracks). On wide monitors there is room, so it
-               does not shrink. */
+            /* Tight screens (laptops): switch to a "shrink-the-tokens" grid so
+               the side controls always fit and nothing leaves the bar. The
+               side tracks are content-sized (auto, so Layer/Head/α/Correction/
+               BAR/Top-K never overflow), and the centre token track shrinks to
+               whatever is left. On wide monitors (>=1600px) we keep the centred
+               1fr|auto|1fr grid above. */
             @media (max-width: 1599px) {
+                #bias-controls-row {
+                    grid-template-columns: auto minmax(0, 380px) auto !important;
+                    justify-content: center;
+                }
+                /* When a panel is open, shrink the token box further. */
                 #bias-controls-row:has(.cw-inline-panel.open) #bias-tokens-row .token-sentence,
                 #bias-controls-row:has(.alpha-inline-panel.open) #bias-tokens-row .token-sentence {
                     max-width: 200px !important;
@@ -2501,36 +2543,18 @@ def create_floating_bias_toolbar():
                     line-height: 1 !important;
                 }
 
-                /* Right group: below the tokens; SRC ATT (col 1) | BAR/TOP-K stacked (col 2) */
+                /* Right group: below the tokens. Flex-wrap so it handles any
+                   number of controls (alpha | Correction | SRC ATT | BAR | TopK)
+                   without overlapping. */
                 .bias-bar-right {
                     order: 3;
-                    display: grid !important;
-                    grid-template-columns: auto auto !important;
-                    grid-template-rows: auto auto !important;
-                    column-gap: 8px !important;
-                    row-gap: 0 !important;
+                    display: flex !important;
+                    flex-wrap: wrap !important;
+                    justify-content: center !important;
                     align-items: center !important;
+                    gap: 6px 12px !important;
                 }
-                /* alpha button (col1 row1) | SRC ATT (col1 row2) */
-                .bias-bar-right > .control-group:nth-child(1) {
-                    grid-column: 1 / 2;
-                    grid-row: 1 / 2;
-                }
-                .bias-bar-right > .control-group:nth-child(2) {
-                    grid-column: 1 / 2;
-                    grid-row: 2 / 3;
-                }
-                /* BAR (col2 row1) | Top-K (col2 row2) */
-                .bias-bar-right > .control-group:nth-child(3) {
-                    grid-column: 2 / 3;
-                    grid-row: 1 / 2;
-                }
-                .bias-bar-right > .control-group:nth-child(4) {
-                    grid-column: 2 / 3;
-                    grid-row: 2 / 3;
-                }
-                .bias-bar-right > .control-group:nth-child(3),
-                .bias-bar-right > .control-group:nth-child(4) {
+                .bias-bar-right > .control-group {
                     flex-direction: column !important;
                     align-items: center !important;
                     gap: 0 !important;
@@ -2675,6 +2699,32 @@ def create_floating_bias_toolbar():
                 if (!opt) return;
                 var val = opt.getAttribute('data-value');
                 if (val) window._setBiasAttnSource(val);
+            });
+        })();
+
+        // ── Multiplicity correction toggle (radio-group pattern) ──
+        (function() {
+            if (window._biasCorrReady) return;
+            window._biasCorrReady = true;
+
+            window._setBiasCorrection = function(mode) {
+                var group = document.getElementById('bias-correction-radio-group');
+                if (!group) return;
+                group.querySelectorAll('.radio-option').forEach(function(o) { o.classList.remove('active'); });
+                var active = document.getElementById('bias-corr-' + mode);
+                if (active) active.classList.add('active');
+                var hidden = document.getElementById('bias_correction');
+                if (hidden) hidden.value = mode;
+                if (typeof Shiny !== 'undefined') {
+                    Shiny.setInputValue('bias_correction', mode, {priority: 'event'});
+                }
+            };
+
+            document.addEventListener('click', function(e) {
+                var opt = e.target.closest('#bias-correction-radio-group .radio-option');
+                if (!opt) return;
+                var val = opt.getAttribute('data-value');
+                if (val) window._setBiasCorrection(val);
             });
         })();
 
