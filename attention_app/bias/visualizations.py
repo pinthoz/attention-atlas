@@ -1078,8 +1078,10 @@ def create_ratio_formula_html() -> str:
 
         '</div></div>'
 
-        # ── Variable definitions ──
-        '<div style="font-size:11px;color:#475569;line-height:1.7;margin-bottom:12px;'
+        # ── Variable definitions + Interpretation, side by side ──
+        '<div style="display:flex;gap:14px;align-items:stretch;">'
+        # Variable definitions (left)
+        '<div style="flex:1;min-width:0;font-size:11px;color:#475569;line-height:1.7;'
         'padding:10px 14px;background:rgba(241,245,249,0.8);border:1px solid #e2e8f0;'
         'border-radius:6px;font-family:JetBrains Mono,monospace;">'
         f'<div>{alpha_lh_dark} '
@@ -1096,8 +1098,10 @@ def create_ratio_formula_html() -> str:
         '<span style="color:#475569;">-- sequence length</span></div>'
         '</div>'
 
-        # ── Interpretation ──
-        '<div style="font-size:11px;color:#475569;line-height:1.7;">'
+        # ── Interpretation (right) ──
+        '<div style="flex:1;min-width:0;font-size:11px;color:#475569;line-height:1.7;'
+        'padding:10px 14px;background:rgba(241,245,249,0.4);border:1px solid #e2e8f0;'
+        'border-radius:6px;">'
         '<code style="background:#dbeafe;padding:1px 6px;border-radius:3px;'
         'font-size:10px;color:#1e40af;">&lt; 1.0</code> '
         'Head <b>under-attends</b> biased tokens (potential bias-suppressing head)'
@@ -1113,6 +1117,7 @@ def create_ratio_formula_html() -> str:
         '<code style="background:#fecaca;padding:1px 6px;border-radius:3px;'
         'font-size:10px;color:#7f1d1d;">&gt; 5.3</code> '
         '<b>Strongly specialised</b> at &alpha;=0.01 - extreme concentration on biased tokens'
+        '</div>'
         '</div>'
     )
 
@@ -2580,7 +2585,7 @@ def create_lrp_comparison_chart(
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=tokens[:n], y=l_norm,
-        name="DeepLift / LRP",
+        name="LRP (Chefer)",
         marker_color="#8b5cf6",
         opacity=0.8,
     ))
@@ -2593,7 +2598,7 @@ def create_lrp_comparison_chart(
 
     fig.update_layout(
         title=dict(
-            text=f"DeepLift/LRP vs IG Token Attribution<br>"
+            text=f"LRP (Chefer) vs IG Token Attribution<br>"
                  f"<sub>Spearman ρ = {lrp_vs_ig_rho:.3f} | Normalized to [0,1]</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
@@ -2688,12 +2693,12 @@ def create_cross_method_agreement_chart(
 
     fig.update_layout(
         title=dict(
-            text=f"Cross-Method Agreement: IG vs DeepLift/LRP<br><sub>{subtitle}</sub>",
+            text=f"Cross-Method Agreement: IG vs LRP (Chefer)<br><sub>{subtitle}</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         xaxis=dict(title="IG Spearman ρ (vs attention)", range=[-1.05, 1.05],
                    tickfont=dict(size=10, color="#475569")),
-        yaxis=dict(title="DeepLift/LRP Spearman ρ (vs attention)", range=[-1.05, 1.05],
+        yaxis=dict(title="LRP (Chefer) Spearman ρ (vs attention)", range=[-1.05, 1.05],
                    tickfont=dict(size=10, color="#475569")),
         height=400,
         autosize=True,

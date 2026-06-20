@@ -1499,18 +1499,19 @@ def register_xai_handlers(
                 + '</div>'
             )
 
-            # DeepLift can fail and silently fall back to IG — in that case
+            # Transformer-LRP can still fail and fall back to IG — in that case
             # ρ(LRP, IG) compares IG with itself and proves nothing. Say so.
-            if getattr(bundle, "method", "DeepLift") == "IG-fallback":
+            if getattr(bundle, "method", "Chefer-LRP") == "IG-fallback":
                 summary_html += (
                     '<div style="margin-top:12px;padding:10px 14px;'
                     'background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.40);'
                     'border-left:4px solid #f59e0b;border-radius:8px;font-size:11.5px;'
                     'color:#78350f;line-height:1.5;">'
-                    '<b>DeepLift failed for this model</b> — the attributions shown '
-                    'are an Integrated Gradients fallback, so the &rho;(LRP, IG) '
-                    'agreement above is NOT an independent cross-validation. '
-                    'Rely on the Perturbation panel for convergent evidence instead.'
+                    '<b>Transformer-LRP could not be computed for this model</b> — the '
+                    'attributions shown are an Integrated Gradients fallback, so the '
+                    '&rho;(LRP, IG) agreement above is NOT an independent '
+                    'cross-validation. Rely on the Perturbation panel for convergent '
+                    'evidence instead.'
                     '</div>'
                 )
 
@@ -1557,12 +1558,12 @@ def register_xai_handlers(
         _lrp_f_bdg = _source_badge_html(_lrp_f_lbl) if _lrp_f_src != "compare" else ""
 
         header_args = (
-            f"DeepLift / LRP Cross-Validation{_lrp_f_bdg}",
-            "Convergent validity: does DeepLift agree with Integrated Gradients on token importance?",
-            f"<span style='{_TH}'>Method: DeepLift / LRP (Shrikumar et al., 2017)</span>"
+            f"LRP Cross-Validation{_lrp_f_bdg}",
+            "Convergent validity: does transformer-LRP agree with Integrated Gradients on token importance?",
+            f"<span style='{_TH}'>Method: Transformer-LRP (Chefer et al., 2021)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
-            f"<span>Relevance back-propagated from output to input tokens (conservation rule)</span></div>"
-            f"<div style='{_TN}; margin-bottom:4px;'>Fallback: LayerDeepLift when BERT LayerNorm prevents standard LRP</div>"
+            f"<span>Head-averaged (attention &odot; attention-gradient)&#8314;, rolled through layers with a residual</span></div>"
+            f"<div style='{_TN}; margin-bottom:4px;'>A genuine second method (relevance redistribution), independent of IG. Fallback: Integrated Gradients if propagation fails.</div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Metrics</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
@@ -1588,8 +1589,8 @@ def register_xai_handlers(
                 _lA, _lB = "Base Encoder", "GUS-Net"
             else:
                 _lA, _lB = "Model A", "Model B"
-            _hA = (f"DeepLift / LRP Cross-Validation{_source_badge_html(_lA)}", header_args[1], header_args[2])
-            _hB = (f"DeepLift / LRP Cross-Validation{_source_badge_html(_lB)}", header_args[1], header_args[2])
+            _hA = (f"LRP Cross-Validation{_source_badge_html(_lA)}", header_args[1], header_args[2])
+            _hB = (f"LRP Cross-Validation{_source_badge_html(_lB)}", header_args[1], header_args[2])
             return ui.div(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(_render_lrp_single(bundle_A, ig_bundle_A, "_A"), *_hA,

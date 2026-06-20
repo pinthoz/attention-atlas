@@ -152,6 +152,141 @@ def _bh_reject(pvals, alpha):
     return pvals <= p_cut, p_cut
 
 
+def _compute_head_pvalues(res):
+    """Per-head BAR permutation null + p-values for one analysed result.
+
+    Returns ``None`` (no analysis), or a dict with ``status`` in
+    {``no_biased``, ``no_room``, ``ok``}. For ``ok`` it also carries
+    ``observed``, ``pvals``, ``n_heads``, ``n_biased``, ``n_perm``. Used for
+    both model/prompt A and B (compare mode) via the same code path.
+    """
+    if not res or not res.get("attentions"):
+        return None
+    attn = res.get("attention_metrics", [])
+    labels = res.get("token_labels", [])
+    if not attn or not labels:
+        return None
+
+    specials = ("[CLS]", "[SEP]", "[PAD]")
+    # Exact biased set that produced the observed BAR, so observed and null
+    # share the same n_biased.
+    biased = list(res.get("biased_indices")
+                  or [l["index"] for l in labels if l.get("is_biased")])
+    valid = sorted(set(l["index"] for l in labels if l.get("token") not in specials)
+                   | set(biased))
+    n_biased = len(biased)
+    n_heads = len(attn)
+    observed = np.array([m.bias_attention_ratio for m in attn], dtype=float)
+
+    if n_biased == 0:
+        return {"status": "no_biased", "n_heads": n_heads}
+
+    from ..bias.attention_bias import bar_permutation_null
+    null2d = bar_permutation_null(res["attentions"], n_biased, valid,
+                                  n_perm=_N_PERM_NULL, flatten=False)
+    if getattr(null2d, "size", 0) == 0 or null2d.ndim != 2:
+        return {"status": "no_room", "n_heads": n_heads}
+
+    pvals = _perm_pvalues(observed, null2d)
+    return {
+        "status": "ok",
+        "observed": observed,
+        "pvals": pvals,
+        "n_heads": n_heads,
+        "n_biased": n_biased,
+        "n_perm": int(null2d.shape[0]),
+    }
+
+
+def _alpha_survival_html(data, alpha, correction):
+    """Build the head-survival readout (inner HTML) for one result.
+
+    ``data`` is the dict from :func:`_compute_head_pvalues`. ``alpha`` and
+    ``correction`` ('none' | 'fdr' | 'bonferroni') come from the toolbar.
+    """
+    def _m(t):
+        return f'<div style="color:#94a3b8;font-size:12px;padding:8px;">{t}</div>'
+    if data is None:
+        return _m('Run "Analyze Bias" to use the significance control.')
+    if data.get("status") == "no_biased":
+        return _m('No biased tokens in this prompt, so head specialisation is undefined.')
+    if data.get("status") == "no_room":
+        return _m('Not enough room to permute the bias mask for this prompt.')
+
+    pvals = data["pvals"]
+    n_heads = data["n_heads"]
+    n_perm = data["n_perm"]
+
+    n_none = int((pvals <= alpha).sum())
+    _fdr_reject, _fdr_cut = _bh_reject(pvals, alpha)
+    n_fdr = int(_fdr_reject.sum())
+    _bonf_cut = alpha / n_heads
+    n_bonf = int((pvals <= _bonf_cut).sum())
+
+    if correction == "bonferroni":
+        reject = pvals <= _bonf_cut
+        corr_label = "Bonferroni"
+        cutoff_txt = f'p &le; &alpha;/{n_heads} = <b style="font-family:monospace;color:#334155;">{_bonf_cut:.2g}</b>'
+    elif correction == "none":
+        reject = pvals <= alpha
+        corr_label = "None (per-instance)"
+        cutoff_txt = f'p &le; &alpha; = <b style="font-family:monospace;color:#334155;">{alpha:.2g}</b>'
+    else:  # fdr (default)
+        reject = _fdr_reject
+        corr_label = "FDR (Benjamini-Hochberg)"
+        cutoff_txt = (f'BH cutoff p &le; <b style="font-family:monospace;color:#334155;">{_fdr_cut:.2g}</b>'
+                      if _fdr_cut > 0 else 'BH cutoff: <b style="color:#334155;">none pass</b>')
+
+    n_surv = int(reject.sum())
+    frac = (n_surv / n_heads) if n_heads else 0.0
+    exp_fp = alpha * n_heads
+    alpha_disp = f"{alpha:.2f}" if alpha >= 0.01 else f"{alpha:.3f}"
+
+    def _chip(label, n, active):
+        bg = "#ff5ca9" if active else "#f1f5f9"
+        col = "#fff" if active else "#64748b"
+        return (f'<span style="background:{bg};color:{col};border-radius:999px;'
+                f'padding:2px 9px;font-size:10px;font-weight:700;font-family:JetBrains Mono,monospace;">'
+                f'{label} {n}</span>')
+
+    chips = (
+        _chip("None", n_none, correction == "none")
+        + "&nbsp;&rarr;&nbsp;" + _chip("FDR", n_fdr, correction == "fdr")
+        + "&nbsp;&rarr;&nbsp;" + _chip("Bonf", n_bonf, correction == "bonferroni")
+    )
+
+    if correction == "none":
+        note = (f'No multiplicity correction: with {n_heads} heads tested at &alpha; = {alpha_disp}, '
+                f'about <b style="color:#dc2626;">{exp_fp:.1f}</b> would pass by chance alone. '
+                f'FDR / Bonferroni control for this.')
+    elif correction == "fdr":
+        note = (f'Benjamini-Hochberg controls the expected <i>false discovery rate</i> at &alpha; = {alpha_disp} '
+                f'across all {n_heads} heads (the right default at {n_perm:,} permutations).')
+    else:
+        note = (f'Bonferroni controls the family-wise error rate (p &le; &alpha;/{n_heads}); the strictest '
+                f'view. {n_perm:,} permutations resolve the tail near &alpha;/{n_heads}; an EVT tail fit '
+                f'(Knijnenburg et al. 2009) is the lighter alternative if the budget has to drop.')
+
+    return (
+        f'<div style="padding:0;margin:0;">'
+        f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;">'
+        f'<div><span style="font-size:13px;color:#64748b;">Heads specialised in bias at </span>'
+        f'<span style="font-weight:700;color:#0f172a;">&alpha; = {alpha_disp}</span>'
+        f'<span style="font-size:11px;color:#94a3b8;"> &middot; {corr_label}</span></div>'
+        f'<div style="font-size:28px;font-weight:800;color:#ff5ca9;line-height:1;">{n_surv}'
+        f'<span style="font-size:14px;color:#94a3b8;font-weight:600;"> / {n_heads}</span></div>'
+        f'</div>'
+        f'<div style="font-size:11px;color:#64748b;margin-top:8px;">'
+        f'{cutoff_txt} &nbsp;&middot;&nbsp; per-prompt null, {n_perm:,} permutations</div>'
+        f'<div style="display:flex;align-items:center;gap:4px;margin-top:10px;">{chips}</div>'
+        f'<div style="margin-top:10px;height:8px;background:#fee2e2;border-radius:4px;position:relative;overflow:hidden;">'
+        f'<div style="position:absolute;left:0;top:0;height:100%;width:{min(frac*100,100):.1f}%;'
+        f'background:#ff5ca9;border-radius:4px;"></div></div>'
+        f'<div style="font-size:10px;color:#94a3b8;margin-top:8px;font-style:italic;">{note}</div>'
+        f'</div>'
+    )
+
+
 def _release_snapshot_bias(snap):
     """Drop references to a bias snapshot's tensors and force a collection.
     Mirrors ``_release_snapshot`` in ``main`` (kept local to avoid a circular
@@ -1918,7 +2053,7 @@ def bias_server_handlers(input, output, session):
                 except Exception as e:
                     sentence_data["perturbation_error"] = str(e)[:100]
 
-                # ── Phase 5: LRP / DeepLift ──
+                # ── Phase 5: transformer-LRP (Chefer 2021) ──
                 try:
                     if ig_data and ig_bundle:
                         tokenizer, encoder_model, _ = ModelManager.get_model(model_name)
@@ -2727,68 +2862,26 @@ def bias_server_handlers(input, output, session):
     def bias_ratio_formula():
         return ui.HTML(create_ratio_formula_html())
 
-    # ── Live significance (alpha) control over head specialisation (feature 1) ──
+    # ── Live significance (alpha) + multiplicity correction (features 1 & 2) ──
     #
     # The per-head BAR permutation null depends only on the analysed prompt
     # (not on alpha or the chosen correction), so it is computed once and cached
-    # in this reactive.calc. The alpha slider and the None/FDR/Bonferroni toggle
-    # are then instant post-processing of the cached p-values (feature 2).
+    # in these reactive.calcs (one per model/prompt). The alpha slider and the
+    # None/FDR/Bonferroni toggle are then instant post-processing. Compare mode
+    # renders A and B side by side.
 
     @reactive.calc
     def _bias_head_pvalues():
-        res = bias_results.get()
-        if not res or not res.get("attentions"):
-            return None
-        attn = res.get("attention_metrics", [])
-        labels = res.get("token_labels", [])
-        if not attn or not labels:
-            return None
+        return _compute_head_pvalues(bias_results.get())
 
-        specials = ("[CLS]", "[SEP]", "[PAD]")
-        valid = [l["index"] for l in labels if l.get("token") not in specials]
-        biased = [l["index"] for l in labels
-                  if l.get("is_biased") and l.get("token") not in specials]
-        n_biased = len(biased)
-        n_heads = len(attn)
-        observed = np.array([m.bias_attention_ratio for m in attn], dtype=float)
-
-        if n_biased == 0:
-            return {"status": "no_biased", "n_heads": n_heads}
-
-        from ..bias.attention_bias import bar_permutation_null
-        null2d = bar_permutation_null(res["attentions"], n_biased, valid,
-                                      n_perm=_N_PERM_NULL, flatten=False)
-        if getattr(null2d, "size", 0) == 0 or null2d.ndim != 2:
-            return {"status": "no_room", "n_heads": n_heads}
-
-        pvals = _perm_pvalues(observed, null2d)
-        return {
-            "status": "ok",
-            "observed": observed,
-            "pvals": pvals,
-            "n_heads": n_heads,
-            "n_biased": n_biased,
-            "n_perm": int(null2d.shape[0]),
-        }
+    @reactive.calc
+    def _bias_head_pvalues_B():
+        return _compute_head_pvalues(bias_results_B.get())
 
     @output
     @render.ui
     @visible_errors("Significance (alpha) head survival")
     def alpha_head_survival():
-        data = _bias_head_pvalues()
-        _msg = lambda t: ui.HTML(f'<div style="color:#94a3b8;font-size:12px;padding:8px;">{t}</div>')
-        if data is None:
-            return _msg('Run "Analyze Bias" to use the significance control.')
-        if data["status"] == "no_biased":
-            return _msg('No biased tokens in this prompt, so head specialisation is undefined.')
-        if data["status"] == "no_room":
-            return _msg('Not enough room to permute the bias mask for this prompt.')
-
-        observed = data["observed"]
-        pvals = data["pvals"]
-        n_heads = data["n_heads"]
-        n_perm = data["n_perm"]
-
         try:
             alpha = float(input.bias_alpha())
         except Exception:
@@ -2798,73 +2891,31 @@ def bias_server_handlers(input, output, session):
         except Exception:
             correction = "fdr"
 
-        # Counts under each correction, so the user sees the set shrink.
-        n_none = int((pvals <= alpha).sum())
-        _fdr_reject, _fdr_cut = _bh_reject(pvals, alpha)
-        n_fdr = int(_fdr_reject.sum())
-        _bonf_cut = alpha / n_heads
-        n_bonf = int((pvals <= _bonf_cut).sum())
+        compare_m = bool(active_bias_compare_models.get())
+        compare_p = bool(active_bias_compare_prompts.get())
+        html_A = _alpha_survival_html(_bias_head_pvalues(), alpha, correction)
 
-        if correction == "bonferroni":
-            reject = pvals <= _bonf_cut
-            corr_label = "Bonferroni"
-            cutoff_txt = f'p &le; &alpha;/{n_heads} = <b style="font-family:monospace;color:#334155;">{_bonf_cut:.2g}</b>'
-        elif correction == "none":
-            reject = pvals <= alpha
-            corr_label = "None (per-instance)"
-            cutoff_txt = f'p &le; &alpha; = <b style="font-family:monospace;color:#334155;">{alpha:.2g}</b>'
-        else:  # fdr (default)
-            reject = _fdr_reject
-            corr_label = "FDR (Benjamini-Hochberg)"
-            cutoff_txt = (f'BH cutoff p &le; <b style="font-family:monospace;color:#334155;">{_fdr_cut:.2g}</b>'
-                          if _fdr_cut > 0 else 'BH cutoff: <b style="color:#334155;">none pass</b>')
+        if not (compare_m or compare_p):
+            return ui.HTML(html_A)
 
-        n_surv = int(reject.sum())
-        frac = (n_surv / n_heads) if n_heads else 0.0
-        exp_fp = alpha * n_heads
-        alpha_disp = f"{alpha:.2f}" if alpha >= 0.01 else f"{alpha:.3f}"
+        # Compare mode: A and B side by side.
+        html_B = _alpha_survival_html(_bias_head_pvalues_B(), alpha, correction)
+        res_A = bias_results.get()
+        res_B = bias_results_B.get()
+        label_A = _get_label(res_A, True, compare_m) if res_A else "A"
+        label_B = _get_label(res_B, False, compare_m) if res_B else "B"
 
-        def _chip(label, n, active):
-            bg = "#ff5ca9" if active else "#f1f5f9"
-            col = "#fff" if active else "#64748b"
-            return (f'<span style="background:{bg};color:{col};border-radius:999px;'
-                    f'padding:2px 9px;font-size:10px;font-weight:700;font-family:JetBrains Mono,monospace;">'
-                    f'{label} {n}</span>')
-
-        chips = (
-            _chip("None", n_none, correction == "none")
-            + "&nbsp;&rarr;&nbsp;" + _chip("FDR", n_fdr, correction == "fdr")
-            + "&nbsp;&rarr;&nbsp;" + _chip("Bonf", n_bonf, correction == "bonferroni")
-        )
-
-        if correction == "none":
-            note = (f'No multiplicity correction: with {n_heads} heads tested at &alpha; = {alpha_disp}, '
-                    f'about <b style="color:#dc2626;">{exp_fp:.1f}</b> would pass by chance alone. '
-                    f'FDR / Bonferroni control for this.')
-        elif correction == "fdr":
-            note = (f'Benjamini-Hochberg controls the expected <i>false discovery rate</i> at &alpha; = {alpha_disp} '
-                    f'across all {n_heads} heads (the right default at {n_perm:,} permutations).')
-        else:
-            note = (f'Bonferroni controls the family-wise error rate (p &le; &alpha;/{n_heads}); the strictest '
-                    f'view. {n_perm:,} permutations resolve the tail near &alpha;/{n_heads}; an EVT tail fit '
-                    f'(Knijnenburg et al. 2009) is the lighter alternative if the budget has to drop.')
+        def _col(label, body, color):
+            return (f'<div style="flex:1;min-width:0;">'
+                    f'<div style="font-size:11px;font-weight:700;color:{color};'
+                    f'text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;">{label}</div>'
+                    f'{body}</div>')
 
         return ui.HTML(
-            f'<div style="padding:0;margin:0;">'
-            f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;">'
-            f'<div><span style="font-size:13px;color:#64748b;">Heads specialised in bias at </span>'
-            f'<span style="font-weight:700;color:#0f172a;">&alpha; = {alpha_disp}</span>'
-            f'<span style="font-size:11px;color:#94a3b8;"> &middot; {corr_label}</span></div>'
-            f'<div style="font-size:28px;font-weight:800;color:#ff5ca9;line-height:1;">{n_surv}'
-            f'<span style="font-size:14px;color:#94a3b8;font-weight:600;"> / {n_heads}</span></div>'
-            f'</div>'
-            f'<div style="font-size:11px;color:#64748b;margin-top:8px;">'
-            f'{cutoff_txt} &nbsp;&middot;&nbsp; per-prompt null, {n_perm:,} permutations</div>'
-            f'<div style="display:flex;align-items:center;gap:4px;margin-top:10px;">{chips}</div>'
-            f'<div style="margin-top:10px;height:8px;background:#fee2e2;border-radius:4px;position:relative;overflow:hidden;">'
-            f'<div style="position:absolute;left:0;top:0;height:100%;width:{min(frac*100,100):.1f}%;'
-            f'background:#ff5ca9;border-radius:4px;"></div></div>'
-            f'<div style="font-size:10px;color:#94a3b8;margin-top:8px;font-style:italic;">{note}</div>'
+            f'<div style="display:flex;gap:20px;align-items:flex-start;">'
+            f'{_col(label_A, html_A, "#ff5ca9")}'
+            f'<div style="width:1px;align-self:stretch;background:#e2e8f0;"></div>'
+            f'{_col(label_B, html_B, "#3b82f6")}'
             f'</div>'
         )
 

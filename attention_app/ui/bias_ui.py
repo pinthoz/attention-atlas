@@ -1719,8 +1719,8 @@ def create_bias_accordion():
                 ),
                 ui.output_ui("perturbation_results_display"),
                 subsection_header(
-                    "Cross-Validation With LRP / DeepLift",
-                    "This final block tests convergent validity. If LRP or DeepLift agrees with Integrated Gradients, the faithfulness claim becomes more robust than relying on a single baseline.",
+                    "Cross-Validation With LRP",
+                    "This final block tests convergent validity. If transformer-LRP (Chefer et al., 2021) agrees with Integrated Gradients, the faithfulness claim becomes more robust than relying on a single baseline.",
                 ),
                 ui.output_ui("lrp_results_display"),
             ),

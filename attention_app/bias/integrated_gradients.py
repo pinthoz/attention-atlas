@@ -161,10 +161,11 @@ class LRPAnalysisBundle:
     lrp_vs_ig_spearman: float
     correlations: List[tuple]
     # Which attribution method actually produced token_attributions:
-    # "DeepLift", or "IG-fallback" when DeepLift failed. In the fallback
-    # case lrp_vs_ig_spearman compares IG with IG and is NOT an
-    # independent cross-validation — renderers must surface this.
-    method: str = "DeepLift"
+    # "Chefer-LRP" (transformer LRP, Chefer et al. 2021), or "IG-fallback"
+    # when even that failed. In the fallback case lrp_vs_ig_spearman compares
+    # IG with IG and is NOT an independent cross-validation — renderers must
+    # surface this.
+    method: str = "Chefer-LRP"
 
 
 def _get_embedding_layer(encoder_model, is_gpt2):
@@ -655,57 +656,76 @@ def compute_lrp_attributions(
     tokenizer,
     text: str,
     is_gpt2: bool,
-) -> Tuple[np.ndarray, List[str]]:
-    """Compute per-token LRP attributions via Captum.
+) -> Tuple[np.ndarray, List[str], str]:
+    """Compute per-token transformer-LRP attributions (Chefer et al., 2021).
 
-    Uses LayerLRP if available, falls back to LayerDeepLift for models
-    where LRP fails (e.g. BERT LayerNorm incompatibility).
+    Captum's DeepLift / LayerLRP cannot run on BERT/GPT-2 (LayerNorm + GELU +
+    reused/functional modules), so instead we use the attention-relevance
+    method of Chefer, Gur & Wolf, "Transformer Interpretability Beyond
+    Attention Visualization" (CVPR 2021): for every layer take the
+    head-averaged, positive part of (attention ⊙ ∂target/∂attention), and roll
+    relevance through the layers with a residual,
 
-    Parameters
-    ----------
-    encoder_model : BertModel or GPT2Model
-    tokenizer : PreTrainedTokenizer
-    text : str
-    is_gpt2 : bool
+        R₀ = I,   Āₗ = mean_h ( (Aₗ ⊙ ∇Aₗ)⁺ ),   Rₗ = Rₗ₋₁ + Āₗ · Rₗ₋₁ .
 
-    Returns
-    -------
-    (np.ndarray, list[str], str)
-        Absolute attribution per token [seq_len], token strings, and the
-        method that produced them ("DeepLift" or "IG-fallback").
+    This is a genuine second attribution method (relevance redistribution),
+    independent of IG, so ρ(LRP, IG) becomes a real cross-validation. The
+    backward target is the same masked-mean-pooled hidden-state norm that IG
+    explains, so both methods attribute the *same* output.
+
+    Returns ``(abs attribution per token [seq_len], token strings, method)``
+    where method is ``"Chefer-LRP"`` or, if anything fails, ``"IG-fallback"``
+    (the caller must surface the fallback — the agreement is then IG-vs-IG).
     """
     device = next(encoder_model.parameters()).device
     inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=128)
     input_ids = inputs["input_ids"].to(device)
     attention_mask = inputs["attention_mask"].to(device)
-
     tokens = tokenizer.convert_ids_to_tokens(input_ids[0].tolist())
-    embedding_layer = _get_embedding_layer(encoder_model, is_gpt2)
-
-    def forward_fn(input_ids, attention_mask):
-        outputs = encoder_model(input_ids=input_ids, attention_mask=attention_mask)
-        hidden = outputs.last_hidden_state
-        mask_expanded = attention_mask.unsqueeze(-1).float()
-        pooled = (hidden * mask_expanded).sum(dim=1) / mask_expanded.sum(dim=1)
-        return pooled.norm(dim=-1)
-
-    # Try LayerDeepLift (more robust than LRP for BERT/GPT-2)
-    from captum.attr import LayerDeepLift
 
     try:
-        ldl = LayerDeepLift(forward_fn, embedding_layer)
-        baseline_ids = torch.full_like(input_ids, _baseline_token_id(tokenizer))
+        encoder_model.zero_grad(set_to_none=True)
+        with torch.enable_grad():
+            outputs = encoder_model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                output_attentions=True,
+            )
+            attns = outputs.attentions  # tuple of L tensors [1, H, N, N]
+            if not attns:
+                raise RuntimeError("model returned no attentions")
+            for a in attns:
+                a.retain_grad()
+            hidden = outputs.last_hidden_state
+            m = attention_mask.unsqueeze(-1).float()
+            pooled = (hidden * m).sum(dim=1) / m.sum(dim=1).clamp(min=1e-9)
+            target = pooled.norm(dim=-1).sum()
+            target.backward()
 
-        attributions = ldl.attribute(
-            inputs=input_ids,
-            baselines=baseline_ids,
-            additional_forward_args=(attention_mask,),
-        )
-        token_attrs = attributions.squeeze(0).sum(dim=-1).abs()
-        return token_attrs.detach().cpu().numpy(), tokens, "DeepLift"
+        N = input_ids.shape[1]
+        R = torch.eye(N, device=device)
+        used = 0
+        for a in attns:
+            g = a.grad
+            if g is None:
+                continue
+            # head-averaged positive relevance for this layer  → [N, N]
+            cam = (a * g).clamp(min=0).mean(dim=1)[0]
+            R = R + cam @ R          # Chefer rollout with residual
+            used += 1
+        if used == 0:
+            raise RuntimeError("no attention gradients captured")
+
+        # Per-token relevance: mean relevance flowing into each key token.
+        rel = R.mean(dim=0).abs().detach().cpu().numpy()
+        encoder_model.zero_grad(set_to_none=True)
+        if rel.size == 0 or not np.isfinite(rel).all() or float(rel.std()) < 1e-12:
+            raise RuntimeError("degenerate relevance")
+        return rel, tokens, "Chefer-LRP"
     except Exception:
-        # Final fallback: reuse IG. The caller MUST surface this — the
+        # Honest fallback: reuse IG. The caller MUST surface this — the
         # "LRP vs IG" agreement is then IG-vs-IG and proves nothing.
+        encoder_model.zero_grad(set_to_none=True)
         token_attrs = compute_token_attributions(
             encoder_model, tokenizer, text, is_gpt2, n_steps=20,
         )
