@@ -161,11 +161,11 @@ class LRPAnalysisBundle:
     lrp_vs_ig_spearman: float
     correlations: List[tuple]
     # Which attribution method actually produced token_attributions:
-    # "Chefer-LRP" (transformer LRP, Chefer et al. 2021), or "IG-fallback"
-    # when even that failed. In the fallback case lrp_vs_ig_spearman compares
-    # IG with IG and is NOT an independent cross-validation — renderers must
-    # surface this.
-    method: str = "Chefer-LRP"
+    # "AttnLRP" (Achtibat et al. 2024, via lxt), "Chefer-LRP" (Chefer et al.
+    # 2021), or "IG-fallback" when both failed. In the fallback case
+    # lrp_vs_ig_spearman compares IG with IG and is NOT an independent
+    # cross-validation — renderers must surface this.
+    method: str = "AttnLRP"
 
 
 def _get_embedding_layer(encoder_model, is_gpt2):
@@ -651,31 +651,106 @@ def batch_compute_perturbation(
 # ── LRP (Layer-wise Relevance Propagation) ────────────────────────────────
 
 
+def _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2):
+    """AttnLRP relevance (Achtibat et al., 2024) via the ``lxt`` library.
+
+    AttnLRP is a conservation-preserving layer-wise relevance propagation with
+    rules tailored to the transformer non-linearities (softmax, matmul, layer
+    normalisation), and is more rigorous than the attention-rollout relevance
+    of Chefer et al. (2021). The ``lxt`` implementation works by monkey-patching
+    the Hugging Face modeling module so that the backward pass redistributes
+    relevance; the forward pass is numerically unchanged.
+
+    Because the patch is global (it rewrites methods on the shared modeling
+    classes) and only alters the backward, leaving it in place would corrupt the
+    gradients of every other diagnostic (integrated gradients, the Chefer
+    cross-check). We therefore snapshot the patched classes/module, patch,
+    compute, and restore the snapshot, so the rest of the dashboard is
+    unaffected. Returns ``(abs attribution per token, tokens)`` or ``None`` if
+    ``lxt`` is unavailable or the computation fails (the caller then falls back
+    to Chefer).
+    """
+    try:
+        from lxt.efficient import monkey_patch
+        if is_gpt2:
+            import lxt.efficient.models.gpt2 as _lm
+            from transformers.models.gpt2 import modeling_gpt2 as _mod
+        else:
+            import lxt.efficient.models.bert as _lm
+            from transformers.models.bert import modeling_bert as _mod
+        patch_map = _lm.attnLRP
+    except Exception:
+        return None  # lxt not installed / incompatible — caller uses Chefer
+
+    targets = list(patch_map.keys())
+    snapshot = {t: dict(vars(t)) for t in targets}  # pristine class/module state
+    try:
+        device = next(encoder_model.parameters()).device
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=128)
+        input_ids = inputs["input_ids"].to(device)
+        attention_mask = inputs["attention_mask"].to(device)
+        tokens = tokenizer.convert_ids_to_tokens(input_ids[0].tolist())
+
+        encoder_model.zero_grad(set_to_none=True)
+        with torch.enable_grad():
+            monkey_patch(_mod, patch_map, verbose=False)
+            emb = encoder_model.get_input_embeddings()(input_ids).detach().requires_grad_(True)
+            outputs = encoder_model(inputs_embeds=emb, attention_mask=attention_mask)
+            hidden = outputs.last_hidden_state
+            m = attention_mask.unsqueeze(-1).float()
+            pooled = (hidden * m).sum(dim=1) / m.sum(dim=1).clamp(min=1e-9)
+            pooled.norm(dim=-1).sum().backward()
+
+        rel = (emb.grad * emb).sum(dim=-1)[0].abs().detach().cpu().numpy()
+        if rel.size == 0 or not np.isfinite(rel).all() or float(rel.std()) < 1e-12:
+            return None
+        return rel, tokens
+    except Exception:
+        return None
+    finally:
+        # Restore the pristine modeling state so no other diagnostic is affected.
+        for t, original in snapshot.items():
+            for k in list(vars(t).keys()):
+                if k not in original:
+                    try:
+                        delattr(t, k)
+                    except Exception:
+                        pass
+            for k, v in original.items():
+                try:
+                    setattr(t, k, v)
+                except Exception:
+                    pass
+        encoder_model.zero_grad(set_to_none=True)
+
+
 def compute_lrp_attributions(
     encoder_model,
     tokenizer,
     text: str,
     is_gpt2: bool,
 ) -> Tuple[np.ndarray, List[str], str]:
-    """Compute per-token transformer-LRP attributions (Chefer et al., 2021).
+    """Compute per-token transformer-LRP attributions for the IG cross-check.
 
-    Captum's DeepLift / LayerLRP cannot run on BERT/GPT-2 (LayerNorm + GELU +
-    reused/functional modules), so instead we use the attention-relevance
-    method of Chefer, Gur & Wolf, "Transformer Interpretability Beyond
-    Attention Visualization" (CVPR 2021): for every layer take the
-    head-averaged, positive part of (attention ⊙ ∂target/∂attention), and roll
-    relevance through the layers with a residual,
+    Three methods are tried in order of rigour, and the one that succeeds is
+    reported so the interface can label it:
 
-        R₀ = I,   Āₗ = mean_h ( (Aₗ ⊙ ∇Aₗ)⁺ ),   Rₗ = Rₗ₋₁ + Āₗ · Rₗ₋₁ .
+    1. ``"AttnLRP"`` — the conservation-preserving Attention-Aware LRP of
+       \\citet{Achtibat2024} via the ``lxt`` library, when it is installed and
+       compatible with the loaded Transformers version.
+    2. ``"Chefer-LRP"`` — the attention-rollout relevance of Chefer, Gur & Wolf
+       (CVPR 2021): for every layer take the head-averaged positive part of
+       (attention ⊙ ∂target/∂attention) and roll it through the layers with a
+       residual, ``R₀ = I, Āₗ = mean_h((Aₗ ⊙ ∇Aₗ)⁺), Rₗ = Rₗ₋₁ + Āₗ·Rₗ₋₁``.
+       Self-contained, so it always runs on BERT/GPT-2.
+    3. ``"IG-fallback"`` — re-uses integrated gradients if both relevance
+       methods fail. The caller MUST surface this, because the agreement is
+       then IG-vs-IG and proves nothing.
 
-    This is a genuine second attribution method (relevance redistribution),
-    independent of IG, so ρ(LRP, IG) becomes a real cross-validation. The
-    backward target is the same masked-mean-pooled hidden-state norm that IG
-    explains, so both methods attribute the *same* output.
+    All three attribute the same masked-mean-pooled hidden-state norm that IG
+    explains, so the cross-validation compares like with like.
 
-    Returns ``(abs attribution per token [seq_len], token strings, method)``
-    where method is ``"Chefer-LRP"`` or, if anything fails, ``"IG-fallback"``
-    (the caller must surface the fallback — the agreement is then IG-vs-IG).
+    Returns ``(abs attribution per token [seq_len], token strings, method)``.
     """
     device = next(encoder_model.parameters()).device
     inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=128)
@@ -683,6 +758,12 @@ def compute_lrp_attributions(
     attention_mask = inputs["attention_mask"].to(device)
     tokens = tokenizer.convert_ids_to_tokens(input_ids[0].tolist())
 
+    # 1) AttnLRP (most rigorous) when lxt is available and compatible.
+    _attn = _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2)
+    if _attn is not None:
+        return _attn[0], _attn[1], "AttnLRP"
+
+    # 2) Chefer transformer-LRP (always available).
     try:
         encoder_model.zero_grad(set_to_none=True)
         with torch.enable_grad():

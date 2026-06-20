@@ -282,8 +282,12 @@ def _chart_with_png_btn(chart_html: str, container_id: str, filename: str, contr
 
 
 
-def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header=None, style=None, controls=None):
-    """Wrap content in a card with consistent header style."""
+def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header=None, style=None, controls=None, top=None):
+    """Wrap content in a card with consistent header style.
+
+    ``top`` is an optional element rendered inside the white card *above* the
+    title row (e.g. a selector that belongs to the card but sits over its
+    header)."""
     base_style = "min-height: auto; display: flex; flex-direction: column;"
     if style:
         base_style += f" {style}"
@@ -320,6 +324,7 @@ def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header
 
     return ui.div(
         {"class": "card", "style": base_style},
+        top,
         header,
         ui.div(content, style="flex: 1; display: flex; flex-direction: column;")
     )

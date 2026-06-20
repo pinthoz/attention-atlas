@@ -1627,55 +1627,9 @@ def create_bias_accordion():
                     "Causal Head Intervention",
                     "Head ablation tests whether heads that appear bias-focused actually change the model representation when removed. This is the most directly causal part of the validation panel.",
                 ),
-                # Ranking selector: which BAR variant picks the heads to
-                # ablate. Per-category rankings (BAR_C) recover causal signal
-                # that the combined ranking dilutes, especially in GPT-2
-                # (THRESHOLDS_CALIBRATION.md sections 15-16).
-                ui.div(
-                    {
-                        "style": "display:flex;justify-content:center;align-items:center;gap:14px;margin:0 0 16px 0;"
-                    },
-                    ui.span(
-                        "Rank heads by",
-                        style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;",
-                    ),
-                    ui.div(
-                        {
-                            "style": "display:inline-flex;gap:8px;align-items:stretch;",
-                            "id": "ablation-rank-pills",
-                        },
-                        ui.HTML(
-                            # Combined (blue) - active by default
-                            '<div class="ablation-pill active" data-value="combined" title="Combined BAR (all biased tokens)" '
-                            'style="--pill-color:#ff5ca9;--pill-bg:rgba(255,92,169,0.14);--pill-border:#ff5ca933;">'
-                            '<span class="ablation-pill-label">Combined</span>'
-                            '<span class="ablation-pill-sub">all biased</span>'
-                            "</div>"
-                            # GEN (yellow)
-                            '<div class="ablation-pill" data-value="GEN" title="BAR_GEN (generalisation tokens)" '
-                            'style="--pill-color:#f59e0b;--pill-bg:rgba(245,158,11,0.14);--pill-border:#f59e0b33;">'
-                            '<span class="ablation-pill-label">GEN</span>'
-                            '<span class="ablation-pill-sub">generalisation</span>'
-                            "</div>"
-                            # UNFAIR (red)
-                            '<div class="ablation-pill" data-value="UNFAIR" title="BAR_UNFAIR (unfair-language tokens)" '
-                            'style="--pill-color:#ef4444;--pill-bg:rgba(239,68,68,0.14);--pill-border:#ef444433;">'
-                            '<span class="ablation-pill-label">UNFAIR</span>'
-                            '<span class="ablation-pill-sub">unfair language</span>'
-                            "</div>"
-                            # STEREO (purple)
-                            '<div class="ablation-pill" data-value="STEREO" title="BAR_STEREO (stereotype tokens)" '
-                            'style="--pill-color:#a78bfa;--pill-bg:rgba(167,139,250,0.14);--pill-border:#a78bfa33;">'
-                            '<span class="ablation-pill-label">STEREO</span>'
-                            '<span class="ablation-pill-sub">stereotype</span>'
-                            "</div>"
-                        ),
-                    ),
-                    ui.tags.input(
-                        type="hidden", id="bias_ablation_rank_by", value="combined"
-                    ),
-                ),
-                # Pill styles + JS
+                # The "Rank heads by" selector is now rendered at the TOP of the
+                # Head Ablation Results card itself (see ablation_results_display
+                # in bias_xai.py); only its shared CSS lives here.
                 ui.tags.style("""
                     .ablation-pill {
                         display: flex; flex-direction: row; align-items: baseline; gap: 6px;
@@ -1696,21 +1650,6 @@ def create_bias_accordion():
                         font-size: 9px; font-weight: 500; color: var(--pill-color);
                         opacity: 0.65; letter-spacing: 0.3px;
                     }
-                """),
-                ui.tags.script("""
-                    (function() {
-                        var grp = document.getElementById('ablation-rank-pills');
-                        if (!grp) return;
-                        grp.addEventListener('click', function(e) {
-                            var pill = e.target.closest('.ablation-pill');
-                            if (!pill) return;
-                            grp.querySelectorAll('.ablation-pill').forEach(function(p) { p.classList.remove('active'); });
-                            pill.classList.add('active');
-                            var val = pill.getAttribute('data-value');
-                            document.getElementById('bias_ablation_rank_by').value = val;
-                            Shiny.setInputValue('bias_ablation_rank_by', val, {priority: 'event'});
-                        });
-                    })();
                 """),
                 ui.output_ui("ablation_results_display"),
                 subsection_header(

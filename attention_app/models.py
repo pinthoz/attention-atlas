@@ -9,6 +9,24 @@ import gc
 
 _logger = logging.getLogger(__name__)
 
+
+def _eager_kwargs():
+    """Force eager attention so ``output_attentions=True`` returns the maps.
+
+    From transformers 4.36 the default attention is SDPA, which silently
+    drops the attention weights when ``output_attentions=True`` (and on 5.x
+    raises). The whole dashboard is built on those weights, so we request the
+    eager implementation. The kwarg does not exist before 4.36, hence the
+    version guard (keeps the code working if transformers is downgraded)."""
+    try:
+        import transformers
+        from packaging import version
+        if version.parse(transformers.__version__) >= version.parse("4.36"):
+            return {"attn_implementation": "eager"}
+    except Exception:
+        pass
+    return {}
+
 # Suppress warnings
 warnings.filterwarnings(
     "ignore",
@@ -99,6 +117,7 @@ class ModelManager:
                     model_name,
                     output_attentions=True,
                     output_hidden_states=True,
+                    **_eager_kwargs(),
                 )
                 encoder.eval()
 
@@ -119,6 +138,7 @@ class ModelManager:
                     model_name,
                     output_attentions=True,
                     output_hidden_states=True,
+                    **_eager_kwargs(),
                 )
                 encoder.eval()
 

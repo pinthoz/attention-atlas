@@ -488,6 +488,46 @@ def register_xai_handlers(
             f"<div style='{_TN}'>Ablation is useful, but not sufficient on its own. Cross-reference it with Integrated Gradients for convergent validity.</div>"
         )
 
+        # "Rank heads by" selector, rendered ABOVE the Head Ablation Results
+        # title. Server-rendered so the active pill reflects the current
+        # ranking; each pill sets bias_ablation_rank_by (and toggles active for
+        # instant feedback). Shared across A/B in compare mode.
+        try:
+            _rank_by = str(input.bias_ablation_rank_by())
+        except Exception:
+            _rank_by = "combined"
+        _pill_specs = [
+            ("combined", "Combined", "all biased", "#ff5ca9", "rgba(255,92,169,0.14)", "#ff5ca933"),
+            ("GEN", "GEN", "generalisation", "#f59e0b", "rgba(245,158,11,0.14)", "#f59e0b33"),
+            ("UNFAIR", "UNFAIR", "unfair language", "#ef4444", "rgba(239,68,68,0.14)", "#ef444433"),
+            ("STEREO", "STEREO", "stereotype", "#a78bfa", "rgba(167,139,250,0.14)", "#a78bfa33"),
+        ]
+        _pills = ""
+        for _val, _label, _sub, _col, _bg, _bd in _pill_specs:
+            _active = " active" if _rank_by == _val else ""
+            _onclick = (
+                "Shiny.setInputValue('bias_ablation_rank_by','" + _val + "',{priority:'event'});"
+                "this.parentNode.querySelectorAll('.ablation-pill').forEach(function(p){p.classList.remove('active');});"
+                "this.classList.add('active');"
+            )
+            _pills += (
+                f'<div class="ablation-pill{_active}" data-value="{_val}" '
+                f'title="BAR_{_val} ranking" '
+                f'style="--pill-color:{_col};--pill-bg:{_bg};--pill-border:{_bd};" '
+                f'onclick="{_onclick}">'
+                f'<span class="ablation-pill-label">{_label}</span>'
+                f'<span class="ablation-pill-sub">{_sub}</span>'
+                f'</div>'
+            )
+        rank_pills = ui.HTML(
+            '<div style="display:flex;justify-content:center;align-items:center;'
+            'gap:14px;margin:0 0 14px 0;flex-wrap:wrap;">'
+            '<span style="font-size:10px;font-weight:700;color:#94a3b8;'
+            'text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;">Rank heads by</span>'
+            f'<div style="display:inline-flex;gap:8px;align-items:stretch;">{_pills}</div>'
+            '</div>'
+        )
+
         if show_comparison:
             src_mode = _get_attn_source_mode("bias_attn_source")
             if src_mode == "compare":
@@ -500,21 +540,24 @@ def register_xai_handlers(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(_render_ablation_single(results_A, "_A"), *h_A,
                            style="border: 2px solid #3b82f6; height: 100%;",
+                           top=rank_pills,
                            controls=[
                                ui.download_button("export_ablation_csv", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('ablation-chart-container_A', 'ablation_impact_A.png')", style=_BTN_STYLE_PNG),
                            ]),
                 _wrap_card(_render_ablation_single(results_B, "_B"), *h_B,
                            style="border: 2px solid #ff5ca9; height: 100%;",
+                           top=rank_pills,
                            controls=[
                                ui.download_button("export_ablation_csv_B", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('ablation-chart-container_B', 'ablation_impact_B.png')", style=_BTN_STYLE_PNG),
-                           ])
+                           ]),
             )
 
         return _wrap_card(
             _render_ablation_single(results_A),
             *header_args,
+            top=rank_pills,
             controls=[
                 ui.download_button("export_ablation_csv", "CSV", style=_BTN_STYLE_CSV),
                 ui.tags.button("PNG", onclick="downloadPlotlyPNG('ablation-chart-container', 'ablation_impact.png')", style=_BTN_STYLE_PNG),
@@ -1491,8 +1534,22 @@ def register_xai_handlers(
                     f'{label}</div></div>'
                 )
 
+            _method = getattr(bundle, "method", "AttnLRP")
+            _method_label = {
+                "AttnLRP": "AttnLRP &middot; Achtibat et al. 2024",
+                "Chefer-LRP": "Chefer-LRP &middot; Chefer et al. 2021",
+                "IG-fallback": "Integrated Gradients fallback",
+            }.get(_method, _method)
+            _method_badge = (
+                f'<div style="display:inline-block;margin-top:12px;padding:3px 10px;'
+                f'background:#ede9fe;border:1px solid #ddd6fe;border-radius:999px;'
+                f'font-size:11px;font-weight:600;color:#6d28d9;">'
+                f'LRP method: {_method_label}</div>'
+            )
+
             summary_html = (
-                f'<div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;">'
+                _method_badge
+                + f'<div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;">'
                 + _rho_card(rho_ig, "ρ(LRP, IG)", rho_ig_color, rho_ig_label)
                 + _rho_card(mean_attn_rho, "Mean ρ(LRP, Attn)",
                             mean_attn_color, mean_attn_label)
@@ -1560,10 +1617,12 @@ def register_xai_handlers(
         header_args = (
             f"LRP Cross-Validation{_lrp_f_bdg}",
             "Convergent validity: does transformer-LRP agree with Integrated Gradients on token importance?",
-            f"<span style='{_TH}'>Method: Transformer-LRP (Chefer et al., 2021)</span>"
+            f"<span style='{_TH}'>Method: AttnLRP (Achtibat et al., 2024), Chefer et al. (2021) fallback</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
-            f"<span>Head-averaged (attention &odot; attention-gradient)&#8314;, rolled through layers with a residual</span></div>"
-            f"<div style='{_TN}; margin-bottom:4px;'>A genuine second method (relevance redistribution), independent of IG. Fallback: Integrated Gradients if propagation fails.</div>"
+            f"<span>AttnLRP: conservation-preserving layer-wise relevance with transformer-specific rules (via <i>lxt</i>)</span></div>"
+            f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
+            f"<span>Chefer: head-averaged (attention &odot; attention-gradient)&#8314; rolled through layers, when <i>lxt</i> is unavailable</span></div>"
+            f"<div style='{_TN}; margin-bottom:4px;'>A genuine second method (relevance redistribution), independent of IG. Final fallback: Integrated Gradients if both fail.</div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Metrics</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"

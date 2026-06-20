@@ -2585,7 +2585,7 @@ def create_lrp_comparison_chart(
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=tokens[:n], y=l_norm,
-        name="LRP (Chefer)",
+        name="LRP",
         marker_color="#8b5cf6",
         opacity=0.8,
     ))
@@ -2598,7 +2598,7 @@ def create_lrp_comparison_chart(
 
     fig.update_layout(
         title=dict(
-            text=f"LRP (Chefer) vs IG Token Attribution<br>"
+            text=f"LRP vs IG Token Attribution<br>"
                  f"<sub>Spearman ρ = {lrp_vs_ig_rho:.3f} | Normalized to [0,1]</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
@@ -2693,12 +2693,12 @@ def create_cross_method_agreement_chart(
 
     fig.update_layout(
         title=dict(
-            text=f"Cross-Method Agreement: IG vs LRP (Chefer)<br><sub>{subtitle}</sub>",
+            text=f"Cross-Method Agreement: IG vs LRP<br><sub>{subtitle}</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         xaxis=dict(title="IG Spearman ρ (vs attention)", range=[-1.05, 1.05],
                    tickfont=dict(size=10, color="#475569")),
-        yaxis=dict(title="LRP (Chefer) Spearman ρ (vs attention)", range=[-1.05, 1.05],
+        yaxis=dict(title="LRP Spearman ρ (vs attention)", range=[-1.05, 1.05],
                    tickfont=dict(size=10, color="#475569")),
         height=400,
         autosize=True,
