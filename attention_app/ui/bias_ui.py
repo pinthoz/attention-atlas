@@ -1576,21 +1576,12 @@ def create_bias_accordion():
                 ui.span("Attention × Bias Corr", class_="panel-title-short"),
                 ui.span({"class": "accordion-panel-badge explore"}, "Exploration"),
             ),
-            # Formula definition + live significance (alpha) control, in ONE card
-            ui.div(
-                {"style": "background:linear-gradient(135deg,#f8fafc,#f0f4f8);"
-                          "border:1px solid #e2e8f0;border-radius:12px;"
-                          "padding:16px 20px;margin-bottom:16px;"},
-                # Definition (now without its own outer card)
-                ui.output_ui("bias_ratio_formula"),
-                # Feature 1 + 2: head-survival readout. The alpha slider and the
-                # multiplicity-correction toggle live in the floating toolbar
-                # (alpha button + Correction radio group, next to Source Attention).
-                ui.div(
-                    {"style": "border-top:1px solid #e2e8f0;margin-top:14px;padding-top:12px;"},
-                    ui.output_ui("alpha_head_survival"),
-                ),
-            ),
+            # Formula definition + live significance (alpha) control, in ONE card.
+            # The whole card (gradient wrapper, formula and the head-survival
+            # readout) is rendered server-side by `bias_ratio_formula` so it only
+            # appears once an analysis exists, together with the Combined
+            # Attention & Bias View, instead of flashing as an empty white box.
+            ui.output_ui("bias_ratio_formula"),
             # Hidden selects (driven by the floating toolbar)
             ui.div(
                 {"style": "display:none;"},
@@ -1659,7 +1650,7 @@ def create_bias_accordion():
                 ui.output_ui("perturbation_results_display"),
                 subsection_header(
                     "Cross-Validation With LRP",
-                    "This final block tests convergent validity. If transformer-LRP (Chefer et al., 2021) agrees with Integrated Gradients, the faithfulness claim becomes more robust than relying on a single baseline.",
+                    "This final block tests convergent validity. If AttnLRP (Achtibat et al., 2024) agrees with Integrated Gradients, the faithfulness claim becomes more robust than relying on a single baseline. Transformer-LRP (Chefer et al., 2021) is available as a second option you can switch to.",
                 ),
                 ui.output_ui("lrp_results_display"),
             ),

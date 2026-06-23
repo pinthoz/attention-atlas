@@ -2855,12 +2855,29 @@ def bias_server_handlers(input, output, session):
 
 
 
-    # ── Ratio formula panel (static) ──
+    # ── Ratio formula panel (definition + live significance readout) ──
 
     @output
     @render.ui
     def bias_ratio_formula():
-        return ui.HTML(create_ratio_formula_html())
+        # Render the whole card only once the section is ready (analysis done and
+        # permutation null computed), so the BAR definition AND its head-survival
+        # readout appear together with the rest of the section, rather than the
+        # readout popping in later or the card flashing as an empty white box.
+        if not _attn_corr_ready():
+            return ui.HTML("")
+        return ui.div(
+            {"style": "background:linear-gradient(135deg,#f8fafc,#f0f4f8);"
+                      "border:1px solid #e2e8f0;border-radius:12px;"
+                      "padding:16px 20px;margin-bottom:16px;"},
+            ui.HTML(create_ratio_formula_html()),
+            # Head-survival readout (alpha + multiplicity correction live in the
+            # floating toolbar). No top divider line above it, by request.
+            ui.div(
+                {"style": "margin-top:14px;padding-top:12px;"},
+                ui.output_ui("alpha_head_survival"),
+            ),
+        )
 
     # ── Live significance (alpha) + multiplicity correction (features 1 & 2) ──
     #
@@ -2877,6 +2894,24 @@ def bias_server_handlers(input, output, session):
     @reactive.calc
     def _bias_head_pvalues_B():
         return _compute_head_pvalues(bias_results_B.get())
+
+    @reactive.calc
+    def _attn_corr_ready():
+        """Whole-section reveal gate for Attention × Bias Correlation.
+
+        Reading this blocks until the per-head permutation null has been
+        computed, so the definition card, the head-survival readout and the
+        plots below it all appear together instead of revealing piecewise while
+        the 30k-permutation null is still running.
+        """
+        if not bias_results.get():
+            return False
+        # Force the (cached) permutation null so every section output waits for
+        # the same compute and is flushed to the client together.
+        _bias_head_pvalues()
+        if active_bias_compare_models.get() or active_bias_compare_prompts.get():
+            _bias_head_pvalues_B()
+        return True
 
     @output
     @render.ui
@@ -3518,7 +3553,9 @@ def bias_server_handlers(input, output, session):
     @visible_errors("Token-Level Bias Distribution")
     def combined_bias_view():
         res = bias_results.get()
-        if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
+        # Wait for the section-ready gate so this view reveals together with the
+        # definition card and the head-survival readout, not before them.
+        if not res or not _attn_corr_ready(): return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
 
         try: l_idx, h_idx = int(input.bias_attn_layer()), int(input.bias_attn_head())
         except Exception: l_idx, h_idx = 0, 0
@@ -3655,7 +3692,8 @@ def bias_server_handlers(input, output, session):
     @visible_errors("Attention × Bias Matrix")
     def attention_bias_matrix():
         res = bias_results.get()
-        if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
+        # Reveal together with the rest of the Attention × Bias Correlation section.
+        if not res or not _attn_corr_ready(): return ui.HTML('<div style="color:#9ca3af;padding:20px;text-align:center;">No analysis results yet.</div>')
 
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
@@ -3805,7 +3843,8 @@ def bias_server_handlers(input, output, session):
     @visible_errors("Bias Propagation")
     def bias_propagation_plot():
         res = bias_results.get()
-        if not res: return ui.HTML('<div style="color:#9ca3af;padding:20px;">No results.</div>')
+        # Reveal together with the rest of the Attention × Bias Correlation section.
+        if not res or not _attn_corr_ready(): return ui.HTML('<div style="color:#9ca3af;padding:20px;">No results.</div>')
 
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
@@ -3960,7 +3999,8 @@ def bias_server_handlers(input, output, session):
     @visible_errors("Bias-Focused Attention Heads")
     def bias_focused_heads_table():
         res = bias_results.get()
-        if not res: return None
+        # Reveal together with the rest of the Attention × Bias Correlation section.
+        if not res or not _attn_corr_ready(): return None
 
         compare_models = active_bias_compare_models.get()
         compare_prompts = active_bias_compare_prompts.get()
