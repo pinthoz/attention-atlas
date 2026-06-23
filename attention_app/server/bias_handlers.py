@@ -2784,7 +2784,7 @@ def bias_server_handlers(input, output, session):
                 f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
                 f"<span>Each category component saturates once &ge; 20% of tokens carry it (ratio × 5, capped at 1).</span></div>"
                 f"<div style='{_TN}; margin-top:6px;'>High token density + low stereotype score → loaded language without group-specific targeting.</div>"
-                f"<div style='{_TN}; margin-top:6px;'>The composite level is a communication aid, not a calibrated metric — token-level detection uses the calibrated GUS-Net thresholds.</div>"
+                f"<div style='{_TN}; margin-top:6px;'>The composite level is a communication aid, not a calibrated metric; token-level detection uses the calibrated GUS-Net thresholds.</div>"
             )
 
             cards_grid = ui.div(
@@ -2819,7 +2819,7 @@ def bias_server_handlers(input, output, session):
                 f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
                 f"<span>Each category component saturates once &ge; 20% of tokens carry it (ratio × 5, capped at 1).</span></div>"
                 f"<div style='{_TN}; margin-top:6px;'>High token density + low stereotype score → loaded language without group-specific targeting.</div>"
-                f"<div style='{_TN}; margin-top:6px;'>The composite level is a communication aid, not a calibrated metric — token-level detection uses the calibrated GUS-Net thresholds.</div>"
+                f"<div style='{_TN}; margin-top:6px;'>The composite level is a communication aid, not a calibrated metric; token-level detection uses the calibrated GUS-Net thresholds.</div>"
             )
             body = get_summary_cards(res, abl, ig) + _render_input_warnings(res)
             card = _wrap_card(ui.HTML(body), *header_args, style="margin-bottom: 24px;")
