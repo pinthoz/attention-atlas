@@ -3027,11 +3027,11 @@ def bias_server_handlers(input, output, session):
         """Render Top K heads as horizontal chips."""
         res = bias_results.get()
         if not res:
-            return ui.HTML('<span style="color:#64748b;font-size:9px;">--</span>')
+            return ui.HTML('<span style="color:#64748b;font-size:9px;">n/a</span>')
 
         metrics = res.get("attention_metrics", [])
         if not metrics:
-            return ui.HTML('<span style="color:#64748b;font-size:9px;">--</span>')
+            return ui.HTML('<span style="color:#64748b;font-size:9px;">n/a</span>')
 
         try:
             k = int(input.bias_top_k())

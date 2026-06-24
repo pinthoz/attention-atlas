@@ -259,6 +259,36 @@ def _impact_color(impact: float, thresholds: dict) -> str:
     return "#64748b"       # slate-500 (within null distribution)
 
 
+def _faithfulness_section_note(body: str):
+    """Mirror of bias_ui.section_note so the panel intro can be gated server-side."""
+    return ui.p(
+        body,
+        style=(
+            "font-size: 12px; line-height: 1.5; color: #f8fafc; "
+            "margin: 0 0 18px 0; padding: 0 0 10px 0; "
+            "border-bottom: 2px solid #ff5ca9; text-align: center;"
+        ),
+    )
+
+
+def _faithfulness_subsection_header(title: str, body: str | None = None):
+    """Mirror of bias_ui.subsection_header so each header can be gated server-side."""
+    nodes = [
+        ui.h5(
+            title,
+            style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #f8fafc; letter-spacing: 0.2px;",
+        )
+    ]
+    if body:
+        nodes.append(
+            ui.p(
+                body,
+                style="margin: 0 0 10px 0; font-size: 12px; line-height: 1.5; color: #94a3b8;",
+            )
+        )
+    return ui.div({"style": "margin: 12px 0 8px;"}, *nodes)
+
+
 def register_xai_handlers(
     input, output,
     ablation_results, ablation_results_B, ablation_running,
@@ -272,6 +302,71 @@ def register_xai_handlers(
     _resolve_faithfulness_results,
 ):
     """Wire up ablation / IG / perturbation / LRP renderers and exports."""
+
+    # ── Gated panel copy ─────────────────────────────────────────────────
+    # The Faithfulness Validation intro note and per-method subsection
+    # headers are rendered server-side so they only appear once their
+    # corresponding analysis has been computed, instead of showing all the
+    # explanatory text up front above empty white plot areas.
+    @output
+    @render.ui
+    def faithfulness_intro_note():
+        ready = bool(
+            ig_results.get() or ablation_results.get()
+            or perturbation_results.get() or lrp_results.get()
+        )
+        if not ready:
+            return None
+        return _faithfulness_section_note(
+            "This section organizes the internal validation evidence for the bias analysis. "
+            "It asks whether attention is only visually plausible or whether it aligns with "
+            "gradient-based attributions, perturbation tests, and causal interventions."
+        )
+
+    @output
+    @render.ui
+    def ig_section_header():
+        if ig_running.get() or not ig_results.get():
+            return None
+        return _faithfulness_subsection_header(
+            "Gradient Agreement",
+            "Integrated Gradients is used as the primary attribution baseline. These outputs show "
+            "whether heads that focus on biased tokens also align with gradient-based token importance.",
+        )
+
+    @output
+    @render.ui
+    def ablation_section_header():
+        if ablation_running.get() or not ablation_results.get():
+            return None
+        return _faithfulness_subsection_header(
+            "Causal Head Intervention",
+            "Head ablation tests whether heads that appear bias-focused actually change the model "
+            "representation when removed. This is the most directly causal part of the validation panel.",
+        )
+
+    @output
+    @render.ui
+    def perturbation_section_header():
+        if perturbation_running.get() or not perturbation_results.get():
+            return None
+        return _faithfulness_subsection_header(
+            "Perturbation and Minimality",
+            "Perturbation analysis checks whether token importance is stable under masking or removal. "
+            "This helps test whether the model truly depends on the same content that the explanations highlight.",
+        )
+
+    @output
+    @render.ui
+    def lrp_section_header():
+        if lrp_running.get() or not lrp_results.get():
+            return None
+        return _faithfulness_subsection_header(
+            "Cross-Validation With LRP",
+            "This final block tests convergent validity. If AttnLRP (Achtibat et al., 2024) agrees with "
+            "Integrated Gradients, the faithfulness claim becomes more robust than relying on a single "
+            "baseline. Transformer-LRP (Chefer et al., 2021) is available as a second option you can switch to.",
+        )
 
     @output
     @render.ui
@@ -1608,7 +1703,7 @@ def register_xai_handlers(
                     'background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.40);'
                     'border-left:4px solid #f59e0b;border-radius:8px;font-size:11.5px;'
                     'color:#78350f;line-height:1.5;">'
-                    '<b>Transformer-LRP could not be computed for this model</b> — the '
+                    '<b>Transformer-LRP could not be computed for this model.</b> The '
                     'attributions shown are an Integrated Gradients fallback, so the '
                     '&rho;(LRP, IG) agreement above is NOT an independent '
                     'cross-validation. Rely on the Perturbation panel for convergent '

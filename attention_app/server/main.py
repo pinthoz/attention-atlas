@@ -2509,7 +2509,7 @@ def server(input, output, session):
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Sum & Layer Normalization"),
-            ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here — it applies LayerNorm inside each block (ln_1).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
+            ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here; it applies LayerNorm inside each block (ln_1).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"),
             get_sum_layernorm_view(res, encoder_model)
         )
 
@@ -3347,7 +3347,7 @@ def server(input, output, session):
                     {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here — it applies LayerNorm inside each block (ln_1).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
+                        ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here; it applies LayerNorm inside each block (ln_1).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
                     ),
                     arrow("Sum & Layer Normalization", "Q/K/V Projections", "horizontal", suffix=suffix, style="margin-top: 15px;"),
                     ui.div(
@@ -3414,7 +3414,7 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 26px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here — it applies LayerNorm inside each block (ln_1).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
+                    ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Sum & Layer Normalization"), ui.p("Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here; it applies LayerNorm inside each block (ln_1).", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_sum_layernorm_view(res, encoder_model_local))
                 ),
                 ui.div(
                     {"style": "position: relative; display: flex; align-items: center; justify-content: center;"},
@@ -4130,7 +4130,7 @@ def server(input, output, session):
 
                  # Sum & Norm
                  rows.append(ui.div(paired_arrows("Positional Embeddings", "Sum & Layer Normalization"), class_="arrow-row"))
-                 sum_desc = "Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here — it applies LayerNorm inside each block (ln_1)."
+                 sum_desc = "Computes the element-wise sum of token, positional, and segment embeddings (where applicable). BERT then applies Layer Normalization before the first Transformer block; GPT-2 (pre-LN) does not normalize here; it applies LayerNorm inside each block (ln_1)."
                  rows.append(ui.layout_columns(
                      make_card("Sum & Layer Normalization", sum_desc, get_sum_layernorm_view(res_A, encoder_model_A), "a"),
                      make_card("Sum & Layer Normalization", sum_desc, get_sum_layernorm_view(res_B, encoder_model_B, suffix="_B"), "b"),

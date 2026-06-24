@@ -61,6 +61,36 @@ from ..bias.visualizations import (
 _logger = logging.getLogger(__name__)
 
 
+def _stereoset_section_note(body: str):
+    """Mirror of bias_ui.section_note so the panel intro can be gated server-side."""
+    return ui.p(
+        body,
+        style=(
+            "font-size: 12px; line-height: 1.5; color: #f8fafc; "
+            "margin: 0 0 18px 0; padding: 0 0 10px 0; "
+            "border-bottom: 2px solid #ff5ca9; text-align: center;"
+        ),
+    )
+
+
+def _stereoset_subsection_header(title: str, body: str | None = None):
+    """Mirror of bias_ui.subsection_header so each header can be gated server-side."""
+    nodes = [
+        ui.h5(
+            title,
+            style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #f8fafc; letter-spacing: 0.2px;",
+        )
+    ]
+    if body:
+        nodes.append(
+            ui.p(
+                body,
+                style="margin: 0 0 10px 0; font-size: 12px; line-height: 1.5; color: #94a3b8;",
+            )
+        )
+    return ui.div({"style": "margin: 12px 0 8px;"}, *nodes)
+
+
 def register_stereoset_handlers(
     input, output,
     bias_results, bias_results_B,
@@ -216,6 +246,64 @@ def register_stereoset_handlers(
                 return (base_mk, gk)
             return base_mk  # fallback to single
         return base_mk
+
+    # ── Gated panel copy ─────────────────────────────────────────────────
+    # The StereoSet intro note and subsection headers are rendered
+    # server-side so each block of explanatory text only appears once its
+    # underlying data is available, instead of showing all the copy up front
+    # above empty white plot areas.
+    @output
+    @render.ui
+    def stereoset_intro_note():
+        if get_stereoset_scores(_stereoset_model_key()) is None:
+            return None
+        return _stereoset_section_note(
+            "This section provides the external benchmark view of the project. "
+            "While the faithfulness panel validates internal explanation quality, "
+            "StereoSet evaluates whether the models exhibit stereotypical preferences "
+            "on a standardized bias benchmark."
+        )
+
+    @output
+    @render.ui
+    def stereoset_overview_header():
+        if get_stereoset_scores(_stereoset_model_key()) is None:
+            return None
+        return _stereoset_subsection_header(
+            "Benchmark Overview",
+            "Use LMS, SS, and ICAT together. SS measures stereotype preference, LMS measures "
+            "language-model quality, and ICAT rewards the balance between the two.",
+        )
+
+    @output
+    @render.ui
+    def stereoset_sensitivity_header():
+        if get_head_sensitivity_matrix(_stereoset_model_key()) is None:
+            return None
+        return _stereoset_subsection_header(
+            "Sensitive Heads and Attention Mechanisms",
+            "This block reconnects StereoSet to the main Attention Atlas contribution. It identifies "
+            "which heads are most sensitive on the benchmark and how benchmark behavior relates back "
+            "to attention structure.",
+        )
+
+    @output
+    @render.ui
+    def stereoset_explorer_header():
+        # Match the explorer's own source-aware key resolution: in gusnet
+        # source mode it reads GUS-Net examples, otherwise the base model.
+        gk = _stereoset_gusnet_key()
+        if _get_attn_source_mode("bias_attn_source") == "gusnet" and gk:
+            explorer_mk = gk
+        else:
+            explorer_mk = _stereoset_model_key()
+        if not get_stereoset_examples(explorer_mk):
+            return None
+        return _stereoset_subsection_header(
+            "Example Explorer",
+            "Use this final section for qualitative inspection. It is best suited for case studies "
+            "where you want to connect benchmark scores to concrete prompts and attention patterns.",
+        )
 
     @output
     @render.ui

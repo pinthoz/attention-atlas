@@ -1604,20 +1604,14 @@ def create_bias_accordion():
             ),
             ui.div(
                 {"style": "padding: 8px 0;"},
-                section_note(
-                    "This section organizes the internal validation evidence for the bias analysis. "
-                    "It asks whether attention is only visually plausible or whether it aligns with "
-                    "gradient-based attributions, perturbation tests, and causal interventions.",
-                ),
-                subsection_header(
-                    "Gradient Agreement",
-                    "Integrated Gradients is used as the primary attribution baseline. These outputs show whether heads that focus on biased tokens also align with gradient-based token importance.",
-                ),
+                # Intro note + per-method headers are rendered server-side
+                # (see bias_xai.py) so each block of explanatory text only
+                # appears once its analysis has been computed, instead of
+                # showing all the copy up front above empty plot areas.
+                ui.output_ui("faithfulness_intro_note"),
+                ui.output_ui("ig_section_header"),
                 ui.output_ui("ig_results_display"),
-                subsection_header(
-                    "Causal Head Intervention",
-                    "Head ablation tests whether heads that appear bias-focused actually change the model representation when removed. This is the most directly causal part of the validation panel.",
-                ),
+                ui.output_ui("ablation_section_header"),
                 # The "Rank heads by" selector is now rendered at the TOP of the
                 # Head Ablation Results card itself (see ablation_results_display
                 # in bias_xai.py); only its shared CSS lives here.
@@ -1643,15 +1637,9 @@ def create_bias_accordion():
                     }
                 """),
                 ui.output_ui("ablation_results_display"),
-                subsection_header(
-                    "Perturbation and Minimality",
-                    "Perturbation analysis checks whether token importance is stable under masking or removal. This helps test whether the model truly depends on the same content that the explanations highlight.",
-                ),
+                ui.output_ui("perturbation_section_header"),
                 ui.output_ui("perturbation_results_display"),
-                subsection_header(
-                    "Cross-Validation With LRP",
-                    "This final block tests convergent validity. If AttnLRP (Achtibat et al., 2024) agrees with Integrated Gradients, the faithfulness claim becomes more robust than relying on a single baseline. Transformer-LRP (Chefer et al., 2021) is available as a second option you can switch to.",
-                ),
+                ui.output_ui("lrp_section_header"),
                 ui.output_ui("lrp_results_display"),
             ),
             value="ablation",
@@ -1662,30 +1650,20 @@ def create_bias_accordion():
                 "StereoSet Evaluation",
                 ui.span({"class": "accordion-panel-badge benchmark"}, "Benchmark"),
             ),
-            section_note(
-                "This section provides the external benchmark view of the project. "
-                "While the faithfulness panel validates internal explanation quality, "
-                "StereoSet evaluates whether the models exhibit stereotypical preferences "
-                "on a standardized bias benchmark.",
-            ),
-            subsection_header(
-                "Benchmark Overview",
-                "Use LMS, SS, and ICAT together. SS measures stereotype preference, LMS measures language-model quality, and ICAT rewards the balance between the two.",
-            ),
+            # Intro note + subsection headers are rendered server-side
+            # (see bias_stereoset.py) so each block of explanatory text only
+            # appears once its underlying StereoSet data is available, instead
+            # of showing all the copy up front above empty plot areas.
+            ui.output_ui("stereoset_intro_note"),
+            ui.output_ui("stereoset_overview_header"),
             ui.output_ui("stereoset_overview"),
             ui.output_ui("stereoset_category_header"),
             ui.output_ui("stereoset_category_breakdown"),
             ui.output_ui("stereoset_demographic_slices"),
-            subsection_header(
-                "Sensitive Heads and Attention Mechanisms",
-                "This block reconnects StereoSet to the main Attention Atlas contribution. It identifies which heads are most sensitive on the benchmark and how benchmark behavior relates back to attention structure.",
-            ),
+            ui.output_ui("stereoset_sensitivity_header"),
             ui.output_ui("stereoset_head_sensitivity"),
             ui.output_ui("stereoset_attention_bias_link"),
-            subsection_header(
-                "Example Explorer",
-                "Use this final section for qualitative inspection. It is best suited for case studies where you want to connect benchmark scores to concrete prompts and attention patterns.",
-            ),
+            ui.output_ui("stereoset_explorer_header"),
             ui.output_ui("stereoset_example_explorer"),
             value="stereoset",
         ),

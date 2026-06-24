@@ -1112,7 +1112,7 @@ JS_TRANSITION_MODAL = """
                             </div>
 
                             <h4 style="color: #ff5ca9; margin-top: 16px;">Why Mean (Attention Mass)?</h4>
-                            <p>ISA reports <strong>average coupling</strong>: how much of one sentence's attention budget the other sentence receives. A max-of-max aggregation (used before 2026-06) measures only whether <em>any single strong token link</em> exists — one co-reference link sets the whole pair's score, making values outlier-dominated and hard to compare. Mass is robust, interpretable as a share, and the token drill-down (click a cell) shows exactly which token pairs carry it.</p>
+                            <p>ISA reports <strong>average coupling</strong>: how much of one sentence's attention budget the other sentence receives. A max-of-max aggregation (used before 2026-06) measures only whether <em>any single strong token link</em> exists; one co-reference link sets the whole pair's score, making values outlier-dominated and hard to compare. Mass is robust, interpretable as a share, and the token drill-down (click a cell) shows exactly which token pairs carry it.</p>
 
                             <h4 style="color: #ff5ca9; margin-top: 16px;">BERT Properties (Bidirectional)</h4>
                             <ul style="padding-left: 20px; margin-bottom: 12px;">
