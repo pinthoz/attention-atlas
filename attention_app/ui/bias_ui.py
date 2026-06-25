@@ -2083,8 +2083,8 @@ def create_floating_bias_toolbar():
             .cw-inline-panel {
                 display: none;
                 align-items: center;
-                gap: 16px;                 /* spaced, but tight enough to fit the left track */
-                margin-left: 10px;
+                gap: 11px;                 /* weight sliders kept tight to save space */
+                margin-left: 8px;
                 animation: cwPopUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
             }
             .cw-inline-panel.open {
@@ -2179,16 +2179,17 @@ def create_floating_bias_toolbar():
             }
 
             /* Layer & Head: 60px when there is room. When the weights panel is
-               open they SHRINK (down to nothing) to absorb the extra width, so
-               the whole left group always fits inside the bar and nothing — not
-               the button, not Layer/Head — ever spills out or over the tokens. */
+               open they get a touch shorter but KEEP a usable minimum width so
+               the two sliders never collapse onto each other (the LAYER/HEAD
+               labels must stay side by side). The free space on the right is
+               absorbed by the centre token box instead, not by these sliders. */
             .bias-lh-group input[type="range"] {
                 transition: width 0.2s ease;
             }
             .bias-bar-left.cw-active .bias-lh-group input[type="range"] {
-                width: 60px !important;   /* basis only; flex-shrink takes over */
-                min-width: 0 !important;
-                flex-shrink: 1;
+                width: 48px !important;
+                min-width: 44px !important;   /* never collapse: keep both sliders usable */
+                flex-shrink: 0;
             }
             /* While the panel is open: anchor the group LEFT (button never leaves
                the bar), tighten spacing, and hide the COMP SCORE label. */
@@ -2199,20 +2200,18 @@ def create_floating_bias_toolbar():
             .bias-bar-left.cw-active .cw-btn-col .control-label {
                 display: none;
             }
-            /* Button + sliders panel stay intact; Layer/Head are the ones that give. */
+            /* Button + sliders panel stay intact; Layer/Head keep their size too —
+               the centre token box is what gives way on tight screens. */
             .bias-bar-left.cw-active .cw-section {
                 flex-shrink: 0;
+                margin-right: 4px;   /* pull Layer right up against STEREO to save space */
             }
             .bias-bar-left.cw-active .bias-lh-group {
-                flex-shrink: 1;
-                min-width: 0;
+                flex-shrink: 0;
             }
-            /* Centre Layer+Head in the free space between the sliders panel and
-               the tokens: equal auto-margins before Layer and after Head, so the
-               gap STEREO->Layer matches the gap Head->tokens. */
-            .bias-bar-left.cw-active .cw-section + .bias-lh-group {
-                margin-left: auto;
-            }
+            /* When Weights is active, pull Layer right up against STEREO (the last
+               weight slider) to save space, then let ALL the free space fall after
+               Head so it stays clear of the centred token box. */
             .bias-bar-left.cw-active .bias-lh-group:last-child {
                 margin-right: auto;
             }
@@ -2243,21 +2242,29 @@ def create_floating_bias_toolbar():
                 gap: 12px;
                 width: 100%;
             }
-            /* Tight screens (laptops): switch to a "shrink-the-tokens" grid so
-               the side controls always fit and nothing leaves the bar. The
-               side tracks are content-sized (auto, so Layer/Head/α/Correction/
-               BAR/Top-K never overflow), and the centre token track shrinks to
-               whatever is left. On wide monitors (>=1600px) we keep the centred
-               1fr|auto|1fr grid above. */
+            /* Tight screens (laptops). Two cases:
+               - CLOSED (no panel open): content-sized side tracks + a capped
+                 380px token track, whole row centred. This is the original
+                 layout that keeps everything inside the bar (Top-K never spills,
+                 token never overlaps Change α).
+               - OPEN (Weights/α panel showing): switch to equal 1fr side tracks
+                 so the token box stays perfectly centred in the bar and Head
+                 clears it. The token box shrinks a touch to leave room. */
             @media (max-width: 1599px) {
                 #bias-controls-row {
                     grid-template-columns: auto minmax(0, 380px) auto !important;
                     justify-content: center;
                 }
-                /* When a panel is open, shrink the token box further. */
+                #bias-controls-row:has(.cw-inline-panel.open),
+                #bias-controls-row:has(.alpha-inline-panel.open) {
+                    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+                    justify-content: stretch;
+                }
+                /* When a panel is open, cap the token box so it stays centred
+                   without crowding the side controls. */
                 #bias-controls-row:has(.cw-inline-panel.open) #bias-tokens-row .token-sentence,
                 #bias-controls-row:has(.alpha-inline-panel.open) #bias-tokens-row .token-sentence {
-                    max-width: 200px !important;
+                    max-width: 260px !important;
                 }
             }
 
@@ -2333,6 +2340,16 @@ def create_floating_bias_toolbar():
                     max-height: 54px;
                     gap: 4px;
                     padding: 4px 8px;
+                }
+                /* Plenty of width here: instead of a fixed gap, auto-balance the
+                   Layer+Head block in the free space between STEREO and the token
+                   box (margin-left:auto before Layer pairs with the global
+                   margin-right:auto after Head), so it sits centred automatically. */
+                .bias-bar-left.cw-active .cw-section {
+                    margin-right: 0;
+                }
+                .bias-bar-left.cw-active .cw-section + .bias-lh-group {
+                    margin-left: auto;
                 }
             }
 
