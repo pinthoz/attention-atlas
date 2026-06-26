@@ -260,7 +260,7 @@ The bias section is organised as an accordion with **five panels**:
 #### 4. Faithfulness Validation
 - **Gradient Agreement**: Integrated Gradients as the primary attribution baseline.
 - **Causal Head Intervention**: Head ablation (Combined / GEN / UNFAIR / STEREO rankings) testing whether bias-focused heads are causally relevant.
-- **Perturbation & Minimality** and **cross-validation** with LRP / DeepLift.
+- **Perturbation & Minimality** and **cross-validation** with LRP (AttnLRP / Chefer-LRP).
 
 #### 5. StereoSet Evaluation
 - **Benchmark Overview**: LMS / SS / ICAT scores.

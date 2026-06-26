@@ -57,7 +57,7 @@ Ethical AI analysis and bias quantification using specialized GUS-Net models:
 
 - **Token-level bias classification**: GUS-Net tags each token as `O`, `GEN` (generalisation), `UNFAIR` (unfair language), or `STEREO` (stereotype), with adjustable per-category thresholds.
 - **Attention × Bias correlation**: Bias-Attention Ratio (BAR) heatmaps showing which heads attend to biased tokens, plus propagation across layers.
-- **Faithfulness validation**: Integrated Gradients agreement, causal head ablation, perturbation/minimality, and LRP/DeepLift cross-checks.
+- **Faithfulness validation**: Integrated Gradients agreement, causal head ablation, perturbation/minimality, and LRP (AttnLRP / Chefer-LRP) cross-checks.
 - **Dual-pipeline comparison**: Side-by-side analysis of two models or two prompts throughout the bias workflow.
 - **StereoSet evaluation**: LMS / SS / ICAT scores with category breakdown, demographic slices, and an example explorer.
 
