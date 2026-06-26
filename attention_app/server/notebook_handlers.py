@@ -292,43 +292,43 @@ _REG_MAP: Dict[str, tuple] = {
     # ── Model identity / artefact traceability ─────────────────────
     "att_metric_model_id": (
         "EU AI Act Art. 12",
-        "Article 12 requires logs that allow identification of the system "
+        "Requires logs that allow identification of the system "
         "in use. The model name is the minimum identifier.",
         _URL_EU_AI_ACT,
     ),
     "att_metric_model_id_b": (
         "EU AI Act Art. 12",
-        "Article 12 requires logs that allow identification of the system "
+        "Requires logs that allow identification of the system "
         "in use. The model name is the minimum identifier.",
         _URL_EU_AI_ACT,
     ),
     "att_metric_model_param_hash": (
         "EU AI Act Art. 12",
-        "Article 12 requires logs to identify the exact system artefact; "
+        "Requires logs to identify the exact system artefact; "
         "a weight fingerprint detects post-hoc swaps with the same name.",
         _URL_EU_AI_ACT,
     ),
     "att_metric_model_param_hash_b": (
         "EU AI Act Art. 12",
-        "Article 12 requires logs to identify the exact system artefact; "
+        "Requires logs to identify the exact system artefact; "
         "a weight fingerprint detects post-hoc swaps with the same name.",
         _URL_EU_AI_ACT,
     ),
     "att_metric_transformers_version": (
         "ISO/IEC 42001 A.6.2.6",
-        "ISO/IEC 42001:2023 control A.6.2.6 requires documented "
-        "evidence of the AI system's components and versions.",
+        "Requires documented evidence of the AI system's components "
+        "and versions.",
         _URL_ISO_42001,
     ),
     "bias_metric_model_id": (
         "EU AI Act Art. 12",
-        "Article 12 requires logs that allow identification of the bias "
+        "Requires logs that allow identification of the bias "
         "model in use.",
         _URL_EU_AI_ACT,
     ),
     "bias_metric_model_id_b": (
         "EU AI Act Art. 12",
-        "Article 12 requires logs that allow identification of the bias "
+        "Requires logs that allow identification of the bias "
         "model in use.",
         _URL_EU_AI_ACT,
     ),
@@ -336,25 +336,25 @@ _REG_MAP: Dict[str, tuple] = {
     # ── Inputs being audited (Art. 12 event logging) ───────────────
     "att_prompt_a": (
         "EU AI Act Art. 12",
-        "Article 12 mandates automatic event logging for high-risk "
+        "Mandates automatic event logging for high-risk "
         "systems; the prompt is the triggering event.",
         _URL_EU_AI_ACT,
     ),
     "att_prompt_b": (
         "EU AI Act Art. 12",
-        "Article 12 mandates automatic event logging for high-risk "
+        "Mandates automatic event logging for high-risk "
         "systems; the counterfactual prompt is part of the same event.",
         _URL_EU_AI_ACT,
     ),
     "bias_prompt_a": (
         "EU AI Act Art. 12",
-        "Article 12 mandates automatic event logging; the prompt is the "
+        "Mandates automatic event logging; the prompt is the "
         "triggering event.",
         _URL_EU_AI_ACT,
     ),
     "bias_prompt_b": (
         "EU AI Act Art. 12",
-        "Article 12 mandates automatic event logging; the counterfactual "
+        "Mandates automatic event logging; the counterfactual "
         "prompt is part of the same event.",
         _URL_EU_AI_ACT,
     ),
@@ -362,37 +362,37 @@ _REG_MAP: Dict[str, tuple] = {
     # ── Bias detection outputs (NYC LL 144 + Art. 13 transparency) ─
     "bias_metric_n_biased": (
         "NYC LL 144",
-        "NYC Local Law 144 requires bias-audit results to be disclosed "
+        "Requires bias-audit results to be disclosed "
         "with counts of flagged items.",
         _URL_NYC_LL144,
     ),
     "bias_metric_biased_scored": (
         "NYC LL 144",
-        "NYC Local Law 144 expects per-item scores for each flagged "
+        "Expects per-item scores for each flagged "
         "demographic-bearing token.",
         _URL_NYC_LL144,
     ),
     "bias_metric_type_counts": (
         "NYC LL 144",
-        "NYC Local Law 144 requires the bias audit to report counts by "
+        "Requires the bias audit to report counts by "
         "category (here generalisation / unfair / stereotype).",
         _URL_NYC_LL144,
     ),
     "bias_metric_strongest_token": (
         "EU AI Act Art. 13",
-        "Article 13 requires the system to be transparent about the "
+        "Requires the system to be transparent about the "
         "most decisive token driving a bias finding.",
         _URL_EU_AI_ACT,
     ),
     "bias_metric_bias_spans": (
         "EU AI Act Art. 13",
-        "Article 13 requires transparency about which textual region "
+        "Requires transparency about which textual region "
         "triggered a bias decision.",
         _URL_EU_AI_ACT,
     ),
     "bias_metric_mean_confidence": (
         "EU AI Act Art. 15",
-        "Article 15 requires high-risk systems to report accuracy and "
+        "Requires high-risk systems to report accuracy and "
         "robustness measures; mean confidence is a coarse robustness "
         "indicator.",
         _URL_EU_AI_ACT,
@@ -401,20 +401,20 @@ _REG_MAP: Dict[str, tuple] = {
     # ── Counterfactual / cross-group comparison (NYC LL 144 §5-303) ─
     "bias_metric_delta_n_biased": (
         "NYC LL 144 §5-303",
-        "NYC LL 144 mandates a comparison of outcomes across "
+        "Mandates a comparison of outcomes across "
         "demographic groups; this is the Δ across the swap.",
         _URL_NYC_LL144,
     ),
     "bias_metric_delta_strongest_score": (
         "NYC LL 144 §5-303",
-        "NYC LL 144 mandates a comparison of outcomes across "
+        "Mandates a comparison of outcomes across "
         "demographic groups; this measures the shift in the strongest "
         "biased token's score.",
         _URL_NYC_LL144,
     ),
     "bias_metric_delta_type_counts": (
         "NYC LL 144 §5-303",
-        "NYC LL 144 mandates a comparison of outcomes across "
+        "Mandates a comparison of outcomes across "
         "demographic groups, broken down by category.",
         _URL_NYC_LL144,
     ),
@@ -440,33 +440,33 @@ _REG_MAP: Dict[str, tuple] = {
     # ── Faithfulness / triangulation (Art. 14 human oversight + 15) ─
     "bias_metric_methods_top1_agree": (
         "EU AI Act Art. 14",
-        "Article 14 requires human oversight to be informed by "
+        "Requires human oversight to be informed by "
         "triangulated evidence; this records whether attribution, LRP "
         "and perturbation agree on the most salient token.",
         _URL_EU_AI_ACT,
     ),
     "bias_metric_ig_mean_spearman": (
         "EU AI Act Art. 15",
-        "Article 15 requires accuracy/robustness measures; the mean "
+        "Requires accuracy/robustness measures; the mean "
         "Spearman ρ between attention and IG quantifies how aligned the "
         "two signals are.",
         _URL_EU_AI_ACT,
     ),
     "bias_metric_perturb_vs_ig": (
         "EU AI Act Art. 15",
-        "Article 15 requires accuracy/robustness measures; perturbation "
+        "Requires accuracy/robustness measures; perturbation "
         "agreement with IG corroborates feature importance.",
         _URL_EU_AI_ACT,
     ),
     "bias_metric_lrp_vs_ig": (
         "EU AI Act Art. 15",
-        "Article 15 requires accuracy/robustness measures; LRP "
+        "Requires accuracy/robustness measures; LRP "
         "agreement with IG corroborates feature importance.",
         _URL_EU_AI_ACT,
     ),
     "att_metric_head_special_mass": (
         "EU AI Act Art. 14",
-        "Article 14 requires human oversight to be aware of failure "
+        "Requires human oversight to be aware of failure "
         "modes; heavy attention on [CLS]/[SEP]/[PAD] flags an "
         "'attention sink' that should temper any head-level claim.",
         _URL_EU_AI_ACT,
