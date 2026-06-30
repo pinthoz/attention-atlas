@@ -461,58 +461,59 @@ JS_CODE = """
                 },
                 'Confidence Max': {
                     formula: 'MaxA = max<sub>i,j</sub>(a<sub>ij</sub>)',
-                    description: 'The maximum attention weight in the attention matrix (Eq. 5). Measures the strongest connection between any query-key pair.',
+                    description: 'The maximum attention weight in the attention matrix. Measures the strongest connection between any query-key pair.',
                     interpretation: 'Higher values indicate that this head has a very confident focus on a specific token. Values close to 1 suggest the head is highly specialized.',
                     typicalRange: '<b>Low:</b> < 0.2 (diffuse) · <b>Medium:</b> 0.2–0.5 · <b>High:</b> > 0.5 (confident)',
-                    paper: 'From Attention to Assurance (Eq. 5)'
+                    paper: 'From Attention to Assurance'
                 },
                 'Confidence Avg': {
                     formula: 'AvgMaxA = (1/d<sub>k</sub>) Σ<sub>i</sub> max<sub>j</sub>(a<sub>ij</sub>)',
-                    description: 'Average of the maximum attention weight per row (Eq. 6). Each row represents how a query token attends to all key tokens.',
+                    description: 'Average of the maximum attention weight per row. Each row represents how a query token attends to all key tokens.',
                     interpretation: 'This metric captures the overall confidence level. High values suggest the head consistently focuses strongly on specific tokens for each query.',
                     typicalRange: '<b>Low:</b> < 0.15 · <b>Medium:</b> 0.15–0.4 · <b>High:</b> > 0.4 (consistently confident)',
-                    paper: 'From Attention to Assurance (Eq. 6)'
+                    paper: 'From Attention to Assurance'
                 },
                 'Focus': {
                     formula: 'Focus = E / (n·log n), where E = -Σ a<sub>ij</sub> log(a<sub>ij</sub>)',
-                    description: 'Normalized attention entropy (Eq. 8). Divided by the uniform-attention maximum n·log n to give a value between 0 and 1.',
+                    description: 'Normalized attention entropy. Divided by the uniform-attention maximum n·log n to give a value between 0 and 1.',
                     interpretation: '0 = fully focused (one token). 1 = fully uniform (all tokens equal). <b>Lower is more focused</b>.',
                     typicalRange: '<b>Focused:</b> < 0.3 · <b>Moderate:</b> 0.3–0.7 · <b>Diffuse:</b> > 0.7',
-                    paper: 'From Attention to Assurance (Eq. 8)'
+                    paper: 'From Attention to Assurance'
                 },
                 'Sparsity': {
                     formula: 'S = (1/n²) Σ<sub>ij</sub> 𝟙(a<sub>ij</sub> < τ), where τ = 1/n',
-                    description: 'Proportion of attention weights below adaptive threshold τ = 1/seq_len (Eq. 11). Uses adaptive threshold for length-independence.',
+                    description: 'Proportion of attention weights below adaptive threshold τ = 1/seq_len. Uses adaptive threshold for length-independence.',
                     interpretation: 'High sparsity = most tokens ignored (selective). Low sparsity = attention distributed across many tokens.',
                     typicalRange: '<b>Low:</b> < 30% · <b>Medium:</b> 30%–60% · <b>High:</b> > 60% (very selective)',
-                    paper: 'From Attention to Assurance (Eq. 11)'
+                    paper: 'From Attention to Assurance'
                 },
                 'Distribution': {
                     formula: 'Q<sub>0.5</sub> = median(A)',
-                    description: 'The median (50th percentile) of all attention weights (Eq. 12).',
+                    description: 'The median (50th percentile) of all attention weights.',
                     interpretation: 'Low median + high max = attention concentrated on few tokens. High median = more evenly distributed.',
                     typicalRange: '<b>Low:</b> < 0.005 · <b>Medium:</b> 0.005–0.02 · <b>High:</b> > 0.02',
-                    paper: 'From Attention to Assurance (Eq. 12)'
+                    paper: 'From Attention to Assurance'
                 },
                 'Uniformity': {
                     formula: 'U = std(A) = √[(1/n²) Σ<sub>ij</sub> (a<sub>ij</sub> - μ)²]',
-                    description: 'Standard deviation of attention weights (Eq. 15). Measures variability in the attention distribution.',
+                    description: 'Standard deviation of attention weights. Measures variability in the attention distribution.',
                     interpretation: 'Low = uniform/homogeneous attention. High = variable attention (some strong, some weak).',
                     typicalRange: '<b>Low:</b> < 0.03 (uniform) · <b>Medium:</b> 0.03–0.10 · <b>High:</b> > 0.10 (variable)',
-                    paper: 'From Attention to Assurance (Eq. 15)'
+                    paper: 'From Attention to Assurance'
                 },
                 'Flow Change': {
                     formula: 'JSD(L<sub>first</sub>, L<sub>last</sub>) = √[ ½×KL(P||M) + ½×KL(Q||M) ]',
-                    description: 'Jensen-Shannon Divergence between first and last layer attention distributions (Eq. 9). Measures how attention patterns transform through the model.',
+                    description: 'Jensen-Shannon Divergence between first and last layer attention distributions. Measures how attention patterns transform through the model.',
                     interpretation: 'Low = static patterns (first≈last). High = effective feature extraction (diverse representations learned). Higher JSD correlates with fewer errors.',
                     typicalRange: '<b>Low:</b> < 0.10 (static) · <b>Medium:</b> 0.10–0.25 · <b>High:</b> > 0.25 (good transformation)',
-                    paper: 'From Attention to Assurance (Eq. 9)'
+                    paper: 'From Attention to Assurance'
                 },
                 'Balance': {
                     formula: 'Balance = attn_to_CLS / attn_total',
                     description: 'Fraction of total attention mass directed to the [CLS] token, in a 0-1 range. This is an app-specific CLS-focus measure for bias detection, inspired by but not identical to the Euclidean class-vs-token "Balance" defined in the source paper.',
                     interpretation: '0 = none to [CLS]. 1 = all to [CLS]. The uniform-attention baseline is 1/n (not 0.5), so judge a value against 1/n. High values suggest shortcut learning (common in biased models).',
-                    typicalRange: '<b>Low:</b> < 0.15 (content) · <b>Medium:</b> 0.15–0.40 · <b>High:</b> > 0.40 (CLS focus)'
+                    typicalRange: '<b>Low:</b> < 0.15 (content) · <b>Medium:</b> 0.15–0.40 · <b>High:</b> > 0.40 (CLS focus)',
+                    paper: 'From Attention to Assurance'
                 }
             };
 
