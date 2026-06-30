@@ -362,18 +362,6 @@ def register_stereoset_handlers(
         mk_B = _stereoset_model_key_B() if compare_models else None
 
         if compare_models and mk_B:
-            res_A, header_A = _render_single(mk_A)
-            res_B, header_B = _render_single(mk_B)
-            
-            # If render single returned a div (error/missing), handle it
-            content_A = res_A if isinstance(res_A, str) else res_A
-            content_B = res_B if isinstance(res_B, str) else res_B
-            
-            # If one is missing data, it might return a div directly, not tuple
-            # _render_single returns tuple (html, header) on success, or UI object on failure
-            # Let's standardize helper to always return tuple or (UI, None)
-            
-            # Adjusted helper strategy:
             def _render_safe(mk):
                 s = get_stereoset_scores(mk)
                 m = get_metadata(mk)
@@ -441,7 +429,6 @@ def register_stereoset_handlers(
     @render.ui
     def stereoset_category_header():
         """Dynamic subsection header for Category & Demographic Breakdown with source badge."""
-        src_mode = _get_attn_source_mode("bias_attn_source")
         badge = _source_badge_html("Base Encoder")
         return ui.div(
             {"style": "margin: 12px 0 8px;"},
@@ -678,7 +665,6 @@ def register_stereoset_handlers(
         def _render_single(mk, container_suffix=""):
             matrix = get_head_sensitivity_matrix(mk)
             top_heads = get_sensitive_heads(mk)
-            examples = get_stereoset_examples(mk)
             if matrix is None:
                 return None
 

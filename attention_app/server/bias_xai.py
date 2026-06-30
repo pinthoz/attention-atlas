@@ -1038,7 +1038,7 @@ def register_xai_handlers(
             f"<span style='{_TH}'>Method: Integrated Gradients (Sundararajan et al., 2017)</span>"
             f"<div style='{_TR};font-family:JetBrains Mono,monospace;font-size:10px;color:#e2e8f0;'>"
             f"IG(x) = (x−x′) × ∫₀¹ ∂F/∂x dα</div>"
-            f"<div style='{_TN}; margin-bottom:4px;'>Steps=30 · Baseline=PAD · via Captum LayerIntegratedGradients</div>"
+            f"<div style='{_TN}; margin-bottom:4px;'>Steps=30 · Baseline=[PAD] (BERT) / &lt;|endoftext|&gt; (GPT-2) · via Captum LayerIntegratedGradients</div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Faithfulness metric: Spearman ρ(IG, Attention)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"

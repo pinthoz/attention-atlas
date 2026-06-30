@@ -114,10 +114,38 @@ def compute_sublayer_states(layer_block, hidden_states_in):
     return mid, inter_act, proj
 
 
-def arrow(from_section, to_section, direction="horizontal", suffix="", model_type=None, **kwargs):
+def aa_model_dims(encoder_model):
+    """Real architecture dimensions of the active model, for the Deep Dive
+    transition modals. Lets the educational formulas reflect the selected
+    model (e.g. BERT-large, GPT-2-medium) instead of the hardcoded 12x12 base
+    sizes. Handles both BERT-style (hidden_size/num_attention_heads/...) and
+    GPT-2-style (n_embd/n_head/...) configs.
+    """
+    try:
+        cfg = encoder_model.config
+        hidden = int(getattr(cfg, "hidden_size", None) or getattr(cfg, "n_embd", 768))
+        heads = int(getattr(cfg, "num_attention_heads", None) or getattr(cfg, "n_head", 12))
+        ffn = getattr(cfg, "intermediate_size", None) or getattr(cfg, "n_inner", None)
+        ffn = int(ffn) if ffn else 4 * hidden
+        layers = int(getattr(cfg, "num_hidden_layers", None) or getattr(cfg, "n_layer", 12))
+        maxpos = int(getattr(cfg, "max_position_embeddings", None) or getattr(cfg, "n_positions", 512))
+        vocab = int(getattr(cfg, "vocab_size", 30522))
+        dk = hidden // heads if heads else 64
+        return {"hidden": hidden, "heads": heads, "ffn": ffn, "layers": layers,
+                "maxpos": maxpos, "vocab": vocab, "dk": dk}
+    except Exception:
+        return {"hidden": 768, "heads": 12, "ffn": 3072, "layers": 12,
+                "maxpos": 512, "vocab": 30522, "dk": 64}
+
+
+def arrow(from_section, to_section, direction="horizontal", suffix="", model_type=None, model_dims=None, **kwargs):
     """
     Uniform arrow component - centered positioning
     direction: "horizontal" | "vertical" | "initial"
+
+    model_dims: optional dict from ``aa_model_dims`` — when given, the arrow
+    also emits a small script that exposes the active model's real dimensions
+    to the transition modals via ``window.AA_DIMS``.
     """
     arrow_id = f"arrow_{from_section.replace(' ', '_').replace('&', '').replace('(', '').replace(')', '')}_{to_section.replace(' ', '_').replace('&', '').replace('(', '').replace(')', '')}{suffix}"
 
@@ -144,7 +172,14 @@ def arrow(from_section, to_section, direction="horizontal", suffix="", model_typ
     }
     attrs.update(kwargs)
 
-    return ui.tags.div(attrs, icon)
+    arrow_div = ui.tags.div(attrs, icon)
+    if model_dims:
+        import json as _json
+        return ui.TagList(
+            ui.tags.script(f"window.AA_DIMS = {_json.dumps(model_dims)};"),
+            arrow_div,
+        )
+    return arrow_div
 
 
 # ──────────────────────────────────────────────────────────────

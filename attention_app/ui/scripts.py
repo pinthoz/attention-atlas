@@ -474,8 +474,8 @@ JS_CODE = """
                     paper: 'From Attention to Assurance (Eq. 6)'
                 },
                 'Focus': {
-                    formula: 'Focus = E / log(n²), where E = -Σ a<sub>ij</sub> log(a<sub>ij</sub>)',
-                    description: 'Normalized attention entropy (Eq. 8). Divided by max entropy (log n²) to give value between 0 and 1.',
+                    formula: 'Focus = E / (n·log n), where E = -Σ a<sub>ij</sub> log(a<sub>ij</sub>)',
+                    description: 'Normalized attention entropy (Eq. 8). Divided by the uniform-attention maximum n·log n to give a value between 0 and 1.',
                     interpretation: '0 = fully focused (one token). 1 = fully uniform (all tokens equal). <b>Lower is more focused</b>.',
                     typicalRange: '<b>Focused:</b> < 0.3 · <b>Moderate:</b> 0.3–0.7 · <b>Diffuse:</b> > 0.7',
                     paper: 'From Attention to Assurance (Eq. 8)'
@@ -510,10 +510,9 @@ JS_CODE = """
                 },
                 'Balance': {
                     formula: 'Balance = attn_to_CLS / attn_total',
-                    description: 'Proportion of attention directed to [CLS] token vs total attention. Normalized 0-1 range. Relevant for bias detection.',
-                    interpretation: '0 = all to content. 0.5 = balanced. 1 = all to [CLS]. High values suggest shortcut learning (common in biased models).',
-                    typicalRange: '<b>Low:</b> < 0.15 (content) · <b>Medium:</b> 0.15–0.40 · <b>High:</b> > 0.40 (CLS focus)',
-                    paper: 'From Attention to Assurance (Eq. 14)'
+                    description: 'Fraction of total attention mass directed to the [CLS] token, in a 0-1 range. This is an app-specific CLS-focus measure for bias detection, inspired by but not identical to the Euclidean class-vs-token "Balance" defined in the source paper.',
+                    interpretation: '0 = none to [CLS]. 1 = all to [CLS]. The uniform-attention baseline is 1/n (not 0.5), so judge a value against 1/n. High values suggest shortcut learning (common in biased models).',
+                    typicalRange: '<b>Low:</b> < 0.15 (content) · <b>Medium:</b> 0.15–0.40 · <b>High:</b> > 0.40 (CLS focus)'
                 }
             };
 
@@ -1176,6 +1175,11 @@ JS_TRANSITION_MODAL = """
         };
 
         function getTransitionExplanation(from, to, modelType) {
+            // Real dimensions of the active model (injected via window.AA_DIMS by
+            // the Deep Dive arrows). Falls back to 12x12 base sizes if absent.
+            var D = window.AA_DIMS || {hidden:768, heads:12, ffn:3072, layers:12, maxpos:512, vocab:30522, dk:64};
+            var vocabStr = (D.vocab >= 1000) ? (Math.round(D.vocab/1000) + 'k') : ('' + D.vocab);
+
             // Dynamic handling for Input -> Token Embeddings based on Model Type
             if (from === 'Input' && to === 'Token Embeddings') {
                 if (modelType === 'gpt2') {
@@ -1188,12 +1192,12 @@ JS_TRANSITION_MODAL = """
                         <span style="font-size:12px; color:#94a3b8;">1. Initialize with 256 byte tokens → 2. Merge most frequent pairs → 3. Repeat to 50,257 tokens</span>
                     </div>
 
-                    <p>Token IDs index into the <strong>Token Embedding Matrix</strong> <code>E ∈ ℝ<sup>50,257 × 768</sup></code>.</p>
+                    <p>Token IDs index into the <strong>Token Embedding Matrix</strong> <code>E ∈ ℝ<sup>${D.vocab.toLocaleString()} × ${D.hidden}</sup></code>.</p>
 
                     <ul style="font-size:13px;">
                         <li><strong>Special Token:</strong> <code>&lt;|endoftext|&gt;</code> marks sequence boundaries</li>
                         <li><strong>No start token</strong> - generation begins directly from context</li>
-                        <li><strong>Output:</strong> <code>(batch, seq_len, 768)</code> - context-independent vectors</li>
+                        <li><strong>Output:</strong> <code>(batch, seq_len, ${D.hidden})</code> - context-independent vectors</li>
                     </ul>
                     `;
                 } else {
@@ -1208,12 +1212,12 @@ JS_TRANSITION_MODAL = """
                         <span style="font-size:11px; color:#64748b;">Example: "unbelievable" → ["un", "##believ", "##able"]</span>
                     </div>
 
-                    <p>Token IDs index into the <strong>Token Embedding Matrix</strong> <code>E ∈ ℝ<sup>30,522 × 768</sup></code>.</p>
+                    <p>Token IDs index into the <strong>Token Embedding Matrix</strong> <code>E ∈ ℝ<sup>${D.vocab.toLocaleString()} × ${D.hidden}</sup></code>.</p>
 
                     <ul style="font-size:13px;">
                         <li><strong>[CLS]:</strong> Prepended to every sequence - aggregates sequence-level info</li>
                         <li><strong>[SEP]:</strong> Appended after each sentence - demarcates boundaries</li>
-                        <li><strong>Output:</strong> <code>(batch, seq_len, 768)</code> - context-independent vectors</li>
+                        <li><strong>Output:</strong> <code>(batch, seq_len, ${D.hidden})</code> - context-independent vectors</li>
                     </ul>
                     `;
                 }
@@ -1270,9 +1274,9 @@ JS_TRANSITION_MODAL = """
                     </div>
 
                     <ul style="font-size:13px;">
-                        <li><strong>Position Matrix:</strong> <code>E<sub>pos</sub> ∈ ℝ<sup>1024 × 768</sup></code> (learned, not sinusoidal)</li>
+                        <li><strong>Position Matrix:</strong> <code>E<sub>pos</sub> ∈ ℝ<sup>${D.maxpos} × ${D.hidden}</sup></code> (learned, not sinusoidal)</li>
                         <li><strong>No Segment Embeddings:</strong> GPT-2 processes continuous text streams</li>
-                        <li><strong>Max length:</strong> Fixed at 1024 tokens (architectural limit)</li>
+                        <li><strong>Max length:</strong> Fixed at ${D.maxpos} tokens (architectural limit)</li>
                     </ul>
                     `;
                 } else {
@@ -1288,7 +1292,7 @@ JS_TRANSITION_MODAL = """
                     <ul style="font-size:13px;">
                         <li><strong>Token:</strong> Semantic meaning from vocabulary</li>
                         <li><strong>Segment:</strong> Sentence A (0) vs Sentence B (1)</li>
-                        <li><strong>Position:</strong> Absolute index (0, 1, 2...511)</li>
+                        <li><strong>Position:</strong> Absolute index (0, 1, 2...${D.maxpos - 1})</li>
                     </ul>
                     <p style="font-size:12px; color:#94a3b8;">All three matrices are learned during pre-training and summed element-wise.</p>
                     `;
@@ -1308,7 +1312,7 @@ JS_TRANSITION_MODAL = """
                     </div>
 
                     <ul style="font-size:13px;">
-                        <li><strong>Segment Matrix:</strong> <code>E<sub>seg</sub> ∈ ℝ<sup>2 × 768</sup></code></li>
+                        <li><strong>Segment Matrix:</strong> <code>E<sub>seg</sub> ∈ ℝ<sup>2 × ${D.hidden}</sup></code></li>
                         <li><strong>ID 0:</strong> Sentence A (incl. [CLS] and first [SEP])</li>
                         <li><strong>ID 1:</strong> Sentence B (incl. final [SEP])</li>
                     </ul>
@@ -1325,7 +1329,7 @@ JS_TRANSITION_MODAL = """
                     </div>
 
                     <ul style="font-size:13px;">
-                        <li><strong>Matrix:</strong> <code>E<sub>pos</sub> ∈ ℝ<sup>512 × 768</sup></code> (BERT-base)</li>
+                        <li><strong>Matrix:</strong> <code>E<sub>pos</sub> ∈ ℝ<sup>${D.maxpos} × ${D.hidden}</sup></code></li>
                         <li><strong>Learned</strong> (not sinusoidal) - optimized during pre-training</li>
                         <li><strong>Limitation:</strong> Cannot generalize beyond max_seq_len</li>
                     </ul>
@@ -1364,7 +1368,7 @@ JS_TRANSITION_MODAL = """
                         <li><strong>Value (V):</strong> "Here is my actual content"</li>
                     </ul>
 
-                    <p style="font-size:12px; color:#94a3b8;"><strong>Weight matrices:</strong> W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> ∈ ℝ<sup>768 × 768</sup><br>
+                    <p style="font-size:12px; color:#94a3b8;"><strong>Weight matrices:</strong> W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> ∈ ℝ<sup>${D.hidden} × ${D.hidden}</sup><br>
                     The separation allows different transformations for "searching" vs "being found" vs "providing content".</p>
                 `,
                 'Segment Embeddings_Sum & Layer Normalization': `
@@ -1377,7 +1381,7 @@ JS_TRANSITION_MODAL = """
                     </div>
 
                     <ul style="font-size:13px;">
-                        <li>All embeddings share the same dimension (768)</li>
+                        <li>All embeddings share the same dimension (${D.hidden})</li>
                         <li>Element-wise addition preserves vector space structure</li>
                         <li><strong>LayerNorm</strong> stabilizes values before attention</li>
                     </ul>
@@ -1426,7 +1430,7 @@ JS_TRANSITION_MODAL = """
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
                         <strong style="color:#3b82f6;">Multi-Head Formula:</strong><br>
                         <code style="font-size:11px;">MultiHead(Q,K,V) = Concat(head<sub>1</sub>,...,head<sub>h</sub>) · W<sub>O</sub></code><br>
-                        <span style="font-size:11px; color:#94a3b8;">h=12 heads, each with d<sub>k</sub>=64 dims (768/12)</span>
+                        <span style="font-size:11px; color:#94a3b8;">h=${D.heads} heads, each with d<sub>k</sub>=${D.dk} dims (${D.hidden}/${D.heads})</span>
                     </div>
 
                     <ul style="font-size:13px;">
@@ -1581,9 +1585,9 @@ JS_TRANSITION_MODAL = """
                     </div>
 
                     <ul style="font-size:13px;">
-                        <li><strong>Expansion:</strong> 768 → 3072 dims (4× bottleneck)</li>
+                        <li><strong>Expansion:</strong> ${D.hidden} → ${D.ffn} dims (4× bottleneck)</li>
                         <li><strong>Activation:</strong> GELU ≈ x · Φ(x) - smooth approximation of ReLU</li>
-                        <li><strong>Projection:</strong> 3072 → 768 dims</li>
+                        <li><strong>Projection:</strong> ${D.ffn} → ${D.hidden} dims</li>
                     </ul>
 
                     <div style="background:rgba(139,92,246,0.1); padding:10px; border-radius:6px; margin-top:12px; border:1px solid rgba(139,92,246,0.3);">
@@ -1614,7 +1618,7 @@ JS_TRANSITION_MODAL = """
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0;">
                         <strong style="color:#94a3b8; font-size:12px;">Hidden State Properties:</strong><br>
-                        <span style="font-size:11px;">• Shape: <code>(batch, seq_len, 768)</code></span><br>
+                        <span style="font-size:11px;">• Shape: <code>(batch, seq_len, ${D.hidden})</code></span><br>
                         <span style="font-size:11px;">• Each H[i] = token i in full context</span><br>
                         <span style="font-size:11px;">• Earlier layers → local/syntactic info</span><br>
                         <span style="font-size:11px;">• Later layers → global/semantic info</span>
@@ -1632,7 +1636,7 @@ JS_TRANSITION_MODAL = """
 
                     <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #3b82f6;">
                         <strong style="color:#3b82f6;">MLM Head Pipeline:</strong><br>
-                        <span style="font-size:11px;">Hidden → Linear(768→768) → GELU → LayerNorm → W<sub>vocab</sub>(768→30k) → Softmax</span>
+                        <span style="font-size:11px;">Hidden → Linear(${D.hidden}→${D.hidden}) → GELU → LayerNorm → W<sub>vocab</sub>(${D.hidden}→${vocabStr}) → Softmax</span>
                     </div>
 
                     <ul style="font-size:13px;">

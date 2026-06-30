@@ -1163,7 +1163,7 @@ def bias_server_handlers(input, output, session):
 
             ui.notification_show("Bias session loaded successfully.", type="message", duration=3)
 
-        except Exception as e:
+        except Exception:
             _logger.exception("Error loading bias session")
             ui.notification_show("Error loading session. Please check the file format.", type="error")
 
@@ -1855,7 +1855,6 @@ def bias_server_handlers(input, output, session):
 
         per_sentence_results = []
         all_bar_matrices = []
-        all_bsr_matrices = []
 
         loop = asyncio.get_running_loop()
 
@@ -1891,7 +1890,6 @@ def bias_server_handlers(input, output, session):
 
                 # Extract bias info
                 token_labels = processed.get("token_labels", [])
-                bias_summary = processed.get("bias_summary", {})
                 bias_spans = processed.get("bias_spans", [])
                 metrics = processed.get("attention_metrics", [])
                 attentions = processed.get("attentions")
@@ -3301,7 +3299,7 @@ def bias_server_handlers(input, output, session):
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Confidence score</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
-            f"<span>GUS-Net softmax probability for predicted bias class</span></div>"
+            f"<span>GUS-Net sigmoid probability for the predicted bias class</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
             f"<span>Tokens below threshold (default 0.5) are not highlighted</span></div>"
             f"<hr style='{_TS}'>"
@@ -3449,7 +3447,7 @@ def bias_server_handlers(input, output, session):
         _strip_help = (
             f"<span style='{_TH}'>What this shows: GUS-Net (Powers et al., 2024)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
-            f"<span>Coloured dot strip showing each token's softmax score across all four bias categories, scored independently by GUS-Net</span></div>"
+            f"<span>Coloured dot strip showing each token's sigmoid score across all four bias categories, scored independently by GUS-Net</span></div>"
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Reading the strip</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▪</span>"
@@ -3519,7 +3517,7 @@ def bias_server_handlers(input, output, session):
         _confidence_help = (
             f"<span style='{_TH}'>What this shows: GUS-Net (Powers et al., 2024)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
-            f"<span>Detected bias spans grouped into three confidence tiers based on GUS-Net's softmax probability for the predicted bias class</span></div>"
+            f"<span>Detected bias spans grouped into three confidence tiers based on GUS-Net's sigmoid probability for the predicted bias class</span></div>"
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Tiers</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"

@@ -147,6 +147,11 @@ def calculate_balance(attention_matrix, cls_index=0, has_cls=True):
 
     Balance = attn_to_CLS / attn_total
 
+    NOTE: this is an app-specific CLS-focus measure. It is inspired by, but not
+    identical to, the "Attentions' Balance" of Golshanrad & Faghih (Eq. 14),
+    which is the Euclidean distance between the class-token and other-token
+    attention vectors. We deliberately use the simpler CLS-mass fraction here.
+
     This metric is only meaningful for BERT-style encoders where position 0
     holds a special [CLS] summary token. For GPT-2 and other decoder-only
     models without a dedicated summary token, the value is undefined — pass
@@ -209,7 +214,8 @@ def compute_all_attention_metrics(attention_matrix, has_cls=True, causal=None):
     - sparsity: Proportion below adaptive threshold (Eq. 11)
     - distribution_median: Median attention weight (Eq. 12)
     - uniformity: Standard deviation of weights (Eq. 15)
-    - balance: CLS attention fraction (Eq. 16) — ``None`` when has_cls=False
+    - balance: CLS attention fraction (app-specific CLS-focus measure; NOT the
+      paper's Eq. 14 Euclidean class-vs-token Balance) — ``None`` when has_cls=False
     """
     if causal is None:
         causal = not has_cls

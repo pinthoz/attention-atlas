@@ -54,6 +54,7 @@ from .renderers import (
     get_layer_block,
     extract_qkv,
     arrow,
+    aa_model_dims,
     get_architecture_section,
     get_choices,
     get_embedding_table,
@@ -2527,6 +2528,8 @@ def server(input, output, session):
         norm_mode = global_norm_mode.get()
 
         # Check if global mode is active
+        use_global = global_metrics_mode.get() == "all"
+
         return ui.div(
             {"class": "card", "style": "height: 100%;"},
             ui.h4("Q/K/V Projections"),
@@ -3322,7 +3325,7 @@ def server(input, output, session):
                     {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type_val, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                        arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type_val, model_dims=aa_model_dims(encoder_model_local), style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
                         ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Maps each token ID to a learned dense vector representation (d=768 for base models) that captures semantic meaning from the vocabulary embedding matrix. At this stage, representations are context-independent-contextual disambiguation occurs in subsequent attention layers.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k_val))
                     ),
                     arrow("Token Embeddings", "Segment Embeddings", "horizontal", suffix=suffix),
@@ -3400,7 +3403,7 @@ def server(input, output, session):
                     {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
-                        arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type_val, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                        arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type_val, model_dims=aa_model_dims(encoder_model_local), style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
                         ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Maps each token ID to a learned dense vector representation (d=768 for base models) that captures semantic meaning from the vocabulary embedding matrix. At this stage, representations are context-independent-contextual disambiguation occurs in subsequent attention layers.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k_val))
                     ),
                     arrow("Token Embeddings", "Positional Embeddings", "horizontal", suffix=suffix),
@@ -4094,13 +4097,13 @@ def server(input, output, session):
                  # Embeddings - Arrow must be OUTSIDE the .card to avoid overflow: hidden clipping
                  row_A = ui.div(
                      {"style": "position: relative; height: 100%;"},
-                     arrow("Input", "Token Embeddings", "vertical", suffix="_A", model_type=model_type_A,
+                     arrow("Input", "Token Embeddings", "vertical", suffix="_A", model_type=model_type_A, model_dims=aa_model_dims(encoder_model_A),
                            style="position: absolute; top: -32px; left: 50%; transform: translateX(-50%); width: auto; margin: 0; z-index: 100;"),
                       make_card("Token Embeddings", "Maps each token ID to a learned dense vector representation (d=768 for base models) that captures semantic meaning from the vocabulary embedding matrix. At this stage, representations are context-independent-contextual disambiguation occurs in subsequent attention layers.", get_embedding_table(res_A, top_k=top_k), "a")
                  )
                  row_B = ui.div(
                      {"style": "position: relative; height: 100%;"},
-                     arrow("Input", "Token Embeddings", "vertical", suffix="_B", model_type=model_type_B,
+                     arrow("Input", "Token Embeddings", "vertical", suffix="_B", model_type=model_type_B, model_dims=aa_model_dims(encoder_model_B),
                            style="position: absolute; top: -32px; left: 50%; transform: translateX(-50%); width: auto; margin: 0; z-index: 100;"),
                       make_card("Token Embeddings", "Maps each token ID to a learned dense vector representation (d=768 for base models) that captures semantic meaning from the vocabulary embedding matrix. At this stage, representations are context-independent-contextual disambiguation occurs in subsequent attention layers.", get_embedding_table(res_B, top_k=top_k, suffix="_B"), "b")
                  )
@@ -6189,7 +6192,7 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, model_dims=aa_model_dims(encoder_model), style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
                     ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k))
                 ),
                 arrow("Token Embeddings", "Segment Embeddings", "horizontal", suffix=suffix),
@@ -6276,7 +6279,7 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, model_dims=aa_model_dims(encoder_model), style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
                     ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k, suffix=suffix))
                 ),
                 arrow("Token Embeddings", "Segment Embeddings", "horizontal", suffix=suffix),
@@ -6363,7 +6366,7 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, model_dims=aa_model_dims(encoder_model), style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
                     ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k, suffix=suffix))
                 ),
                 ui.div(
@@ -6446,7 +6449,7 @@ def server(input, output, session):
                 {"class": "flex-row-container", "style": "margin-bottom: 26px; margin-top: 15px;"},
                 ui.div(
                     {"class": "flex-card", "style": "position: relative;"},
-                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
+                    arrow("Input", "Token Embeddings", "vertical", suffix=suffix, model_type=model_type, model_dims=aa_model_dims(encoder_model), style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"),
                     ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Token Embeddings"), ui.p("Token Lookup (Meaning)", style="font-size:11px; color:#6b7280; margin-bottom:8px;"), get_embedding_table(res, top_k=top_k, suffix=suffix))
                 ),
                 ui.div(
