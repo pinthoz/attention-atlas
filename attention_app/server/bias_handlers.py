@@ -195,6 +195,8 @@ def _compute_head_pvalues(res):
         "n_heads": n_heads,
         "n_biased": n_biased,
         "n_perm": int(null2d.shape[0]),
+        # (layer, head) per flat index, so survivors can be named.
+        "heads": [(int(m.layer), int(m.head)) for m in attn],
     }
 
 
@@ -267,6 +269,18 @@ def _alpha_survival_html(data, alpha, correction):
                 f'view. {n_perm:,} permutations resolve the tail near &alpha;/{n_heads}; an EVT tail fit '
                 f'(Knijnenburg et al. 2009) is the lighter alternative if the budget has to drop.')
 
+    # Name the survivors when there are few enough to list, so the analyst
+    # (and the Notebook capture) can see *which* heads pass, not just how many.
+    surv_ids_html = ""
+    heads = data.get("heads")
+    if heads and 0 < n_surv <= 6:
+        ids = [f"L{heads[i][0]}H{heads[i][1]}" for i in np.nonzero(reject)[0]]
+        surv_ids_html = (
+            f'<div style="font-size:11px;color:#334155;margin-top:6px;'
+            f'font-family:JetBrains Mono,monospace;">'
+            f'Surviving heads: <b>{", ".join(ids)}</b></div>'
+        )
+
     return (
         f'<div style="padding:0;margin:0;">'
         f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;">'
@@ -278,6 +292,7 @@ def _alpha_survival_html(data, alpha, correction):
         f'</div>'
         f'<div style="font-size:11px;color:#64748b;margin-top:8px;">'
         f'{cutoff_txt} &nbsp;&middot;&nbsp; per-prompt null, {n_perm:,} permutations</div>'
+        f'{surv_ids_html}'
         f'<div style="display:flex;align-items:center;gap:4px;margin-top:10px;">{chips}</div>'
         f'<div style="margin-top:10px;height:8px;background:#fee2e2;border-radius:4px;position:relative;overflow:hidden;">'
         f'<div style="position:absolute;left:0;top:0;height:100%;width:{min(frac*100,100):.1f}%;'
@@ -403,6 +418,12 @@ def bias_server_handlers(input, output, session):
     # ── Batch mode state ──
     batch_sentences = reactive.value([])
     batch_file_name = reactive.value("")
+    # Per-sentence processed results of the last batch run, for the
+    # prev/next navigation in the Sentence Preview card. Each entry is
+    # {"index": position in file, "text": sentence, "processed": result
+    # dict of the same shape as bias_results}.
+    batch_result_objects = reactive.value([])
+    batch_view_idx = reactive.value(0)
 
     # Snapshots of compare mode state - Updated ONLY on 'Analyze Bias'
     active_bias_compare_models = reactive.Value(False)
@@ -1645,6 +1666,15 @@ def bias_server_handlers(input, output, session):
         except Exception as e:
             log_debug(f"CRITICAL ERROR in compute_bias top level: {e}")
             _logger.exception("CRITICAL ERROR in compute_bias top level")
+            # Surface the failure to the analyst; a silent log-only error
+            # looks like "the button did nothing" from the dashboard.
+            try:
+                ui.notification_show(
+                    f"Analysis failed: {type(e).__name__}: {str(e)[:160]}",
+                    type="error", duration=12
+                )
+            except Exception:
+                pass
         finally:
             # Defensive cleanup: an exception raised between bias_running.set(True)
             # and the inner try/finally would otherwise leave the spinner stuck on
@@ -1855,6 +1885,11 @@ def bias_server_handlers(input, output, session):
 
         per_sentence_results = []
         all_bar_matrices = []
+        # Successful processed results kept for prev/next navigation in the
+        # Sentence Preview card (attention tensors for short sentences are
+        # small, so holding a batch of them in memory is cheap).
+        batch_viewable = []
+        batch_result_objects.set([])
 
         loop = asyncio.get_running_loop()
 
@@ -1867,9 +1902,14 @@ def bias_server_handlers(input, output, session):
             }
             try:
                 # ── Phase 1: GUS-Net bias detection ──
-                await session.send_custom_message("batch_progress", {
-                    "label": f"Analyse Bias ({idx+1}/{n_total})"
-                })
+                # Progress is cosmetic: a failed push (e.g. the browser tab
+                # was closed mid-run) must not abort the sentence.
+                try:
+                    await session.send_custom_message("batch_progress", {
+                        "label": f"Analyse Bias ({idx+1}/{n_total})"
+                    })
+                except Exception:
+                    _logger.debug("Suppressed exception", exc_info=True)
 
                 with ThreadPoolExecutor(max_workers=1) as pool:
                     raw = await asyncio.wait_for(
@@ -1952,10 +1992,16 @@ def bias_server_handlers(input, output, session):
                     "token_scores": token_scores,
                 })
 
-                # BAR/BSR matrix
+                # BAR/BSR matrix. Sentences with no biased tokens carry an
+                # EMPTY array (shape (0,)) rather than None; stacking that
+                # with the (n_layers, n_heads) matrices of flagged sentences
+                # would break the aggregate, so only proper 2-D matrices are
+                # collected.
                 if bias_matrix is not None:
-                    all_bar_matrices.append(np.array(bias_matrix))
-                    sentence_data["bar_matrix_shape"] = list(np.array(bias_matrix).shape)
+                    bm = np.asarray(bias_matrix)
+                    if bm.ndim == 2 and bm.size:
+                        all_bar_matrices.append(bm)
+                        sentence_data["bar_matrix_shape"] = list(bm.shape)
 
                 # Propagation
                 if propagation:
@@ -1965,6 +2011,11 @@ def bias_server_handlers(input, output, session):
                         "peak_layer": propagation.get("peak_layer"),
                         "pattern": propagation.get("propagation_pattern", "none"),
                     }
+
+                # Keep the processed result for dashboard navigation.
+                batch_viewable.append({
+                    "index": idx, "text": text, "processed": processed,
+                })
 
                 # ── Phase 2: Integrated Gradients ──
                 ig_data = None
@@ -2096,36 +2147,125 @@ def bias_server_handlers(input, output, session):
 
         elapsed = round(_time.time() - t0, 1)
 
+        # ── Publish per-sentence results for dashboard navigation ──
+        # The Sentence Preview card gains prev/next arrows so the analyst
+        # can page through every example of the file; each click points
+        # bias_results at that sentence, so all panels follow.
+        if batch_viewable:
+            batch_result_objects.set(batch_viewable)
+            active_bias_compare_models.set(False)
+            active_bias_compare_prompts.set(False)
+            bias_results_B.set(None)
+            _show_batch_sentence(0)
+
         # ── Build comprehensive report ──
-        await session.send_custom_message("batch_progress", {
-            "label": f"Analyse Bias ({n_total}/{n_total})"
-        })
+        # Every step below is guarded individually: a lost websocket (the
+        # analyst reloaded or navigated away during a long run) or a report
+        # bug must not silently discard the computed results. The report is
+        # written to disk BEFORE the browser download is attempted, so the
+        # artefact survives even when the session is gone.
+        try:
+            await session.send_custom_message("batch_progress", {
+                "label": f"Analyse Bias ({n_total}/{n_total})"
+            })
+        except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
 
-        report = _build_batch_report(
-            per_sentence_results, all_bar_matrices,
-            bias_model_key, model_name, thresholds, use_optimized,
-            batch_file_name.get(), elapsed, n_total
-        )
+        try:
+            report = _build_batch_report(
+                per_sentence_results, all_bar_matrices,
+                bias_model_key, model_name, thresholds, use_optimized,
+                batch_file_name.get(), elapsed, n_total
+            )
+        except Exception as e:
+            _logger.exception("[batch] report build failed")
+            try:
+                ui.notification_show(
+                    f"Batch analysis finished but the report failed to build: "
+                    f"{type(e).__name__}: {str(e)[:120]}",
+                    type="error", duration=12
+                )
+            except Exception:
+                pass
+            return
 
-        # Save to disk
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         fname = f"batch_report_{bias_model_key}_{ts}.json"
-        save_path = Path("downloads/batch/bias") / fname
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(save_path, "w", encoding="utf-8") as f:
-            json.dump(report, f, indent=2, ensure_ascii=False, default=str)
+        payload = json.dumps(report, indent=2, ensure_ascii=False, default=str)
+
+        # Save to disk first
+        save_error = None
+        try:
+            save_path = Path("downloads/batch/bias") / fname
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            save_path.write_text(payload, encoding="utf-8")
+        except Exception as e:
+            save_error = e
+            _logger.exception("[batch] report save failed")
 
         # Auto-download
-        await session.send_custom_message("batch_download_ready", {
-            "json_content": json.dumps(report, indent=2, ensure_ascii=False, default=str),
-            "filename": fname,
-        })
+        download_error = None
+        try:
+            await session.send_custom_message("batch_download_ready", {
+                "json_content": payload,
+                "filename": fname,
+            })
+        except Exception as e:
+            download_error = e
+            _logger.exception("[batch] download push failed")
 
         analyzed = sum(1 for r in per_sentence_results if not r.get("error"))
-        ui.notification_show(
-            f"Batch complete! {analyzed}/{n_total} sentences, {elapsed}s",
-            type="message", duration=8
-        )
+        msg = f"Batch complete! {analyzed}/{n_total} sentences, {elapsed}s."
+        if save_error is None:
+            msg += f" Report saved to downloads/batch/bias/{fname}."
+        else:
+            msg += " Report could NOT be saved to disk (see server log)."
+        if download_error is not None:
+            msg += " Browser download failed; use the saved file."
+        try:
+            ui.notification_show(
+                msg,
+                type="message" if (save_error is None and download_error is None) else "warning",
+                duration=10
+            )
+        except Exception:
+            pass
+
+    # ── Batch navigation (Sentence Preview prev/next arrows) ──
+
+    def _show_batch_sentence(idx):
+        """Point the dashboard at batch sentence ``idx``.
+
+        Sets ``bias_results`` to that sentence's processed result, so every
+        panel (detection, token strip, Attention x Bias, ...) follows. The
+        faithfulness reactives are reset because their contents belong to
+        the previously shown sentence.
+        """
+        objs = batch_result_objects.get()
+        if not (0 <= idx < len(objs)):
+            return
+        entry = objs[idx]
+        batch_view_idx.set(idx)
+        bias_cached_text_A.set(entry["text"])
+        bias_results.set(entry["processed"])
+        for rv in (ig_results, ig_results_base, ablation_results,
+                   perturbation_results, lrp_results):
+            rv.set(None)
+
+    @reactive.effect
+    @reactive.event(input.batch_view_step)
+    def _batch_view_navigate():
+        objs = batch_result_objects.get()
+        if not objs:
+            return
+        payload = input.batch_view_step()
+        try:
+            step = int(payload.get("dir")) if isinstance(payload, dict) else int(payload)
+        except Exception:
+            return
+        new_idx = max(0, min(len(objs) - 1, batch_view_idx.get() + step))
+        if new_idx != batch_view_idx.get():
+            _show_batch_sentence(new_idx)
 
     # ── Dashboard content (conditional rendering) ──
 
@@ -2215,9 +2355,54 @@ def bias_server_handlers(input, output, session):
                 )
             else:
                 # Single result view (original behavior)
+
+                # Batch navigation: when the shown result belongs to the last
+                # batch run, prev/next arrows and a position badge sit inside
+                # the legend row of the preview (same line as the category
+                # legend, right-aligned). The identity check means a later
+                # single analysis (new result object) hides the arrows
+                # automatically.
+                batch_objs = batch_result_objects.get()
+                b_idx = batch_view_idx.get()
+                nav_html = ""
+                if (batch_objs and 0 <= b_idx < len(batch_objs)
+                        and res is batch_objs[b_idx]["processed"]):
+                    n_b = len(batch_objs)
+                    btn_style = (
+                        "border:1px solid #e2e8f0;background:#fff;color:#475569;"
+                        "border-radius:6px;width:24px;height:24px;line-height:1;"
+                        "cursor:pointer;font-size:11px;padding:0;"
+                    )
+
+                    def _nav_btn(step, icon, title):
+                        return (
+                            '<button type="button" style="' + btn_style + '" '
+                            'title="' + title + '" '
+                            "onclick=\"Shiny.setInputValue('batch_view_step', "
+                            "{dir: " + str(step) + ", nonce: Date.now()}, "
+                            "{priority: 'event'})\">"
+                            '<i class="fa-solid ' + icon + '"></i></button>'
+                        )
+
+                    parts = []
+                    if b_idx > 0:
+                        parts.append(_nav_btn(-1, "fa-chevron-left", "Previous sentence"))
+                    parts.append(
+                        '<span style="font-size:11px;color:#64748b;font-weight:600;'
+                        "font-family:'JetBrains Mono',monospace;\">"
+                        + str(b_idx + 1) + " / " + str(n_b) + "</span>"
+                    )
+                    if b_idx < n_b - 1:
+                        parts.append(_nav_btn(1, "fa-chevron-right", "Next sentence"))
+                    nav_html = (
+                        '<span style="display:inline-flex;align-items:center;gap:8px;">'
+                        + "".join(parts) + "</span>"
+                    )
+
                 preview_html = create_bias_sentence_preview(
-                    res["tokens"], res["token_labels"]
+                    res["tokens"], res["token_labels"], trailing_html=nav_html
                 )
+
                 return ui.div(
                     {"style": "display: flex; flex-direction: column; gap: 24px;"},
                     ui.div(
@@ -2893,6 +3078,104 @@ def bias_server_handlers(input, output, session):
     def _bias_head_pvalues_B():
         return _compute_head_pvalues(bias_results_B.get())
 
+    # Base-encoder variant for the attention-source toggle. Not a reactive
+    # calc because _get_base_resolved writes to a reactive value (a side
+    # effect calcs must not have); instead the permutation null is memoised
+    # per (text, model) in a plain dict, so flipping the toggle repeatedly
+    # never recomputes it.
+    _base_pvals_cache = {}
+
+    def _bias_head_pvalues_base(compute: bool = True):
+        """Per-head BAR p-values computed on the base-encoder attentions.
+
+        With ``compute=False`` only a cached value is returned, so callers
+        that must stay instant (e.g. the Notebook capture) never trigger
+        the on-demand base-model load or the 30k-permutation null.
+        """
+        res = bias_results.get()
+        if not res:
+            return None
+        key = (res.get("text"), res.get("bias_model_key"))
+        if key in _base_pvals_cache:
+            return _base_pvals_cache[key]
+        if not compute:
+            return None
+        base = _get_base_resolved(res, _base_attn_cache)
+        if not base:
+            return None
+        data = _compute_head_pvalues(base)
+        if len(_base_pvals_cache) > 8:
+            _base_pvals_cache.clear()
+        _base_pvals_cache[key] = data
+        return data
+
+    def _peek_base_resolved():
+        """Return the cached base-encoder result for the current analysis.
+
+        Unlike ``_get_base_resolved`` this never triggers the on-demand
+        load, so it is safe to call from the Notebook capture path.
+        """
+        res = bias_results.get()
+        cached = _base_attn_cache.get()
+        if not res or not cached:
+            return None
+        if (cached.get("text"), cached.get("bias_model_key")) == (
+                res.get("text"), res.get("bias_model_key")):
+            return cached
+        return None
+
+    def _survival_counts_for_notebook():
+        """Per-source head-survival counts at the current alpha/correction.
+
+        Used by the Auditor Notebook so a captured entry records the same
+        readout the analyst saw in the BAR definition card. Uses cached
+        nulls only, so capture stays instant.
+        """
+        try:
+            alpha = float(input.bias_alpha())
+        except Exception:
+            alpha = 0.05
+        try:
+            correction = str(input.bias_correction())
+        except Exception:
+            correction = "fdr"
+
+        corr_label = {"none": "no correction", "fdr": "FDR",
+                      "bonferroni": "Bonferroni"}.get(correction, correction)
+
+        def _count(data):
+            if not data or data.get("status") != "ok":
+                return None
+            pvals, n_heads = data["pvals"], data["n_heads"]
+            if correction == "bonferroni":
+                mask = pvals <= alpha / n_heads
+            elif correction == "none":
+                mask = pvals <= alpha
+            else:
+                mask, _cut = _bh_reject(pvals, alpha)
+            n = int(mask.sum())
+            label = f"{n} / {n_heads} at alpha={alpha:g} ({corr_label})"
+            heads = data.get("heads")
+            if heads and 0 < n <= 6:
+                ids = [f"L{heads[i][0]}H{heads[i][1]}" for i in np.nonzero(mask)[0]]
+                label += ": " + ", ".join(ids)
+            return label
+
+        out = {}
+        try:
+            g = _count(_bias_head_pvalues())
+            if g:
+                out["gusnet"] = g
+        except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
+        try:
+            b = _count(_bias_head_pvalues_base(compute=False))
+            if b:
+                out["base"] = b
+        except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
+        return out
+
     @reactive.calc
     def _attn_corr_ready():
         """Whole-section reveal gate for Attention × Bias Correlation.
@@ -2928,7 +3211,39 @@ def bias_server_handlers(input, output, session):
         compare_p = bool(active_bias_compare_prompts.get())
         html_A = _alpha_survival_html(_bias_head_pvalues(), alpha, correction)
 
+        def _col(label, body, color):
+            return (f'<div style="flex:1;min-width:0;">'
+                    f'<div style="font-size:11px;font-weight:700;color:{color};'
+                    f'text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;">{label}</div>'
+                    f'{body}</div>')
+
+        def _two_cols(label_a, html_a, label_b, html_b):
+            return ui.HTML(
+                f'<div style="display:flex;gap:20px;align-items:flex-start;">'
+                f'{_col(label_a, html_a, "#ff5ca9")}'
+                f'<div style="width:1px;align-self:stretch;background:#e2e8f0;"></div>'
+                f'{_col(label_b, html_b, "#3b82f6")}'
+                f'</div>'
+            )
+
         if not (compare_m or compare_p):
+            # Attention-source toggle (GUS-Net / base / compare). The UI
+            # forces the toggle back to "gusnet" whenever an A/B compare
+            # mode is switched on, so this branch is the only one where
+            # the base encoder can be active.
+            src_mode = _normalize_attn_source_mode(
+                _get_attn_source_mode("bias_attn_source"))
+            if src_mode == "compare":
+                html_base = _alpha_survival_html(
+                    _bias_head_pvalues_base(), alpha, correction)
+                return _two_cols("GUS-Net", html_A, "Base Encoder", html_base)
+            if src_mode == "base":
+                data_base = _bias_head_pvalues_base()
+                if data_base is not None:
+                    return ui.HTML(_col(
+                        "Base Encoder",
+                        _alpha_survival_html(data_base, alpha, correction),
+                        "#3b82f6"))
             return ui.HTML(html_A)
 
         # Compare mode: A and B side by side.
@@ -2938,19 +3253,7 @@ def bias_server_handlers(input, output, session):
         label_A = _get_label(res_A, True, compare_m) if res_A else "A"
         label_B = _get_label(res_B, False, compare_m) if res_B else "B"
 
-        def _col(label, body, color):
-            return (f'<div style="flex:1;min-width:0;">'
-                    f'<div style="font-size:11px;font-weight:700;color:{color};'
-                    f'text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;">{label}</div>'
-                    f'{body}</div>')
-
-        return ui.HTML(
-            f'<div style="display:flex;gap:20px;align-items:flex-start;">'
-            f'{_col(label_A, html_A, "#ff5ca9")}'
-            f'<div style="width:1px;align-self:stretch;background:#e2e8f0;"></div>'
-            f'{_col(label_B, html_B, "#3b82f6")}'
-            f'</div>'
-        )
+        return _two_cols(label_A, html_A, label_B, html_B)
 
     # ── Update layer/head selectors ──
 
@@ -4305,6 +4608,12 @@ def bias_server_handlers(input, output, session):
         "perturbation_results_B": perturbation_results_B,
         "lrp_results": lrp_results,
         "lrp_results_B": lrp_results_B,
+        # Attention-source toggle support for the Auditor Notebook: plain
+        # callables (not reactive values), read at capture time. They only
+        # peek at caches, so capture never triggers a heavy compute.
+        "attn_source_mode": lambda: _get_attn_source_mode("bias_attn_source"),
+        "bias_results_base": _peek_base_resolved,
+        "head_survival": _survival_counts_for_notebook,
     }
 
 __all__ = ["bias_server_handlers"]

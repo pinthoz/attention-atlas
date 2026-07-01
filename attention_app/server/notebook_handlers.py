@@ -96,6 +96,12 @@ _CONTEXT_INPUTS = [
     # audit entry is not reconstructable without them.
     ("bias_bar_threshold",       "bias_bar_threshold",     "BAR specialisation threshold (calibrated α=0.05 default 2.5)"),
     ("bias_top_k",               "bias_top_k",             "Top-K heads shown (calibrated elbow default 5)"),
+    # Active statistical criteria + attention source. Without these three
+    # an entry made under the source toggle or a non-default alpha is not
+    # reconstructable, so they belong to the conditions block.
+    ("bias_alpha",               "bias_alpha",             "Significance level α (head specialisation)"),
+    ("bias_correction",          "bias_correction",        "Multiple-comparison correction (none / FDR / Bonferroni)"),
+    ("bias_attn_source",         "bias_attn_source",       "Attention source (gusnet / base / compare)"),
     ("bias_attn_layer",          "bias_attn_layer",        "Bias panel: selected layer"),
     ("bias_attn_head",           "bias_attn_head",         "Bias panel: selected head"),
     ("bias_selected_tokens_A",   "bias_selected_tokens_a", "Selected tokens (A)"),
@@ -144,6 +150,7 @@ _CLIENT_EVENT_INPUTS = {
     # target; restored by pushing the input value back to the browser).
     "bias_bar_threshold", "bias_top_k",
     "bias_attn_layer", "bias_attn_head",
+    "bias_alpha", "bias_correction", "bias_attn_source",
 }
 
 # Computed-metric keys, grouped by side. These are *outputs* of the
@@ -178,6 +185,13 @@ _METRIC_LABELS = {
     "bias_metric_peak_layer":        "Peak propagation layer (A)",
     "bias_metric_propagation":       "Propagation pattern (A)",
     "bias_metric_matrix_peak_head":  "Peak head in bias-attention matrix (A)",
+    # ── Head-specialisation survival (BAR permutation null) ──────────
+    "bias_metric_heads_survive":          "Heads specialised after correction (GUS-Net)",
+    "bias_metric_heads_survive_base":     "Heads specialised after correction (base encoder)",
+    # ── Attention-source toggle: base-encoder side (GUS-Net vs base) ─
+    "bias_metric_matrix_peak_head_base":  "Peak head in bias-attention matrix (base encoder)",
+    "bias_metric_peak_layer_base":        "Peak propagation layer (base encoder)",
+    "bias_metric_propagation_base":       "Propagation pattern (base encoder)",
     # ── Integrated Gradients (A) ─────────────────────────────────────
     "bias_metric_ig_top_tokens":          "IG top-5 tokens (A)",
     "bias_metric_ig_top_corr_heads":      "Top-3 heads by IG ↔ attention ρ (A)",
@@ -1306,6 +1320,46 @@ def _extract_bias_metrics(bias_state, bias_compare_active: bool) -> Dict[str, An
         out["bias_metric_propagation"] = summary_a["propagation"]
     if summary_a.get("matrix_peak_head"):
         out["bias_metric_matrix_peak_head"] = summary_a["matrix_peak_head"]
+
+    # ── Head-survival readout + attention-source toggle ──────────
+    # Mirrors the "Heads specialised at α · correction" card so the
+    # entry records the same evidence the analyst saw. When the source
+    # toggle is on "base" or "compare", the base-encoder side of the
+    # contrast is captured as well (from caches only; never recomputed).
+    surv_fn = bias_state.get("head_survival")
+    if callable(surv_fn):
+        try:
+            surv = surv_fn() or {}
+        except Exception:
+            surv = {}
+        if surv.get("gusnet"):
+            out["bias_metric_heads_survive"] = surv["gusnet"]
+        if surv.get("base"):
+            out["bias_metric_heads_survive_base"] = surv["base"]
+
+    src_mode = None
+    src_fn = bias_state.get("attn_source_mode")
+    if callable(src_fn):
+        try:
+            src_mode = src_fn()
+        except Exception:
+            src_mode = None
+    if src_mode in ("base", "compare"):
+        base_fn = bias_state.get("bias_results_base")
+        base_res = None
+        if callable(base_fn):
+            try:
+                base_res = base_fn()
+            except Exception:
+                base_res = None
+        if base_res:
+            summary_base = _summarise_bias_result(base_res)
+            if summary_base.get("matrix_peak_head"):
+                out["bias_metric_matrix_peak_head_base"] = summary_base["matrix_peak_head"]
+            if summary_base.get("peak_layer") is not None:
+                out["bias_metric_peak_layer_base"] = summary_base["peak_layer"]
+            if summary_base.get("propagation"):
+                out["bias_metric_propagation_base"] = summary_base["propagation"]
 
     # Tokens hint for IG/LRP (fall back to bias_results tokens if needed).
     tokens_hint = (bias_res_a or {}).get("tokens") if isinstance(bias_res_a, dict) else None

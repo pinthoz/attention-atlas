@@ -836,10 +836,28 @@ def create_bias_sidebar():
                     justify-content: center;
                     margin-top: 6px;
                     padding: 4px 12px;
-                    background: rgba(34, 197, 94, 0.12);
-                    color: #16a34a;
+                    background: rgba(255, 92, 169, 0.12);
+                    color: #ff5ca9;
                     font-size: 11px;
                     border-radius: 4px;
+                    /* Long filenames must truncate inside the dashed dropzone
+                       instead of overflowing it. */
+                    max-width: 100%;
+                    min-width: 0;
+                    box-sizing: border-box;
+                }
+                .batch-file-info > i {
+                    flex-shrink: 0;
+                }
+                #batch-file-name {
+                    min-width: 0;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                #batch-file-count {
+                    flex-shrink: 0;
+                    white-space: nowrap;
                 }
             """),
             ui.div(
@@ -1413,8 +1431,8 @@ def create_bias_sidebar():
                         if (label) label.style.display = 'none';
                     } else {
                         infoDiv.style.display = 'inline-flex';
-                        infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
-                        infoDiv.style.color = '#16a34a';
+                        infoDiv.style.background = 'rgba(255, 92, 169, 0.1)';
+                        infoDiv.style.color = '#ff5ca9';
                         nameSpan.textContent = msg.filename;
                         countSpan.textContent = msg.count + ' sentences';
                         if (icon) icon.style.display = 'none';

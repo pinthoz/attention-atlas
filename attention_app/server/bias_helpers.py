@@ -555,6 +555,18 @@ def _build_batch_report(per_sentence_results, all_bar_matrices,
     )[:20]
 
     attention_analysis = {}
+    # Defensive: keep only matrices of the majority shape. Sentences with
+    # no biased tokens produce empty (0,) arrays, and a mixed-shape list
+    # would make np.stack raise and lose the whole report.
+    if all_bar_matrices:
+        from collections import Counter
+        shape_counts = Counter(m.shape for m in all_bar_matrices if getattr(m, "ndim", 0) == 2)
+        if shape_counts:
+            keep_shape = shape_counts.most_common(1)[0][0]
+            all_bar_matrices = [m for m in all_bar_matrices
+                                if getattr(m, "ndim", 0) == 2 and m.shape == keep_shape]
+        else:
+            all_bar_matrices = []
     if all_bar_matrices:
         stacked = np.stack(all_bar_matrices)
         avg_bar = np.nanmean(stacked, axis=0)

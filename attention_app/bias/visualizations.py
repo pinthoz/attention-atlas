@@ -1271,12 +1271,16 @@ def create_token_bias_strip(
     )
 
 
-def create_bias_sentence_preview(tokens: List[str], token_labels: List[Dict]) -> str:
+def create_bias_sentence_preview(tokens: List[str], token_labels: List[Dict],
+                                 trailing_html: str = "") -> str:
     """Create a token-viz style sentence preview with bias coloring.
-    
+
     Logic matches create_token_bias_strip:
     - BERT (##): Split and show ##
     - GPT-2 (Ġ): Merge subwords
+
+    ``trailing_html``, when given, is placed inside the legend row, pushed
+    to the right edge (used for the batch prev/next navigation).
     """
     token_html = []
     
@@ -1374,9 +1378,13 @@ def create_bias_sentence_preview(tokens: List[str], token_labels: List[Dict]) ->
             f'<span style="font-size:9px;color:#6b7280;">{info["label"]}</span></span>'
         )
 
+    trailing = (
+        f'<span style="margin-left:auto;display:inline-flex;align-items:center;">'
+        f'{trailing_html}</span>'
+    ) if trailing_html else ""
     legend_html = (
         f'<div style="display:flex;gap:12px;margin-top:8px;font-size:9px;'
-        f'color:#6b7280;align-items:center;">{"".join(legend)}</div>'
+        f'color:#6b7280;align-items:center;">{"".join(legend)}{trailing}</div>'
     )
 
     # Note for GPT-2 visualization

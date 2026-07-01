@@ -618,6 +618,24 @@ NOTEBOOK_JS = """
                 Shiny.setInputValue(inputId, values[inputId], {priority: 'event'});
             });
 
+            // Sync the bespoke toolbar widgets whose visual state lives in
+            // the DOM rather than in a native Shiny widget.
+            if (Object.prototype.hasOwnProperty.call(values, 'bias_attn_source') &&
+                    window._setBiasAttnSource) {
+                window._setBiasAttnSource(values.bias_attn_source);
+            }
+            if (Object.prototype.hasOwnProperty.call(values, 'bias_correction') &&
+                    window._setBiasCorrection) {
+                window._setBiasCorrection(values.bias_correction);
+            }
+            if (Object.prototype.hasOwnProperty.call(values, 'bias_alpha')) {
+                var alphaSlider = document.getElementById('bias_alpha');
+                if (alphaSlider) alphaSlider.value = values.bias_alpha;
+                var alphaDisplay = document.getElementById('alpha_val_input');
+                if (alphaDisplay) alphaDisplay.value = (+values.bias_alpha).toFixed(
+                    (+values.bias_alpha) < 0.01 ? 3 : 2);
+            }
+
             if (Object.prototype.hasOwnProperty.call(values, 'bias_selected_tokens_A')) {
                 window.selectedBiasTokensA = new Set(values.bias_selected_tokens_A || []);
             }
