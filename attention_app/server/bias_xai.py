@@ -997,7 +997,7 @@ def register_xai_handlers(
                     f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
                     f"<span>Scatter on the right: Jaccard vs BAR (attention specialisation). Heads above the trend line are more faithful than their specialisation alone would predict.</span></div>"
                     f"<hr style='{_TS}'/>"
-                    f"<div style='{_TN}'>K is set to 5 by default. A mean Jaccard &gt; 0.4 across heads suggests attention is a reasonable proxy for token importance.</div>"
+                    f"<div style='{_TN}'>K is set to 5 by default. A mean Jaccard &gt; 0.4 across heads suggests attention is a reasonable proxy for token importance (display heuristic, not a calibrated threshold).</div>"
                 )
                 _topk_section_html = (
                     f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">'

@@ -436,7 +436,7 @@ JS_CODE = """
                 },
                 'CLS Focus': {
                     formula: 'CLS<sup>l,h</sup> = (1/n) Σ<sub>i=1</sub><sup>n</sup> A<sub>i,CLS</sub><sup>l,h</sup>',
-                    description: 'Average attention weight from all tokens to the [CLS] token at position 0. Computed by taking column 0 of the attention matrix (all queries attending to [CLS]) and averaging across all query positions.',
+                    description: 'Average attention weight from all tokens to the [CLS] token at position 0. Computed by taking column 0 of the attention matrix (all queries attending to [CLS]) and averaging across all query positions. For causal models (GPT-2) there is no [CLS]: the metric measures attention received by the <em>first token</em> (an attention-sink position), and the degenerate first row (always 1.0) is excluded.',
                     interpretation: 'Higher values (closer to 1) indicate the head uses [CLS] as a central aggregation point, pulling information from the entire sequence into this special token. This is common in later layers where [CLS] accumulates sentence-level representations. Low values suggest the head doesn\\'t use [CLS] as a special aggregation point.'
                 },
                 'Punctuation': {
@@ -456,7 +456,7 @@ JS_CODE = """
                 },
                 'Self-attention': {
                     formula: 'SELF<sup>l,h</sup> = (1/n) Σ<sub>i=1</sub><sup>n</sup> A<sub>ii</sub><sup>l,h</sup>',
-                    description: 'Average of the diagonal elements of the attention matrix, measuring how much each token attends to itself. Computed by extracting the diagonal (where i = j) and averaging these self-attention weights across all positions.',
+                    description: 'Average of the diagonal elements of the attention matrix, measuring how much each token attends to itself. Computed by extracting the diagonal (where i = j) and averaging these self-attention weights across all positions. For causal models (GPT-2) the first diagonal element is excluded, since token 0 can only attend to itself (forced 1.0).',
                     interpretation: 'Higher values (closer to 1) indicate strong self-attention loops where tokens primarily attend to themselves. This often serves to preserve token identity or stabilize representations. Lower values suggest the head focuses on contextual relationships rather than self-preservation.'
                 },
                 'Confidence Max': {
@@ -467,7 +467,7 @@ JS_CODE = """
                     paper: 'From Attention to Assurance'
                 },
                 'Confidence Avg': {
-                    formula: 'AvgMaxA = (1/d<sub>k</sub>) Σ<sub>i</sub> max<sub>j</sub>(a<sub>ij</sub>)',
+                    formula: 'AvgMaxA = (1/n) Σ<sub>i</sub> max<sub>j</sub>(a<sub>ij</sub>)',
                     description: 'Average of the maximum attention weight per row. Each row represents how a query token attends to all key tokens.',
                     interpretation: 'This metric captures the overall confidence level. High values suggest the head consistently focuses strongly on specific tokens for each query.',
                     typicalRange: '<b>Low:</b> < 0.15 · <b>Medium:</b> 0.15–0.4 · <b>High:</b> > 0.4 (consistently confident)',

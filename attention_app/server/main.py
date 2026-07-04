@@ -3683,7 +3683,7 @@ def server(input, output, session):
 
                              <ul style='font-size:9px; margin:4px 0 0 0; padding-left:14px; color:#e2e8f0;'>
                                 <li><b>Vectors:</b> Average of sub-token vectors (mean pool).</li>
-                                <li><b>Attention:</b> Average input attention (receiving), Sum output attention (sending).</li>
+                                <li><b>Attention:</b> Sum input attention (receiving), Average output attention (sending).</li>
                             </ul>
                         </div>
                         

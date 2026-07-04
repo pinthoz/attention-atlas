@@ -308,6 +308,7 @@ def create_bias_propagation_heads_plot(
     head_bars: List[float],
     layer_idx: int,
     selected_head: Optional[int] = None,
+    bar_threshold: float = 2.5,
 ) -> go.Figure:
     """Bar chart showing BAR per head within a single layer.
 
@@ -315,15 +316,19 @@ def create_bias_propagation_heads_plot(
         head_bars: List of BAR values, one per head in the layer.
         layer_idx: Which layer this is (for the title).
         selected_head: Optional head index to highlight.
+        bar_threshold: Specialisation threshold (UI slider; default 2.5,
+            the calibrated α=0.05 cut-off). The moderate band starts at
+            0.8 × threshold, preserving the calibrated 2.0/2.5 banding.
     """
     heads = list(range(len(head_bars)))
+    moderate_cut = 0.8 * bar_threshold
     colors = []
     for i, bar in enumerate(head_bars):
         if i == selected_head:
             colors.append("#3b82f6")
-        elif bar > 2.5:
+        elif bar > bar_threshold:
             colors.append("#dc2626")
-        elif bar > 2.0:
+        elif bar > moderate_cut:
             colors.append("#ea580c")
         else:
             colors.append("#ff5ca9")
@@ -346,10 +351,13 @@ def create_bias_propagation_heads_plot(
         annotation_font=dict(size=10, color="#64748b"),
     )
     fig.add_hline(
-        y=2.5,
+        y=bar_threshold,
         line_dash="dot",
         line_color="#dc2626",
-        annotation_text="Specialised α=0.05 (2.5)",
+        annotation_text=(
+            "Specialised α=0.05 (2.5)" if abs(bar_threshold - 2.5) < 1e-9
+            else f"Specialised (BAR {bar_threshold:g})"
+        ),
         annotation_position="right",
         annotation_font=dict(size=10, color="#dc2626"),
     )

@@ -27,7 +27,7 @@ from .bias_styles import (
     TBG as _TBG, TBR as _TBR, TBA as _TBA, TBB as _TBB, TBP as _TBP,
     TN as _TN,
 )
-from .bias_xai import register_xai_handlers
+from .bias_xai import register_xai_handlers, _get_impact_thresholds
 from .bias_stereoset import register_stereoset_handlers
 from .bias_exports import (
     csv_summary as _csv_summary_fn, csv_spans as _csv_spans_fn,
@@ -2877,11 +2877,13 @@ def bias_server_handlers(input, output, session):
             else:
                 rho_val, rho_color, rho_sub = "-", "#94a3b8", "run IG analysis first"
 
-            # Ablation Δ
+            # Ablation Δ — coloured against the calibrated α=0.05 impact
+            # threshold for the active model (THRESHOLDS_CALIBRATION.md §13)
+            _impact_th = _get_impact_thresholds(res_data.get("model_name", ""))
             if abl_data:
                 max_delta = max(r.representation_impact for r in abl_data)
                 top = abl_data[0]
-                abl_color = "#ff5ca9" if max_delta > 0.05 else "#64748b"
+                abl_color = "#ff5ca9" if max_delta >= _impact_th["high"] else "#64748b"
                 abl_val, abl_sub = f"{max_delta:.3f}", f"top: L{top.layer}H{top.head}"
             else:
                 abl_val, abl_color, abl_sub = "-", "#94a3b8", "run ablation first"
@@ -2924,7 +2926,8 @@ def bias_server_handlers(input, output, session):
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH_lc}'>Threshold</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
-                f"<span>Δ &gt; 0.05 → <span style='{_TBP}'>high-impact head</span></span></div>"
+                f"<span>Δ &ge; {_impact_th['high']:g} → <span style='{_TBP}'>high-impact head</span></span></div>"
+                f"<div style='{_TN};margin-top:6px;'>Calibrated α=0.05 cut-off: 95th percentile of a random-head ablation null on the full v9 corpus, per model (BERT 0.0093, GPT-2 0.000105).</div>"
                 f"<div style='{_TN};margin-top:6px;'>Identifies the head whose removal most disrupts the model's internal representation.</div>"
             )
             bench_cards = (
@@ -2947,8 +2950,8 @@ def bias_server_handlers(input, output, session):
                 "Composite bias level with explicit weighted criteria and per-category counts.",
                 f"<span style='{_TH}'>What this shows</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
-                f"<span>4-level severity: <span style='{_TBG}'>None</span> "
-                f"<span style='{_TBB}'>Low</span> <span style='{_TBA}'>Moderate</span> "
+                f"<span>3-level severity: <span style='{_TBB}'>Low</span> "
+                f"<span style='{_TBA}'>Moderate</span> "
                 f"<span style='{_TBR}'>High</span></span></div>"
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH}'>Weights</span>"
@@ -2982,8 +2985,8 @@ def bias_server_handlers(input, output, session):
                 "Composite bias level with explicit weighted criteria and per-category counts.",
                 f"<span style='{_TH}'>What this shows</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
-                f"<span>4-level severity: <span style='{_TBG}'>None</span> "
-                f"<span style='{_TBB}'>Low</span> <span style='{_TBA}'>Moderate</span> "
+                f"<span>3-level severity: <span style='{_TBB}'>Low</span> "
+                f"<span style='{_TBA}'>Moderate</span> "
                 f"<span style='{_TBR}'>High</span></span></div>"
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH}'>Weights</span>"
@@ -3604,11 +3607,11 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span>GUS-Net sigmoid probability for the predicted bias class</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
-            f"<span>Tokens below threshold (default 0.5) are not highlighted</span></div>"
+            f"<span>Tokens below the category threshold are not highlighted; defaults are each model's optimised per-label thresholds (adjustable via the sliders)</span></div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Interaction</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>▶</span>"
-            f"<span>Click a token to highlight it across the token-level bias distribution and confidence breakdown views</span></div>"
+            f"<span>Click a token to highlight it across the token-level bias distribution, confidence breakdown, and combined attention &amp; bias views</span></div>"
             f"<div style='{_TN}; margin-top:4px;'>Multiple categories can fire on the same token. The primary label is the highest-confidence class.</div>"
         )
         
@@ -3756,9 +3759,9 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▪</span>"
             f"<span><b>Dot colour</b>: category (O / GEN / UNFAIR / STEREO)</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▪</span>"
-            f"<span><b>Dot size / bar height</b>: overall bias magnitude for that token</span></div>"
+            f"<span><b>Number next to each dot</b>: that category's sigmoid score for the token</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▪</span>"
-            f"<span><b>Grey / no fill</b>: token is below the detection threshold</span></div>"
+            f"<span><b>Greyed-out dot</b>: category is below the detection threshold</span></div>"
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Categories</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
@@ -3814,7 +3817,7 @@ def bias_server_handlers(input, output, session):
 
         man_header = (
             "Confidence Breakdown",
-            "Biased tokens grouped by confidence tier: Low (0.50–0.70), Medium (0.70–0.85), and High (0.85+). "
+            "Biased tokens grouped by confidence tier: Low (< 0.70), Medium (0.70–0.85), and High (0.85+). "
             "These tier boundaries are display heuristics, not empirically calibrated cutoffs.",
         )
         _confidence_help = (
@@ -3824,7 +3827,7 @@ def bias_server_handlers(input, output, session):
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Tiers</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-            f"<span><span style='{_TBA};color:#22c55e;'>Low 0.50–0.70</span>&nbsp;marginal detection: figurative language, borderline phrasing, or domain terms</span></div>"
+            f"<span><span style='{_TBA};color:#22c55e;'>Low &lt; 0.70</span>&nbsp;marginal detection: figurative language, borderline phrasing, or domain terms</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#eab308;'>●</span>"
             f"<span><span style='{_TBB};color:#eab308;'>Medium 0.70–0.85</span>&nbsp;probable bias signal: likely, but not certain</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
@@ -3836,7 +3839,7 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
             f"<span>High-confidence spans are the primary evidence for bias presence in the text</span></div>"
             f"<hr style='{_TS}'/>"
-            f"<div style='{_TN}'>Threshold (default 0.5): spans below this are suppressed entirely. Adjust via the toolbar to surface or hide borderline detections.</div>"
+            f"<div style='{_TN}'>Detection thresholds default to each model's optimised per-category values (not a fixed 0.5); spans below them are suppressed entirely. Adjust via the toolbar to surface or hide borderline detections.</div>"
             f"<hr style='{_TS}'/>"
             f"<div style='{_TN}'><b>Note:</b> the tier boundaries 0.70 and 0.85 are <b>display heuristics</b>, not empirical calibration. Use them as qualitative grouping, not as significance cutoffs.</div>"
         )
@@ -4162,6 +4165,8 @@ def bias_server_handlers(input, output, session):
 
         try: l_idx = int(input.bias_attn_layer())
         except Exception: l_idx = None
+        try: _bar_th = float(input.bias_bar_threshold())
+        except Exception: _bar_th = 2.5
 
         def _get_head_bars(data, layer):
             """Extract per-head BAR values for a given layer."""
@@ -4180,7 +4185,7 @@ def bias_server_handlers(input, output, session):
         def get_heads_viz(data, layer, container_id="bias-propagation-heads-container"):
             head_bars = _get_head_bars(data, layer)
             if not head_bars: return "No per-head data for this layer."
-            fig = create_bias_propagation_heads_plot(head_bars, layer)
+            fig = create_bias_propagation_heads_plot(head_bars, layer, bar_threshold=_bar_th)
             return _deferred_plotly(fig, container_id, height="450px")
 
         # ── Back button for drilldown ──
@@ -4194,16 +4199,21 @@ def bias_server_handlers(input, output, session):
             ),
         )
 
+        # Layer-band labels scale with the model depth (12 vs 24 layers)
+        _n_lay = len((res_render.get("propagation_analysis") or {}).get("layer_propagation") or []) or 12
+        _e_end = max(_n_lay // 3 - 1, 0)
+        _m_end = max((2 * _n_lay) // 3 - 1, _e_end)
+
         _layer_header_args = (
             f"Bias Propagation Across Layers{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
             "Mean BAR per transformer layer. Click a layer to drill down into its heads.",
             f"<span style='{_TH}'>Layer depth</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-            f"<span><span style='{_TBG}'>Early (0–3)</span>&nbsp;syntactic or surface-focused; BAR is usually near neutral</span></div>"
+            f"<span><span style='{_TBG}'>Early (0–{_e_end})</span>&nbsp;syntactic or surface-focused; BAR is usually near neutral</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
-            f"<span><span style='{_TBA}'>Middle (4–8)</span>&nbsp;semantic associations; bias often peaks here</span></div>"
+            f"<span><span style='{_TBA}'>Middle ({_e_end + 1}–{_m_end})</span>&nbsp;semantic associations; bias often peaks here</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>●</span>"
-            f"<span><span style='{_TBP}'>Late (9–11)</span>&nbsp;task-specific or abstract; signal may consolidate or diffuse</span></div>"
+            f"<span><span style='{_TBP}'>Late ({_m_end + 1}–{_n_lay - 1})</span>&nbsp;task-specific or abstract; signal may consolidate or diffuse</span></div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Curve shapes</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>▲</span>"
@@ -4221,11 +4231,11 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
             f"<span>Each bar is one attention head's BAR value</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#dc2626;'>●</span>"
-            f"<span><span style='{_TBR}'>Red bars</span>&nbsp;BAR &gt; 2.5 = bias-specialised head</span></div>"
+            f"<span><span style='{_TBR}'>Red bars</span>&nbsp;BAR &gt; {_bar_th:g} = bias-specialised head (follows the BAR Threshold slider)</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ea580c;'>●</span>"
-            f"<span><span style='{_TBA}'>Orange bars</span>&nbsp;BAR 2.0–2.5 = moderate bias focus</span></div>"
+            f"<span><span style='{_TBA}'>Orange bars</span>&nbsp;BAR {0.8 * _bar_th:g}–{_bar_th:g} = moderate bias focus</span></div>"
             f"<hr style='{_TS}'>"
-            f"<div style='{_TN}'>The 2.5 cut-off is the α=0.05 threshold of a permutation null fitted on the full v9 corpus. Click ← Layers to return to the layer overview.</div>"
+            f"<div style='{_TN}'>The default cut-off 2.5 is the α=0.05 threshold of a permutation null fitted on the full v9 corpus. Click ← Layers to return to the layer overview.</div>"
         )
 
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
@@ -4366,7 +4376,7 @@ def bias_server_handlers(input, output, session):
                 val_color = "#ff5ca9" if is_sig else "#475569"
 
                 rows.append(
-                    f'<tr style="{bg}{border_left}transition:all 0.2s ease;">'
+                    f'<tr onclick="setBiasHead({m.layer},{m.head})" style="{bg}{border_left}transition:all 0.2s ease;cursor:pointer;">'
                     f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-weight:500;color:#64748b;font-size:11px;">#{rank}</td>'
                     f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{m.layer}</td>'
                     f'<td style="padding:10px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{m.head}</td>'
@@ -4400,7 +4410,7 @@ def bias_server_handlers(input, output, session):
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>How to use</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
-            f"<span>Click a row to highlight that head in all visualisations</span></div>"
+            f"<span>Click a row to set the Layer / Head selection used across the attention × bias views</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
             f"<span>Run <b>Head Ablation</b> to test causal impact</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
