@@ -266,7 +266,7 @@ The bias section is organised as an accordion with **five panels**:
 - **Benchmark Overview**: LMS / SS / ICAT scores.
 - **Category Breakdown, Demographic Slices, Sensitive Heads**, and an **Example Explorer**.
 
-Compare-mode runs two models or two prompts side by side throughout the bias workflow. Counterfactual probes (lexical demographic swaps) and batch CSV/JSON reports are also available.
+Compare-mode runs two models or two prompts side by side throughout the bias workflow. Counterfactual probes (CrowS-Pairs-style demographic swaps, with POS-aware disambiguation of ambiguous reverse mappings such as possessive "her" → "his" vs object "her" → "him") and batch CSV/JSON reports are also available.
 
 ---
 
