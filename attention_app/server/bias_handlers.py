@@ -3583,6 +3583,13 @@ def bias_server_handlers(input, output, session):
             # Check if counterfactual swaps are available (single-prompt mode)
             show_cf = (not is_B and not compare_models and not compare_prompts
                        and counterfactual_swaps.get())
+            # Context-aware targets from find_swappable_terms (POS
+            # disambiguation, e.g. possessive "her" → "his"); the trigger
+            # applies these, so the chip must show the same target.
+            cf_map = {}
+            if show_cf:
+                cf_map = {s["term"].lower(): (s["swap_to"], s["category"])
+                          for s in counterfactual_swaps.get()}
 
             for lbl in biased:
                 clean = _html.escape(lbl["token"].replace("##", "").replace("\u0120", ""))
@@ -3593,10 +3600,12 @@ def bias_server_handlers(input, output, session):
                 # Counterfactual swap badge (if token is swappable)
                 cf_badge = ""
                 if show_cf:
-                    swap_info = get_swap_for_token(clean)
+                    cf_key = clean.lower()
+                    # Prefer the context-aware target; fall back to the
+                    # lexical lookup for subword-split tokens.
+                    swap_info = cf_map.get(cf_key) or get_swap_for_token(clean)
                     if swap_info:
                         swap_to, swap_cat = swap_info
-                        cf_key = clean.lower()
                         cf_badge = (
                             f'<span class="cf-swap-badge" data-cf-key="{cf_key}" '
                             f'onclick="event.stopPropagation(); window.toggleCfSwap(\'{cf_key}\', \'{swap_to}\', \'{swap_cat}\')" '

@@ -269,6 +269,34 @@ _build_swap_map()
 _SORTED_KEYS: List[str] = sorted(_SWAP_MAP.keys(), key=len, reverse=True)
 
 
+# ── POS-based disambiguation of ambiguous reverse mappings ───────────
+# English collapses distinct grammatical words into one surface form, so a
+# purely lexical reverse lookup is ambiguous: "her" is both the object
+# pronoun (→ "him") and the possessive determiner (→ "his"). For these keys
+# the correct target depends on the token's POS tag in context; everywhere
+# else the first-declared pair remains the deterministic choice.
+_POS_DISAMBIGUATION: Dict[str, Dict[str, Tuple[str, Category]]] = {
+    "her": {
+        "PRP$": ("his", "gender"),   # possessive determiner: her car → his car
+        "PRP":  ("him", "gender"),   # object pronoun: saw her → saw him
+    },
+}
+
+
+def _pos_tags_for(text: str) -> Dict[int, str]:
+    """Return ``{char_offset: PTB tag}`` for *text* via the shared spaCy model.
+
+    Returns an empty dict when spaCy (or its model) is unavailable so the
+    caller silently falls back to the lexical first-pair behaviour.
+    """
+    try:
+        from ..head_specialization import get_spacy_model
+        doc = get_spacy_model()(text)
+        return {tok.idx: tok.tag_ for tok in doc}
+    except Exception:
+        return {}
+
+
 # ── Public API ────────────────────────────────────────────────────────
 
 def get_swap_for_token(token: str) -> Optional[Tuple[str, str]]:
@@ -295,6 +323,7 @@ def find_swappable_terms(text: str) -> List[Dict]:
     """
     results: List[Dict] = []
     occupied: List[Tuple[int, int]] = []  # spans already matched
+    pos_by_offset: Optional[Dict[int, str]] = None  # lazy: only tag when needed
 
     for key in _SORTED_KEYS:
         pattern = re.compile(r"\b" + re.escape(key) + r"\b", re.IGNORECASE)
@@ -305,6 +334,13 @@ def find_swappable_terms(text: str) -> List[Dict]:
                 continue
             targets = _SWAP_MAP[key]
             swap_to, category = targets[0]  # primary swap target
+            ambiguous = _POS_DISAMBIGUATION.get(key)
+            if ambiguous:
+                if pos_by_offset is None:
+                    pos_by_offset = _pos_tags_for(text)
+                tag = pos_by_offset.get(start)
+                if tag in ambiguous:
+                    swap_to, category = ambiguous[tag]
             results.append({
                 "term": m.group(),
                 "start": start,
