@@ -1,5 +1,6 @@
 import logging
 import string
+import threading
 import numpy as np
 from functools import lru_cache
 import spacy
@@ -81,11 +82,15 @@ def _manual_pca_kmeans(X, n_clusters=None):
         X_2d = X_scaled[:, :2] # Fallback to first 2 dims
         
     # 3. K-Means (Manual)
-    
+
+    # Fixed seed: without it the fallback clustering (and therefore the
+    # auto-K choice) changed between runs on the same sentence.
+    rng = np.random.default_rng(42)
+
     def run_kmeans_step(data, k):
         n = data.shape[0]
         k = min(k, n)
-        indices = np.random.choice(n, k, replace=False)
+        indices = rng.choice(n, k, replace=False)
         centers = data[indices]
         labels = np.zeros(n, dtype=int)
         
@@ -121,20 +126,24 @@ def _manual_pca_kmeans(X, n_clusters=None):
 
 # Cache for spaCy model to avoid reloading
 _SPACY_NLP = None
+# heavy_compute runs in a thread pool: without the lock two concurrent
+# sessions could both see None and load the model twice.
+_SPACY_LOCK = threading.Lock()
 
 
 def get_spacy_model():
-    """Load and cache spaCy model."""
+    """Load and cache spaCy model (thread-safe)."""
     global _SPACY_NLP
-    if _SPACY_NLP is None:
-        try:
-            _SPACY_NLP = spacy.load("en_core_web_sm")
-        except OSError:
-            raise OSError(
-                "spaCy model 'en_core_web_sm' not found. "
-                "Install it with: python -m spacy download en_core_web_sm"
-            )
-    return _SPACY_NLP
+    with _SPACY_LOCK:
+        if _SPACY_NLP is None:
+            try:
+                _SPACY_NLP = spacy.load("en_core_web_sm")
+            except OSError:
+                raise OSError(
+                    "spaCy model 'en_core_web_sm' not found. "
+                    "Install it with: python -m spacy download en_core_web_sm"
+                )
+        return _SPACY_NLP
 
 
 _SPECIAL_TOKENS = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "<|endoftext|>"}

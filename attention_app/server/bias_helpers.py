@@ -340,7 +340,7 @@ def _align_gusnet_to_attention_tokens(gusnet_labels, attention_tokens, gusnet_sp
     attn_special = {"[CLS]", "[SEP]", "[PAD]", "<|endoftext|>"}
 
     def _clean(tok):
-        return tok.replace("##", "").replace("\u0120", "").replace("\u0120", "").lower().strip()
+        return tok.replace("##", "").replace("\u0120", "").replace("\u010a", "").lower().strip()
 
     gus_clean = []
     gus_data = []

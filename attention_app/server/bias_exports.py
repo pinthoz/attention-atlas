@@ -82,13 +82,13 @@ def csv_combined(res, l_idx=0, h_idx=0):
     return "\n".join(lines)
 
 
-def csv_matrix(res):
+def csv_matrix(res, bar_threshold=2.5):
     metrics = res.get("attention_metrics", [])
     if not metrics:
         return "No metrics available"
     lines = ["layer,head,bias_attention_ratio,specialized"]
     for m in metrics:
-        lines.append(f"{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.specialized_for_bias}")
+        lines.append(f"{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.bias_attention_ratio > bar_threshold}")
     return "\n".join(lines)
 
 
@@ -111,14 +111,14 @@ def csv_propagation(res):
     return "\n".join(lines)
 
 
-def csv_top_heads(res):
+def csv_top_heads(res, k=5, bar_threshold=2.5):
     metrics = res.get("attention_metrics", [])
     if not metrics:
         return "No metrics available"
-    top = sorted(metrics, key=lambda m: m.bias_attention_ratio, reverse=True)[:5]
+    top = sorted(metrics, key=lambda m: m.bias_attention_ratio, reverse=True)[:k]
     lines = ["rank,layer,head,bar,specialized"]
     for i, m in enumerate(top, 1):
-        lines.append(f"{i},{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.specialized_for_bias}")
+        lines.append(f"{i},{m.layer},{m.head},{m.bias_attention_ratio:.4f},{m.bias_attention_ratio > bar_threshold}")
     return "\n".join(lines)
 
 

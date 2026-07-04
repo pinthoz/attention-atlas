@@ -23,6 +23,7 @@ categorical bias labels (GEN, UNFAIR, STEREO).
 
 import torch
 import logging
+import threading
 import numpy as np
 from pathlib import Path
 from transformers import (
@@ -343,6 +344,9 @@ class GusNetDetector:
     """
 
     _cache: Dict[str, tuple] = {}
+    # Serialises loads so concurrent sessions/executors don't load the same
+    # model twice (mirrors ModelManager._lock).
+    _cache_lock = threading.Lock()
 
     def __init__(
         self,
@@ -376,48 +380,49 @@ class GusNetDetector:
         moved to the requested device so callers don't silently get a CPU
         model when they asked for CUDA (or vice versa).
         """
-        if model_key in cls._cache:
-            cached_tok, cached_model = cls._cache[model_key]
-            # Ensure the cached model sits on the requested device.
-            if str(cached_model.device) != str(device):
-                cached_model.to(device)
+        with cls._cache_lock:
+            if model_key in cls._cache:
+                cached_tok, cached_model = cls._cache[model_key]
+                # Ensure the cached model sits on the requested device.
+                if str(cached_model.device) != str(device):
+                    cached_model.to(device)
+                return cls._cache[model_key]
+
+            cfg = MODEL_REGISTRY[model_key]
+            model_path = cfg["path"]
+            arch = cfg["architecture"]
+
+            _logger.info("[GUS-Net] Loading %s from %s ...", cfg['display_name'], model_path)
+
+            try:
+                if arch == "gpt2":
+                    tokenizer = _load_gpt2_tokenizer_compat(
+                        model_path, add_prefix_space=True,
+                    )
+                    if tokenizer.pad_token is None:
+                        tokenizer.pad_token = tokenizer.eos_token
+                    # Silence "Using sep_token, but it is not set yet." —
+                    # GPT-2 has no sep/cls/mask tokens and transformers logs
+                    # this on every internal special-token access otherwise.
+                    tokenizer.verbose = False
+                    model = GPT2ForTokenClassification.from_pretrained(model_path)
+                else:
+                    # BERT: use tokenizer from registry (model repo may lack one)
+                    tok_name = cfg.get("tokenizer", "bert-base-uncased")
+                    tokenizer = BertTokenizerFast.from_pretrained(tok_name)
+                    model = BertForTokenClassification.from_pretrained(
+                        model_path, num_labels=cfg["num_labels"]
+                    )
+
+                model.eval()
+                model.to(device)
+                cls._cache[model_key] = (tokenizer, model)
+                _logger.info("[GUS-Net] %s loaded successfully on %s.", cfg['display_name'], device)
+            except Exception as e:
+                _logger.error("[GUS-Net] Failed to load %s: %s", cfg['display_name'], e)
+                raise
+
             return cls._cache[model_key]
-
-        cfg = MODEL_REGISTRY[model_key]
-        model_path = cfg["path"]
-        arch = cfg["architecture"]
-
-        _logger.info("[GUS-Net] Loading %s from %s ...", cfg['display_name'], model_path)
-
-        try:
-            if arch == "gpt2":
-                tokenizer = _load_gpt2_tokenizer_compat(
-                    model_path, add_prefix_space=True,
-                )
-                if tokenizer.pad_token is None:
-                    tokenizer.pad_token = tokenizer.eos_token
-                # Silence "Using sep_token, but it is not set yet." —
-                # GPT-2 has no sep/cls/mask tokens and transformers logs
-                # this on every internal special-token access otherwise.
-                tokenizer.verbose = False
-                model = GPT2ForTokenClassification.from_pretrained(model_path)
-            else:
-                # BERT: use tokenizer from registry (model repo may lack one)
-                tok_name = cfg.get("tokenizer", "bert-base-uncased")
-                tokenizer = BertTokenizerFast.from_pretrained(tok_name)
-                model = BertForTokenClassification.from_pretrained(
-                    model_path, num_labels=cfg["num_labels"]
-                )
-
-            model.eval()
-            model.to(device)
-            cls._cache[model_key] = (tokenizer, model)
-            _logger.info("[GUS-Net] %s loaded successfully on %s.", cfg['display_name'], device)
-        except Exception as e:
-            _logger.error("[GUS-Net] Failed to load %s: %s", cfg['display_name'], e)
-            raise
-
-        return cls._cache[model_key]
 
     @property
     def is_available(self) -> bool:

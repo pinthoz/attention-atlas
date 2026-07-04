@@ -25,6 +25,22 @@ from ..utils import array_to_base64_img, compute_influence_tree
 from ..metrics import compute_all_attention_metrics, calculate_flow_change, calculate_balance
 from ..models import ModelManager
 
+
+def _attention_rollout(attentions, up_to_layer):
+    """Attention rollout (Abnar & Zuidema, 2020) from layer 0 up to and
+    including ``up_to_layer``: head-averaged attention per layer, the
+    0.5·A + 0.5·I residual approximation, row re-normalisation, and
+    left-multiplied accumulation."""
+    seq_len = attentions[0][0].shape[-1]
+    rollout = np.eye(seq_len)
+    for l_idx in range(up_to_layer + 1):
+        attention = np.mean(attentions[l_idx][0].cpu().numpy(), axis=0)
+        attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
+        row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
+        rollout = np.matmul(attention_with_residual / (row_sums + 1e-8), rollout)
+    return rollout
+
+
 def get_layer_block(model, layer_idx):
     """Get the layer block for BERT or GPT-2."""
     if hasattr(model, "encoder"): # BERT
@@ -1520,45 +1536,10 @@ def get_qkv_table(res, layer_idx, top_k=3, suffix="", norm_mode="raw", use_globa
     elif norm_mode == "rollout" and not use_global:
         # Attention rollout: accumulated attention flow through layers
         # (Only applies in single-layer mode - in global mode we use the average)
-        att_per_layer = []
-        for l_idx in range(layer_idx + 1):
-            layer_att = attentions[l_idx][0].cpu().numpy()
-            layer_att_avg = np.mean(layer_att, axis=0)
-            att_per_layer.append(layer_att_avg)
-
-        seq_len = att_per_layer[0].shape[0]
-        rollout = np.eye(seq_len)
-
-        for l_idx in range(layer_idx + 1):
-            attention = att_per_layer[l_idx]
-            # Add residual connection
-            attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
-            # Re-normalize rows
-            row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
-            attention_with_residual = attention_with_residual / (row_sums + 1e-8)
-            # Accumulate
-            rollout = np.matmul(attention_with_residual, rollout)
-
-        att_avg = rollout
+        att_avg = _attention_rollout(attentions, layer_idx)
     elif norm_mode == "rollout" and use_global:
         # In global mode with rollout, compute rollout across ALL layers
-        att_per_layer = []
-        for l_idx in range(num_layers):
-            layer_att = attentions[l_idx][0].cpu().numpy()
-            layer_att_avg = np.mean(layer_att, axis=0)
-            att_per_layer.append(layer_att_avg)
-
-        seq_len = att_per_layer[0].shape[0]
-        rollout = np.eye(seq_len)
-
-        for l_idx in range(num_layers):
-            attention = att_per_layer[l_idx]
-            attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
-            row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
-            attention_with_residual = attention_with_residual / (row_sums + 1e-8)
-            rollout = np.matmul(attention_with_residual, rollout)
-
-        att_avg = rollout
+        att_avg = _attention_rollout(attentions, num_layers - 1)
 
     # Get normalization mode label for display
     if use_global:
@@ -1832,23 +1813,7 @@ def get_scaled_attention_view(res, layer_idx, head_idx, focus_indices, top_k=3, 
         norm_label = "col-norm"
     elif norm_mode == "rollout":
         # Attention rollout
-        att_per_layer = []
-        for l_idx in range(layer_idx + 1):
-            layer_att = attentions[l_idx][0].cpu().numpy()
-            layer_att_avg = np.mean(layer_att, axis=0)
-            att_per_layer.append(layer_att_avg)
-
-        seq_len = att_per_layer[0].shape[0]
-        rollout = np.eye(seq_len)
-
-        for l_idx in range(layer_idx + 1):
-            attention = att_per_layer[l_idx]
-            attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
-            row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
-            attention_with_residual = attention_with_residual / (row_sums + 1e-8)
-            rollout = np.matmul(attention_with_residual, rollout)
-
-        att_normalized = rollout
+        att_normalized = _attention_rollout(attentions, layer_idx)
         norm_label = "rollout"
     else:
         att_normalized = att_head
@@ -2424,23 +2389,7 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
             return att_matrix / (col_sums + 1e-8)
         elif norm_mode == "rollout" and layer_for_rollout is not None:
             # Attention rollout
-            att_per_layer = []
-            for l_idx in range(layer_for_rollout + 1):
-                layer_att = att_layers[l_idx]
-                layer_att_avg = np.mean(layer_att, axis=0)
-                att_per_layer.append(layer_att_avg)
-
-            seq_len = att_per_layer[0].shape[0]
-            rollout = np.eye(seq_len)
-
-            for l_idx in range(layer_for_rollout + 1):
-                attention = att_per_layer[l_idx]
-                attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
-                row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
-                attention_with_residual = attention_with_residual / (row_sums + 1e-8)
-                rollout = np.matmul(attention_with_residual, rollout)
-
-            return rollout
+            return _attention_rollout(attentions, layer_for_rollout)
         else:
             return att_matrix
 
@@ -2759,23 +2708,7 @@ def get_influence_tree_data(res, layer_idx, head_idx, root_idx, top_k, max_depth
         att = raw_att / (col_sums + 1e-8)
     elif norm_mode == "rollout":
         # Attention rollout
-        att_per_layer = []
-        for l_idx in range(layer_idx + 1):
-            layer_att = attentions[l_idx][0].cpu().numpy()
-            layer_att_avg = np.mean(layer_att, axis=0)
-            att_per_layer.append(layer_att_avg)
-
-        seq_len = att_per_layer[0].shape[0]
-        rollout = np.eye(seq_len)
-
-        for l_idx in range(layer_idx + 1):
-            attention = att_per_layer[l_idx]
-            attention_with_residual = 0.5 * attention + 0.5 * np.eye(seq_len)
-            row_sums = attention_with_residual.sum(axis=-1, keepdims=True)
-            attention_with_residual = attention_with_residual / (row_sums + 1e-8)
-            rollout = np.matmul(attention_with_residual, rollout)
-
-        att = rollout
+        att = _attention_rollout(attentions, layer_idx)
     else:
         att = raw_att
 

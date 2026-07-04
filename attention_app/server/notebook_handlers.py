@@ -35,6 +35,7 @@ import html as _html
 import io
 import json
 import logging
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -614,8 +615,14 @@ def _load_entries() -> List[Dict[str, Any]]:
 def _save_entries(entries: List[Dict[str, Any]]) -> None:
     try:
         _NOTEBOOK_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with _NOTEBOOK_PATH.open("w", encoding="utf-8") as f:
+        # Atomic write: dump to a temp file in the same directory, then
+        # os.replace() it over the target. A crash mid-write would otherwise
+        # leave a truncated JSON and _load_entries would silently return []
+        # (total loss of the audit trail).
+        tmp_path = _NOTEBOOK_PATH.with_suffix(".json.tmp")
+        with tmp_path.open("w", encoding="utf-8") as f:
             json.dump(entries, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, _NOTEBOOK_PATH)
     except Exception:
         _logger.exception("Could not save Auditor Notebook entries to disk")
 

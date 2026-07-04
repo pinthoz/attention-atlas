@@ -564,7 +564,13 @@ def bias_server_handlers(input, output, session):
         """
         if not res:
             return None
-        cached = cache_rv.get()
+        # The cache is plain memoisation, not app state: read it inside
+        # isolate() so a renderer that fills the cache on a miss does not
+        # register a dependency on it and then invalidate itself mid-render
+        # when it calls set() below (that self-invalidation desyncs the
+        # client's output-state tracker and re-runs the renderer twice).
+        with reactive.isolate():
+            cached = cache_rv.get()
         cache_key = (res.get("text"), res.get("bias_model_key"))
         if cached and (cached.get("text"), cached.get("bias_model_key")) == cache_key:
             return cached
@@ -725,12 +731,16 @@ def bias_server_handlers(input, output, session):
         items = []
         for text in hist:
             display_text = (text[:60] + "...") if len(text) > 60 else text
-            safe_text = _html.escape(text.replace('\n', ' '), quote=True)
+            # json.dumps JS-escapes quotes/backslashes; htmltools then
+            # HTML-escapes the attribute. html.escape alone is NOT enough
+            # here: the HTML parser un-escapes entities before the JS runs,
+            # so a quote in the text would break out of the JS string.
+            js_arg = json.dumps(text.replace('\n', ' '))
             items.append(
                 ui.div(
                     _html.escape(display_text),
                     class_="history-item",
-                    onclick=f"selectBiasHistoryItem('{safe_text}')"
+                    onclick=f"selectBiasHistoryItem({js_arg})"
                 )
             )
         return ui.div(*items)
@@ -854,11 +864,14 @@ def bias_server_handlers(input, output, session):
         else:
             for item in history:
                 display = (item[:60] + "...") if len(item) > 60 else item
-                safe = _html.escape(item.replace('\n', ' '), quote=True)
+                # JS-escape via json.dumps, then HTML-escape for the raw
+                # attribute context (html.escape alone is not JS-safe: the
+                # parser un-escapes entities before the JS string is read).
+                js_arg = _html.escape(json.dumps(item.replace('\n', ' ')), quote=True)
                 display_safe = _html.escape(display)
                 html_content += (
                     f'<div class="history-item" '
-                    f"onclick=\"selectBiasHistoryItem('{safe}')\">"
+                    f'onclick="selectBiasHistoryItem({js_arg})">'
                     f'{display_safe}</div>'
                 )
 
@@ -1200,10 +1213,54 @@ def bias_server_handlers(input, output, session):
             l_idx, h_idx = 0, 0
         return _csv_combined_fn(res, l_idx, h_idx)
 
+    def _csv_matrix(res):
+        """Thin wrapper: 'specialized' column follows the live BAR-threshold slider."""
+        try: bar_th = float(input.bias_bar_threshold())
+        except Exception: bar_th = 2.5
+        return _csv_matrix_fn(res, bar_threshold=bar_th)
+
+    def _csv_top_heads(res):
+        """Thin wrapper: row count and 'specialized' follow the Top-K / BAR sliders."""
+        try: k = int(input.bias_top_k())
+        except Exception: k = 5
+        try: bar_th = float(input.bias_bar_threshold())
+        except Exception: bar_th = 2.5
+        return _csv_top_heads_fn(res, k=k, bar_threshold=bar_th)
+
+    # Attention-derived sections must export what the on-screen panel shows,
+    # which depends on the Source Attention toggle (GUS-Net / Base / Compare).
+    _ATTN_SOURCE_SECTIONS = {"combined", "matrix", "propagation", "top_heads"}
+
+    def _export_source_res_A(res):
+        """Resolve the result the A-side attention panel is showing."""
+        src = _normalize_attn_source_mode(_get_attn_source_mode("bias_attn_source"))
+        if src == "compare":
+            # In source-compare views the left/A panel shows the Base Encoder.
+            return _get_base_resolved(res, _base_attn_cache) or res
+        if src == "base":
+            return _resolve_source_for_render(res, _base_attn_cache, src)[0]
+        return res
+
+    def _export_source_res_B():
+        """Resolve the result the B-side attention panel is showing."""
+        src = _normalize_attn_source_mode(_get_attn_source_mode("bias_attn_source"))
+        if src == "compare":
+            # Source-compare wins over model/prompt compare in the views:
+            # the right/_B panel shows the GUS-Net attentions of result A.
+            return bias_results.get()
+        res_B = bias_results_B.get()
+        if res_B is not None and src == "base":
+            return _resolve_source_for_render(res_B, _base_attn_cache_B, src)[0]
+        return res_B
+
     def _bias_export_ab(section, ext, body_fn, name):
         """Register A + B download handlers that share *body_fn(res) -> str*."""
+        source_aware = section in _ATTN_SOURCE_SECTIONS
+
         def _a():
             res = bias_results.get()
+            if res and source_aware:
+                res = _export_source_res_A(res)
             if not res:
                 yield "No data available"; return
             yield body_fn(res)
@@ -1211,7 +1268,7 @@ def bias_server_handlers(input, output, session):
         auto_save_bias_download(section, ext)(_a)
 
         def _b():
-            res = bias_results_B.get()
+            res = _export_source_res_B() if source_aware else bias_results_B.get()
             if not res:
                 yield "No data available"; return
             yield body_fn(res)
@@ -1223,9 +1280,9 @@ def bias_server_handlers(input, output, session):
     _bias_export_ab("strip",       "csv", _csv_strip_fn,       "export_bias_strip")
     _bias_export_ab("confidence",  "csv", _csv_confidence_fn,   "export_bias_confidence")
     _bias_export_ab("combined",    "csv", _csv_combined,        "export_bias_combined")
-    _bias_export_ab("matrix",      "csv", _csv_matrix_fn,       "export_bias_matrix")
+    _bias_export_ab("matrix",      "csv", _csv_matrix,          "export_bias_matrix")
     _bias_export_ab("propagation", "csv", _csv_propagation_fn,  "export_bias_propagation")
-    _bias_export_ab("top_heads",   "csv", _csv_top_heads_fn,    "export_bias_top_heads")
+    _bias_export_ab("top_heads",   "csv", _csv_top_heads,       "export_bias_top_heads")
 
     def log_debug(msg):
         _logger.debug(msg)

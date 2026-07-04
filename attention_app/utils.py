@@ -60,8 +60,8 @@ def positional_encoding(position: int, d_model: int = 768) -> np.ndarray:
     """
     pe = np.zeros((position, d_model))
     pos = np.arange(position)[:, np.newaxis]                  # (position, 1)
-    even_i = np.arange(0, d_model, 2)                         # even dims
-    div = 10000 ** ((2 * even_i) / d_model)                   # (d_model/2,)
+    even_i = np.arange(0, d_model, 2)                         # even dims (= the "2i" of the formula)
+    div = 10000 ** (even_i / d_model)                         # (d_model/2,)
     pe[:, 0::2] = np.sin(pos / div)
     pe[:, 1::2] = np.cos(pos / div[: pe[:, 1::2].shape[1]])
     return pe

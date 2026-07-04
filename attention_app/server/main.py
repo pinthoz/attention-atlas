@@ -915,12 +915,15 @@ def server(input, output, session):
         items = []
         for text in hist:
             display_text = (text[:60] + "...") if len(text) > 60 else text
-            safe_text = text.replace("\\", "\\\\").replace("'", "\\'").replace('"', '&quot;').replace('\n', ' ')
+            # json.dumps JS-escapes quotes/backslashes; htmltools then
+            # HTML-escapes the attribute (hand-rolled escaping here double
+            # escaped `"` and was not fully JS-safe).
+            js_arg = json.dumps(text.replace('\n', ' '))
             items.append(
                 ui.div(
-                    display_text, 
-                    class_="history-item", 
-                    onclick=f"selectHistoryItem('{safe_text}')"
+                    display_text,
+                    class_="history-item",
+                    onclick=f"selectHistoryItem({js_arg})"
                 )
             )
         return ui.div(*items)

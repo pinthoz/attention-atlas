@@ -115,9 +115,12 @@ def calculate_flow_change(all_layer_attentions):
     
     Args:
         all_layer_attentions: list of arrays [num_heads, seq_len, seq_len] per layer
-    
+
     Returns:
-        float: JSD between 0 (identical) and 1 (completely different)
+        float: JS distance between 0 (identical) and √ln2 ≈ 0.833 (maximally
+        different). scipy's ``jensenshannon`` uses the natural-log base; the
+        base is kept as-is so historical values stay comparable — do not
+        read the metric against a [0, 1] ceiling.
     """
     from scipy.spatial.distance import jensenshannon
     
