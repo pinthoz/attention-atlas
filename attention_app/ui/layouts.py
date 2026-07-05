@@ -518,8 +518,8 @@ attention_analysis_page = ui.page_fluid(
                         countSpan.textContent = '';
                     } else {
                         infoDiv.style.display = 'inline-flex';
-                        infoDiv.style.background = 'rgba(34, 197, 94, 0.1)';
-                        infoDiv.style.color = '#16a34a';
+                        infoDiv.style.background = 'rgba(255, 92, 169, 0.1)';
+                        infoDiv.style.color = '#ff5ca9';
                         nameSpan.textContent = msg.filename;
                         countSpan.textContent = msg.count + ' sentences';
                     }

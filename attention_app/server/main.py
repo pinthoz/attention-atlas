@@ -1090,6 +1090,12 @@ def server(input, output, session):
     # ── Attention Batch Mode ──────────────────────────────────────────────
     attn_batch_sentences = reactive.value([])
     attn_batch_file_name = reactive.value("")
+    # Per-sentence ComputeResults kept so the dashboard can page through the
+    # whole uploaded set in place (mirrors the bias batch): prev/next arrows in
+    # the Sentence Preview point cached_result at each sentence, so every panel
+    # follows, instead of only downloading a JSON report.
+    attn_batch_result_objects = reactive.value([])
+    attn_batch_view_idx = reactive.value(0)
 
     @reactive.effect
     @reactive.event(input.attn_batch_file_upload)
@@ -1192,7 +1198,13 @@ def server(input, output, session):
         is_gpt2 = "gpt2" in model_name.lower()
         n_total = len(sentences)
 
+        # Drop any previous navigable batch (and its tensors) before starting.
+        attn_batch_result_objects.set([])
+        attn_batch_view_idx.set(0)
+
         per_sentence_results = []
+        # ComputeResults kept for in-place dashboard navigation.
+        batch_viewable = []
         # Aggregate specialization across sentences: {(l,h): [metrics_dicts]}
         all_spec = {}
         all_global_metrics = []
@@ -1219,6 +1231,10 @@ def server(input, output, session):
                     continue
 
                 tokens, embeddings, pos_enc, attentions, hidden_states, inputs_tok, tokenizer_inst, encoder_model, mlm_model, head_spec, isa_data, head_clusters = result
+
+                # Keep the full ComputeResult so every dashboard panel can be
+                # replayed for this sentence during navigation.
+                batch_viewable.append({"index": idx, "text": text, "result": result})
 
                 n_layers = len(attentions)
                 n_heads = attentions[0].shape[1]
@@ -1305,6 +1321,17 @@ def server(input, output, session):
             per_sentence_results.append(sentence_data)
 
         elapsed = round(_time.time() - t0, 1)
+
+        # ── Publish per-sentence results for dashboard navigation ──
+        # The Sentence Preview gains prev/next arrows so the analyst can page
+        # through every sentence of the file in place; each step points
+        # cached_result at that sentence, so all attention panels follow.
+        if batch_viewable:
+            attn_batch_result_objects.set(batch_viewable)
+            active_compare_models.set(False)
+            active_compare_prompts.set(False)
+            cached_result_B.set(None)
+            _show_attn_batch_sentence(0)
 
         # ── Build report ──
         await session.send_custom_message("attn_batch_progress", {
@@ -1416,6 +1443,80 @@ def server(input, output, session):
             type="message", duration=8
         )
 
+    # ── Attention batch navigation (Sentence Preview prev/next arrows) ──
+
+    def _show_attn_batch_sentence(idx):
+        """Point the attention dashboard at batch sentence ``idx``.
+
+        Sets ``cached_result`` to that sentence's ComputeResult, which drives
+        ``_update_layout_config`` and every panel through the normal
+        single-mode render path.
+        """
+        objs = attn_batch_result_objects.get()
+        if not (0 <= idx < len(objs)):
+            return
+        entry = objs[idx]
+        attn_batch_view_idx.set(idx)
+        cached_text_A.set(entry["text"])
+        cached_result.set(entry["result"])
+
+    @reactive.effect
+    @reactive.event(input.attn_batch_view_step)
+    def _attn_batch_view_navigate():
+        objs = attn_batch_result_objects.get()
+        if not objs:
+            return
+        payload = input.attn_batch_view_step()
+        try:
+            step = int(payload.get("dir")) if isinstance(payload, dict) else int(payload)
+        except Exception:
+            return
+        new_idx = max(0, min(len(objs) - 1, attn_batch_view_idx.get() + step))
+        if new_idx != attn_batch_view_idx.get():
+            _show_attn_batch_sentence(new_idx)
+
+    def _attn_batch_nav_html():
+        """Right-aligned prev/next arrows + position badge for the Sentence
+        Preview, shown only while the displayed result is the batch entry at
+        the active index (identity check against the raw cached result, so a
+        later single Generate All hides the arrows automatically)."""
+        objs = attn_batch_result_objects.get()
+        idx = attn_batch_view_idx.get()
+        raw = cached_result.get()
+        if not (objs and 0 <= idx < len(objs) and raw is objs[idx].get("result")):
+            return ""
+        n = len(objs)
+        btn_style = (
+            "border:1px solid #e2e8f0;background:#fff;color:#475569;"
+            "border-radius:6px;width:24px;height:24px;line-height:1;"
+            "cursor:pointer;font-size:11px;padding:0;"
+        )
+
+        def _btn(step, icon, title):
+            return (
+                '<button type="button" style="' + btn_style + '" title="' + title + '" '
+                "onclick=\"Shiny.setInputValue('attn_batch_view_step', "
+                "{dir: " + str(step) + ", nonce: Date.now()}, {priority: 'event'})\">"
+                '<i class="fa-solid ' + icon + '"></i></button>'
+            )
+
+        parts = []
+        if idx > 0:
+            parts.append(_btn(-1, "fa-chevron-left", "Previous sentence"))
+        parts.append(
+            "<span style=\"font-size:11px;color:#64748b;font-weight:600;"
+            "font-family:'JetBrains Mono',monospace;\">"
+            + str(idx + 1) + " / " + str(n) + "</span>"
+        )
+        if idx < n - 1:
+            parts.append(_btn(1, "fa-chevron-right", "Next sentence"))
+        # Inline-flex so it composes into the Sentence Preview legend row,
+        # right-aligned next to the High/Low Attention legend.
+        return (
+            '<span style="display:inline-flex;align-items:center;gap:8px;">'
+            + "".join(parts) + "</span>"
+        )
+
     @reactive.effect
     @reactive.event(input.generate_all)
     async def compute_all():
@@ -1509,6 +1610,8 @@ def server(input, output, session):
 
         # Clear existing results to provide a "fresh load" feel.
         # Set cached_text to current inputs so they appear in previews immediately while loading.
+        # Also drop any navigable batch results so their tensors are reclaimed.
+        attn_batch_result_objects.set([])
         cached_result.set(None)
         cached_result_B.set(None)
         cached_text_A.set(input.text_input().strip())
@@ -3967,11 +4070,16 @@ def server(input, output, session):
             text_A = tokenizer_A.convert_tokens_to_string(tokens_A)
             footer_A_main = '<span style="color:#94a3b8;">Ġ (space token) removed for visualization</span>' if is_gpt2 else ""
             arch_type = "gpt2" if is_gpt2 else "bert"
+            # Batch navigation arrows go in the Sentence Preview legend row
+            # (right-aligned, next to the High/Low Attention legend) when the
+            # shown result belongs to the last attention batch run.
+            _nav_html = _attn_batch_nav_html()
+            _footer = (footer_A_main + _nav_html) if (footer_A_main and _nav_html) else (_nav_html or footer_A_main)
             return ui.div(
                 ui.div(
                     {"class": "card", "style": "margin-bottom: 32px;"},
                     preview_title,
-                    get_preview_text_view(res, text_A, "", footer_A_main),
+                    get_preview_text_view(res, text_A, "", _footer),
                 ),
                 # Architecture diagrams removed - they only appear before generation
                 # Dashboard layout
