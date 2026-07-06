@@ -67,6 +67,46 @@ MODEL_CONFIGS = {
         "n_heads": 16,
         "output_file": "stereoset_precomputed_gpt2_medium.json",
     },
+    # ── GUS-Net variants ─────────────────────────────────────────────
+    # SS/LMS/ICAT are language-model metrics, so they are scored with the
+    # BASE LM (scorer_model_name) — GUS-Net is a token classifier and has
+    # no LM head. The attention features, however, are extracted from the
+    # fine-tuned GUS-Net trunk (model_name). This matches how the
+    # stereoset_precomputed_gusnet_*.json files consumed by the dashboard
+    # were originally produced, and lets them be regenerated with the
+    # corrected LMS / FDR / sensitivity code.
+    "gusnet_bert": {
+        "model_name": "pinthoz/gus-net-bert",
+        "scorer_model_name": "bert-base-uncased",
+        "scoring": "pll",
+        "n_layers": 12,
+        "n_heads": 12,
+        "output_file": "stereoset_precomputed_gusnet_bert.json",
+    },
+    "gusnet_bert_large": {
+        "model_name": "pinthoz/gus-net-bert-large",
+        "scorer_model_name": "bert-large-uncased",
+        "scoring": "pll",
+        "n_layers": 24,
+        "n_heads": 16,
+        "output_file": "stereoset_precomputed_gusnet_bert_large.json",
+    },
+    "gusnet_gpt2": {
+        "model_name": "pinthoz/gus-net-gpt2",
+        "scorer_model_name": "gpt2",
+        "scoring": "autoregressive",
+        "n_layers": 12,
+        "n_heads": 12,
+        "output_file": "stereoset_precomputed_gusnet_gpt2.json",
+    },
+    "gusnet_gpt2_medium": {
+        "model_name": "pinthoz/gus-net-gpt2-medium",
+        "scorer_model_name": "gpt2-medium",
+        "scoring": "autoregressive",
+        "n_layers": 24,
+        "n_heads": 16,
+        "output_file": "stereoset_precomputed_gusnet_gpt2_medium.json",
+    },
 }
 
 
@@ -132,11 +172,14 @@ def score_sentence_autoregressive(text, model, tokenizer):
 
 
 def _load_scorer(model_key, device):
-    """Load the appropriate scoring model + tokenizer."""
+    """Load the appropriate scoring model + tokenizer.
+
+    Uses ``scorer_model_name`` when set (GUS-Net configs: the fine-tuned
+    token classifier cannot score sentences, so its BASE LM does)."""
     from transformers import AutoTokenizer
 
     cfg = MODEL_CONFIGS[model_key]
-    model_name = cfg["model_name"]
+    model_name = cfg.get("scorer_model_name", cfg["model_name"])
 
     if cfg["scoring"] == "pll":
         from transformers import BertForMaskedLM
@@ -160,60 +203,110 @@ def _score_sentence(text, model, tokenizer, scoring_method):
 # ── Aggregation helpers ───────────────────────────────────────────────
 
 
-def _compute_aggregate_scores(examples):
-    """Compute SS, LMS, ICAT overall and per-category."""
-    n = len(examples)
-    if n == 0:
-        return {"overall": {}, "by_category": {}}
+def _scores_for(examples):
+    """SS / LMS / ICAT for a list of examples, per Nadeem et al. (2021).
 
+    LMS (canonical definition): the percentage of *meaningful vs. unrelated*
+    comparisons the model gets right, counting the stereotype sentence and
+    the anti-stereotype sentence as TWO separate comparisons per example.
+    The previous implementation counted a single ``max(stereo, anti) >
+    unrelated`` test per example, which only requires the BEST related
+    sentence to beat the unrelated one — that systematically inflates LMS
+    (and therefore ICAT) relative to published values.
+
+    Sentinel handling: scoring returns -9999.0 for over-length sentences.
+    Examples whose stereo or anti score is the sentinel are EXCLUDED from
+    every aggregate (and counted in ``n_excluded``): a sentinel in the SS
+    comparison would register as a model preference it never expressed, and
+    a single sentinel bias_score (magnitude ~1e4 vs. a real signal of ~1)
+    would destroy the mean. The unrelated sentinel was already filtered by
+    the LMS denominator.
+    """
+    n_raw = len(examples)
+    examples = [
+        e for e in examples
+        if e["stereo_pll"] > -9999.0 and e["anti_pll"] > -9999.0
+    ]
+    n = len(examples)
+    n_excluded = n_raw - n
+    if n == 0:
+        return None
+
+    # SS tie convention: a strict ">" means an EXACT score tie counts as an
+    # anti-stereotype preference. With float log-likelihoods ties are
+    # essentially impossible, so this has no practical effect — documented
+    # here so the convention is explicit rather than accidental.
     stereo_preferred = sum(1 for e in examples if e["stereo_pll"] > e["anti_pll"])
     ss = (stereo_preferred / n * 100)
 
-    n_unrel = sum(1 for e in examples if e["unrelated_pll"] > -9999.0)
+    valid = [e for e in examples if e["unrelated_pll"] > -9999.0]
     meaningful = sum(
-        1 for e in examples
-        if max(e["stereo_pll"], e["anti_pll"]) > e["unrelated_pll"]
-        and e["unrelated_pll"] > -9999.0
+        (1 if e["stereo_pll"] > e["unrelated_pll"] else 0)
+        + (1 if e["anti_pll"] > e["unrelated_pll"] else 0)
+        for e in valid
     )
-    lms = (meaningful / n_unrel * 100) if n_unrel > 0 else 100.0
+    total_comparisons = 2 * len(valid)
+    lms = (meaningful / total_comparisons * 100) if total_comparisons > 0 else 100.0
     icat = lms * min(ss, 100 - ss) / 50.0
     mean_bias = float(np.mean([e["bias_score"] for e in examples]))
 
-    overall = {
+    return {
         "ss": round(ss, 2), "lms": round(lms, 2), "icat": round(icat, 2),
-        "n": n, "mean_bias_score": round(mean_bias, 6),
+        "n": n, "n_excluded": n_excluded,
+        "mean_bias_score": round(mean_bias, 6),
     }
+
+
+def _compute_aggregate_scores(examples):
+    """Compute SS, LMS, ICAT overall and per-category."""
+    overall = _scores_for(examples)
+    if overall is None:
+        return {"overall": {}, "by_category": {}}
 
     by_category = {}
     for cat in CATEGORIES:
-        cat_ex = [e for e in examples if e["category"] == cat]
-        cat_n = len(cat_ex)
-        if cat_n == 0:
-            continue
-        cat_stereo = sum(1 for e in cat_ex if e["stereo_pll"] > e["anti_pll"])
-        cat_ss = cat_stereo / cat_n * 100
-        cat_n_unrel = sum(1 for e in cat_ex if e["unrelated_pll"] > -9999.0)
-        cat_meaningful = sum(
-            1 for e in cat_ex
-            if max(e["stereo_pll"], e["anti_pll"]) > e["unrelated_pll"]
-            and e["unrelated_pll"] > -9999.0
-        )
-        cat_lms = (cat_meaningful / cat_n_unrel * 100) if cat_n_unrel > 0 else 100.0
-        cat_icat = cat_lms * min(cat_ss, 100 - cat_ss) / 50.0
-        cat_mean_bias = float(np.mean([e["bias_score"] for e in cat_ex]))
-        by_category[cat] = {
-            "ss": round(cat_ss, 2), "lms": round(cat_lms, 2), "icat": round(cat_icat, 2),
-            "n": cat_n, "mean_bias_score": round(cat_mean_bias, 6),
-        }
+        cat_scores = _scores_for([e for e in examples if e["category"] == cat])
+        if cat_scores is not None:
+            by_category[cat] = cat_scores
 
     return {"overall": overall, "by_category": by_category}
 
 
-def _compute_head_sensitivity(df, num_layers=12, num_heads=12):
-    """Compute 12×12 head sensitivity matrix and top heads.
+def _eta_squared(vals, cats):
+    """Effect size η² = SS_between / SS_total for a feature grouped by category.
 
-    Uses ALL features per head (GAM, AttMap, Spec) to compute
-    aggregate sensitivity, not just AttMap_mean.
+    Scale-free in [0, 1], unlike the raw variance-of-category-means used
+    before: that statistic (a) ignored the within-category variance, so a
+    noisy feature could look "sensitive", and (b) carried the feature's raw
+    scale, so averaging it across GAM/AttMap/Spec features with different
+    units let the largest-scale features dominate the head aggregate.
+    """
+    grand = vals.mean()
+    ss_total = float(((vals - grand) ** 2).sum())
+    if ss_total <= 0:
+        return 0.0
+    ss_between = 0.0
+    for cat in cats.unique():
+        g = vals[cats == cat]
+        if len(g):
+            ss_between += len(g) * float((g.mean() - grand) ** 2)
+    return ss_between / ss_total
+
+
+def _compute_head_sensitivity(df, num_layers=12, num_heads=12):
+    """Compute head sensitivity matrix and top heads.
+
+    Uses ALL features per head (GAM, AttMap, Spec). Sensitivity is the mean
+    η² (between-category effect size) across the head's features — a
+    scale-free measure of how strongly the head's features separate the
+    StereoSet demographic categories.
+
+    NOTE the intended input: ``df`` should carry the PAIRED stereo − anti
+    feature DIFFERENCES (built in run_for_model). Features of the stereotype
+    sentences alone separate categories by topic/vocabulary (gender vs.
+    religion domains), which says nothing about stereotype processing; the
+    paired difference cancels the shared topic content, so what separates
+    categories is how the head reacts to the stereotype↔anti swap.
     """
     import re
 
@@ -229,39 +322,42 @@ def _compute_head_sensitivity(df, num_layers=12, num_heads=12):
 
     matrix = [[0.0] * num_heads for _ in range(num_layers)]
     records = []
+    cats = df["category"]
 
     for (layer, head), cols in head_features.items():
-        # For each feature of this head, compute variance of category means
-        variances = []
+        effect_sizes = []
+        used_cols = []
         correlations = []
         for col in cols:
             vals = df[col]
             if vals.var() == 0:
                 continue
-            cat_means = df.groupby("category")[col].mean()
-            variances.append(float(cat_means.var()))
+            effect_sizes.append(_eta_squared(vals, cats))
+            used_cols.append(col)
             if "bias_score" in df.columns:
                 corr = df[[col, "bias_score"]].corr().iloc[0, 1]
                 if not np.isnan(corr):
                     correlations.append(corr)
 
-        if not variances:
+        if not effect_sizes:
             continue
 
-        # Aggregate: mean variance across all features for this head
-        agg_variance = float(np.mean(variances))
+        # Aggregate: mean η² across all features for this head (scale-free)
+        agg_eta2 = float(np.mean(effect_sizes))
         agg_correlation = float(np.mean(correlations)) if correlations else 0.0
 
-        matrix[layer][head] = agg_variance
+        matrix[layer][head] = agg_eta2
 
-        # Category means for the top-variance feature of this head
-        best_col = cols[np.argmax(variances)] if variances else cols[0]
+        # Category means for the top-effect-size feature of this head
+        best_col = used_cols[int(np.argmax(effect_sizes))]
         cat_means = df.groupby("category")[best_col].mean()
         cat_means_dict = {cat: round(float(cat_means.get(cat, 0)), 8) for cat in CATEGORIES}
 
         records.append({
             "layer": layer, "head": head,
-            "variance": round(agg_variance, 10),
+            # Key kept as "variance" for JSON/UI backward compatibility;
+            # the value is now the mean η² effect size (0-1, scale-free).
+            "variance": round(agg_eta2, 10),
             "correlation": round(agg_correlation, 6),
             "n_features": len(cols),
             "best_feature": best_col,
@@ -272,8 +368,28 @@ def _compute_head_sensitivity(df, num_layers=12, num_heads=12):
     return matrix, records[:20]
 
 
+def _bh_fdr(pvals):
+    """Benjamini-Hochberg adjusted p-values (q-values)."""
+    p = np.asarray(pvals, dtype=float)
+    n = len(p)
+    if n == 0:
+        return p
+    order = np.argsort(p)
+    scaled = p[order] * n / (np.arange(n) + 1)
+    scaled = np.minimum.accumulate(scaled[::-1])[::-1]
+    out = np.empty(n)
+    out[order] = np.clip(scaled, 0.0, 1.0)
+    return out
+
+
 def _compute_top_features(df):
-    """Kruskal-Wallis test on all numeric features."""
+    """Kruskal-Wallis test on all numeric features, with BH-FDR correction.
+
+    Testing ~3000 features at a raw cut-off is mass significance testing:
+    at p<0.001 alone, ~3 false positives are expected by chance. The
+    significance count and the ranking therefore use the BH-adjusted
+    q-values; the raw p-value is kept in the payload for reference.
+    """
     df_numeric = df.select_dtypes(include=[np.number]).fillna(0)
     df_numeric = df_numeric.loc[:, df_numeric.var() > 0]
     feature_cols = [c for c in df_numeric.columns if c not in ("bias_score", "stereo_prob", "anti_prob")]
@@ -288,9 +404,16 @@ def _compute_top_features(df):
         except Exception:
             kw_results[col] = 1.0
 
-    sorted_feats = sorted(kw_results.items(), key=lambda x: x[1])
-    top_features = [{"name": name, "p_value": float(pval)} for name, pval in sorted_feats[:20]]
-    sig_count = sum(1 for _, pval in kw_results.items() if pval < 0.001)
+    names = list(kw_results.keys())
+    raw_p = [kw_results[c] for c in names]
+    q_vals = _bh_fdr(raw_p)
+    by_q = sorted(zip(names, raw_p, q_vals), key=lambda x: (x[2], x[1]))
+
+    top_features = [
+        {"name": name, "p_value": float(p), "p_value_fdr": float(q)}
+        for name, p, q in by_q[:20]
+    ]
+    sig_count = int(sum(1 for q in q_vals if q < 0.001))
     return top_features, sig_count, len(kw_results)
 
 
@@ -452,7 +575,39 @@ def run_for_model(model_key, stereoset):
     df = pd.DataFrame(features_list)
     n_layers = cfg.get("n_layers", 12)
     n_heads = cfg.get("n_heads", 12)
-    matrix, sensitive_heads = _compute_head_sensitivity(df, n_layers, n_heads)
+
+    # Head sensitivity runs on PAIRED stereo - anti feature differences:
+    # stereo-only features separate categories by topic/vocabulary, not by
+    # stereotype processing (see _compute_head_sensitivity docstring). The
+    # difference cancels the shared context; only pairs where the anti
+    # features extracted successfully contribute. Falls back to the
+    # stereo-only frame if too few pairs survive.
+    diff_rows = []
+    for i, (stereo_feats, anti_feats) in enumerate(example_feats_pairs):
+        if not anti_feats:
+            continue
+        row = {}
+        for k, v in stereo_feats.items():
+            if k in ("category", "bias_score"):
+                continue
+            av = anti_feats.get(k)
+            if isinstance(v, (int, float)) and isinstance(av, (int, float)):
+                row[k] = float(v) - float(av)
+        if row:
+            row["category"] = stereo_feats.get("category")
+            row["bias_score"] = stereo_feats.get("bias_score")
+            diff_rows.append(row)
+
+    diff_df = pd.DataFrame(diff_rows)
+    if len(diff_df) >= 50:
+        sens_df = diff_df
+        print(f"    Using {len(diff_df)} paired stereo-anti feature differences")
+    else:
+        sens_df = df
+        print("    WARNING: too few stereo-anti pairs; falling back to "
+              "stereo-only features (sensitivity then reflects topic "
+              "separation, not stereotype processing)")
+    matrix, sensitive_heads = _compute_head_sensitivity(sens_df, n_layers, n_heads)
 
     print("  Building per-example head profiles...")
     head_profile_stats = _build_head_profile_stats(sensitive_heads, df)

@@ -984,26 +984,24 @@ Start with **Overview** to understand what the model is doing, move to **Explore
 
 ---
 
-## Planned Features (Thesis Validation Phase)
+## Validation Features
 
-The following features are **planned for implementation** as part of the Master's thesis validation:
+The following features support the scientific validation of the analysis; the first is implemented, the rest remain on the roadmap:
 
-### 1. Faithfulness Validation Panel
+### 1. Faithfulness Validation Panel (implemented — Bias Detection section)
 
-**Location**: New tab "Faithfulness Analysis"
+**Location**: Bias Detection → "Faithfulness Validation" accordion panel
 
-**What it will show**: Side-by-side comparison of attention weights vs. gradient-based attributions
+**What it shows**: Whether attention agrees with gradient- and perturbation-based attributions of the **GUS-Net detected-bias evidence** (the decision-level target — see [attention_app/bias/integrated_gradients.py](attention_app/bias/integrated_gradients.py)).
 
 **Components**:
-- **Dual Heatmaps**: Attention (left) vs. Integrated Gradients (right)
-- **Correlation Score**: Spearman-r coefficient with color-coded interpretation
-  - Green (r > 0.5): Strong correlation → attention is faithful
-  - Yellow (0.3 < r < 0.5): Moderate correlation
-  - Red (r < 0.3): Weak correlation → attention may be misleading
-- **Toggle Options**: Switch between IG, LRP, Gradient×Input baselines
-- **Token Highlighting**: Click token to see its attribution from both methods
+- **Per-head correlation heatmap**: Spearman ρ(attention, IG) per head, plus BAR-vs-ρ scatter
+- **Correlation magnitudes**: read against Cohen (1988) bands (|ρ| ≥ 0.3 moderate, ≥ 0.5 strong) as *agreement between explanation methods* — a high ρ does **not** by itself establish that attention is faithful (Jain & Wallace, 2019), and a per-sentence ρ has low power (n = tokens)
+- **Significance**: Benjamini–Hochberg FDR q-values across heads; raw p<0.05 counts are shown with the expected-by-chance baseline
+- **Causal evidence**: the head-ablation sub-panel (zero/mean ablation with calibrated null thresholds), not the correlations
+- **Cross-validation**: AttnLRP (Achtibat et al., 2024) and Chefer-LRP (2021) against IG
 
-**Research Value**: Quantifies when attention is/isn't a reliable interpretability signal
+**Research Value**: Quantifies when attention is/isn't a reliable interpretability signal — with multiplicity-corrected statistics and an explicit attribution target.
 
 ---
 
@@ -1129,4 +1127,4 @@ The following features are **planned for implementation** as part of the Master'
 
 **Attention Atlas** — Making Transformer attention mechanisms interpretable, one head at a time.
 
-**Academic Context**: This user guide documents the current implementation and planned extensions for a Master's thesis on **Interpretable Large Language Models through Attention Mechanism Visualization**. For full thesis objectives and validation strategy, see [README.md](../README.md).
+**Context**: This user guide documents the current implementation and planned extensions of a project on **interpretable large language models through attention mechanism visualization**. For the full objectives and validation strategy, see [README.md](../README.md).

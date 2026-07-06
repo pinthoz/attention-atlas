@@ -942,218 +942,69 @@ All visualizations and metrics are computed in real-time from actual BERT/GPT-2 
 
 ---
 
-## Planned Extensions (Thesis Validation Phase)
+## Validation Components
 
-The following components are **planned for implementation** as part of the Master's thesis validation phase:
+The bias analysis is backed by the following validation components:
 
-### Faithfulness Validation
+### Faithfulness Validation (implemented)
 
-**Objective**: Validate whether attention weights are faithful explanations of model behavior by comparing with gradient-based attribution methods.
+**Objective**: Test whether attention weights track what actually drives the model's *bias detections*, by comparing them with gradient- and perturbation-based attribution methods.
 
-**Planned Implementation**:
+**Implementation**: [attention_app/bias/integrated_gradients.py](attention_app/bias/integrated_gradients.py) (IG, perturbation, AttnLRP / Chefer-LRP) and [attention_app/bias/head_ablation.py](attention_app/bias/head_ablation.py) (causal head intervention), rendered by [attention_app/server/bias_xai.py](attention_app/server/bias_xai.py).
 
-```python
-# attention_app/faithfulness/integrated_gradients.py
+Key design points:
 
-def compute_integrated_gradients(model, input_ids, baseline_ids, target_idx, steps=50):
-    """
-    Compute Integrated Gradients attribution (Sundararajan et al., 2017)
+- **Attribution target** `F = Σ_tokens Σ_labels sigmoid(bias logit)` — the GUS-Net detected-bias evidence. Faithfulness is only defined relative to a prediction (Jain & Wallace 2019; Jacovi & Goldberg 2020), so all methods attribute this decision-level scalar. A legacy pooled-norm target exists only as a labelled fallback.
+- **Per-head metric**: Spearman ρ between attention-received per token and |IG| per token, with **Benjamini–Hochberg FDR** q-values across the ~144 heads (raw p<0.05 counts include ≈7 chance hits).
+- **IG completeness** is checked (`convergence_delta`); 64 integration steps for the bias target.
+- **Interpretation is deliberately cautious**: correlation magnitudes are read against Cohen (1988) bands as *agreement between explanation methods*, never as proof that "attention is faithful" — a high ρ on one sentence is weak evidence (n = tokens per sentence), and corpus-level aggregation is required for claims. Causal evidence comes from the head-ablation panel, not from correlations.
 
-    Formula:
-    IG_i = (x_i - x'_i) × ∫₀¹ ∂F(x' + α(x - x')) / ∂x_i dα
-
-    Where:
-    - x: Input
-    - x': Baseline (e.g., [PAD] tokens)
-    - α: Interpolation coefficient
-    - F: Model output logit
-    """
-    # Implementation using path integral approximation
-    pass
-
-def attention_gradient_faithfulness(attention_weights, ig_attributions):
-    """
-    Compute Spearman correlation between attention and IG
-
-    Expected Range: [-1, 1]
-    - > 0.5: Strong correlation (attention is faithful)
-    - 0.3-0.5: Moderate correlation
-    - < 0.3: Weak correlation (attention may be misleading)
-    """
-    return spearman_r(attention_weights.flatten(), ig_attributions.flatten())
-```
-
-**Visualization**: Side-by-side heatmaps (Attention vs. Integrated Gradients) in Deep Dive section
-
-**Reference**: Sundararajan, M., Taly, A., & Yan, Q. (2017). *Axiomatic Attribution for Deep Networks*, ICML
+**References**: Sundararajan et al. (2017), *Axiomatic Attribution for Deep Networks*, ICML; Jain & Wallace (2019), *Attention is not Explanation*, NAACL; Chefer et al. (2021), CVPR; Achtibat et al. (2024), AttnLRP.
 
 ---
 
-### Correlation Dashboard
+### StereoSet Integration (implemented)
 
-**Objective**: Visualize three-way relationships between attention metrics, task performance, and fairness scores.
+**Objective**: Quantify model bias using the StereoSet benchmark (Nadeem et al., 2021).
 
-**Planned Implementation**:
+**Implementation**: pre-computed offline by [attention_app/bias/stereoset/generate_stereoset_json.py](attention_app/bias/stereoset/generate_stereoset_json.py) (one JSON per model in `attention_app/bias/stereoset/results/`), rendered by [attention_app/server/bias_stereoset.py](attention_app/server/bias_stereoset.py) as the "StereoSet Evaluation" accordion panel (Benchmark Overview, Category Breakdown, Demographic Slices, Sensitive Heads, Example Explorer).
 
-```python
-# attention_app/correlation/dashboard.py
+Key design points:
 
-def create_correlation_dashboard():
-    """
-    Three-panel dashboard showing:
-
-    Panel 1: Attention Metrics vs. Task Accuracy
-      - X-axis: Attention metric (e.g., Confidence)
-      - Y-axis: Head contribution to accuracy (via ablation)
-      - Each point = one attention head
-
-    Panel 2: Attention Metrics vs. Bias Score
-      - X-axis: Attention to bias tokens
-      - Y-axis: StereoSet bias score (SS)
-      - Color: Head cluster (Syntactic, Semantic, etc.)
-
-    Panel 3: Performance-Fairness Trade-off
-      - X-axis: Task accuracy
-      - Y-axis: Fairness (lower bias = higher fairness)
-      - Pareto frontier highlighting optimal heads
-    """
-    pass
-```
-
-**Use Case**: Identify heads that are **Pareto-optimal** (high accuracy, low bias) for model pruning decisions
-
----
-
-### StereoSet Integration
-
-**Objective**: Quantify model bias using the official StereoSet benchmark (Nadeem et al., 2021).
-
-**Planned Implementation**:
-
-```python
-# attention_app/benchmarks/stereoset_loader.py
-
-def compute_stereoset_score(model, tokenizer, stereoset_dataset):
-    """
-    Compute official StereoSet metrics:
-
-    1. Language Modeling Score (LMS):
-       Measures model quality (ability to distinguish plausible from implausible)
-
-    2. Stereotype Score (SS):
-       SS = P(stereotype) / [P(stereotype) + P(anti-stereotype)]
-       Range: [0, 1]
-       - SS ≈ 0.5: Unbiased (equal preference)
-       - SS > 0.5: Prefers stereotypes (biased)
-       - SS < 0.5: Prefers anti-stereotypes
-
-    3. ICAT (Idealized CAT Score):
-       ICAT = LMS × (min(SS, 1-SS) / 0.5)
-       Balances quality and fairness
-       - Higher ICAT = Better model (high quality, low bias)
-    """
-    pass
-```
-
-**Visualization**: StereoSet score card in Overview section, correlation with attention patterns
+- **Sentence scoring**: BERT-family models use Pseudo-Log-Likelihood (mask each token in turn, average the log-probability); GPT-2-family models use the average autoregressive log-likelihood. GUS-Net variants are token classifiers with no LM head, so their SS/LMS are scored with the corresponding base LM while the attention features come from the fine-tuned trunk.
+- **Metrics** (canonical definitions): **SS** = % of examples where the stereotype sentence scores higher than the anti-stereotype one (50% = unbiased); **LMS** = % of meaningful-vs-unrelated comparisons won, counting the stereotype and anti-stereotype sentences as two separate comparisons per example; **ICAT** = LMS × min(SS, 100−SS) / 50. Over-length sentinel scores are excluded from every aggregate.
+- **Head sensitivity**: mean η² effect size per head computed on paired stereo−anti feature differences (topic content cancels out), with Benjamini-Hochberg FDR on the per-feature Kruskal-Wallis tests.
 
 **Reference**: Nadeem, M., Bethke, A., & Reddy, S. (2021). *StereoSet: Measuring stereotypical bias in pretrained language models*, ACL
 
 ---
 
-### Benchmark Integration (GLUE/SuperGLUE)
+### Future Work
 
-**Objective**: Evaluate attention patterns across diverse NLP tasks.
+Not yet implemented; see [ROADMAP.md](ROADMAP.md) for details:
 
-**Planned Implementation**:
-
-```python
-# attention_app/benchmarks/glue_loader.py
-
-def load_glue_task(task_name):
-    """
-    Load GLUE benchmark tasks:
-    - CoLA: Grammatical acceptability
-    - SST-2: Sentiment analysis
-    - MRPC: Paraphrase detection
-    - QQP: Question similarity
-    - MNLI: Natural language inference
-    - QNLI: Question answering NLI
-    - RTE: Textual entailment
-    - WNLI: Winograd schemas
-    """
-    dataset = datasets.load_dataset("glue", task_name)
-    return dataset
-
-def correlate_attention_with_performance(attention_metrics, task_accuracy):
-    """
-    Research Question: Do specific attention patterns predict task success?
-
-    Analysis:
-    - Compute Pearson correlation between attention metrics and accuracy
-    - Identify which heads are most important per task
-    - Compare attention patterns across tasks
-    """
-    pass
-```
-
-**Expected Finding**: Different tasks rely on different head specializations (e.g., syntax heads for grammaticality, semantic heads for entailment)
+- **Correlation Dashboard** — three-way view of attention metrics × task performance × fairness scores, highlighting Pareto-optimal heads (high accuracy, low bias) for pruning decisions.
+- **GLUE/SuperGLUE integration** — correlate attention patterns and head specializations with task performance across diverse NLP tasks.
+- **User study** — usability validation (SUS, task accuracy, interaction logging) with NLP researchers and practitioners.
 
 ---
 
-### User Study Data Collection
+## Implementation Status
 
-**Objective**: Qualitative validation via usability study.
+| Component | Status |
+|-----------|--------|
+| **Core Platform** | ✅ Complete |
+| **Bias Detection (GUS-Net) + Attention × Bias analysis** | ✅ Complete |
+| **Faithfulness Validation** (IG, perturbation, LRP, head ablation) | ✅ Complete |
+| **StereoSet Integration** | ✅ Complete |
+| **Correlation Dashboard** | 📋 Future work |
+| **GLUE/SuperGLUE** | 📋 Future work |
+| **User Study** | 📋 Future work |
 
-**Planned Implementation**:
-
-```python
-# attention_app/user_study/logger.py
-
-class InteractionLogger:
-    """
-    Log user interactions for usability analysis:
-
-    Metrics:
-    - Task completion time (efficiency)
-    - Click patterns (navigation strategy)
-    - Visualization usage frequency (which features are most useful)
-    - Error rate (incorrect interpretations)
-
-    Integration with questionnaires:
-    - System Usability Scale (SUS)
-    - NASA-TLX cognitive load
-    - Open-ended feedback
-    """
-
-    def log_click(self, element_id, timestamp):
-        pass
-
-    def log_task_completion(self, task_id, duration, accuracy):
-        pass
-```
-
-**Target**: N=10-15 participants (NLP researchers, ML practitioners, domain experts)
-
-**Expected Outcome**: SUS score > 70 (above average usability), task accuracy > 75%
-
----
-
-## Implementation Timeline
-
-| Component | Status | Priority | Target Completion |
-|-----------|--------|----------|-------------------|
-| **Core Platform** | ✅ Complete | - | Already deployed |
-| **Integrated Gradients** | 📋 Planned | 🔴 Critical | Week 12 |
-| **Correlation Dashboard** | 📋 Planned | 🔴 Critical | Week 13 |
-| **StereoSet Integration** | 📋 Planned | 🔴 High | Week 14 |
-| **GLUE/SuperGLUE** | 📋 Planned | 🟡 Medium | Week 14 |
-| **User Study** | 📋 Planned | 🟡 Medium | Weeks 15-17 |
-
-**Full Roadmap**: See [ROADMAP.md](ROADMAP.md) for detailed implementation plan.
+**Full Roadmap**: See [ROADMAP.md](ROADMAP.md) for the detailed implementation plan.
 
 ---
 
 **Attention Atlas** provides complete transparency into every component of the Transformer architecture, enabling researchers, educators, and practitioners to understand exactly how BERT and GPT-2 process language—from raw text input to final predictions.
 
-**Academic Context**: This project is part of a Master's thesis on **Interpretable Large Language Models through Attention Mechanism Visualization**, addressing critical gaps in LLM interpretability and fairness analysis. See [README.md](README.md) for full thesis context and objectives.
+**Context**: This project focuses on **interpretable language models through attention mechanism visualization**, addressing critical gaps in LLM interpretability and fairness analysis. See [README.md](README.md) for the full feature tour and objectives.
