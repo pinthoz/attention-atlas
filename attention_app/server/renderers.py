@@ -2416,11 +2416,9 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
         layer_metrics_list = []
         for h in range(num_heads):
             head_att = apply_normalization(layer_heads[h], layer_idx)
+            # focus_normalized comes causal-aware from metrics.py (log(n!)
+            # ceiling for causal models, n·log(n) for bidirectional).
             m = compute_all_attention_metrics(head_att, has_cls=has_cls)
-            # Normalize focus entropy locally for comparison
-            num_tokens = head_att.shape[0]
-            max_ent = num_tokens * np.log(num_tokens) if num_tokens > 1 else 1
-            m['focus_normalized'] = m['focus_entropy'] / max_ent if max_ent > 0 else 0
             layer_metrics_list.append(m)
         
         # Compute Percentiles and Averages for each key
@@ -2436,12 +2434,6 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
             current_val = current_metrics.get(key)
             if current_val is None:
                 continue
-            if key == 'focus_normalized':
-                # Re-calc current normalized for consistency
-                num_tokens = att_matrix.shape[0]
-                max_ent = num_tokens * np.log(num_tokens) if num_tokens > 1 else 1
-                current_val = current_metrics['focus_entropy'] / max_ent if max_ent > 0 else 0
-            
             # Percentile (rank)
             # strictly less count
             smaller_count = sum(v < current_val for v in values)
@@ -2496,10 +2488,8 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
     # below instead of rendering a meaningless number.
     balance = current_metrics.get('balance')
 
-    # Normalize current focus
-    num_tokens = att_matrix.shape[0]
-    max_entropy = num_tokens * np.log(num_tokens) if num_tokens > 1 else 1
-    focus_normalized = current_metrics['focus_entropy'] / max_entropy if max_entropy > 0 else 0
+    # Causal-aware normalised focus (see metrics.max_focus_entropy)
+    focus_normalized = current_metrics.get('focus_normalized', 0.0)
 
     # Thresholds / Interpretations
     # If use_full_scale is True, we overwrite max_range to 1.0 (or theoretical max)
@@ -2918,7 +2908,18 @@ def head_specialization_radar(res, layer_idx, head_idx, mode, suffix=""):
             yaxis=dict(title="t-SNE Dimension 2", showgrid=True, gridcolor='#f1f5f9', zeroline=False, showticklabels=False),
             showlegend=True,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(l=40, r=20, t=60, b=40)
+            margin=dict(l=40, r=20, t=60, b=52),
+            # K-Means runs in the 7-D metric space; t-SNE is ONLY the 2-D
+            # layout. Same-cluster points may land far apart (and vice
+            # versa), and t-SNE distances/axes carry no meaning
+            # (Wattenberg et al., 2016) — say so under the plot.
+            annotations=[dict(
+                text=("Clusters are computed in the 7-D metric space; t-SNE only lays them out in 2-D. "
+                      "Distances between points are not meaningful — read cluster membership, not geometry."),
+                xref="paper", yref="paper", x=0.5, y=-0.14,
+                xanchor="center", yanchor="top", showarrow=False,
+                font=dict(size=10, color="#94a3b8"),
+            )]
         )
 
     elif mode == "single":

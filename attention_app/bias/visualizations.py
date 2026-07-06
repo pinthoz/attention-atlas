@@ -523,7 +523,16 @@ def create_combined_bias_visualization(
         x=list(range(n)),
         y=list(range(n)),
         colorscale=att_colorscale,
-        zmin=0, zmax=float(attention_matrix.max()) if attention_matrix.max() > 0 else 1,
+        # Colour scale: local max for a single view (max contrast), but the
+        # SHARED max of both matrices in compare mode — otherwise the A and
+        # B heatmaps sit side by side with different scales and the darker
+        # panel is misread as "more attention".
+        zmin=0,
+        zmax=(
+            float(max(attention_matrix.max(), attention_matrix_other.max()))
+            if has_delta and max(attention_matrix.max(), attention_matrix_other.max()) > 0
+            else (float(attention_matrix.max()) if attention_matrix.max() > 0 else 1)
+        ),
         colorbar=dict(
             title=dict(text="Attention", font=dict(color="#64748b", size=11)),
             tickfont=dict(color="#64748b", size=10),

@@ -80,17 +80,8 @@ def compute_baselines(model, tokenizer, is_gpt2):
                         if m_val is None:
                             continue
 
-                        # Normalize focus entropy locally
-                        if m_key == 'focus_entropy':
-                            num_tokens = matrix.shape[0]
-                            max_ent = num_tokens * np.log(num_tokens) if num_tokens > 1 else 1
-                            norm_val = m_val / max_ent if max_ent > 0 else 0
-
-                            # Store normalized version as 'focus_normalized'
-                            if 'focus_normalized' not in raw_stats[key]:
-                                raw_stats[key]['focus_normalized'] = []
-                            raw_stats[key]['focus_normalized'].append(norm_val)
-
+                        # 'focus_normalized' now arrives causal-aware from
+                        # compute_all_attention_metrics — no local n·log(n).
                         if m_key not in raw_stats[key]:
                             raw_stats[key][m_key] = []
                         raw_stats[key][m_key].append(m_val)

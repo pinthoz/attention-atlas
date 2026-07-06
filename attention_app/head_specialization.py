@@ -153,10 +153,24 @@ def align_spacy_to_bert_tokens(model_tokens, spacy_doc):
     """
     Align spaCy word-level tags to model subword tokens.
 
-    Handles both tokenizer conventions:
-      - BERT WordPiece: ``##`` prefix marks a continuation of the previous word.
-      - GPT-2 BPE: ``Ġ`` prefix marks the START of a new word; tokens without
-        it continue the previous word. ``Ċ`` is a newline marker.
+    Character-consumption alignment: each subword consumes characters from
+    the current spaCy token, and the cursor advances exactly when a spaCy
+    token is fully consumed. This replaces the previous new-word/continuation
+    heuristic, whose cursor only advanced on an EXACT text match — any
+    tokenization disagreement (multi-subword words, hyphens, unicode
+    normalisation) desynchronised it and every later token silently got the
+    wrong POS/NER tag, which feeds directly into the syntax / semantics /
+    entities specialization metrics.
+
+    Properties:
+      - Continuation subwords ("##ing", non-Ġ BPE pieces) match the
+        REMAINDER of the same spaCy word, so they inherit its tags by
+        construction rather than by copying the previous tag.
+      - A subword spanning several spaCy tokens consumes across them and
+        takes the tags of the first.
+      - On an unresolvable mismatch (e.g. accent stripping by an uncased
+        tokenizer) only THAT token falls back to "X"/"O" and the cursor
+        resynchronises within a small look-ahead window — no cascade.
 
     Args:
         model_tokens: List of sub-tokens from the attention model's tokenizer.
@@ -172,9 +186,16 @@ def align_spacy_to_bert_tokens(model_tokens, spacy_doc):
     spacy_pos = [token.pos_ for token in spacy_doc]
     spacy_ner = [token.ent_type_ if token.ent_type_ else "O" for token in spacy_doc]
 
-    is_gpt_style = any("Ġ" in tok for tok in model_tokens)
+    s_idx = 0       # current spaCy token
+    consumed = 0    # characters of spacy_words[s_idx] already matched
+    _LOOKAHEAD = 3  # resync window on mismatch (spaCy tokens)
 
-    spacy_idx = 0
+    def _skip_exhausted(idx, cons):
+        """Advance past fully-consumed or empty spaCy tokens."""
+        while idx < len(spacy_words) and cons >= len(spacy_words[idx]):
+            idx += 1
+            cons = 0
+        return idx, cons
 
     for raw_token in model_tokens:
         if raw_token in _SPECIAL_TOKENS:
@@ -182,49 +203,57 @@ def align_spacy_to_bert_tokens(model_tokens, spacy_doc):
             ner_tags.append("O")
             continue
 
-        # Determine continuation vs new word per tokenizer convention, and
-        # strip the marker characters before matching against spaCy text.
-        if is_gpt_style:
-            is_continuation = "Ġ" not in raw_token and "Ċ" not in raw_token \
-                and len(pos_tags) > 0
-            clean_token = raw_token.replace("Ġ", "").replace("Ċ", "").lower()
-        else:
-            is_continuation = raw_token.startswith("##")
-            clean_token = raw_token.replace("##", "").lower()
-
-        if is_continuation:
-            # Continuation of previous word - inherit its tags
-            if pos_tags:
-                pos_tags.append(pos_tags[-1])
-                ner_tags.append(ner_tags[-1])
-            else:
-                pos_tags.append("X")
-                ner_tags.append("O")
-            continue
-
-        if not clean_token:
+        clean = (raw_token.replace("Ġ", "").replace("Ċ", "")
+                 .replace("##", "").lower())
+        if not clean:
             # Pure marker token (e.g. a bare newline)
             pos_tags.append("X")
             ner_tags.append("O")
             continue
 
-        # New word - find the corresponding spaCy token
-        if spacy_idx < len(spacy_words):
-            if (spacy_words[spacy_idx].startswith(clean_token)
-                    or clean_token.startswith(spacy_words[spacy_idx])):
-                pos_tags.append(spacy_pos[spacy_idx])
-                ner_tags.append(spacy_ner[spacy_idx])
-                if clean_token == spacy_words[spacy_idx]:
-                    spacy_idx += 1
-            else:
-                spacy_idx += 1
-                if spacy_idx < len(spacy_words):
-                    pos_tags.append(spacy_pos[spacy_idx])
-                    ner_tags.append(spacy_ner[spacy_idx])
-                else:
-                    pos_tags.append("X")
-                    ner_tags.append("O")
+        s_idx, consumed = _skip_exhausted(s_idx, consumed)
+
+        matched = None  # (spacy index, new s_idx, new consumed)
+        scan, sc_cons = s_idx, consumed
+        for probe in range(_LOOKAHEAD + 1):
+            scan, sc_cons = _skip_exhausted(scan, sc_cons)
+            if scan >= len(spacy_words):
+                break
+            rem = spacy_words[scan][sc_cons:]
+            if rem.startswith(clean):
+                # Subword sits inside the current spaCy word.
+                matched = (scan, scan, sc_cons + len(clean))
+                break
+            if clean.startswith(rem):
+                # Subword spans one or more whole spaCy tokens
+                # ("cannot" vs "can"+"not"); consume across them.
+                need = clean
+                c_scan, c_cons, ok = scan, sc_cons, True
+                while need:
+                    c_scan, c_cons = _skip_exhausted(c_scan, c_cons)
+                    if c_scan >= len(spacy_words):
+                        ok = False
+                        break
+                    piece = spacy_words[c_scan][c_cons:]
+                    take = min(len(piece), len(need))
+                    if need[:take] != piece[:take]:
+                        ok = False
+                        break
+                    need = need[take:]
+                    c_cons += take
+                if ok:
+                    matched = (scan, c_scan, c_cons)
+                    break
+            # Mismatch at this spaCy token — resync one token ahead.
+            scan += 1
+            sc_cons = 0
+
+        if matched is not None:
+            tag_idx, s_idx, consumed = matched
+            pos_tags.append(spacy_pos[tag_idx])
+            ner_tags.append(spacy_ner[tag_idx])
         else:
+            # Unresolvable (unicode artefact etc.) — degrade THIS token only.
             pos_tags.append("X")
             ner_tags.append("O")
 
@@ -290,12 +319,10 @@ def compute_head_metrics(attention_matrix, tokens, pos_tags, ner_tags, is_gpt_st
     else:
         self_att = float(diag.mean())
 
-    # 3. Long-range attention - distance >= 5
-    long_range_mask = np.zeros((seq_len, seq_len), dtype=bool)
-    for i in range(seq_len):
-        for j in range(seq_len):
-            if abs(i - j) >= 5:
-                long_range_mask[i, j] = True
+    # 3. Long-range attention - distance >= 5 (vectorised; the previous
+    #    double Python loop was O(n^2) per head, i.e. 144x per sentence)
+    idx = np.arange(seq_len)
+    long_range_mask = np.abs(idx[:, None] - idx[None, :]) >= 5
 
     if long_range_mask.any():
         long_range_att = float(attention_matrix[long_range_mask].mean())

@@ -283,18 +283,73 @@ _POS_DISAMBIGUATION: Dict[str, Dict[str, Tuple[str, Category]]] = {
 }
 
 
+# ── Polysemous terms: only swap in person-referential contexts ────────
+# Colour / size / wealth / weight adjectives double as ordinary descriptors:
+# "a large dataset", "a white shirt", "poor performance", "a heavy box".
+# Swapping those produces invalid counterfactuals — the pair no longer
+# differs only in the demographic attribute, which is the whole premise of
+# minimal-pair analysis (Nangia et al., 2020). For the terms below we
+# require evidence that the mention refers to people: the token is a
+# NORP/PERSON entity, a noun used nominally ("the poor"), or an adjective
+# whose syntactic head is a person-denoting noun.
+_POLYSEMOUS_TERMS = frozenset({
+    "black", "blacks", "white", "whites", "colored", "native",
+    "short", "shortest", "tall", "tallest", "small", "smallest", "large",
+    "heavy", "light", "fat", "thin", "slim", "skinny", "fit", "buff",
+    "poor", "rich", "straight", "young", "younger", "youngest",
+    "old", "older", "oldest", "educated", "uneducated",
+    "beautiful", "handsome", "ugly", "blonde", "brunette",
+    "adult", "adults", "child", "children", "youth", "indian", "indians",
+})
+
+# Lemmas of head nouns that mark an adjective as person-referential.
+_PERSON_HEAD_LEMMAS = frozenset({
+    "person", "people", "man", "woman", "men", "women", "guy", "girl",
+    "boy", "child", "children", "kid", "adult", "teenager", "senior",
+    "individual", "citizen", "immigrant", "refugee", "worker", "employee",
+    "student", "teacher", "doctor", "nurse", "patient", "customer",
+    "neighbor", "neighbour", "family", "community", "population", "folk",
+    "lady", "gentleman", "male", "female", "resident", "voter", "parent",
+    "mother", "father", "friend", "colleague", "americans", "american",
+})
+
+
+def _is_person_referential(tok) -> bool:
+    """True when a spaCy token plausibly refers to people (not an object)."""
+    if tok.ent_type_ in ("PERSON", "NORP"):
+        return True
+    if tok.pos_ in ("NOUN", "PROPN"):
+        # Nominal use ("the poor", "young adults", "the elderly")
+        return True
+    if tok.pos_ == "ADJ":
+        head = tok.head
+        if head is not None and head is not tok:
+            if head.ent_type_ in ("PERSON", "NORP"):
+                return True
+            if head.lemma_.lower() in _PERSON_HEAD_LEMMAS:
+                return True
+    return False
+
+
+def _spacy_doc_for(text: str):
+    """Parse *text* with the shared spaCy model; None when unavailable."""
+    try:
+        from ..head_specialization import get_spacy_model
+        return get_spacy_model()(text)
+    except Exception:
+        return None
+
+
 def _pos_tags_for(text: str) -> Dict[int, str]:
     """Return ``{char_offset: PTB tag}`` for *text* via the shared spaCy model.
 
     Returns an empty dict when spaCy (or its model) is unavailable so the
     caller silently falls back to the lexical first-pair behaviour.
     """
-    try:
-        from ..head_specialization import get_spacy_model
-        doc = get_spacy_model()(text)
-        return {tok.idx: tok.tag_ for tok in doc}
-    except Exception:
+    doc = _spacy_doc_for(text)
+    if doc is None:
         return {}
+    return {tok.idx: tok.tag_ for tok in doc}
 
 
 # ── Public API ────────────────────────────────────────────────────────
@@ -323,7 +378,17 @@ def find_swappable_terms(text: str) -> List[Dict]:
     """
     results: List[Dict] = []
     occupied: List[Tuple[int, int]] = []  # spans already matched
-    pos_by_offset: Optional[Dict[int, str]] = None  # lazy: only tag when needed
+    doc = None          # lazy spaCy parse: only when needed
+    doc_loaded = False
+    tok_by_offset: Dict[int, object] = {}
+
+    def _ensure_doc():
+        nonlocal doc, doc_loaded, tok_by_offset
+        if not doc_loaded:
+            doc = _spacy_doc_for(text)
+            doc_loaded = True
+            if doc is not None:
+                tok_by_offset = {tok.idx: tok for tok in doc}
 
     for key in _SORTED_KEYS:
         pattern = re.compile(r"\b" + re.escape(key) + r"\b", re.IGNORECASE)
@@ -332,13 +397,25 @@ def find_swappable_terms(text: str) -> List[Dict]:
             # Skip if this span overlaps with an already-matched term.
             if any(s <= start < e or s < end <= e for s, e in occupied):
                 continue
+
+            # Polysemous terms ("black", "poor", "large"…): only swap when
+            # the mention is person-referential — otherwise the pair is not
+            # a minimal demographic pair ("a large dataset" ≠ demographic).
+            # When spaCy is unavailable the term is SKIPPED (a missed swap
+            # is recoverable; a corrupted counterfactual is not).
+            if key in _POLYSEMOUS_TERMS:
+                _ensure_doc()
+                tok = tok_by_offset.get(start)
+                if tok is None or not _is_person_referential(tok):
+                    continue
+
             targets = _SWAP_MAP[key]
             swap_to, category = targets[0]  # primary swap target
             ambiguous = _POS_DISAMBIGUATION.get(key)
             if ambiguous:
-                if pos_by_offset is None:
-                    pos_by_offset = _pos_tags_for(text)
-                tag = pos_by_offset.get(start)
+                _ensure_doc()
+                tok = tok_by_offset.get(start)
+                tag = tok.tag_ if tok is not None else None
                 if tag in ambiguous:
                     swap_to, category = ambiguous[tag]
             results.append({
@@ -386,6 +463,10 @@ def generate_counterfactual(
         original_fragment = text[swap["start"]:swap["end"]]
         replacement = _match_case(original_fragment, swap["swap_to"])
         text = text[:swap["start"]] + replacement + text[swap["end"]:]
+        # Fix ONLY the article immediately preceding this replacement.
+        # A global pass would rewrite articles the swap never touched
+        # (and any heuristic will get some of those wrong).
+        text = _fix_article_before(text, swap["start"])
         applied.append({
             "original": original_fragment,
             "replacement": replacement,
@@ -394,7 +475,6 @@ def generate_counterfactual(
             "end": swap["end"],
         })
 
-    text = _fix_articles(text)
     applied.sort(key=lambda d: d["start"])
     return text, applied
 
@@ -419,26 +499,57 @@ _A_EXCEPTIONS = {"european", "united", "university", "uniform", "unique",
                  "universal", "unicorn", "union", "usage", "usual", "one",
                  "unitarian", "uneducated"}
 
+# Words where "an" is correct despite starting with a consonant letter
+# (silent h → the pronunciation starts with a vowel sound).
+_AN_EXCEPTIONS = {"hour", "hourly", "honest", "honestly", "honor", "honour",
+                  "honorable", "honourable", "heir", "heiress", "herb"}
+
 _VOWELS = set("aeiouAEIOU")
 
 
+def _correct_article(word: str) -> str:
+    """Return "a" or "an" for *word* using letter + silent-h heuristics."""
+    word_lower = word.lower()
+    starts_vowel_sound = (
+        (word[0] in _VOWELS and word_lower not in _A_EXCEPTIONS)
+        or word_lower in _AN_EXCEPTIONS
+    )
+    return "an" if starts_vowel_sound else "a"
+
+
+def _fix_article_before(text: str, word_start: int) -> str:
+    """Fix a/an agreement for the article immediately preceding the word
+    at *word_start* (a replacement site). Leaves the rest of the text
+    untouched — the swap cannot have broken articles anywhere else."""
+    m = re.search(r"\b(an?|An?)(\s+)$", text[:word_start])
+    if not m:
+        return text
+    word_m = re.match(r"\w+", text[word_start:])
+    if not word_m:
+        return text
+
+    article = m.group(1)
+    correct = _correct_article(word_m.group())
+    if article[0].isupper():
+        correct = correct.title()
+    if correct == article:
+        return text
+    return text[:m.start(1)] + correct + text[m.end(1):]
+
+
 def _fix_articles(text: str) -> str:
-    """Fix a/an article agreement after a demographic swap."""
+    """Fix a/an agreement for EVERY article in *text*.
+
+    Kept for backward compatibility only — prefer the targeted
+    :func:`_fix_article_before`, which cannot corrupt articles the
+    counterfactual swap never touched."""
 
     def _replace(m: re.Match) -> str:
         article = m.group(1)          # "a" or "an" (original)
         space = m.group(2)            # whitespace between article and word
         word = m.group(3)             # the following word
 
-        word_lower = word.lower()
-        starts_vowel_sound = (
-            word[0] in _VOWELS and word_lower not in _A_EXCEPTIONS
-        )
-
-        if starts_vowel_sound:
-            correct = "an"
-        else:
-            correct = "a"
+        correct = _correct_article(word)
 
         # Preserve original capitalisation of article.
         if article[0].isupper():

@@ -1629,6 +1629,23 @@ def server(input, output, session):
             _logger.debug("No text input, returning")
             return
 
+        # Every model in the app is English-only (BERT/GPT-2 pre-training,
+        # GUS-Net fine-tuning, spaCy en_core_web_sm). Warn — don't block —
+        # when the input doesn't look like English, because the outputs
+        # would otherwise be rendered with full confidence and no caveat.
+        try:
+            from ..utils import looks_english
+            if not looks_english(text):
+                ui.notification_show(
+                    "This input does not look like English. All models here "
+                    "(BERT/GPT-2, GUS-Net, spaCy POS/NER) are English-only: "
+                    "attention metrics, head specialization and bias "
+                    "detections on non-English text are unreliable.",
+                    type="warning", duration=12,
+                )
+        except Exception:
+            _logger.debug("Language check failed", exc_info=True)
+
         # Update History
         current_history = input_history.get()
         # Only add if unique and non-empty
@@ -3352,7 +3369,11 @@ def server(input, output, session):
         if use_word_level:
             tokenization_legend = ui.div(
                 {"class": "tokenization-legend", "style": "font-size: 10px; color: #6b7280; margin-bottom: 8px; font-style: italic; background: #f3f4f6; padding: 4px 8px; border-radius: 4px; display: inline-block;"},
-                "Tokenization: Word-Level (Aggregated)"
+                "Tokenization: Word-Level (Aggregated). Rows are re-normalised "
+                "after excluding special tokens: [CLS]/[SEP] often absorb a "
+                "large share of raw attention (Clark et al., 2019), so "
+                "word-to-word weights here look stronger than in the raw "
+                "sub-token view."
             )
 
         # --- PANEL DEFINITIONS ---

@@ -136,10 +136,13 @@ def csv_ablation(results):
 
 def csv_ig_correlation(bundle):
     results = bundle.correlations if isinstance(bundle, IGAnalysisBundle) else bundle
-    lines = ["rank,layer,head,spearman_rho,spearman_pvalue,bar_original"]
+    target = getattr(bundle, "target", "") if isinstance(bundle, IGAnalysisBundle) else ""
+    lines = ["rank,layer,head,spearman_rho,spearman_pvalue,spearman_qvalue_fdr,bar_original,attribution_target"]
     sorted_results = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)
     for i, r in enumerate(sorted_results, 1):
-        lines.append(f"{i},{r.layer},{r.head},{r.spearman_rho:.6f},{r.spearman_pvalue:.6f},{r.bar_original:.4f}")
+        q = getattr(r, "spearman_qvalue", None)
+        q_str = f"{q:.6f}" if q is not None else ""
+        lines.append(f"{i},{r.layer},{r.head},{r.spearman_rho:.6f},{r.spearman_pvalue:.6f},{q_str},{r.bar_original:.4f},{target}")
     return "\n".join(lines)
 
 

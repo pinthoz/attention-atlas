@@ -10,7 +10,24 @@ Uses Captum's LayerIntegratedGradients to compute per-token attributions
 at the word-embedding layer.  Baseline = PAD-token embeddings (semantic
 "no information" reference).
 
-Target scalar F = L2 norm of mean-pooled final hidden state.
+Target scalar F ("faithful to WHAT?")
+-------------------------------------
+Faithfulness is only defined relative to a prediction (Jain & Wallace
+2019; Jacovi & Goldberg 2020). Two targets are supported, and every
+method in this module (IG, perturbation, AttnLRP, Chefer-LRP) attributes
+the SAME one so the cross-method comparison stays like-with-like:
+
+- ``target_model`` given (a GUS-Net ``*ForTokenClassification`` model):
+  F = Σ_tokens Σ_{c ∈ bias labels} sigmoid(logit_c) — the model's total
+  detected-bias evidence. Attributions then answer "which input tokens
+  drive the bias detections?", which is the question the Faithfulness
+  Validation panel actually asks. This is the intended configuration for
+  the bias dashboard.
+- ``target_model=None``: legacy F = L2 norm of the mean-pooled final
+  hidden state of ``encoder_model``. This is a *geometric* quantity, not
+  a decision — kept for the offline calibration scripts whose thresholds
+  were derived with it. Bundles record which target was used in their
+  ``target`` field so the UI can label the result honestly.
 
 Faithfulness metric
 -------------------
@@ -21,6 +38,9 @@ For each head (l, h):
 
 High positive ρ → attention faithfully reflects gradient importance.
 Low / negative ρ → attention is not a reliable proxy for this head.
+Per-head p-values additionally carry Benjamini-Hochberg q-values
+(``spearman_qvalue``): with ~144 heads, ~7 raw p<0.05 hits are expected
+by chance alone, so raw significance counts are not reportable.
 """
 
 import torch
@@ -49,7 +69,12 @@ class IGCorrelationResult:
         Spearman rank correlation between attention-based and IG-based
         token importance.  Range [-1, 1].
     spearman_pvalue : float
-        Two-sided p-value for the Spearman test.
+        Two-sided RAW p-value for the Spearman test. NOT interpretable on
+        its own: one test runs per head (~144), so ~7 raw p<0.05 hits are
+        expected by chance. Use ``spearman_qvalue``.
+    spearman_qvalue : float
+        Benjamini-Hochberg adjusted p-value (FDR) across all heads of the
+        same run. This is the value significance claims must use.
     bar_original : float
         BAR value for this head (for cross-referencing with bias analysis).
     """
@@ -58,6 +83,7 @@ class IGCorrelationResult:
     spearman_rho: float
     spearman_pvalue: float
     bar_original: float
+    spearman_qvalue: float = 1.0
 
 
 @dataclass
@@ -104,6 +130,18 @@ class IGAnalysisBundle:
     token_attributions: np.ndarray
     tokens: List[str]
     topk_overlaps: Optional[List[TopKOverlapResult]] = None
+    # Relative completeness error of the IG integration:
+    # |Σ attributions − (F(x) − F(baseline))| / |F(x) − F(baseline)|.
+    # Values ≳ 0.05 mean the path integral has not converged and the
+    # attributions (hence all downstream correlations) are approximate —
+    # rerun with more steps. None for bundles computed before this field.
+    convergence_delta: Optional[float] = None
+    # Which scalar the attributions explain: "gusnet-bias-logits" (the
+    # detected-bias evidence — the intended target for the faithfulness
+    # panel) or "pooled-norm" (legacy geometric fallback). Renderers must
+    # surface this: pooled-norm correlations do NOT validate the bias
+    # explanations.
+    target: str = "pooled-norm"
 
 
 @dataclass
@@ -140,6 +178,8 @@ class PerturbationAnalysisBundle:
     tokens: List[str]
     perturb_vs_ig_spearman: float
     perturb_vs_attn_spearman: List[tuple]
+    # Attribution target (see IGAnalysisBundle.target).
+    target: str = "pooled-norm"
 
 
 @dataclass
@@ -170,6 +210,8 @@ class LRPAnalysisBundle:
     # AttnLRP), so the panel can show both ρ(method, IG) and switch charts
     # between the two LRP variants. None when only one method was available.
     alt: Optional["LRPAnalysisBundle"] = None
+    # Attribution target (see IGAnalysisBundle.target).
+    target: str = "pooled-norm"
 
 
 def _get_embedding_layer(encoder_model, is_gpt2):
@@ -177,6 +219,53 @@ def _get_embedding_layer(encoder_model, is_gpt2):
     if is_gpt2:
         return encoder_model.wte
     return encoder_model.embeddings.word_embeddings
+
+
+# Shared GUS-Net label scheme: index 0 = O, 1..6 = B/I-STEREO, B/I-GEN,
+# B/I-UNFAIR (see gusnet_detector.CATEGORY_INDICES).
+_BIAS_LABEL_INDICES = (1, 2, 3, 4, 5, 6)
+
+
+def _bias_evidence_scalar(logits: torch.Tensor) -> torch.Tensor:
+    """Total detected-bias evidence: Σ_tokens Σ_{bias labels} sigmoid(logit).
+
+    Smooth and differentiable; grows when any bias label on any token gains
+    probability, so gradients point at the inputs that drive the GUS-Net
+    detections. Reduces over the last two dims → [batch] scalar.
+    """
+    idx = torch.tensor(_BIAS_LABEL_INDICES, device=logits.device)
+    return torch.sigmoid(logits.index_select(-1, idx)).sum(dim=(-1, -2))
+
+
+def _make_scalar_forward(encoder_model, is_gpt2, target_model=None):
+    """Build the attribution target: ``(forward_fn, embedding_layer, label)``.
+
+    ``forward_fn(input_ids, attention_mask) -> [batch] scalar`` and the
+    embedding layer belong to the SAME model, so LayerIntegratedGradients
+    integrates through the network that produces the target. See the module
+    docstring for the semantics of the two targets.
+    """
+    if target_model is not None:
+        def forward_fn(input_ids, attention_mask):
+            logits = target_model(
+                input_ids=input_ids, attention_mask=attention_mask
+            ).logits
+            # Mask padded/removed positions out of the evidence sum.
+            probs = torch.sigmoid(
+                logits.index_select(-1, torch.tensor(_BIAS_LABEL_INDICES,
+                                                     device=logits.device)))
+            return (probs * attention_mask.unsqueeze(-1)).sum(dim=(-1, -2))
+
+        return forward_fn, target_model.get_input_embeddings(), "gusnet-bias-logits"
+
+    def forward_fn(input_ids, attention_mask):
+        outputs = encoder_model(input_ids=input_ids, attention_mask=attention_mask)
+        hidden = outputs.last_hidden_state
+        mask_expanded = attention_mask.unsqueeze(-1).float()
+        pooled = (hidden * mask_expanded).sum(dim=1) / mask_expanded.sum(dim=1)
+        return pooled.norm(dim=-1)
+
+    return forward_fn, _get_embedding_layer(encoder_model, is_gpt2), "pooled-norm"
 
 
 def _baseline_token_id(tokenizer) -> int:
@@ -193,6 +282,20 @@ def _baseline_token_id(tokenizer) -> int:
     if eos is not None:
         return eos
     return 0
+
+
+def _bh_fdr(pvals) -> np.ndarray:
+    """Benjamini-Hochberg adjusted p-values (q-values)."""
+    p = np.asarray(pvals, dtype=float)
+    n = len(p)
+    if n == 0:
+        return p
+    order = np.argsort(p)
+    scaled = p[order] * n / (np.arange(n) + 1)
+    scaled = np.minimum.accumulate(scaled[::-1])[::-1]
+    out = np.empty(n)
+    out[order] = np.clip(scaled, 0.0, 1.0)
+    return out
 
 
 def _attention_token_importance(attn_matrix: np.ndarray) -> np.ndarray:
@@ -217,6 +320,7 @@ def compute_token_attributions(
     text: str,
     is_gpt2: bool,
     n_steps: int = 50,
+    target_model=None,
 ) -> np.ndarray:
     """Compute per-token Integrated Gradients attributions via Captum.
 
@@ -231,44 +335,61 @@ def compute_token_attributions(
     is_gpt2 : bool
     n_steps : int
         Number of interpolation steps (higher = more accurate, slower).
+    target_model : optional GUS-Net ``*ForTokenClassification`` model
+        When given, attributions target the detected-bias evidence scalar
+        instead of the legacy pooled-norm (see module docstring).
 
     Returns
     -------
-    np.ndarray of shape [seq_len]
-        Absolute IG attribution per token.
+    (np.ndarray of shape [seq_len], float)
+        Absolute IG attribution per token, and the RELATIVE completeness
+        error |Σ attr − (F(x) − F(baseline))| / |F(x) − F(baseline)|.
+        Sundararajan et al. (2017) guarantee Σ attr = F(x) − F(baseline)
+        only in the limit of infinite steps; without checking the residual
+        there is no evidence the integration converged.
     """
-    device = next(encoder_model.parameters()).device
+    ref_model = target_model if target_model is not None else encoder_model
+    device = next(ref_model.parameters()).device
     inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
     input_ids = inputs["input_ids"].to(device)
     attention_mask = inputs["attention_mask"].to(device)
 
-    # Forward function: input_ids → scalar (L2 norm of mean-pooled hidden state)
-    def forward_fn(input_ids, attention_mask):
-        outputs = encoder_model(input_ids=input_ids, attention_mask=attention_mask)
-        hidden = outputs.last_hidden_state
-        mask_expanded = attention_mask.unsqueeze(-1).float()
-        pooled = (hidden * mask_expanded).sum(dim=1) / mask_expanded.sum(dim=1)
-        return pooled.norm(dim=-1)
-
-    embedding_layer = _get_embedding_layer(encoder_model, is_gpt2)
+    forward_fn, embedding_layer, _target = _make_scalar_forward(
+        encoder_model, is_gpt2, target_model
+    )
     lig = LayerIntegratedGradients(forward_fn, embedding_layer)
 
     # Baseline: PAD (BERT) / <|endoftext|> (GPT-2) — see _baseline_token_id
     baseline_ids = torch.full_like(input_ids, _baseline_token_id(tokenizer))
 
     # Captum handles gradient enablement internally
-    attributions = lig.attribute(
+    attributions, delta = lig.attribute(
         inputs=input_ids,
         baselines=baseline_ids,
         additional_forward_args=(attention_mask,),
         n_steps=n_steps,
+        return_convergence_delta=True,
     )
     # attributions: [1, seq_len, hidden_dim]
+
+    # Relative completeness error (delta is absolute; scale by the span).
+    with torch.no_grad():
+        f_x = forward_fn(input_ids, attention_mask)
+        f_b = forward_fn(baseline_ids, attention_mask)
+    span = float((f_x - f_b).abs().sum().item())
+    rel_delta = float(delta.abs().sum().item()) / (span + 1e-12)
+    if rel_delta > 0.05:
+        import logging
+        logging.getLogger(__name__).warning(
+            "IG completeness residual %.1f%% (> 5%%) with n_steps=%d — "
+            "attributions are approximate; consider more steps.",
+            rel_delta * 100, n_steps,
+        )
 
     # Sum over embedding dimension → per-token attribution, take absolute value
     token_attrs = attributions.squeeze(0).sum(dim=-1).abs()
 
-    return token_attrs.detach().cpu().numpy()
+    return token_attrs.detach().cpu().numpy(), rel_delta
 
 
 def compute_ig_attention_correlation(
@@ -326,6 +447,13 @@ def compute_ig_attention_correlation(
                 bar_original=bar_lookup.get((layer_idx, head_idx), 0.0),
             ))
 
+    # Multiple-comparison correction: one Spearman test per head means the
+    # raw p-values cannot back any "N heads significant" claim (~5% of
+    # heads clear p<0.05 by chance). Attach BH-FDR q-values.
+    q_vals = _bh_fdr([r.spearman_pvalue for r in results])
+    for r, q in zip(results, q_vals):
+        r.spearman_qvalue = float(q)
+
     results.sort(key=lambda r: abs(r.spearman_rho), reverse=True)
     return results
 
@@ -338,6 +466,7 @@ def batch_compute_ig_correlation(
     attention_metrics: list,
     is_gpt2: bool,
     n_steps: int = 30,
+    target_model=None,
 ) -> IGAnalysisBundle:
     """Full pipeline: compute IG attributions, then correlate with attention.
 
@@ -359,8 +488,9 @@ def batch_compute_ig_correlation(
         Correlations sorted by |ρ| descending, plus raw token attributions
         and tokenized text.
     """
-    token_attributions = compute_token_attributions(
+    token_attributions, convergence_delta = compute_token_attributions(
         encoder_model, tokenizer, text, is_gpt2, n_steps=n_steps,
+        target_model=target_model,
     )
     correlations = compute_ig_attention_correlation(
         attentions, token_attributions, attention_metrics,
@@ -377,6 +507,8 @@ def batch_compute_ig_correlation(
         token_attributions=token_attributions,
         tokens=tokens,
         topk_overlaps=topk_overlaps,
+        convergence_delta=convergence_delta,
+        target="gusnet-bias-logits" if target_model is not None else "pooled-norm",
     )
 
 
@@ -388,6 +520,13 @@ def _rbo(ranked_a: list, ranked_b: list, p: float = 0.9) -> float:
 
     Computes a weighted overlap of two ranked lists, giving more weight
     to agreement at the top of the lists.
+
+    NOTE: this is the TRUNCATED prefix sum (Webber et al.'s RBO_min for
+    the observed depth k), without the paper's extrapolation of the
+    unseen tail (RBO_ext). With k=5 and p=0.9 the geometric weights
+    beyond depth 5 hold ~59% of the total mass, so values here are a
+    LOWER BOUND on the full RBO and should not be compared against
+    RBO_ext numbers from other implementations.
 
     Parameters
     ----------
@@ -494,25 +633,36 @@ def compute_token_perturbation(
     tokenizer,
     text: str,
     is_gpt2: bool,
+    target_model=None,
 ) -> Tuple[List[TokenPerturbationResult], List[str]]:
-    """Compute token importance by zeroing each embedding individually.
+    """Compute token importance by REMOVING each token individually.
 
-    For each token position, replaces its embedding with zeros and measures
-    how much the model's output representation changes (1 - cosine similarity).
+    For each position i, the token is removed by zeroing its attention-mask
+    entry: no other token can attend to it, and it is excluded from the
+    target computation. This is a true leave-one-out. The previous
+    implementation zeroed the token's *embedding* while keeping
+    ``attention_mask=1`` — the model still attended to a "ghost" position
+    carrying its positional embedding, so the measurement mixed token
+    removal with an out-of-distribution zero-vector input.
 
-    Parameters
-    ----------
-    encoder_model : BertModel or GPT2Model
-    tokenizer : PreTrainedTokenizer
-    text : str
-    is_gpt2 : bool
+    Importance:
+    - ``target_model`` given (GUS-Net): |F(x) − F(x∖i)| where F is the
+      detected-bias evidence scalar — the same target IG and LRP attribute,
+      so the cross-method Spearman comparisons are like-with-like.
+    - otherwise (legacy): 1 − cosine_similarity(original_pooled,
+      perturbed_pooled) on ``encoder_model``'s final hidden states.
+
+    Note: this runs one forward pass per token, hence the tighter
+    ``max_length=128`` (vs. 512 for the single-pass IG). For longer texts
+    the two methods are compared on their shared 128-token prefix.
 
     Returns
     -------
     (list[TokenPerturbationResult], list[str])
         Per-token importance results and token strings.
     """
-    device = next(encoder_model.parameters()).device
+    ref_model = target_model if target_model is not None else encoder_model
+    device = next(ref_model.parameters()).device
     inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=128)
     input_ids = inputs["input_ids"].to(device)
     attention_mask = inputs["attention_mask"].to(device)
@@ -520,29 +670,55 @@ def compute_token_perturbation(
     tokens = tokenizer.convert_ids_to_tokens(input_ids[0].tolist())
     seq_len = input_ids.shape[1]
 
-    embedding_layer = _get_embedding_layer(encoder_model, is_gpt2)
+    forward_fn, _emb, _target = _make_scalar_forward(
+        encoder_model, is_gpt2, target_model
+    )
 
     with torch.no_grad():
-        # Get original output
-        orig_embeds = embedding_layer(input_ids)
-        orig_output = encoder_model(inputs_embeds=orig_embeds, attention_mask=attention_mask)
+        results = []
+
+        if target_model is not None:
+            # Bias-evidence target: importance = |ΔF| under leave-one-out.
+            f_orig = float(forward_fn(input_ids, attention_mask).item())
+            for i in range(seq_len):
+                pert_mask = attention_mask.clone()
+                pert_mask[0, i] = 0
+                if int(pert_mask.sum().item()) == 0:
+                    results.append(TokenPerturbationResult(
+                        token_index=i, token=tokens[i], importance=0.0))
+                    continue
+                f_pert = float(forward_fn(input_ids, pert_mask).item())
+                results.append(TokenPerturbationResult(
+                    token_index=i, token=tokens[i],
+                    importance=abs(f_orig - f_pert)))
+            return results, tokens
+
+        # Legacy pooled-representation target.
+        orig_output = encoder_model(input_ids=input_ids, attention_mask=attention_mask)
         orig_hidden = orig_output.last_hidden_state
         mask_expanded = attention_mask.unsqueeze(-1).float()
         orig_pooled = (orig_hidden * mask_expanded).sum(dim=1) / mask_expanded.sum(dim=1)
         orig_pooled = orig_pooled.squeeze(0)  # [hidden_dim]
 
-        results = []
         cos = torch.nn.CosineSimilarity(dim=0)
 
         for i in range(seq_len):
-            perturbed_embeds = orig_embeds.clone()
-            perturbed_embeds[0, i, :] = 0.0  # Zero out token i
+            pert_mask = attention_mask.clone()
+            pert_mask[0, i] = 0  # Remove token i from attention AND pooling
+
+            if int(pert_mask.sum().item()) == 0:
+                # Single-token input: removal leaves nothing to pool.
+                results.append(TokenPerturbationResult(
+                    token_index=i, token=tokens[i], importance=0.0,
+                ))
+                continue
 
             perturbed_output = encoder_model(
-                inputs_embeds=perturbed_embeds, attention_mask=attention_mask
+                input_ids=input_ids, attention_mask=pert_mask
             )
             perturbed_hidden = perturbed_output.last_hidden_state
-            perturbed_pooled = (perturbed_hidden * mask_expanded).sum(dim=1) / mask_expanded.sum(dim=1)
+            pert_expanded = pert_mask.unsqueeze(-1).float()
+            perturbed_pooled = (perturbed_hidden * pert_expanded).sum(dim=1) / pert_expanded.sum(dim=1)
             perturbed_pooled = perturbed_pooled.squeeze(0)
 
             similarity = cos(orig_pooled, perturbed_pooled).item()
@@ -620,6 +796,7 @@ def batch_compute_perturbation(
     is_gpt2: bool,
     ig_attrs: np.ndarray,
     attentions: list,
+    target_model=None,
 ) -> PerturbationAnalysisBundle:
     """Full perturbation analysis pipeline.
 
@@ -639,7 +816,7 @@ def batch_compute_perturbation(
     PerturbationAnalysisBundle
     """
     token_results, tokens = compute_token_perturbation(
-        encoder_model, tokenizer, text, is_gpt2,
+        encoder_model, tokenizer, text, is_gpt2, target_model=target_model,
     )
     perturb_vs_ig, perturb_vs_attn = compute_perturbation_correlations(
         token_results, ig_attrs, attentions,
@@ -649,13 +826,15 @@ def batch_compute_perturbation(
         tokens=tokens,
         perturb_vs_ig_spearman=perturb_vs_ig,
         perturb_vs_attn_spearman=perturb_vs_attn,
+        target="gusnet-bias-logits" if target_model is not None else "pooled-norm",
     )
 
 
 # ── LRP (Layer-wise Relevance Propagation) ────────────────────────────────
 
 
-def _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2):
+def _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2,
+                          target_model=None):
     """AttnLRP relevance (Achtibat et al., 2024) via the ``lxt`` library.
 
     AttnLRP is a conservation-preserving layer-wise relevance propagation with
@@ -688,22 +867,31 @@ def _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2):
 
     targets = list(patch_map.keys())
     snapshot = {t: dict(vars(t)) for t in targets}  # pristine class/module state
+    run_model = target_model if target_model is not None else encoder_model
     try:
-        device = next(encoder_model.parameters()).device
+        device = next(run_model.parameters()).device
         inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=128)
         input_ids = inputs["input_ids"].to(device)
         attention_mask = inputs["attention_mask"].to(device)
         tokens = tokenizer.convert_ids_to_tokens(input_ids[0].tolist())
 
-        encoder_model.zero_grad(set_to_none=True)
+        run_model.zero_grad(set_to_none=True)
         with torch.enable_grad():
             monkey_patch(_mod, patch_map, verbose=False)
-            emb = encoder_model.get_input_embeddings()(input_ids).detach().requires_grad_(True)
-            outputs = encoder_model(inputs_embeds=emb, attention_mask=attention_mask)
-            hidden = outputs.last_hidden_state
-            m = attention_mask.unsqueeze(-1).float()
-            pooled = (hidden * m).sum(dim=1) / m.sum(dim=1).clamp(min=1e-9)
-            pooled.norm(dim=-1).sum().backward()
+            emb = run_model.get_input_embeddings()(input_ids).detach().requires_grad_(True)
+            outputs = run_model(inputs_embeds=emb, attention_mask=attention_mask)
+            if target_model is not None:
+                # Same detected-bias evidence scalar that IG and the
+                # perturbation attribute (see module docstring).
+                logits = outputs.logits
+                idx = torch.tensor(_BIAS_LABEL_INDICES, device=logits.device)
+                probs = torch.sigmoid(logits.index_select(-1, idx))
+                (probs * attention_mask.unsqueeze(-1)).sum().backward()
+            else:
+                hidden = outputs.last_hidden_state
+                m = attention_mask.unsqueeze(-1).float()
+                pooled = (hidden * m).sum(dim=1) / m.sum(dim=1).clamp(min=1e-9)
+                pooled.norm(dim=-1).sum().backward()
 
         rel = (emb.grad * emb).sum(dim=-1)[0].abs().detach().cpu().numpy()
         if rel.size == 0 or not np.isfinite(rel).all() or float(rel.std()) < 1e-12:
@@ -725,7 +913,7 @@ def _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2):
                     setattr(t, k, v)
                 except Exception:
                     pass
-        encoder_model.zero_grad(set_to_none=True)
+        run_model.zero_grad(set_to_none=True)
 
 
 def compute_lrp_attributions(
@@ -734,6 +922,7 @@ def compute_lrp_attributions(
     text: str,
     is_gpt2: bool,
     force: Optional[str] = None,
+    target_model=None,
 ) -> Optional[Tuple[np.ndarray, List[str], str]]:
     """Compute per-token transformer-LRP attributions for the IG cross-check.
 
@@ -752,12 +941,15 @@ def compute_lrp_attributions(
        methods fail. The caller MUST surface this, because the agreement is
        then IG-vs-IG and proves nothing.
 
-    All three attribute the same masked-mean-pooled hidden-state norm that IG
-    explains, so the cross-validation compares like with like.
+    All three attribute the SAME scalar that IG explains — the GUS-Net
+    detected-bias evidence when ``target_model`` is given, otherwise the
+    legacy masked-mean-pooled hidden-state norm — so the cross-validation
+    compares like with like (see module docstring).
 
     Returns ``(abs attribution per token [seq_len], token strings, method)``.
     """
-    device = next(encoder_model.parameters()).device
+    run_model = target_model if target_model is not None else encoder_model
+    device = next(run_model.parameters()).device
     inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=128)
     input_ids = inputs["input_ids"].to(device)
     attention_mask = inputs["attention_mask"].to(device)
@@ -765,7 +957,8 @@ def compute_lrp_attributions(
 
     # 1) AttnLRP (most rigorous) when lxt is available, unless Chefer is forced.
     if force != "chefer":
-        _attn = _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2)
+        _attn = _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2,
+                                      target_model=target_model)
         if _attn is not None:
             return _attn[0], _attn[1], "AttnLRP"
         if force == "attnlrp":
@@ -773,9 +966,9 @@ def compute_lrp_attributions(
 
     # 2) Chefer transformer-LRP (always available).
     try:
-        encoder_model.zero_grad(set_to_none=True)
+        run_model.zero_grad(set_to_none=True)
         with torch.enable_grad():
-            outputs = encoder_model(
+            outputs = run_model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 output_attentions=True,
@@ -785,10 +978,16 @@ def compute_lrp_attributions(
                 raise RuntimeError("model returned no attentions")
             for a in attns:
                 a.retain_grad()
-            hidden = outputs.last_hidden_state
-            m = attention_mask.unsqueeze(-1).float()
-            pooled = (hidden * m).sum(dim=1) / m.sum(dim=1).clamp(min=1e-9)
-            target = pooled.norm(dim=-1).sum()
+            if target_model is not None:
+                logits = outputs.logits
+                idx = torch.tensor(_BIAS_LABEL_INDICES, device=logits.device)
+                probs = torch.sigmoid(logits.index_select(-1, idx))
+                target = (probs * attention_mask.unsqueeze(-1)).sum()
+            else:
+                hidden = outputs.last_hidden_state
+                m = attention_mask.unsqueeze(-1).float()
+                pooled = (hidden * m).sum(dim=1) / m.sum(dim=1).clamp(min=1e-9)
+                target = pooled.norm(dim=-1).sum()
             target.backward()
 
         N = input_ids.shape[1]
@@ -805,18 +1004,26 @@ def compute_lrp_attributions(
         if used == 0:
             raise RuntimeError("no attention gradients captured")
 
-        # Per-token relevance: mean relevance flowing into each key token.
-        rel = R.mean(dim=0).abs().detach().cpu().numpy()
-        encoder_model.zero_grad(set_to_none=True)
+        # Per-token relevance: read the rollout row of the summary position,
+        # as in Chefer et al. (2021) — the paper propagates relevance to the
+        # [CLS] row, not a mean over all query rows (which dilutes the
+        # class-token signal with every other token's rollout). For BERT the
+        # summary position is [CLS] (index 0); for GPT-2 — a causal decoder,
+        # an adaptation beyond the paper's encoder/ViT scope — use the LAST
+        # token, whose row is the only one that aggregates the full context.
+        target_row = -1 if is_gpt2 else 0
+        rel = R[target_row].abs().detach().cpu().numpy()
+        run_model.zero_grad(set_to_none=True)
         if rel.size == 0 or not np.isfinite(rel).all() or float(rel.std()) < 1e-12:
             raise RuntimeError("degenerate relevance")
         return rel, tokens, "Chefer-LRP"
     except Exception:
         # Honest fallback: reuse IG. The caller MUST surface this — the
         # "LRP vs IG" agreement is then IG-vs-IG and proves nothing.
-        encoder_model.zero_grad(set_to_none=True)
-        token_attrs = compute_token_attributions(
+        run_model.zero_grad(set_to_none=True)
+        token_attrs, _ = compute_token_attributions(
             encoder_model, tokenizer, text, is_gpt2, n_steps=20,
+            target_model=target_model,
         )
         return token_attrs, tokens, "IG-fallback"
 
@@ -829,6 +1036,7 @@ def batch_compute_lrp(
     ig_attrs: np.ndarray,
     attentions: list,
     attention_metrics: list,
+    target_model=None,
 ) -> LRPAnalysisBundle:
     """Full LRP analysis pipeline.
 
@@ -883,14 +1091,17 @@ def batch_compute_lrp(
             lrp_vs_ig_spearman=float(lrp_vs_ig),
             correlations=correlations,
             method=method,
+            target="gusnet-bias-logits" if target_model is not None else "pooled-norm",
         )
 
     # Compute AttnLRP (preferred) and Chefer separately, so the panel can show
     # both ρ(method, IG) and let the user check whether the two LRP variants
     # agree with IG. AttnLRP returns None when lxt is unavailable; Chefer always
     # produces a result (or the IG fallback as the last resort).
-    attn = compute_lrp_attributions(encoder_model, tokenizer, text, is_gpt2, force="attnlrp")
-    chef = compute_lrp_attributions(encoder_model, tokenizer, text, is_gpt2, force="chefer")
+    attn = compute_lrp_attributions(encoder_model, tokenizer, text, is_gpt2,
+                                    force="attnlrp", target_model=target_model)
+    chef = compute_lrp_attributions(encoder_model, tokenizer, text, is_gpt2,
+                                    force="chefer", target_model=target_model)
 
     bundles = []
     if attn is not None:
@@ -899,7 +1110,8 @@ def batch_compute_lrp(
         bundles.append(_build(chef[0], chef[1], chef[2]))
 
     if not bundles:
-        d = compute_lrp_attributions(encoder_model, tokenizer, text, is_gpt2)
+        d = compute_lrp_attributions(encoder_model, tokenizer, text, is_gpt2,
+                                     target_model=target_model)
         return _build(d[0], d[1], d[2])
 
     primary = bundles[0]

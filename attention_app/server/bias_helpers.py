@@ -418,8 +418,14 @@ def _get_bias_model_label(res):
     return cfg.get("display_name", key)
 
 
-def _process_raw_bias_result(raw_res, thresholds, use_optimized=False):
-    """Apply thresholds to raw results and regenerate attention metrics."""
+def _process_raw_bias_result(raw_res, thresholds, use_optimized=False,
+                             bar_threshold=2.5):
+    """Apply thresholds to raw results and regenerate attention metrics.
+
+    ``bar_threshold`` sets the BAR cut-off used for the per-head
+    ``specialized_for_bias`` flag, so the user's slider propagates into
+    the stored metrics instead of silently reverting to the 2.5 default.
+    """
     if not raw_res:
         return None
 
@@ -462,6 +468,7 @@ def _process_raw_bias_result(raw_res, thresholds, use_optimized=False):
                     "bias_types": [],
                     "is_biased": False,
                     "scores": {"O": 0.0, "GEN": 0.0, "UNFAIR": 0.0, "STEREO": 0.0},
+                    "fired": {},
                     "method": "gusnet",
                     "explanation": "",
                     "threshold": thresholds.get("GEN", 0.5) if thresholds else 0.5,
@@ -483,13 +490,19 @@ def _process_raw_bias_result(raw_res, thresholds, use_optimized=False):
         if biased_indices and attentions:
             attention_analyzer = AttentionBiasAnalyzer()
             attention_metrics = attention_analyzer.analyze_attention_to_bias(
-                list(attentions), biased_indices, tokens
+                list(attentions), biased_indices, tokens,
+                bar_threshold=bar_threshold,
             )
+            # Reuse the per-head metrics — propagation and the L x H matrix
+            # are derived views of the same BARs (previously each recomputed
+            # the full grid, tripling the work for identical numbers).
             propagation_analysis = attention_analyzer.analyze_bias_propagation(
-                list(attentions), biased_indices, tokens
+                list(attentions), biased_indices, tokens,
+                precomputed_metrics=attention_metrics,
             )
             bias_matrix = attention_analyzer.create_attention_bias_matrix(
-                list(attentions), biased_indices
+                list(attentions), biased_indices,
+                precomputed_metrics=attention_metrics,
             )
 
         return {

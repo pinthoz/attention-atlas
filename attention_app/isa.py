@@ -15,6 +15,35 @@ try:
 except (LookupError, OSError):
     nltk.download('punkt_tab', quiet=True)
 
+def _token_to_sent_via_offsets(text, tokens, tokenizer, char_to_sent):
+    """Map each token to its sentence index using tokenizer char offsets.
+
+    Returns the per-token sentence list, or ``None`` when offsets are
+    unavailable or the re-encoded token sequence does not reproduce
+    ``tokens`` exactly (word-aggregated pseudo-tokens, sentence-pair
+    encodings with a mid-sequence [SEP], slow tokenizers) — the caller then
+    uses the character-matching heuristic.
+    """
+    try:
+        enc = tokenizer(text, return_offsets_mapping=True,
+                        truncation=True, max_length=512)
+        enc_tokens = tokenizer.convert_ids_to_tokens(enc["input_ids"])
+        offsets = enc["offset_mapping"]
+    except Exception:
+        return None
+    if list(enc_tokens) != list(tokens) or len(offsets) != len(tokens):
+        return None
+
+    token_to_sent = []
+    for (start, end) in offsets:
+        if end <= start:  # special tokens carry (0, 0)
+            token_to_sent.append(-1)
+            continue
+        mid = start + (end - start) // 2
+        token_to_sent.append(char_to_sent.get(mid, char_to_sent.get(start, -1)))
+    return token_to_sent
+
+
 def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> Tuple[List[str], List[int]]:
     """
     Split text into sentences and map tokens to sentences.
@@ -41,10 +70,28 @@ def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> 
             char_to_sent[k] = i
         current_pos = end
     
-    # 3. Map tokens to sentences using greedy character-based matching
+    # 3a. Preferred path: exact character offsets from the fast tokenizer.
+    #     The greedy character matching below is a heuristic that can lose
+    #     sync on curly quotes / accents / emoji; offsets cannot. Only
+    #     usable when re-encoding the plain text reproduces the exact token
+    #     sequence we were given (it does NOT for BERT sentence-pair
+    #     encoding, whose mid-sequence [SEP] changes the layout — that case
+    #     falls through to the heuristic).
+    token_to_sent = _token_to_sent_via_offsets(text, tokens, tokenizer, char_to_sent)
+    if token_to_sent is not None:
+        final_boundaries = []
+        for s_idx in range(len(sentences)):
+            found = next((t for t, s in enumerate(token_to_sent) if s == s_idx), None)
+            if found is not None:
+                final_boundaries.append(found)
+            else:
+                final_boundaries.append(final_boundaries[-1] if final_boundaries else 0)
+        return sentences, final_boundaries
+
+    # 3b. Fallback: map tokens to sentences using greedy character matching
     token_to_sent = []
     current_text_pos = 0
-    
+
     # Detect tokenizer type
     is_gpt_style = any(tok.startswith("Ġ") or tok.startswith("Â") for tok in tokens[:min(10, len(tokens))])
     is_bert_style = any("##" in tok for tok in tokens[:min(10, len(tokens))])
@@ -261,15 +308,21 @@ def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs,
     # Final safety check for NaNs
     isa_matrix = np.nan_to_num(isa_matrix, nan=0.0)
 
-    # Add metadata about causality
-    # For causal models (GPT), the upper triangle should be mostly zeros
-    # We can detect this automatically
-    is_causal = False
-    if num_sentences > 1:
-        # Check if upper triangle is mostly zero (causal attention mask)
-        upper_triangle = np.triu(isa_matrix, k=1)
-        if np.mean(upper_triangle) < 0.01:  # Threshold for "mostly zero"
-            is_causal = True
+    # Causality metadata. The caller's model_type is authoritative (it is
+    # derived from the tokenizer, which cannot be wrong about the
+    # architecture); the matrix heuristic is only a fallback for callers
+    # that pass the default. NOTE: the previous heuristic averaged
+    # np.triu(...) over the FULL n×n matrix (diluting by the zero diagonal
+    # and lower triangle), so a bidirectional model with weak inter-sentence
+    # coupling and many sentences could be misflagged as causal.
+    if model_type == "gpt":
+        is_causal = True
+    elif model_type == "bert":
+        is_causal = False
+    else:
+        # Unknown model type: mean over the strict upper-triangle cells only.
+        iu = np.triu_indices(num_sentences, k=1)
+        is_causal = bool(iu[0].size) and float(np.mean(isa_matrix[iu])) < 0.01
 
     return {
         "sentence_texts": sentence_texts,

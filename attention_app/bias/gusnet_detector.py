@@ -37,44 +37,13 @@ from typing import List, Dict
 _logger = logging.getLogger(__name__)
 
 
-# ── Bidirectional fix for GPT-2 inference ────────────────────────────────────
-
-def _make_gpt2_bidirectional(model):
-    """Remove the causal attention mask from a GPT-2 model.
-
-    The ``attn.bias`` buffer is registered with ``persistent=False`` so it
-    is NOT included in ``save_pretrained`` / ``state_dict``.  After loading
-    a bidirectionally-trained GPT-2 model, this function must be called to
-    restore full self-attention (replace lower-triangular with all-ones).
-
-    Two strategies are tried in order:
-
-    1. **Legacy / eager attention** (``transformers < 4.44``): each
-       ``GPT2Attention`` block owns an ``attn.bias`` buffer (lower-
-       triangular). We overwrite it with all-ones.
-    2. **Newer SDPA / flash path** (``transformers >= 4.36``): the
-       ``attn.bias`` buffer may be absent. As a fallback we set
-       ``model.config.is_decoder = False`` and
-       ``attn.is_cross_attention = True`` on every block, which
-       prevents the SDPA backend from applying a causal mask.
-
-    Compatibility: tested with ``transformers 4.36 – 4.46``.
-    """
-    fixed = 0
-    for block in model.transformer.h:
-        attn = block.attn
-        if hasattr(attn, "bias") and attn.bias is not None:
-            attn.bias.fill_(1)
-            fixed += 1
-    if fixed:
-        _logger.info("[GUS-Net] Bidirectional fix applied to %d attention blocks (attn.bias)", fixed)
-    else:
-        # Newer transformers: disable causal masking via config
-        _logger.info("[GUS-Net] No attn.bias found — setting is_cross_attention=True as fallback")
-        model.config.is_decoder = False
-        for block in model.transformer.h:
-            attn = block.attn
-            attn.is_cross_attention = True
+# NOTE on GPT-2 masking: the GUS-Net GPT-2 models are fine-tuned with the
+# standard CAUSAL mask (see attention_app/bias/training/ — no mask removal
+# anywhere), so inference below intentionally keeps the causal mask too.
+# A `_make_gpt2_bidirectional` helper used to live here with a docstring
+# claiming it "must be called" after loading; it was never called and its
+# premise (bidirectional training) does not match the training scripts, so
+# it was removed to avoid suggesting the inference path is misconfigured.
 
 
 # ── Punctuation filter ───────────────────────────────────────────────────────
@@ -193,7 +162,14 @@ MODEL_REGISTRY = {
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT)",
         "public": True,
-        # Thresholds atualizados para o modelo sparse (apesar de manter o nome gusnet-bert)
+        # The checkpoint published as pinthoz/gus-net-bert IS the
+        # sparsity-regularised training run (the "sparse" variant); the
+        # registry key and display name intentionally omit the training
+        # detail. These thresholds are the per-label F1-optimised values
+        # produced by that run's training script (optimized_thresholds.npy)
+        # — they match "gusnet-bert-sparse" below by construction, not by
+        # accident. If the published checkpoint is ever retrained, refresh
+        # these together.
         "optimized_thresholds": [0.476, 0.375, 0.3475, 0.3251, 0.3975, 0.342, 0.3309],
     },
     "gusnet-bert-large": {
@@ -407,12 +383,37 @@ class GusNetDetector:
                     tokenizer.verbose = False
                     model = GPT2ForTokenClassification.from_pretrained(model_path)
                 else:
-                    # BERT: use tokenizer from registry (model repo may lack one)
-                    tok_name = cfg.get("tokenizer", "bert-base-uncased")
-                    tokenizer = BertTokenizerFast.from_pretrained(tok_name)
+                    # BERT: prefer the tokenizer PUBLISHED WITH the
+                    # fine-tuned checkpoint — if a future checkpoint ever
+                    # extends the vocabulary, a generic bert-base-uncased
+                    # tokenizer would produce ids misaligned with the
+                    # model's embedding matrix and the predictions would be
+                    # silently wrong. Fall back to the registry name only
+                    # when the repo ships no tokenizer files.
+                    try:
+                        tokenizer = BertTokenizerFast.from_pretrained(model_path)
+                    except Exception:
+                        tok_name = cfg.get("tokenizer", "bert-base-uncased")
+                        _logger.info(
+                            "[GUS-Net] %s ships no tokenizer — falling back to %s",
+                            model_path, tok_name)
+                        tokenizer = BertTokenizerFast.from_pretrained(tok_name)
                     model = BertForTokenClassification.from_pretrained(
                         model_path, num_labels=cfg["num_labels"]
                     )
+
+                # Guard against the silent-misalignment failure mode: every
+                # tokenizer id must exist in the model's embedding matrix.
+                try:
+                    n_emb = model.get_input_embeddings().num_embeddings
+                    if len(tokenizer) > n_emb:
+                        _logger.warning(
+                            "[GUS-Net] Tokenizer vocab (%d) exceeds model "
+                            "embeddings (%d) for %s — predictions may be "
+                            "wrong for out-of-range tokens.",
+                            len(tokenizer), n_emb, cfg["display_name"])
+                except Exception:
+                    pass
 
                 model.eval()
                 model.to(device)
@@ -509,33 +510,62 @@ class GusNetDetector:
             
             opt = cfg.get("optimized_thresholds")
             
+            # ``fired`` records, per detected category, the EXACT probability
+            # and threshold pair that triggered the decision, so the UI can
+            # show a reproducible rule instead of a max(B,I) score paired
+            # with an unrelated threshold value.
+            fired: Dict[str, Dict] = {}
+
             if use_opt and opt is not None:
-                # Optimized per-label thresholds logic
+                # Optimized per-label thresholds logic (per B-/I- index)
                 for cat in ("GEN", "UNFAIR", "STEREO"):
                     indices = cfg["category_indices"][cat]
-                    if any(probs[i].item() >= opt[i] for i in indices):
+                    hits = [i for i in indices if probs[i].item() >= opt[i]]
+                    if hits:
                         bias_types.append(cat)
+                        best = max(hits, key=lambda i: probs[i].item())
+                        prefix = "B-" if best == indices[0] else "I-"
+                        fired[cat] = {
+                            "prob": float(probs[best].item()),
+                            "threshold": float(opt[best]),
+                            "label": f"{prefix}{cat}",
+                        }
             else:
-                # Dynamic / Manual thresholds
+                # Dynamic / Manual thresholds (per-category max(B, I) score)
                 for cat in ("GEN", "UNFAIR", "STEREO"):
                     thresh = active_thresholds.get(cat, 0.5)
                     if scores.get(cat, 0.0) >= thresh:
                         bias_types.append(cat)
+                        fired[cat] = {
+                            "prob": float(scores[cat]),
+                            "threshold": float(thresh),
+                            "label": cat,
+                        }
 
             # Punctuation is never a bias carrier — suppress span-bleed scores
             if bias_types and token.lstrip("\u0120") in _PUNCTUATION_TOKENS:
                 bias_types = []
+                fired = {}
 
-            # Human-readable explanation
+            # Human-readable explanation: show the firing rule itself.
             _CAT_LABEL = {
                 "GEN": "Generalization",
                 "UNFAIR": "Unfair language",
                 "STEREO": "Stereotype",
             }
             explanations = [
-                f"{_CAT_LABEL[cat]} (score: {scores[cat]:.2f})"
+                f"{_CAT_LABEL[cat]} ({fired[cat]['prob']:.2f} >= "
+                f"{fired[cat]['threshold']:.2f}, {fired[cat]['label']})"
                 for cat in bias_types
             ]
+
+            # ``threshold``: the threshold of the primary (highest-prob)
+            # fired category \u2014 the value the decision actually used.
+            if fired:
+                primary = max(fired, key=lambda c: fired[c]["prob"])
+                token_threshold = fired[primary]["threshold"]
+            else:
+                token_threshold = active_thresholds.get("GEN", 0.5)
 
             results.append({
                 "token": token,
@@ -543,9 +573,10 @@ class GusNetDetector:
                 "bias_types": bias_types,
                 "is_biased": len(bias_types) > 0,
                 "scores": scores,
+                "fired": fired,
                 "method": "gusnet",
                 "explanation": "; ".join(explanations),
-                "threshold": active_thresholds.get("GEN", 0.5), # Just rep one
+                "threshold": token_threshold,
             })
 
         return results
@@ -569,7 +600,6 @@ class GusNetDetector:
         # Determine tokenizer type from tokens
         # BERT has ##, GPT-2 has Ġ (u0120)
         has_gpt2_tokens = any("\u0120" in t["token"] for t in token_labels)
-        has_bert_tokens = any("##" in t["token"] for t in token_labels)
         
         # Merge subwords to count "whole words"
         whole_words = []
@@ -592,13 +622,15 @@ class GusNetDetector:
                 is_punct = clean_tok and not any(c.isalnum() for c in clean_tok)
                 if "\u0120" not in tok and current_word and not is_punct:
                     should_merge = True
-            elif has_bert_tokens:
-                # BERT: User explicitly wants SPLIT. So never merge ##.
-                should_merge = False
             else:
-                # Fallback/Ambiguous: Only merge if explicitly starting with ## (Old behavior)
-                # BUT user wants split for BERT. So actually, default to False.
-                should_merge = False
+                # BERT / fallback: '##' marks a continuation of the previous
+                # word. The SUMMARY counts whole words for BOTH tokenizers so
+                # that total_tokens / bias_percentage / category counts are
+                # word-level and comparable across BERT and GPT-2 in
+                # compare-mode. (Display views such as the span list may
+                # still show BERT subwords split — that is presentation,
+                # not the denominator of a statistic.)
+                should_merge = tok.startswith("##") and current_word is not None
 
             if should_merge:
                 # Merge logic: if any part is biased, the whole word is biased
@@ -717,6 +749,7 @@ class GusNetDetector:
             "bias_types": [],
             "is_biased": False,
             "scores": {"O": 0.0, "GEN": 0.0, "UNFAIR": 0.0, "STEREO": 0.0},
+            "fired": {},
             "method": "gusnet",
             "explanation": "",
             "threshold": self.threshold,

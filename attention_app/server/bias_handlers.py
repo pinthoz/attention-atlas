@@ -27,7 +27,7 @@ from .bias_styles import (
     TBG as _TBG, TBR as _TBR, TBA as _TBA, TBB as _TBB, TBP as _TBP,
     TN as _TN,
 )
-from .bias_xai import register_xai_handlers, _get_impact_thresholds
+from .bias_xai import register_xai_handlers, _get_impact_thresholds, _resolve_bias_target_model
 from .bias_stereoset import register_stereoset_handlers
 from .bias_exports import (
     csv_summary as _csv_summary_fn, csv_spans as _csv_spans_fn,
@@ -554,6 +554,17 @@ def bias_server_handlers(input, output, session):
         """Passthrough - _get_attn_source_mode already returns a valid value."""
         return mode if mode in ("gusnet", "base", "compare") else "gusnet"
 
+    def _get_bar_threshold() -> float:
+        """Current BAR specialisation cut-off from the UI slider.
+
+        Falls back to the calibrated 2.5 default when the input is not
+        available (e.g. outside a reactive context)."""
+        try:
+            with reactive.isolate():
+                return float(input.bias_bar_threshold())
+        except Exception:
+            return 2.5
+
     def _get_base_resolved(res, cache_rv):
         """Return a processed base-encoder-attention result.
 
@@ -577,7 +588,7 @@ def bias_server_handlers(input, output, session):
         try:
             raw_base = _load_base_encoder_attention_for_text(res["text"], res["bias_model_key"])
             thresholds = raw_base.get("effective_thresholds", {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5})
-            processed = _process_raw_bias_result(raw_base, thresholds, use_optimized=False)
+            processed = _process_raw_bias_result(raw_base, thresholds, use_optimized=False, bar_threshold=_get_bar_threshold())
             if processed:
                 cache_rv.set(processed)
             return processed
@@ -845,12 +856,12 @@ def bias_server_handlers(input, output, session):
 
             # Process A
             if raw_A and changed_A and a_model_matches:
-                res_A = _process_raw_bias_result(raw_A, manual_thresholds_A, use_optimized=use_opt)
+                res_A = _process_raw_bias_result(raw_A, manual_thresholds_A, use_optimized=use_opt, bar_threshold=_get_bar_threshold())
                 bias_results.set(res_A)
 
             # Process B
             if raw_B and update_B:
-                res_B = _process_raw_bias_result(raw_B, manual_thresholds_B, use_optimized=use_opt)
+                res_B = _process_raw_bias_result(raw_B, manual_thresholds_B, use_optimized=use_opt, bar_threshold=_get_bar_threshold())
                 bias_results_B.set(res_B)
 
     @reactive.Effect
@@ -1449,6 +1460,22 @@ def bias_server_handlers(input, output, session):
                 log_debug("Text is empty, returning")
                 return
 
+            # GUS-Net (and spaCy, and the attention models) are English-only:
+            # warn on non-English input instead of rendering confident
+            # detections with no caveat.
+            try:
+                from ..utils import looks_english
+                if not looks_english(text):
+                    ui.notification_show(
+                        "This input does not look like English. GUS-Net was "
+                        "fine-tuned on English only — bias detections and "
+                        "attention-bias metrics on non-English text are "
+                        "unreliable.",
+                        type="warning", duration=12,
+                    )
+            except Exception:
+                _logger.debug("Language check failed", exc_info=True)
+
             # ── Intercept Click for Sequential Logic ──
             try:
                 compare_prompts_live = input.bias_compare_prompts_mode()
@@ -1584,7 +1611,7 @@ def bias_server_handlers(input, output, session):
                     
                     # Initial processing for Model A (using thresholds we just grabbed)
                     effective_A = result.get("effective_thresholds", thresholds_A)
-                    res_processed = _process_raw_bias_result(result, effective_A, use_optimized=use_optimized)
+                    res_processed = _process_raw_bias_result(result, effective_A, use_optimized=use_optimized, bar_threshold=_get_bar_threshold())
                     
                     # Update current_thresholds to match what was actually used
                     current_thresholds_A.set(effective_A)
@@ -1629,7 +1656,7 @@ def bias_server_handlers(input, output, session):
                         # Process B immediately for UI
                         effective_B = result_B.get("effective_thresholds", thresholds_B)
                         current_thresholds_B.set(effective_B)
-                        res_B_proc = _process_raw_bias_result(result_B, effective_B, use_optimized=use_optimized)
+                        res_B_proc = _process_raw_bias_result(result_B, effective_B, use_optimized=use_optimized, bar_threshold=_get_bar_threshold())
                         bias_results_B.set(res_B_proc)
                         
                         # Add thresholds B to the message
@@ -1662,7 +1689,7 @@ def bias_server_handlers(input, output, session):
                             # Process B immediately for UI
                             effective_B = result_B.get("effective_thresholds", thresholds_B)
                             current_thresholds_B.set(effective_B)
-                            res_B_proc = _process_raw_bias_result(result_B, effective_B, use_optimized=use_optimized)
+                            res_B_proc = _process_raw_bias_result(result_B, effective_B, use_optimized=use_optimized, bar_threshold=_get_bar_threshold())
                             bias_results_B.set(res_B_proc)
                             
                             # Add thresholds B to the message
@@ -1979,7 +2006,7 @@ def bias_server_handlers(input, output, session):
                     per_sentence_results.append(sentence_data)
                     continue
 
-                processed = _process_raw_bias_result(raw, raw.get("effective_thresholds", thresholds), use_optimized=use_optimized)
+                processed = _process_raw_bias_result(raw, raw.get("effective_thresholds", thresholds), use_optimized=use_optimized, bar_threshold=_get_bar_threshold())
                 if not processed:
                     sentence_data["error"] = "Result processing failed"
                     per_sentence_results.append(sentence_data)
@@ -2078,10 +2105,20 @@ def bias_server_handlers(input, output, session):
                 ig_data = None
                 try:
                     tokenizer, encoder_model, _ = ModelManager.get_model(model_name)
+                    # Attribution target: GUS-Net bias logits when the
+                    # attentions come from the GUS-Net trunk (see
+                    # _resolve_bias_target_model); pooled-norm otherwise.
+                    _target_model = _resolve_bias_target_model(
+                        {"bias_model_key": bias_model_key, "model_name": model_name})
+                    # 64 steps for the bias-evidence target: its sigmoid sum
+                    # saturates and the IG integral converges slowly (residual
+                    # ~68% at 30 steps vs ~3% at 64).
+                    _n_steps = 64 if _target_model is not None else 30
                     with ThreadPoolExecutor(max_workers=1) as pool:
                         ig_bundle = await asyncio.wait_for(
                             loop.run_in_executor(pool, batch_compute_ig_correlation,
-                                encoder_model, tokenizer, text, list(attentions), metrics, is_gpt2),
+                                encoder_model, tokenizer, text, list(attentions), metrics, is_gpt2,
+                                _n_steps, _target_model),
                             timeout=120.0
                         )
                     if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle):
@@ -2091,6 +2128,7 @@ def bias_server_handlers(input, output, session):
                                 "layer": c.layer, "head": c.head,
                                 "spearman_rho": round(float(c.spearman_rho), 4),
                                 "p_value": round(float(c.spearman_pvalue), 6) if c.spearman_pvalue is not None else None,
+                                "q_value_fdr": round(float(c.spearman_qvalue), 6) if getattr(c, "spearman_qvalue", None) is not None else None,
                                 "bar": round(float(c.bar_original), 4) if c.bar_original is not None else None,
                             })
                         topk_data = []
@@ -2145,7 +2183,8 @@ def bias_server_handlers(input, output, session):
                         with ThreadPoolExecutor(max_workers=1) as pool:
                             perturb_bundle = await asyncio.wait_for(
                                 loop.run_in_executor(pool, batch_compute_perturbation,
-                                    encoder_model, tokenizer, text, is_gpt2, ig_bundle.token_attributions, list(attentions)),
+                                    encoder_model, tokenizer, text, is_gpt2, ig_bundle.token_attributions, list(attentions),
+                                    _target_model),
                                 timeout=120.0
                             )
                         if perturb_bundle and isinstance(perturb_bundle, PerturbationAnalysisBundle):
@@ -2166,7 +2205,8 @@ def bias_server_handlers(input, output, session):
                         with ThreadPoolExecutor(max_workers=1) as pool:
                             lrp_bundle = await asyncio.wait_for(
                                 loop.run_in_executor(pool, batch_compute_lrp,
-                                    encoder_model, tokenizer, text, is_gpt2, ig_bundle.token_attributions, list(attentions), metrics),
+                                    encoder_model, tokenizer, text, is_gpt2, ig_bundle.token_attributions, list(attentions), metrics,
+                                    _target_model),
                                 timeout=120.0
                             )
                         if lrp_bundle and isinstance(lrp_bundle, LRPAnalysisBundle):
@@ -2848,7 +2888,7 @@ def bias_server_handlers(input, output, session):
                     <div class="metric-value" style="color:#7b1fa2;">{summary['stereotype_count']}</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-label">Avg Confidence</div>
+                    <div class="metric-label" title="Mean sigmoid detection score of the DETECTED tokens only (conditioned on detection, so structurally high). Raw scores, not calibrated probabilities (Guo et al., 2017).">Avg Detection Score*</div>
                     <div class="metric-value">{summary.get('avg_confidence', 0):.2f}</div>
                 </div>
             </div>
@@ -2919,16 +2959,21 @@ def bias_server_handlers(input, output, session):
             else:
                 bar_val, bar_color, bar_sub = "-", "#94a3b8", "run Analyze Bias first"
 
-            # IG ρ
+            # IG ρ — median of |ρ| across heads. A signed mean lets positive
+            # and negative heads cancel (heads have different roles), and a
+            # raw "n significant at p<0.05" count over 144 heads is expected
+            # to be ~7 by chance alone; the magnitude summary is honest.
             if ig_bundle is not None:
                 from ..bias.integrated_gradients import IGAnalysisBundle
                 corrs = ig_bundle.correlations if isinstance(ig_bundle, IGAnalysisBundle) else ig_bundle
                 if corrs:
-                    rhos = [r.spearman_rho for r in corrs]
-                    mean_rho = sum(rhos) / len(rhos)
-                    n_sig = sum(1 for r in corrs if r.spearman_pvalue < 0.05)
-                    rho_color = "#2563eb" if mean_rho > 0 else "#dc2626"
-                    rho_val, rho_sub = f"{mean_rho:.3f}", f"{n_sig}/{len(corrs)} heads significant"
+                    import numpy as _np
+                    abs_rhos = [abs(r.spearman_rho) for r in corrs]
+                    median_abs_rho = float(_np.median(abs_rhos))
+                    n_moderate = sum(1 for v in abs_rhos if v >= 0.3)
+                    rho_color = "#2563eb" if median_abs_rho >= 0.3 else "#94a3b8"
+                    rho_val = f"{median_abs_rho:.3f}"
+                    rho_sub = f"{n_moderate}/{len(corrs)} heads |ρ| ≥ 0.3"
                 else:
                     rho_val, rho_color, rho_sub = "-", "#94a3b8", "no IG data"
             else:
@@ -2967,14 +3012,16 @@ def bias_server_handlers(input, output, session):
             _tt_rho = (
                 f"<span style='{_TH_lc}'>What it measures</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
-                f"<span>Spearman correlation between attention weights and Integrated Gradients attributions, per head</span></div>"
+                f"<span>Median |Spearman ρ| between attention weights and Integrated Gradients attributions, across heads</span></div>"
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH_lc}'>Interpretation</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#2563eb;'>●</span>"
-                f"<span>ρ ≈ 1 → <span style='{_TBB}'>attention faithful</span> to token importance</span></div>"
+                f"<span>|ρ| &ge; 0.3 → <span style='{_TBB}'>moderate agreement</span> (Cohen 1988) with gradient importance</span></div>"
                 f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
-                f"<span>ρ ≈ 0 → attention is <span style='{_TBG}'>uninformative</span></span></div>"
-                f"<div style='{_TN};margin-top:6px;'>Significance threshold: p &lt; 0.05 per head.</div>"
+                f"<span>|ρ| &lt; 0.3 → attention ranking is <span style='{_TBG}'>weakly related</span> to gradient importance</span></div>"
+                f"<div style='{_TN};margin-top:6px;'>The median of |ρ| is used because heads play different roles: "
+                f"a signed mean lets positive and negative heads cancel, and per-head p&lt;0.05 counts over ~144 heads "
+                f"include ≈5% false positives by construction.</div>"
             )
             _tt_abl = (
                 f"<span style='{_TH_lc}'>What it measures</span>"
@@ -2984,14 +3031,15 @@ def bias_server_handlers(input, output, session):
                 f"<span style='{_TH_lc}'>Threshold</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
                 f"<span>Δ &ge; {_impact_th['high']:g} → <span style='{_TBP}'>high-impact head</span></span></div>"
-                f"<div style='{_TN};margin-top:6px;'>Calibrated α=0.05 cut-off: 95th percentile of a random-head ablation null on the full v9 corpus, per model (BERT 0.0093, GPT-2 0.000105).</div>"
+                f"<div style='{_TN};margin-top:6px;'>Calibrated α=0.05 cut-off: 95th percentile of a random-head ablation null on the full v9 corpus, "
+                f"per model (this model: {_impact_th['high']:g}; interpolated from the calibration table, not hand-typed).</div>"
                 f"<div style='{_TN};margin-top:6px;'>Identifies the head whose removal most disrupts the model's internal representation.</div>"
             )
             bench_cards = (
                 '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(226,232,240,0.4);">'
                 '<div class="metrics-grid">'
                 + _bcard("Mean BAR", bar_val, bar_color, bar_sub, _tt_bar)
-                + _bcard("Mean IG ρ", rho_val, rho_color, rho_sub, _tt_rho)
+                + _bcard("Median |IG ρ|", rho_val, rho_color, rho_sub, _tt_rho)
                 + _bcard("Max Ablation Δ", abl_val, abl_color, abl_sub, _tt_abl)
                 + '</div></div>'
             )
@@ -3908,6 +3956,9 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TN}'>Detection thresholds default to each model's optimised per-category values (not a fixed 0.5); spans below them are suppressed entirely. Adjust via the toolbar to surface or hide borderline detections.</div>"
             f"<hr style='{_TS}'/>"
             f"<div style='{_TN}'><b>Note:</b> the tier boundaries 0.70 and 0.85 are <b>display heuristics</b>, not empirical calibration. Use them as qualitative grouping, not as significance cutoffs.</div>"
+            f"<div style='{_TN};margin-top:4px;'><b>Calibration caveat:</b> these are raw sigmoid <b>detection scores</b>, not calibrated probabilities — "
+            f"fine-tuned transformers are typically overconfident (Guo et al., 2017), so a score of 0.9 does not mean a 90% chance the token is biased. "
+            f"Scores are comparable with each other, not readable as frequencies.</div>"
         )
 
         if (compare_models or compare_prompts) and res_B:

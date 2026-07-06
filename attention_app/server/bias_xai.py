@@ -126,6 +126,42 @@ def _get_impact_thresholds(model_name: str) -> dict:
     return IMPACT_THRESHOLDS["bert-base-uncased"]
 
 
+def _resolve_bias_target_model(res: dict):
+    """Full GUS-Net ``*ForTokenClassification`` model for the attribution target.
+
+    Faithfulness is only meaningful relative to a decision, so IG /
+    perturbation / LRP attribute the GUS-Net detected-bias evidence instead
+    of the legacy pooled-norm — but ONLY when the attentions in ``res`` come
+    from the GUS-Net encoder trunk (attention source "gusnet", where
+    model_name is a ``pinthoz/gus-net-*`` id). In "base" mode the attention
+    maps belong to the pretrained encoder while the gradients would flow
+    through the fine-tuned trunk — a model mismatch — so we fall back to the
+    pooled-norm target and the bundles' ``target`` field says so.
+
+    Returns the model or ``None`` (fallback).
+    """
+    bias_key = res.get("bias_model_key")
+    model_name = str(res.get("model_name", ""))
+    if not bias_key or "gus-net" not in model_name:
+        return None
+    from ..bias.gusnet_detector import GusNetDetector, MODEL_REGISTRY
+    key = str(bias_key)
+    if key not in MODEL_REGISTRY:
+        # Aliases: underscore variants, and the ensemble (whose attentions
+        # come from model A's trunk).
+        key = {"gusnet-ensemble": "gusnet-bert"}.get(key, key.replace("_", "-"))
+    if key not in MODEL_REGISTRY:
+        return None
+    try:
+        _tok, model = GusNetDetector._load_model(key, ModelManager.get_device())
+        return model
+    except Exception:
+        _logger.warning(
+            "Could not load GUS-Net target model %s — falling back to the "
+            "pooled-norm attribution target.", key, exc_info=True)
+        return None
+
+
 def _kl_color(kl: float, thresholds: dict) -> str:
     """Pick a colour for KL divergence using the same 3-band scheme."""
     if kl >= thresholds["kl_very_high"]:
@@ -330,8 +366,10 @@ def register_xai_handlers(
             return None
         return _faithfulness_subsection_header(
             "Gradient Agreement",
-            "Integrated Gradients is used as the primary attribution baseline. These outputs show "
-            "whether heads that focus on biased tokens also align with gradient-based token importance.",
+            "Integrated Gradients is used as the primary attribution baseline, targeting the "
+            "GUS-Net detected-bias evidence (which input tokens drive the bias detections). "
+            "These outputs show whether heads that focus on biased tokens also align with "
+            "gradient-based token importance for that decision.",
         )
 
     @output
@@ -693,12 +731,18 @@ def register_xai_handlers(
                 attentions = r.get("attentions")
                 metrics = r.get("attention_metrics", [])
                 if not attentions or not metrics: return None
-                
+
                 model_name = r.get("model_name", "bert-base-uncased")
                 is_g = "gpt2" in model_name
                 tokenizer, encoder_model, _ = ModelManager.get_model(model_name)
-                
-                return (encoder_model, tokenizer, text, list(attentions), metrics, is_g)
+                target_model = _resolve_bias_target_model(r)
+
+                # The bias-evidence target sums sigmoids, which saturate:
+                # the IG path integral needs more steps to converge there
+                # (measured residual at 30 steps ≈ 68%, at 64 ≈ 3%).
+                n_steps = 64 if target_model is not None else 30
+                return (encoder_model, tokenizer, text, list(attentions),
+                        metrics, is_g, n_steps, target_model)
 
             args_A = _prepare_ig_args(res_A)
 
@@ -853,7 +897,21 @@ def register_xai_handlers(
             )
 
             # ── Summary stats ──
-            sig_results = [r for r in results if r.spearman_pvalue < 0.05]
+            # Significance uses BH-FDR q-values: with ~144 heads, ~7 raw
+            # p<0.05 hits are expected by chance, so raw counts overstate.
+            def _q(r):
+                return getattr(r, "spearman_qvalue", None)
+            has_q = all(_q(r) is not None for r in results)
+            if has_q:
+                sig_results = [r for r in results if _q(r) < 0.05]
+                sig_label = "Significant (FDR q&lt;0.05)"
+                n_raw_sig = sum(1 for r in results if r.spearman_pvalue < 0.05)
+                sig_note = (f"raw p&lt;0.05: {n_raw_sig} "
+                            f"(≈{0.05 * len(results):.0f} expected by chance)")
+            else:
+                sig_results = [r for r in results if r.spearman_pvalue < 0.05]
+                sig_label = "Significant (raw p&lt;0.05, uncorrected)"
+                sig_note = "no FDR data — re-run the analysis"
             mean_rho = np.mean([r.spearman_rho for r in results])
             n_positive = sum(1 for r in sig_results if r.spearman_rho > 0)
             n_negative = sum(1 for r in sig_results if r.spearman_rho < 0)
@@ -865,19 +923,51 @@ def register_xai_handlers(
                 f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Mean Spearman ρ</div></div>'
                 f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.15);border-radius:8px;text-align:center;">'
                 f'<div style="font-size:20px;font-weight:700;color:#22c55e;font-family:JetBrains Mono,monospace;">{len(sig_results)}/{len(results)}</div>'
-                f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Significant (p&lt;0.05)</div></div>'
+                f'<div style="font-size:10px;color:#64748b;margin-top:4px;">{sig_label}</div>'
+                f'<div style="font-size:9px;color:#94a3b8;margin-top:2px;">{sig_note}</div></div>'
                 f'<div style="flex:1;min-width:120px;padding:12px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.15);border-radius:8px;text-align:center;">'
                 f'<div style="font-size:20px;font-weight:700;color:#f59e0b;font-family:JetBrains Mono,monospace;">{n_positive}+ / {n_negative}-</div>'
                 f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Positive / Negative</div></div>'
                 f'</div>'
             )
 
+            # ── Attribution-target + IG-completeness transparency line ──
+            # (see integrated_gradients module docstring: faithfulness is
+            # only defined relative to a prediction)
+            _target = getattr(bundle, "target", None) if isinstance(bundle, IGAnalysisBundle) else None
+            _delta = getattr(bundle, "convergence_delta", None) if isinstance(bundle, IGAnalysisBundle) else None
+            if _target == "gusnet-bias-logits":
+                _t_html = ('<span style="color:#16a34a;font-weight:600;">GUS-Net bias logits</span> '
+                           '(attributions explain the detected-bias evidence)')
+            elif _target == "pooled-norm":
+                _t_html = ('<span style="color:#d97706;font-weight:600;">pooled-norm (legacy fallback)</span> '
+                           '— a geometric quantity, not a model decision; agreement here does '
+                           'NOT validate the bias explanations')
+            else:
+                _t_html = None
+            if _t_html is not None:
+                _d_html = ""
+                if _delta is not None:
+                    _d_color = "#dc2626" if _delta > 0.05 else "#64748b"
+                    _d_html = (f' &middot; IG completeness residual: '
+                               f'<span style="color:{_d_color};font-weight:600;">{_delta * 100:.1f}%</span>'
+                               + (' (&gt;5% — attributions approximate, increase steps)' if _delta > 0.05 else ''))
+                summary_html += (
+                    f'<div style="font-size:10.5px;color:#94a3b8;margin-top:8px;text-align:center;">'
+                    f'Attribution target: {_t_html}{_d_html}</div>'
+                )
+
             # ── Top-K table ──
             top_heads = sorted(results, key=lambda r: abs(r.spearman_rho), reverse=True)[:top_k]
             table_rows = []
             for rank, r in enumerate(top_heads, 1):
                 rho_color, rho_label = _rho_color_and_label(r.spearman_rho)
-                sig_badge = '<span style="color:#22c55e;font-weight:600;">★</span>' if r.spearman_pvalue < 0.05 else ""
+                r_q = _q(r)
+                # Star = significant after BH-FDR correction (falls back to
+                # raw p only for stale bundles without q-values).
+                _is_sig = (r_q < 0.05) if r_q is not None else (r.spearman_pvalue < 0.05)
+                sig_badge = '<span style="color:#22c55e;font-weight:600;">★</span>' if _is_sig else ""
+                q_cell = f"{r_q:.4f}" if r_q is not None else "—"
                 specialized = "Yes" if r.bar_original > bar_threshold else "No"
                 row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
                 table_rows.append(
@@ -888,6 +978,7 @@ def register_xai_handlers(
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{rho_color};">{r.spearman_rho:.3f}{sig_badge}'
                     f'<span style="font-size:9px;font-weight:600;color:{rho_color};opacity:0.75;margin-left:6px;text-transform:uppercase;letter-spacing:0.4px;">{rho_label}</span></td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.spearman_pvalue:.4f}</td>'
+                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{q_cell}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
                     f'</tr>'
@@ -902,6 +993,7 @@ def register_xai_handlers(
                 '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
                 '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Spearman ρ</th>'
                 '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">p-value</th>'
+                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">q (FDR)</th>'
                 '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">BAR</th>'
                 '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Specialized</th>'
                 '</tr>'
@@ -944,7 +1036,8 @@ def register_xai_handlers(
                 'margin-top:8px;font-style:italic;">'
                 'Negative correlations use the same magnitude bands in red. '
                 '<span style="color:#22c55e;font-style:normal;font-weight:700;">&#9733;</span> '
-                'marks rows with raw p &lt; 0.05.'
+                'marks rows significant after Benjamini-Hochberg FDR correction (q &lt; 0.05); '
+                'with one test per head, ~5% of heads clear raw p &lt; 0.05 by chance alone.'
                 '</div>'
                 '</div>'
             )
@@ -1038,7 +1131,10 @@ def register_xai_handlers(
             f"<span style='{_TH}'>Method: Integrated Gradients (Sundararajan et al., 2017)</span>"
             f"<div style='{_TR};font-family:JetBrains Mono,monospace;font-size:10px;color:#e2e8f0;'>"
             f"IG(x) = (x−x′) × ∫₀¹ ∂F/∂x dα</div>"
-            f"<div style='{_TN}; margin-bottom:4px;'>Steps=30 · Baseline=[PAD] (BERT) / &lt;|endoftext|&gt; (GPT-2) · via Captum LayerIntegratedGradients</div>"
+            f"<div style='{_TN}; margin-bottom:4px;'>Steps=64 (bias target; 30 for the pooled-norm fallback) · Baseline=[PAD] (BERT) / &lt;|endoftext|&gt; (GPT-2) · via Captum LayerIntegratedGradients</div>"
+            f"<div style='{_TN}; margin-bottom:4px;'>Target F = GUS-Net detected-bias evidence (Σ sigmoid of the bias-label logits) — "
+            f"attributions answer <i>which input tokens drive the bias detections</i>. Falls back to the pooled hidden-state norm "
+            f"(labelled under the summary cards) only when the GUS-Net head is unavailable or the attention source is the base encoder.</div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Faithfulness metric: Spearman ρ(IG, Attention)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
@@ -1046,7 +1142,8 @@ def register_xai_handlers(
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
             f"<span><span style='{_TBR}'>ρ &lt; 0</span>&nbsp;attention focuses on tokens gradients ignore</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
-            f"<span><span style='{_TBA}'>★ marker</span>&nbsp;statistically significant (p &lt; 0.05)</span></div>"
+            f"<span><span style='{_TBA}'>★ marker</span>&nbsp;significant after BH-FDR correction (q &lt; 0.05) — "
+            f"raw p&lt;0.05 over ~144 heads includes ≈7 chance hits</span></div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Sub-charts</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
@@ -1328,7 +1425,9 @@ def register_xai_handlers(
                 model_name = res.get("model_name", "bert-base-uncased")
                 is_g = "gpt2" in model_name
                 tokenizer, encoder_model, _ = ModelManager.get_model(model_name)
-                return (encoder_model, tokenizer, text, is_g, bundle.token_attributions, list(attentions))
+                target_model = _resolve_bias_target_model(res)
+                return (encoder_model, tokenizer, text, is_g,
+                        bundle.token_attributions, list(attentions), target_model)
 
             args_A = _prepare_args(res_A, bundle_A)
 
@@ -1554,7 +1653,10 @@ def register_xai_handlers(
                 model_name = res.get("model_name", "bert-base-uncased")
                 is_g = "gpt2" in model_name
                 tokenizer, encoder_model, _ = ModelManager.get_model(model_name)
-                return (encoder_model, tokenizer, text, is_g, bundle.token_attributions, list(attentions), metrics)
+                target_model = _resolve_bias_target_model(res)
+                return (encoder_model, tokenizer, text, is_g,
+                        bundle.token_attributions, list(attentions), metrics,
+                        target_model)
 
             args_A = _prepare_args(res_A, bundle_A)
 

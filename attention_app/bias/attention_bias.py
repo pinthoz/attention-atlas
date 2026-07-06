@@ -38,6 +38,11 @@ class HeadBiasMetrics:
         BSR(l,h) = (1/|B|) Σ_{i∈B} Σ_{j∈B} α_ij  /  (|B|/N)
         Measures bias self-reinforcement (biased→biased attention).
         Centred at 1.0; high values indicate echo-chamber patterns.
+
+        Degenerate case |B| = 1: the double sum collapses to α_ii — the
+        single flagged token's SELF-attention scaled by N. There is no
+        "each other" with one token, so an "echo-chamber" reading is
+        vacuous; interpret BSR only when at least two tokens are flagged.
     """
     layer: int
     head: int
@@ -145,6 +150,8 @@ class AttentionBiasAnalyzer:
         # ── BSR: Bias Self-Reinforcement ───────────────────────
         # ν̂ = (1/|B|) Σ_{i∈B} Σ_{j∈B} α_ij
         #    → average attention from a biased query to all biased keys
+        # |B| = 1 degenerates to scaled self-attention of the lone token —
+        # not an "echo chamber" (see HeadBiasMetrics docstring).
         nu_observed = attention_matrix[biased_mask][:, biased_mask].sum() / n_biased
         # ν₀ = |B| / N  (same expected baseline)
         amplification_score = nu_observed / mu_expected if mu_expected > 0 else 0.0
@@ -195,7 +202,8 @@ class AttentionBiasAnalyzer:
         self,
         attention_weights: List[torch.Tensor],
         biased_token_indices: List[int],
-        tokens: List[str]
+        tokens: List[str],
+        precomputed_metrics: Optional[List[HeadBiasMetrics]] = None,
     ) -> Dict:
         """Analyze how bias propagates through attention layers.
 
@@ -203,6 +211,11 @@ class AttentionBiasAnalyzer:
             attention_weights: List of attention tensors
             biased_token_indices: Indices of biased tokens
             tokens: List of tokens
+            precomputed_metrics: Optional output of analyze_attention_to_bias
+                for the SAME (attentions, biased indices). When given, the
+                per-head BARs are reused instead of being recomputed — the
+                three public methods otherwise each recompute the full
+                L x H metric grid for the same inputs.
 
         Returns:
             Dictionary with propagation analysis:
@@ -217,24 +230,15 @@ class AttentionBiasAnalyzer:
                 "propagation_pattern": "none"
             }
 
-        layer_ratios = []
+        if precomputed_metrics is None:
+            precomputed_metrics = self.analyze_attention_to_bias(
+                attention_weights, list(biased_token_indices), tokens
+            )
 
-        for layer_idx, layer_attention in enumerate(attention_weights):
-            # Average across all heads in this layer
-            layer_avg_ratio = []
-
-            num_heads = layer_attention.shape[1]
-            for head_idx in range(num_heads):
-                head_attn = layer_attention[0, head_idx].cpu().numpy()
-                metrics = self._compute_head_metrics(
-                    head_attn,
-                    set(biased_token_indices),
-                    layer_idx,
-                    head_idx
-                )
-                layer_avg_ratio.append(metrics.bias_attention_ratio)
-
-            layer_ratios.append(np.mean(layer_avg_ratio))
+        by_layer: Dict[int, List[float]] = {}
+        for m in precomputed_metrics:
+            by_layer.setdefault(m.layer, []).append(m.bias_attention_ratio)
+        layer_ratios = [float(np.mean(by_layer[l])) for l in sorted(by_layer)]
 
         # Determine propagation pattern
         if len(layer_ratios) < 2:
@@ -261,37 +265,35 @@ class AttentionBiasAnalyzer:
     def create_attention_bias_matrix(
         self,
         attention_weights: List[torch.Tensor],
-        biased_token_indices: List[int]
+        biased_token_indices: List[int],
+        precomputed_metrics: Optional[List[HeadBiasMetrics]] = None,
     ) -> np.ndarray:
         """Create a matrix showing bias attention for each (layer, head).
 
         Args:
             attention_weights: List of attention tensors
             biased_token_indices: Indices of biased tokens
+            precomputed_metrics: Optional output of analyze_attention_to_bias
+                for the SAME inputs — reused instead of recomputing.
 
         Returns:
             Matrix of shape [num_layers, num_heads] with bias attention ratios
         """
+        num_layers = len(attention_weights)
+        num_heads = attention_weights[0].shape[1] if num_layers > 0 else 0
+
         if not biased_token_indices:
-            num_layers = len(attention_weights)
-            num_heads = attention_weights[0].shape[1] if num_layers > 0 else 0
             return np.zeros((num_layers, num_heads))
 
-        num_layers = len(attention_weights)
-        num_heads = attention_weights[0].shape[1]
+        if precomputed_metrics is None:
+            precomputed_metrics = self.analyze_attention_to_bias(
+                attention_weights, list(biased_token_indices), []
+            )
 
         matrix = np.zeros((num_layers, num_heads))
-
-        for layer_idx, layer_attention in enumerate(attention_weights):
-            for head_idx in range(num_heads):
-                head_attn = layer_attention[0, head_idx].cpu().numpy()
-                metrics = self._compute_head_metrics(
-                    head_attn,
-                    set(biased_token_indices),
-                    layer_idx,
-                    head_idx
-                )
-                matrix[layer_idx, head_idx] = metrics.bias_attention_ratio
+        for m in precomputed_metrics:
+            if m.layer < num_layers and m.head < num_heads:
+                matrix[m.layer, m.head] = m.bias_attention_ratio
 
         return matrix
 
@@ -313,7 +315,12 @@ class AttentionBiasAnalyzer:
             head_idx: Head index
 
         Returns:
-            Dictionary with influence metrics
+            Dictionary with influence metrics. NOTE: ``is_bias_influenced``
+            uses a fixed 30%-of-attention-mass cut-off — a heuristic
+            convenience flag, NOT a calibrated threshold (unlike the BAR
+            2.5 cut-off, which comes from a permutation null). Treat it as
+            a rough marker; the continuous ``bias_percentage`` is the
+            number to reason with.
         """
         head_attn = attention_weights[0, head_idx].cpu().numpy()
 

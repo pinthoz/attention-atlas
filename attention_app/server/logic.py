@@ -24,12 +24,19 @@ class ComputeResult:
         attentions: Tuple of attention tensors from each layer
         hidden_states: Tuple of hidden state tensors from each layer
         inputs: Tokenized inputs dict
-        tokenizer: Tokenizer instance
-        encoder_model: Encoder model instance
-        mlm_model: MLM model instance
+        model_name: HuggingFace model id — tokenizer / encoder / MLM head
+            are resolved lazily through ModelManager (see properties below)
         head_specialization: Head specialization metrics
         isa_data: Inter-sentence attention data
         head_clusters: Algorithmic clustering results (t-SNE + K-Means)
+
+    Memory note: results used to hold hard references to the tokenizer and
+    both model instances, so ModelManager's LRU eviction could never
+    actually free an evicted model while any session kept a result alive
+    (compare-mode holds two). Storing only ``model_name`` and resolving via
+    the ModelManager cache keeps the attribute API identical while letting
+    eviction reclaim the weights; a rare cache miss just reloads from the
+    local HF snapshot.
     """
     tokens: Any
     embeddings: Any
@@ -37,12 +44,27 @@ class ComputeResult:
     attentions: Any
     hidden_states: Any
     inputs: Any
-    tokenizer: Any
-    encoder_model: Any
-    mlm_model: Any
+    model_name: Any
     head_specialization: Any
     isa_data: Any
     head_clusters: Any
+
+    def _resolve_models(self):
+        if not self.model_name:
+            return (None, None, None)
+        return ModelManager.get_model(self.model_name)
+
+    @property
+    def tokenizer(self):
+        return self._resolve_models()[0]
+
+    @property
+    def encoder_model(self):
+        return self._resolve_models()[1]
+
+    @property
+    def mlm_model(self):
+        return self._resolve_models()[2]
 
     def __iter__(self):
         """Allow tuple unpacking for backward compatibility."""
@@ -186,7 +208,7 @@ def heavy_compute(text, model_name):
     return ComputeResult(
         tokens=tokens, embeddings=embeddings, pos_enc=pos_enc,
         attentions=attentions, hidden_states=hidden_states, inputs=inputs,
-        tokenizer=tokenizer, encoder_model=encoder_model, mlm_model=mlm_model,
+        model_name=model_name,
         head_specialization=head_specialization, isa_data=isa_data,
         head_clusters=head_clusters,
     )

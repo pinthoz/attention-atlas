@@ -27,19 +27,41 @@ def calculate_confidence(attention_matrix, causal=False):
 def calculate_focus(attention_matrix):
     """
     Attention Focus / Entropy (Eq. 8 from paper)
-    
+
     E = -Σᵢⱼ aᵢⱼ × log(aᵢⱼ)
 
     Returns raw entropy. Higher values = more dispersed attention.
     Note: each of the n rows sums to 1, so the matrix's total mass is n and
-    the maximum (uniform attention) is n·log(n). Callers normalise by
-    n·log(n) for a 0-1 range — NOT by log(n²).
+    the maximum (uniform attention) is n·log(n) for a bidirectional model.
+    Callers should normalise with :func:`max_focus_entropy` (which is
+    causal-mask-aware) rather than hand-rolling n·log(n) — for a causal
+    model row i only has support i+1, so the uniform maximum is
+    Σᵢ log(i+1) = log(n!), NOT n·log(n).
     """
     epsilon = 1e-10  # avoid log(0)
     attn_flat = attention_matrix.flatten()
     attn_flat = attn_flat[attn_flat > epsilon]  # filter near-zero values
     entropy = -np.sum(attn_flat * np.log(attn_flat))
     return float(entropy)
+
+
+def max_focus_entropy(seq_len, causal=False):
+    """Maximum possible attention entropy for a seq_len × seq_len matrix.
+
+    Bidirectional: every row can be uniform over n keys → n·log(n).
+    Causal: row i is uniform over its i+1 visible keys →
+    Σᵢ log(i+1) = log(n!) (computed via gammaln for stability).
+
+    Without the causal correction, GPT-2 heads look systematically more
+    "focused" than BERT heads purely because half the matrix is
+    structurally zero — a mask artefact, not model behaviour.
+    """
+    if seq_len <= 1:
+        return 1.0
+    if causal:
+        from scipy.special import gammaln
+        return float(gammaln(seq_len + 1))
+    return float(seq_len * np.log(seq_len))
 
 
 def calculate_sparsity(attention_matrix, threshold=None, causal=False):
@@ -91,15 +113,24 @@ def calculate_distribution_attributes(attention_matrix):
     }
 
 
-def calculate_uniformity(attention_matrix):
+def calculate_uniformity(attention_matrix, causal=False):
     """
     Attention Uniformity (Eq. 15 from paper)
-    
+
     U = std(A) = √[(1/(n²)) × Σᵢⱼ(aᵢⱼ - μ)²]
-    
+
     Lower values = more uniform attention distribution
     Higher values = more variable/concentrated attention
+
+    Causal-model handling: the structurally-zero upper triangle inflates
+    the std for GPT-2-style models (half the cells are forced zeros).
+    Pass ``causal=True`` to compute the std over the lower-triangular
+    support only, keeping the metric comparable with bidirectional models.
     """
+    if causal:
+        seq_len = attention_matrix.shape[0]
+        support = np.tril_indices(seq_len)
+        return float(np.std(attention_matrix[support]))
     return float(np.std(attention_matrix))
 
 
@@ -212,8 +243,10 @@ def compute_all_attention_metrics(attention_matrix, has_cls=True, causal=None):
     Returns dict with:
     - confidence_max: Max attention weight (Eq. 5)
     - confidence_avg: Average of row maxes (Eq. 6)
-    - focus_entropy: Raw entropy (Eq. 8) — callers normalise with the
-      uniform-attention maximum n·log(n) for a 0-1 range
+    - focus_entropy: Raw entropy (Eq. 8)
+    - focus_normalized: focus_entropy / max_focus_entropy(n, causal) — the
+      causal-aware 0-1 normalisation (log(n!) for causal models, n·log(n)
+      for bidirectional). Prefer this over hand-rolled n·log(n).
     - sparsity: Proportion below adaptive threshold (Eq. 11)
     - distribution_median: Median attention weight (Eq. 12)
     - uniformity: Standard deviation of weights (Eq. 15)
@@ -224,15 +257,17 @@ def compute_all_attention_metrics(attention_matrix, has_cls=True, causal=None):
         causal = not has_cls
     max_conf, avg_conf = calculate_confidence(attention_matrix, causal=causal)
     focus = calculate_focus(attention_matrix)
+    max_ent = max_focus_entropy(attention_matrix.shape[0], causal=causal)
     sparsity = calculate_sparsity(attention_matrix, causal=causal)  # adaptive threshold
     distribution = calculate_distribution_attributes(attention_matrix)
-    uniformity = calculate_uniformity(attention_matrix)
+    uniformity = calculate_uniformity(attention_matrix, causal=causal)
     balance = calculate_balance(attention_matrix, has_cls=has_cls)
 
     return {
         "confidence_max": max_conf,
         "confidence_avg": avg_conf,
         "focus_entropy": focus,
+        "focus_normalized": focus / max_ent if max_ent > 0 else 0.0,
         "sparsity": sparsity,
         "distribution_median": distribution["median"],
         "distribution_q25": distribution["q25"],
@@ -245,6 +280,7 @@ def compute_all_attention_metrics(attention_matrix, has_cls=True, causal=None):
 __all__ = [
     "calculate_confidence",
     "calculate_focus",
+    "max_focus_entropy",
     "calculate_sparsity",
     "calculate_distribution_attributes",
     "calculate_uniformity",

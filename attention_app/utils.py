@@ -52,6 +52,36 @@ def get_reproducibility_info(text: str, model_name: str | None = None) -> dict:
     return info
 
 
+# Small, high-frequency English function words. Coverage-based language
+# check: any real English sentence hits several of these; other languages
+# and non-Latin scripts hit almost none.
+_EN_STOPWORDS = frozenset(
+    "the a an and or of to in is are was were be been for on with that this "
+    "it as at by from he she they we you i his her their its not have has "
+    "had do does did will would can could should but if when who what which "
+    "there about into than then them these those".split()
+)
+
+
+def looks_english(text: str) -> bool:
+    """Cheap English-language heuristic (stopword coverage).
+
+    Every analysis in the app is English-only (BERT/GPT-2 pre-training,
+    GUS-Net fine-tuning, spaCy en_core_web_sm POS/NER, nltk punkt): on
+    non-English input the POS-based head-specialization metrics and the
+    bias detections are unreliable, silently. This gate exists so the UI
+    can WARN instead of presenting confident nonsense.
+
+    Returns True for short inputs (< 6 words) — too little evidence to
+    accuse the user of writing another language.
+    """
+    words = re.findall(r"[a-zA-Z']+", text.lower())
+    if len(words) < 6:
+        return True
+    hits = [w for w in words if w in _EN_STOPWORDS]
+    return len(hits) / len(words) >= 0.12 and len(set(hits)) >= 2
+
+
 def positional_encoding(position: int, d_model: int = 768) -> np.ndarray:
     """Sinusoidal positional encodings to mimic transformer inputs.
 
@@ -94,7 +124,7 @@ def compute_influence_tree(attention_matrix, tokens, Q_matrix, K_matrix, d_k, ro
         d_k: dimension for scaling (d_k = d_model / num_heads)
         root_token_idx: int, index of the root token to analyze
         top_k: int, number of top children to select at each level (default: 3)
-        max_depth: int, maximum depth of the tree (default: 3)
+        max_depth: int, maximum depth of the tree (default: 5)
     
     Returns:
         dict: Tree structure with the following format:
@@ -420,7 +450,7 @@ def aggregate_data_to_words(res, filter_special=True):
     return ComputeResult(
         tokens=new_tokens, embeddings=new_embeddings, pos_enc=new_pos_enc,
         attentions=new_attentions, hidden_states=new_hidden_states, inputs=inputs,
-        tokenizer=tokenizer, encoder_model=encoder_model, mlm_model=mlm_model,
+        model_name=getattr(res, "model_name", None),
         head_specialization=new_head_specialization, isa_data=new_isa_data,
         head_clusters=new_head_clusters,
     )

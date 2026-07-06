@@ -355,7 +355,7 @@ def run_per_sentence_ig_jaccard(
         # ── IG attributions ─────────────────────────────────────
         ig_record = {}
         try:
-            ig_attrs = compute_token_attributions(
+            ig_attrs, _ = compute_token_attributions(
                 encoder_model, tokenizer, text, is_gpt2, n_steps=n_steps,
             )
             ig_topk = compute_topk_overlap(
