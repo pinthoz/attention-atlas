@@ -5,7 +5,9 @@
     "total_examples": 2123,
     "significant_features": 2522,
     "total_features_tested": 3217,
-    "date": "2026-07-06T16:21:51.008810"
+    "date": "2026-07-06T16:21:51.008810",
+    "sensitivity_method": "eta2_paired",
+    "feature_version": "2026-06-12-isa-mean"
   },
   "scores": {
     "overall": {

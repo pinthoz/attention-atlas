@@ -18,7 +18,17 @@ _DATA_DIR = Path(__file__).parent / "results"
 # Per-model cache
 _cache: Dict[str, dict] = {}
 
-# Map base model names and GUS-Net keys to our short model key
+# Map base model names and GUS-Net keys to our short model key.
+#
+# NOTE the deliberate (and potentially surprising) convention: dashed
+# GUS-Net keys ("gusnet-bert") resolve to the BASE model's data ("bert").
+# This is intentional — the upper StereoSet sections (Overview, Category
+# Breakdown, Demographic Slices) always show base-LM scores because
+# GUS-Net is a token classifier, not a language model. Callers that want
+# the GUS-Net-trunk data (head sensitivity, example explorer) must go
+# through get_gusnet_key(), which returns the underscore file keys
+# ("gusnet_bert"). Passing a dashed key expecting GUS-Net data silently
+# yields base data — do not "fix" this mapping without updating callers.
 _MODEL_KEY_MAP = {
     # Short keys
     "bert": "bert",
@@ -177,14 +187,30 @@ def get_metadata(model: Optional[str] = None) -> Optional[Dict]:
 
 
 def compute_model_similarity(base_key: str, gusnet_key: str) -> Optional[Dict]:
-    """Compute a composite similarity metric between base and GUS-NET models.
+    """Composite similarity of base vs GUS-NET **head-sensitivity profiles**.
 
-    Uses two signals weighted into a single 0–100% similarity score:
-      - Head sensitivity matrix Pearson correlation (50%)
-      - Top sensitive heads Jaccard overlap (50%)
+    IMPORTANT — what this does and does not measure: it compares the two
+    models' HEAD-SENSITIVITY matrices (how strongly each head separates the
+    StereoSet demographic categories) and the overlap of their top
+    sensitive heads. It does NOT correlate raw attention matrices; UI copy
+    must not describe it that way.
+
+    Signals, equally weighted into a 0-100% score:
+      - Pearson r between the flattened sensitivity matrices, floored at 0
+        (an anti-correlated or unrelated profile contributes 0, not 50% —
+        the previous (r+1)/2 mapping made "no relationship" read as
+        "50% similar").
+      - Jaccard overlap of the top-20 sensitive heads.
+
+    Method gating: sensitivity values are only comparable when both JSONs
+    were produced by the same sensitivity estimator (metadata key
+    ``sensitivity_method``; current pipeline writes "eta2_paired", legacy
+    files carry raw between-category variance and no key). On a known
+    mismatch, or when either side lacks the key, returns None so the badge
+    is hidden instead of comparing apples to oranges.
 
     Returns a dict with individual metrics and overall similarity, or None
-    if data is unavailable for either model.
+    if data is unavailable or incomparable.
     """
     matrix_base = get_head_sensitivity_matrix(base_key)
     matrix_gus = get_head_sensitivity_matrix(gusnet_key)
@@ -194,18 +220,29 @@ def compute_model_similarity(base_key: str, gusnet_key: str) -> Optional[Dict]:
     if matrix_base is None or matrix_gus is None:
         return None
 
+    meta_base = get_metadata(base_key) or {}
+    meta_gus = get_metadata(gusnet_key) or {}
+    method_base = meta_base.get("sensitivity_method")
+    method_gus = meta_gus.get("sensitivity_method")
+    if method_base is None or method_gus is None or method_base != method_gus:
+        # Unknown or mismatched estimators — regenerate both JSONs with the
+        # current pipeline to re-enable the badge.
+        return None
+
     # ── 1. Head sensitivity matrix Pearson correlation ──
     flat_base = [v for row in matrix_base for v in row]
     flat_gus = [v for row in matrix_gus for v in row]
-    n = len(flat_base)
+    n = min(len(flat_base), len(flat_gus))
+    if n == 0 or len(flat_base) != len(flat_gus):
+        return None  # different architectures (layer/head grid mismatch)
     mean_b = sum(flat_base) / n
     mean_g = sum(flat_gus) / n
     cov = sum((flat_base[i] - mean_b) * (flat_gus[i] - mean_g) for i in range(n))
     std_b = sum((x - mean_b) ** 2 for x in flat_base) ** 0.5
     std_g = sum((x - mean_g) ** 2 for x in flat_gus) ** 0.5
     pearson_r = cov / (std_b * std_g) if std_b > 0 and std_g > 0 else 0.0
-    # Normalise from [-1, 1] to [0, 1]
-    matrix_sim = max(0.0, (pearson_r + 1) / 2)
+    # Floor at 0: negative/zero correlation means "not similar", not 50%.
+    matrix_sim = max(0.0, pearson_r)
 
     # ── 2. Top heads Jaccard overlap ──
     set_base = {(h["layer"], h["head"]) for h in heads_base[:20]}
@@ -225,4 +262,5 @@ def compute_model_similarity(base_key: str, gusnet_key: str) -> Optional[Dict]:
         "matrix_sim_pct": round(matrix_sim * 100, 1),
         "heads_jaccard": round(jaccard, 4),
         "heads_overlap_pct": round(jaccard * 100, 1),
+        "sensitivity_method": method_base,
     }

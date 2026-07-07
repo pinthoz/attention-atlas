@@ -620,13 +620,24 @@ def run_for_model(model_key, stereoset):
     top_features, sig_count, total_tested = _compute_top_features(df)
 
     # Save
+    from attention_app.bias.feature_extraction_notebooks import FEATURE_VERSION
     result = {
         "metadata": {
             "model": model_name,
             "scoring_method": scoring_method,
             "total_examples": len(examples),
+            # significant_features counts BH-FDR q < 0.001 (not raw p)
             "significant_features": sig_count,
             "total_features_tested": total_tested,
+            # Which head-sensitivity estimator produced
+            # head_sensitivity_matrix / sensitive_heads. The similarity
+            # badge only compares JSONs whose methods match.
+            "sensitivity_method": (
+                "eta2_paired" if len(diff_df) >= 50 else "eta2_stereo_only"
+            ),
+            # Semantics of the extracted features (ISA aggregation etc.);
+            # bumps when feature_extraction_notebooks changes meaning.
+            "feature_version": FEATURE_VERSION,
             "date": datetime.now().isoformat(),
         },
         "scores": scores,
