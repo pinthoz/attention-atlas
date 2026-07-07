@@ -2295,8 +2295,14 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
             pval = float(p)
             width = max(4, int(pval * 100))
             logit_val = float(logits_tensor[i, idx])
-            exp_logit = float(torch.exp(logits_tensor[i, idx]))
-            sum_exp = float(torch.sum(torch.exp(logits_tensor[i])))
+            # Display-only walkthrough of the softmax. Computed in
+            # max-shifted form (exp(l - max) / Σ exp(l - max)) — the
+            # standard stable evaluation — so large logits cannot render
+            # as "inf"; the ratio is identical.
+            _row = logits_tensor[i]
+            _max_logit = float(_row.max())
+            exp_logit = float(torch.exp(logits_tensor[i, idx] - _max_logit))
+            sum_exp = float(torch.sum(torch.exp(_row - _max_logit)))
 
             unique_id = f"mlm-detail-{i}-{rank}{suffix}"
 
@@ -2311,17 +2317,17 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
                 <span class='mlm-prob-text'>{pval:.1%}</span>
             </div>
             <div id='{unique_id}' class='mlm-details-panel'>
-                <div class='mlm-math'>softmax(logit<sub>i</sub>) = exp(logit<sub>i</sub>) / Σ<sub>j</sub> exp(logit<sub>j</sub>)</div>
+                <div class='mlm-math'>softmax(logit<sub>i</sub>) = exp(logit<sub>i</sub> − max) / Σ<sub>j</sub> exp(logit<sub>j</sub> − max)</div>
                 <div class='mlm-step'>
                     <span>logit<sub>i</sub></span>
                     <b>{logit_val:.4f}</b>
                 </div>
                 <div class='mlm-step'>
-                    <span>exp(logit<sub>i</sub>)</span>
+                    <span>exp(logit<sub>i</sub> − max)</span>
                     <b>{exp_logit:.4f}</b>
                 </div>
                 <div class='mlm-step'>
-                    <span>Σ exp(logit<sub>j</sub>)</span>
+                    <span>Σ exp(logit<sub>j</sub> − max)</span>
                     <b>{sum_exp:.4f}</b>
                 </div>
                 <div class='mlm-step' style='margin-top:4px;padding-top:4px;border-top:1px dashed #cbd5e1;'>
@@ -2551,7 +2557,22 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
         metrics.append(("Balance", balance, "{:.2f}", "balance", "Balance"))
     metrics.append(("Flow Change", flow_change, "{:.2f}", "flow_change", "Flow Change"))
 
-    cards_html = '<div class="metrics-grid">'
+    cards_html = ''
+    if norm_mode in ("col", "rollout"):
+        # The interpretation bands, layer percentiles and corpus baselines
+        # are all calibrated on RAW softmax attention (row-stochastic
+        # matrices). Column-normalised or rollout matrices live on a
+        # different scale — the numbers are valid, the coloured bands and
+        # baseline markers are not.
+        _mode_label = "column-normalised" if norm_mode == "col" else "rollout"
+        cards_html += (
+            f'<div style="margin-bottom:8px;padding:6px 10px;border:1px dashed #f59e0b66;'
+            f'border-radius:6px;font-size:10.5px;color:#b45309;background:rgba(245,158,11,0.06);">'
+            f'Metrics below are computed on the <b>{_mode_label}</b> matrix. The colour bands, '
+            f'layer ranks and baseline markers are calibrated for raw softmax attention and '
+            f'do not apply in this mode — read the numbers, not the colours.</div>'
+        )
+    cards_html += '<div class="metrics-grid">'
     for label, raw_value, fmt, key, modal_name in metrics:
         value_str = fmt.format(raw_value)
         label_text, color, gauge_pct, low_pct, high_pct, scale_lbl, max_r, min_r = get_interpretation(key, raw_value)

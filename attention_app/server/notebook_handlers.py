@@ -163,7 +163,7 @@ _METRIC_LABELS = {
     "att_metric_n_tokens":           "Tokens",
     "att_metric_n_layers":           "Layers",
     "att_metric_n_heads":            "Heads per layer",
-    "att_metric_head_entropy":       "Selected-head entropy",
+    "att_metric_head_entropy":       "Selected-head entropy (normalised 0-1)",
     "att_metric_head_max_attn":      "Selected-head max attention",
     "att_metric_head_top_pair":      "Selected-head peak src → tgt",
     "att_metric_head_top_received":  "Top-5 tokens receiving attention (sel. head)",
@@ -172,8 +172,8 @@ _METRIC_LABELS = {
     "att_metric_head_specialization": "Selected-head specialisation",
     # ── Attention global (across all layers/heads) ───────────────────
     "att_metric_global_top_attended": "Top-5 tokens receiving attention (global)",
-    "att_metric_global_concentrated": "Top-5 most-concentrated heads (lowest entropy)",
-    "att_metric_layer_entropy":       "Mean entropy per layer",
+    "att_metric_global_concentrated": "Top-5 most-concentrated heads (lowest normalised entropy)",
+    "att_metric_layer_entropy":       "Most concentrated layers (5 lowest mean normalised entropy)",
     # ── Bias detection (side A) ──────────────────────────────────────
     "bias_metric_n_tokens":          "Bias tokens analysed (A)",
     "bias_metric_n_biased":          "Biased tokens (A)",
@@ -196,7 +196,11 @@ _METRIC_LABELS = {
     # ── Integrated Gradients (A) ─────────────────────────────────────
     "bias_metric_ig_top_tokens":          "IG top-5 tokens (A)",
     "bias_metric_ig_top_corr_heads":      "Top-3 heads by IG ↔ attention ρ (A)",
-    "bias_metric_ig_mean_spearman":       "Mean IG ↔ attention Spearman ρ (A)",
+    "bias_metric_ig_mean_spearman":       "Mean |Spearman ρ| IG ↔ attention (A)",
+    "bias_metric_ig_median_abs_rho":      "Median |Spearman ρ| IG ↔ attention (A)",
+    "bias_metric_ig_heads_fdr":           "Heads significant after BH-FDR, q<0.05 (IG, A)",
+    "bias_metric_ig_target":              "IG attribution target",
+    "bias_metric_ig_completeness":        "IG completeness residual",
     # ── Head ablation (A) ─────────────────────────────────────────────
     "bias_metric_ablation_top_heads":     "Top-3 heads by ablation impact (A)",
     "bias_metric_ablation_max_kl":        "Max KL divergence after ablation (A)",
@@ -511,14 +515,32 @@ def _reg_link_html(json_key: str) -> str:
     if entry is None:
         return ""
     label, tooltip, url = entry
-    # Escape the tooltip text so the title attribute is safe.
-    safe_tooltip = _html.escape(f"{label}: {tooltip}", quote=True)
+    # "Mapped to", not "required by": the association between a captured
+    # field and a regulatory clause is this tool's interpretation of the
+    # clause, not a legal determination — overclaiming compliance is worse
+    # than claiming none.
+    safe_tooltip = _html.escape(
+        f"Mapped to {label} (interpretive, not legal advice): {tooltip}",
+        quote=True,
+    )
     safe_url = _html.escape(url, quote=True)
     return (
         f' <a class="nb-reg-link" href="{safe_url}" target="_blank" '
         f'rel="noopener noreferrer" title="{safe_tooltip}" '
         f'aria-label="{safe_tooltip}">&#9432;</a>'
     )
+
+
+# Design-choice cut-offs used by _disconfirming_keys, surfaced in the UI
+# banner tooltip so the heuristic is declared rather than implicit. The
+# |rho| < 0.30 band follows Cohen (1988); the remaining three are design
+# choices of this tool, not literature-calibrated thresholds.
+_DISCONFIRM_CUTOFFS_NOTE = (
+    "Heuristic cut-offs: |rho| < 0.30 (Cohen 1988, weak agreement); "
+    "special-token attention mass > 0.60; counterfactual 'no movement' when "
+    "all deltas are below 1 biased token / 0.10 strongest-score / 0.05 mean "
+    "score. The last three are design choices of this tool."
+)
 
 
 def _disconfirming_keys(ctx: Dict[str, Any]) -> set:
@@ -726,16 +748,26 @@ def _capture_context(input, *, cached_result=None, cached_result_B=None,
     context.update(bias_metrics)
 
     # Bias model identity (sources A and B). The bias_results dict stores
-    # the model key; the HF checkpoint id is the same as the key for
-    # gusnet-* models. Capture both sides when compare is active.
+    # the REGISTRY KEY ("gusnet-bert"), which is NOT the checkpoint id —
+    # a traceability field mapped to EU AI Act Art. 12 must record the
+    # actual artefact ("pinthoz/gus-net-bert" or a local path), so the key
+    # is resolved through MODEL_REGISTRY and kept alongside for context.
+    def _bias_checkpoint(key: str) -> str:
+        try:
+            from ..bias.gusnet_detector import MODEL_REGISTRY
+            path = MODEL_REGISTRY.get(key, {}).get("path")
+            return f"{path} (key: {key})" if path else str(key)
+        except Exception:
+            return str(key)
+
     if bias_state is not None:
         br_a = _safe_get(bias_state.get("bias_results"))
         if isinstance(br_a, dict) and br_a.get("bias_model_key"):
-            context["bias_metric_model_id"] = br_a["bias_model_key"]
+            context["bias_metric_model_id"] = _bias_checkpoint(br_a["bias_model_key"])
         if bias_compare_active:
             br_b = _safe_get(bias_state.get("bias_results_B"))
             if isinstance(br_b, dict) and br_b.get("bias_model_key"):
-                context["bias_metric_model_id_b"] = br_b["bias_model_key"]
+                context["bias_metric_model_id_b"] = _bias_checkpoint(br_b["bias_model_key"])
 
     return context
 
@@ -818,6 +850,34 @@ def _top_k_indices(scores, k=5, descending=True):
         return []
 
 
+def _normalized_row_entropies(mat, causal):
+    """Per-row attention entropy normalised to [0, 1] by each row's maximum.
+
+    For causal matrices row i only has support i+1, so its maximum entropy
+    is log(i+1) — ranking RAW entropies makes the first rows (and the
+    early positions of every head) look "most concentrated" purely because
+    of the mask: row 0 is exactly 0 bits by construction. Normalising each
+    row by its own log(support) removes the artefact; rows with support 1
+    return NaN and must be excluded from rankings and means.
+    """
+    import numpy as _np
+    n = mat.shape[-1]
+    p = mat + 1e-12
+    ent = -(p * _np.log(p)).sum(axis=-1)
+    if causal:
+        support = _np.arange(1, mat.shape[0] + 1, dtype=float)
+    else:
+        support = _np.full(mat.shape[0], float(n))
+    max_ent = _np.log(_np.maximum(support, 1.0))
+    return _np.where(max_ent > 0, ent / max_ent, _np.nan)
+
+
+def _is_causal_matrix(mat) -> bool:
+    """True when the strict upper triangle is structurally zero."""
+    import numpy as _np
+    return mat.shape[0] > 1 and float(_np.triu(mat, k=1).sum()) < 1e-6
+
+
 def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, Any]:
     """Pull a comprehensive set of attention numbers from a ``ComputeResult``.
 
@@ -858,11 +918,21 @@ def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, 
         except Exception:
             n_heads = None
 
-        # ── Per-layer mean entropy (used for global summary too) ────
+        # ── Per-layer mean NORMALISED entropy (0-1, causal-aware) ────
+        # Rankings use each row's own maximum entropy as the ceiling so a
+        # causal mask cannot make early rows/heads look "concentrated" by
+        # construction (see _normalized_row_entropies).
+        causal = False
+        try:
+            causal = _is_causal_matrix(
+                attentions[0][0, 0].detach().cpu().numpy()[:n_tok, :n_tok]
+            )
+        except Exception:
+            pass
         layer_entropies = []
         # Accumulators for global attended/concentrated stats.
         global_col_sums = _np.zeros(n_tok, dtype=float)
-        head_entropies: list = []  # (mean_entropy, layer, head)
+        head_entropies: list = []  # (mean_norm_entropy, layer, head)
         for li, lt in enumerate(attentions):
             try:
                 # shape (batch, heads, seq, seq) → batch 0
@@ -873,14 +943,15 @@ def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, 
             arr = arr[:, :n_tok, :n_tok]
             if arr.size == 0:
                 continue
-            # Per-head entropy (mean over queries).
-            p = arr + 1e-12
-            ent = -(p * _np.log(p)).sum(axis=-1).mean(axis=-1)  # (heads,)
-            layer_entropies.append(round(float(ent.mean()), 4))
+            head_means = []
             for hi_ in range(arr.shape[0]):
-                head_entropies.append(
-                    (round(float(ent[hi_]), 4), li, hi_)
-                )
+                rows = _normalized_row_entropies(arr[hi_], causal)
+                m = float(_np.nanmean(rows)) if _np.isfinite(rows).any() else None
+                if m is not None:
+                    head_means.append(m)
+                    head_entropies.append((round(m, 4), li, hi_))
+            if head_means:
+                layer_entropies.append(round(float(_np.mean(head_means)), 4))
             # Aggregate column sums for global "top attended" tokens.
             global_col_sums += arr.sum(axis=(0, 1))
 
@@ -895,8 +966,10 @@ def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, 
 
         if head_entropies:
             head_entropies.sort(key=lambda x: x[0])  # ascending = most concentrated
+            # "H=" — this is (normalised) entropy, NOT a correlation; the
+            # previous "ρ=" label collided with Spearman ρ everywhere else.
             top_concentrated = [
-                f"L{li}H{hi_} ρ={ent:.3f}" for ent, li, hi_ in head_entropies[:5]
+                f"L{li}H{hi_} H={ent:.3f}" for ent, li, hi_ in head_entropies[:5]
             ]
             out["att_metric_global_concentrated"] = top_concentrated
 
@@ -921,11 +994,13 @@ def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, 
         except Exception:
             return out
 
-        # Entropy + max + peak pair.
+        # Entropy + max + peak pair (normalised, causal-aware rows).
         try:
-            p = head_attn + 1e-12
-            row_entropy = -(p * _np.log(p)).sum(axis=-1)
-            out["att_metric_head_entropy"] = round(float(row_entropy.mean()), 4)
+            row_entropy = _normalized_row_entropies(head_attn, causal)
+            if _np.isfinite(row_entropy).any():
+                out["att_metric_head_entropy"] = round(
+                    float(_np.nanmean(row_entropy)), 4
+                )
             out["att_metric_head_max_attn"] = round(float(head_attn.max()), 4)
             am = int(head_attn.argmax())
             src = am // head_attn.shape[1]
@@ -949,11 +1024,15 @@ def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, 
         except Exception:
             pass
 
-        # Top-K tokens DISTRIBUTING attention (lowest entropy rows = most
-        # concentrated queries → most "decisive" tokens).
+        # Top-K tokens DISTRIBUTING attention (lowest NORMALISED-entropy
+        # rows = most concentrated queries → most "decisive" tokens).
+        # NaN rows (causal support-1 positions) are pushed to the end so
+        # the mask cannot nominate the first tokens by construction.
         try:
-            sorted_rows = list(_np.argsort(row_entropy))
-            top_distr = [int(i) for i in sorted_rows[:5]]
+            rank_vals = _np.where(_np.isfinite(row_entropy), row_entropy, _np.inf)
+            sorted_rows = list(_np.argsort(rank_vals))
+            top_distr = [int(i) for i in sorted_rows[:5]
+                         if _np.isfinite(row_entropy[int(i)])]
             out["att_metric_head_top_attending"] = [
                 f"{tokens[i]} (H={row_entropy[i]:.3f})"
                 for i in top_distr if 0 <= i < n_tok
@@ -1004,17 +1083,53 @@ def _bias_token_top_score(token_label) -> tuple:
 
 
 def _summarise_bias_result(bias_result) -> Dict[str, Any]:
-    """Turn the rich bias-processing dict into a structured summary."""
+    """Turn the rich bias-processing dict into a structured summary.
+
+    Evidence-consistency rule: counts, percentages and the mean score are
+    taken from ``bias_result["bias_summary"]`` — the SAME word-level
+    summary (``get_bias_summary``) the dashboard cards render — so the
+    Notebook records exactly the numbers the analyst saw. Recomputing them
+    here over raw ``token_labels`` (subword-level, [CLS]/[SEP] included)
+    used to produce different values from the cards, which defeats the
+    purpose of an audit trail. Token-level detail (previews, top scored
+    tokens) is still derived from ``token_labels`` as supporting detail.
+    """
     out: Dict[str, Any] = {}
     if not isinstance(bias_result, dict):
         return out
     token_labels = bias_result.get("token_labels") or []
-    out["n_tokens"] = len(token_labels)
     biased = [t for t in token_labels if t.get("is_biased")]
-    out["n_biased"] = len(biased)
+
+    summary = bias_result.get("bias_summary")
+    if isinstance(summary, dict) and summary:
+        # Word-level numbers, identical to the dashboard cards.
+        out["n_tokens"] = int(summary.get("total_tokens", 0))
+        out["n_biased"] = int(summary.get("biased_tokens", 0))
+        if summary.get("avg_confidence") is not None:
+            out["mean_confidence"] = round(float(summary["avg_confidence"]), 4)
+        type_counts = {
+            "GEN": int(summary.get("generalization_count", 0)),
+            "UNFAIR": int(summary.get("unfairness_count", 0)),
+            "STEREO": int(summary.get("stereotype_count", 0)),
+        }
+        if any(type_counts.values()):
+            out["type_counts"] = type_counts
+    else:
+        # Legacy fallback (results without a bias_summary block).
+        out["n_tokens"] = len(token_labels)
+        out["n_biased"] = len(biased)
+        type_counts = {"GEN": 0, "UNFAIR": 0, "STEREO": 0}
+        for t in biased:
+            for bt in (t.get("bias_types") or []):
+                if bt in type_counts:
+                    type_counts[bt] += 1
+        if any(type_counts.values()):
+            out["type_counts"] = type_counts
+
     if biased:
-        # Plain preview (first few tokens) — for back-compat.
-        out["biased_preview"] = [str(t.get("token", "?")) for t in biased[:10]]
+        # Full biased-token list (used for A∩B set logic) + short preview.
+        out["biased_all"] = [str(t.get("token", "?")) for t in biased]
+        out["biased_preview"] = out["biased_all"][:10]
         # Top-5 scored: include the actual score and category.
         scored = []
         for t in biased:
@@ -1027,17 +1142,13 @@ def _summarise_bias_result(bias_result) -> Dict[str, Any]:
                 f"{tok}={score:.2f} {cat}" for score, cat, tok in scored[:5]
             ]
             out["strongest_token"] = f"{scored[0][2]} ({scored[0][1]}, {scored[0][0]:.2f})"
-            out["mean_confidence"] = round(
-                sum(s for s, _c, _t in scored) / len(scored), 4
-            )
-    # Counts by category.
-    type_counts: Dict[str, int] = {"GEN": 0, "UNFAIR": 0, "STEREO": 0}
-    for t in biased:
-        for bt in (t.get("bias_types") or []):
-            if bt in type_counts:
-                type_counts[bt] += 1
-    if any(type_counts.values()):
-        out["type_counts"] = type_counts
+            # Numeric copy so delta computation never has to parse the
+            # display string back apart.
+            out["strongest_score"] = round(float(scored[0][0]), 4)
+            if "mean_confidence" not in out:
+                out["mean_confidence"] = round(
+                    sum(s for s, _c, _t in scored) / len(scored), 4
+                )
     # Biased spans.
     spans = bias_result.get("bias_spans") or []
     if isinstance(spans, list) and spans:
@@ -1094,7 +1205,8 @@ def _extract_ig_metrics(ig_bundle, tokens_hint=None) -> Dict[str, Any]:
                 for i in top_idx if 0 <= i < len(tokens)
             ]
         # Head correlations: sorted by absolute Spearman desc upstream;
-        # take top 3 and a global mean for the audit trail.
+        # take top 3, plus the same magnitude summaries the dashboard
+        # card shows (median |ρ|) and the FDR-corrected significance count.
         corr = getattr(ig_bundle, "correlations", None) or []
         if corr:
             top3 = corr[:3]
@@ -1102,8 +1214,31 @@ def _extract_ig_metrics(ig_bundle, tokens_hint=None) -> Dict[str, Any]:
                 f"L{c.layer}H{c.head} ρ={c.spearman_rho:+.3f}"
                 for c in top3
             ]
-            mean_rho = sum(abs(c.spearman_rho) for c in corr) / len(corr)
-            out["bias_metric_ig_mean_spearman"] = round(float(mean_rho), 4)
+            abs_rhos = sorted(abs(c.spearman_rho) for c in corr)
+            out["bias_metric_ig_mean_spearman"] = round(
+                float(sum(abs_rhos) / len(abs_rhos)), 4
+            )
+            mid = len(abs_rhos) // 2
+            median_abs = (abs_rhos[mid] if len(abs_rhos) % 2
+                          else (abs_rhos[mid - 1] + abs_rhos[mid]) / 2)
+            out["bias_metric_ig_median_abs_rho"] = round(float(median_abs), 4)
+            q_vals = [getattr(c, "spearman_qvalue", None) for c in corr]
+            if all(q is not None for q in q_vals):
+                n_sig = sum(1 for q in q_vals if q < 0.05)
+                out["bias_metric_ig_heads_fdr"] = f"{n_sig}/{len(corr)}"
+        # Interpretability provenance: a ρ is only meaningful given the
+        # attribution TARGET (bias logits vs pooled-norm fallback) and an
+        # IG integration that actually converged. Without these two an
+        # audit entry cannot be interpreted after the fact.
+        target = getattr(ig_bundle, "target", None)
+        if target:
+            out["bias_metric_ig_target"] = str(target)
+        delta = getattr(ig_bundle, "convergence_delta", None)
+        if delta is not None:
+            out["bias_metric_ig_completeness"] = (
+                f"{float(delta) * 100:.1f}%"
+                + (" (>5% — approximate)" if float(delta) > 0.05 else "")
+            )
     except Exception:
         pass
     return out
@@ -1207,16 +1342,24 @@ def _compute_compare_deltas(summary_a: Dict[str, Any],
         out["bias_metric_delta_n_biased"] = (
             summary_b["n_biased"] - summary_a["n_biased"]
         )
-    # Strongest token score difference.
-    sa = summary_a.get("strongest_token") or ""
-    sb = summary_b.get("strongest_token") or ""
-    if sa and sb:
-        try:
-            score_a = float(sa.rsplit(", ", 1)[-1].rstrip(")"))
-            score_b = float(sb.rsplit(", ", 1)[-1].rstrip(")"))
-            out["bias_metric_delta_strongest_score"] = round(score_b - score_a, 4)
-        except Exception:
-            pass
+    # Strongest token score difference. Prefer the NUMERIC field; parsing
+    # the display string ("token (CAT, 0.87)") is kept only as a fallback
+    # for entries saved before strongest_score existed.
+    score_a = summary_a.get("strongest_score")
+    score_b = summary_b.get("strongest_score")
+    if score_a is None or score_b is None:
+        sa = summary_a.get("strongest_token") or ""
+        sb = summary_b.get("strongest_token") or ""
+        if sa and sb:
+            try:
+                score_a = float(sa.rsplit(", ", 1)[-1].rstrip(")"))
+                score_b = float(sb.rsplit(", ", 1)[-1].rstrip(")"))
+            except Exception:
+                score_a = score_b = None
+    if score_a is not None and score_b is not None:
+        out["bias_metric_delta_strongest_score"] = round(
+            float(score_b) - float(score_a), 4
+        )
     # Mean confidence.
     mca = summary_a.get("mean_confidence")
     mcb = summary_b.get("mean_confidence")
@@ -1235,9 +1378,12 @@ def _compute_compare_deltas(summary_a: Dict[str, Any],
     plb = summary_b.get("peak_layer")
     if pla is not None and plb is not None:
         out["bias_metric_delta_peak_layer"] = int(plb) - int(pla)
-    # Biased-token set overlap (use the plain preview list).
-    set_a = set(summary_a.get("biased_preview") or [])
-    set_b = set(summary_b.get("biased_preview") or [])
+    # Biased-token set overlap over the FULL biased lists. Using the
+    # 10-token preview here made the sets wrong for longer sentences (a
+    # token past position 10 in A showed up as "only in B"). Falls back
+    # to the preview for legacy summaries without biased_all.
+    set_a = set(summary_a.get("biased_all") or summary_a.get("biased_preview") or [])
+    set_b = set(summary_b.get("biased_all") or summary_b.get("biased_preview") or [])
     if set_a or set_b:
         overlap = sorted(set_a & set_b)
         only_a = sorted(set_a - set_b)
@@ -1437,7 +1583,13 @@ def _format_context_value(value: Any) -> str:
 # ---------------------------------------------------------------------------
 
 def _now_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """Local timestamp in real ISO 8601 WITH the UTC offset.
+
+    Audit-trail timestamps without a timezone are ambiguous (DST
+    transitions, machines in different zones) — for evidence mapped to
+    EU AI Act Art. 12 logging, the offset is part of the record.
+    """
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def _slugify(text: str) -> str:
@@ -1866,7 +2018,12 @@ def notebook_server_handlers(input, output, session, *,
             except Exception:
                 _logger.exception("Could not restore custom client inputs")
         last_status.set(
-            (f"Restored {n_applied} field(s) from the saved entry.", "ok")
+            (
+                f"Restored {n_applied} input field(s) from the saved entry. "
+                "The panels still show the PREVIOUS run — click Generate All / "
+                "Analyze Bias to recompute the evidence for the restored inputs.",
+                "ok",
+            )
         )
 
     # ---- FAB visibility: only reveal after a run in Attention or Bias --
@@ -1928,9 +2085,10 @@ def notebook_server_handlers(input, output, session, *,
         warning_banner = ""
         if flagged:
             warning_banner = (
-                f'<div class="nb-ctx-warning-banner">'
+                f'<div class="nb-ctx-warning-banner" title="{_DISCONFIRM_CUTOFFS_NOTE}">'
                 f"⚠ {len(flagged)} disconfirming signal(s) detected. "
-                f"Consider tempering or revising the hypothesis before saving."
+                f"Consider tempering or revising the hypothesis before saving. "
+                f'<span style="opacity:0.75;">(hover for the heuristic cut-offs)</span>'
                 f"</div>"
             )
         return ui.HTML(
@@ -1964,7 +2122,7 @@ def notebook_server_handlers(input, output, session, *,
             if ctx:
                 flagged = _disconfirming_keys(ctx)
                 banner = (
-                    f'<div class="nb-ctx-warning-banner">'
+                    f'<div class="nb-ctx-warning-banner" title="{_DISCONFIRM_CUTOFFS_NOTE}">'
                     f"⚠ {len(flagged)} disconfirming signal(s) recorded with this entry."
                     f"</div>"
                 ) if flagged else ""

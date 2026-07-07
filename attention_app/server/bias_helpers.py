@@ -439,10 +439,17 @@ def _process_raw_bias_result(raw_res, thresholds, use_optimized=False,
         else:
             det = GusNetDetector(model_key=bias_model_key, use_optimized=use_optimized)
 
+        # Decision-rule consistency: when the caller wants the optimized
+        # per-label thresholds, pass thresholds=None so apply_thresholds
+        # uses the true per-index (B-/I-) rule. Passing the per-category
+        # "effective" thresholds (mean of B and I) would silently switch to
+        # a max(B,I) >= mean(optB,optI) approximation — a DIFFERENT rule,
+        # which made Base-vs-GUS-Net panels differ for threshold reasons
+        # rather than model reasons.
         gusnet_labels = det.apply_thresholds(
             raw_res["gus_tokens"],
             raw_res["gus_probs"],
-            thresholds=thresholds
+            thresholds=None if use_optimized else thresholds,
         )
 
         tokens = raw_res["tokens"]

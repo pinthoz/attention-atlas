@@ -1233,8 +1233,13 @@ def server(input, output, session):
                 tokens, embeddings, pos_enc, attentions, hidden_states, inputs_tok, tokenizer_inst, encoder_model, mlm_model, head_spec, isa_data, head_clusters = result
 
                 # Keep the full ComputeResult so every dashboard panel can be
-                # replayed for this sentence during navigation.
-                batch_viewable.append({"index": idx, "text": text, "result": result})
+                # replayed for this sentence during navigation. Capped:
+                # each result holds attention + hidden-state tensors, so an
+                # unbounded list scales memory with batch size (the JSON
+                # report still covers all sentences).
+                _VIEWABLE_CAP = 100
+                if len(batch_viewable) < _VIEWABLE_CAP:
+                    batch_viewable.append({"index": idx, "text": text, "result": result})
 
                 n_layers = len(attentions)
                 n_heads = attentions[0].shape[1]

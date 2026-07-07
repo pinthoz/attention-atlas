@@ -588,7 +588,15 @@ def bias_server_handlers(input, output, session):
         try:
             raw_base = _load_base_encoder_attention_for_text(res["text"], res["bias_model_key"])
             thresholds = raw_base.get("effective_thresholds", {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5})
-            processed = _process_raw_bias_result(raw_base, thresholds, use_optimized=False, bar_threshold=_get_bar_threshold())
+            # Mirror the UI's optimized-thresholds toggle so the base-encoder
+            # view applies the SAME decision rule as the GUS-Net view —
+            # otherwise Base-vs-GUS-Net detection differences can come from
+            # the threshold approximation instead of the models.
+            try:
+                _use_opt = bool(input.bias_use_optimized())
+            except Exception:
+                _use_opt = True
+            processed = _process_raw_bias_result(raw_base, thresholds, use_optimized=_use_opt, bar_threshold=_get_bar_threshold())
             if processed:
                 cache_rv.set(processed)
             return processed
@@ -2020,9 +2028,16 @@ def bias_server_handlers(input, output, session):
                 propagation = processed.get("propagation_analysis", {})
                 bias_matrix = processed.get("bias_matrix")
 
-                biased_count = sum(1 for t in token_labels if t.get("is_biased"))
-                total_tokens = len(token_labels)
-                bias_pct = round(biased_count / total_tokens * 100, 1) if total_tokens else 0
+                # Use the SAME word-level summary as the interactive
+                # dashboard (det.get_bias_summary, already computed inside
+                # _process_raw_bias_result). The batch used to recount over
+                # raw token_labels — subword-level AND including [CLS]/[SEP]
+                # in the denominator — so the report's bias_percentage
+                # disagreed with the dashboard for the very same sentence.
+                summary = processed.get("bias_summary") or {}
+                biased_count = int(summary.get("biased_tokens", 0))
+                total_tokens = int(summary.get("total_tokens", 0))
+                bias_pct = float(summary.get("bias_percentage", 0.0))
                 is_biased = biased_count > 0
 
                 # Token scores for report
@@ -2045,32 +2060,18 @@ def bias_server_handlers(input, output, session):
                         "avg_score": round(float(sp.get("avg_score", 0)), 4),
                     })
 
-                # Category counts
-                cat_counts = {}
-                for tl in token_labels:
-                    if tl.get("is_biased"):
-                        for bt in tl.get("bias_types", []):
-                            cat_counts[bt] = cat_counts.get(bt, 0) + 1
-
-                # Confidence
-                confidences = []
-                for tl in token_labels:
-                    if tl.get("is_biased") and tl.get("scores"):
-                        max_score = max(v for k, v in tl["scores"].items() if k != "O")
-                        confidences.append(float(max_score))
-                avg_conf = round(sum(confidences) / len(confidences), 4) if confidences else 0
-
                 sentence_data.update({
                     "is_biased": is_biased,
+                    # Word-level summary, identical to the dashboard cards.
                     "bias_summary": {
                         "total_tokens": total_tokens,
                         "biased_tokens": biased_count,
                         "bias_percentage": bias_pct,
-                        "generalization_count": cat_counts.get("GEN", 0),
-                        "unfairness_count": cat_counts.get("UNFAIR", 0),
-                        "stereotype_count": cat_counts.get("STEREO", 0),
-                        "avg_confidence": avg_conf,
-                        "categories_found": list(cat_counts.keys()),
+                        "generalization_count": summary.get("generalization_count", 0),
+                        "unfairness_count": summary.get("unfairness_count", 0),
+                        "stereotype_count": summary.get("stereotype_count", 0),
+                        "avg_confidence": round(float(summary.get("avg_confidence", 0.0)), 4),
+                        "categories_found": summary.get("categories_found", []),
                     },
                     "biased_spans": span_data,
                     "token_scores": token_scores,
@@ -2097,9 +2098,14 @@ def bias_server_handlers(input, output, session):
                     }
 
                 # Keep the processed result for dashboard navigation.
-                batch_viewable.append({
-                    "index": idx, "text": text, "processed": processed,
-                })
+                # Capped: each entry retains full attention tensors, so an
+                # unbounded list scales memory linearly with batch size.
+                # The JSON report covers ALL sentences either way.
+                _VIEWABLE_CAP = 100
+                if len(batch_viewable) < _VIEWABLE_CAP:
+                    batch_viewable.append({
+                        "index": idx, "text": text, "processed": processed,
+                    })
 
                 # ── Phase 2: Integrated Gradients ──
                 ig_data = None

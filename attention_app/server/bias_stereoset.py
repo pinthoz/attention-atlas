@@ -165,6 +165,15 @@ def register_stereoset_handlers(
         from ..bias.stereoset.stereoset_data import _resolve_key
         return _resolve_key(base_mk)
 
+    def _ss_scoring_label(base_mk: str) -> str:
+        """Human label for the sentence-scoring method of a base model.
+        BERT-family: pseudo-log-likelihood; GPT-2-family: average
+        autoregressive log-likelihood (the previous copy said PLL for
+        both, which is wrong for GPT-2)."""
+        return ("average autoregressive log-likelihood"
+                if "gpt2" in str(base_mk).lower()
+                else "pseudo-log-likelihood (PLL)")
+
     def _stereoset_gusnet_warning_icon():
         """Return a ⚠ tooltip icon explaining why GUS-Net StereoSet scores
         should be interpreted with caution.  Designed to sit in the controls
@@ -176,9 +185,9 @@ def register_stereoset_handlers(
             f"<span>GUS-Net is a <b>token-level bias classifier</b> "
             f"(BertForTokenClassification), not a language model.</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
-            f"<span>Its StereoSet scores are computed by extracting the "
-            f"underlying <b>{base_mk.upper()}</b> encoder and scoring completions "
-            f"via pseudo-log-likelihood.</span></div>"
+            f"<span>Its StereoSet scores are those of the corresponding BASE "
+            f"language model (<b>{base_mk.upper()}</b>), scored via "
+            f"{_ss_scoring_label(base_mk)}.</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
             f"<span>The fine-tuning objective (bias detection) alters internal "
             f"representations in ways that may <b>distort LM-level metrics</b> "
@@ -208,9 +217,9 @@ def register_stereoset_handlers(
             f"<span>GUS-Net is a <b>token-level bias classifier</b> "
             f"(BertForTokenClassification), not a language model.</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
-            f"<span>Its StereoSet scores are computed by extracting the "
-            f"underlying <b>{base_mk.upper()}</b> encoder and scoring completions "
-            f"via pseudo-log-likelihood.</span></div>"
+            f"<span>Its StereoSet scores are those of the corresponding BASE "
+            f"language model (<b>{base_mk.upper()}</b>), scored via "
+            f"{_ss_scoring_label(base_mk)}.</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
             f"<span>The fine-tuning objective (bias detection) alters internal "
             f"representations in ways that may <b>distort LM-level metrics</b> "
@@ -828,14 +837,16 @@ def register_stereoset_handlers(
                 f'box-shadow:0 8px 24px rgba(0,0,0,0.3);z-index:99999;line-height:1.7;'
                 f'border:1px solid rgba(148,163,184,0.15);">'
                 f'<div style="font-weight:700;color:white;margin-bottom:6px;font-size:11px;">'
-                f'{str(canonical).upper()} \u2194 GUS-NET Attention Similarity</div>'
+                f'{str(canonical).upper()} \u2194 GUS-NET Sensitivity-Profile Similarity</div>'
                 f'<div style="color:#cbd5e1;font-size:10px;margin-bottom:12px;line-height:1.5;white-space:normal;max-width:250px;">'
-                f'This score indicates how closely the attention mechanisms of the fine-tuned GUS-NET match the original {str(canonical).upper()} model. '
-                f'It combines the correlation of their attention matrices across all layers and the overlap of their most sensitive heads. '
-                f'A high score means GUS-NET successfully preserves the base model\'s fundamental attention behavior while identifying biased tokens.</div>'
+                f'How closely the two models\' <b>head-sensitivity profiles</b> match: the Pearson correlation of their '
+                f'per-head category-sensitivity matrices (floored at 0 \u2014 no relationship scores 0%, not 50%) '
+                f'averaged 50/50 with the overlap of their top-20 sensitive heads. '
+                f'This compares which heads separate the demographic categories, NOT raw attention matrices; '
+                f'a high score means fine-tuning kept the same heads category-sensitive.</div>'
                 f'<div style="font-family:JetBrains Mono,monospace; text-align:center; background:rgba(0,0,0,0.2); padding:8px 12px; border-radius:6px; border:1px solid rgba(255,255,255,0.05);">'
                 f'<div style="display:flex; justify-content:space-between; margin-bottom:2px; font-size:10px;">'
-                f'<div><span style="color:#60a5fa;">Max Corr:</span> <b style="color:white;">{sim["matrix_corr"]:.3f}</b></div>'
+                f'<div><span style="color:#60a5fa;">Sens. Corr r:</span> <b style="color:white;">{sim["matrix_corr"]:.3f}</b></div>'
                 f'<div><span style="color:#a78bfa;">Top Heads:</span> <b style="color:white;">{sim["heads_overlap_pct"]:.0f}%</b></div>'
                 f'</div>'
                 f'<div style="display:flex; justify-content:center; gap:60px; color:#64748b; font-size:12px; font-weight:bold; margin-bottom:2px;">'
@@ -1386,8 +1397,9 @@ def register_stereoset_handlers(
                         
                         Returns:
                             tuple: (trio_html, diff_html, raw_attentions)
-                            raw_attentions is a dict with keys 'stereo', 'anti', 'unrelated'
-                            each containing the attention tuple from the model.
+                            raw_attentions maps 'stereo'/'anti'/'unrelated' to
+                            (tokens, attention_tuple) pairs (or None), so the
+                            similarity check can align by token identity.
                         """
                         base = _GUSNET_TO_ENCODER.get(model_key, "bert-base-uncased")
                         sens = get_sensitive_heads(model_key) or []
@@ -1439,46 +1451,70 @@ def register_stereoset_handlers(
                             f"stereoset_attn_diff_{model_key}_{suffix}",
                             controls=[str(diff_csv_btn)]
                         )
-                        raw_attentions = {"stereo": s_a, "anti": a_a, "unrelated": u_attn}
+                        raw_attentions = {
+                            "stereo": (s_tok, s_a),
+                            "anti": (a_tok, a_a),
+                            "unrelated": ((ud["tokens"], u_attn) if ud else None),
+                        }
                         return (t_html, d_html, raw_attentions)
 
                     def _compute_attention_similarity(attn_A, attn_B):
-                        """Compute Pearson correlation of attention across all layers for two models.
-                        
-                        Averages similarity over stereo/anti/unrelated sentence types.
+                        """Pearson correlation of attention between two models,
+                        restricted to comparable positions.
+
+                        A flattened positional correlation is only meaningful
+                        where position i holds the SAME token in both models.
+                        Different tokenizers (BERT vs GPT-2) produce different
+                        sequences, and different architectures different head
+                        counts — the previous implementation truncated to
+                        min_seq and correlated unrelated token pairs (and
+                        crashed outright on 12- vs 16-head models). Now:
+
+                        - only layers with EQUAL head counts are compared;
+                        - only positions whose cleaned tokens match in both
+                          models enter the correlation;
+                        - returns None (badge hidden) when fewer than 70% of
+                          positions are shared or nothing is comparable;
+                        - score is max(0, mean r) x 100 — unrelated attention
+                          reads 0%, not 50%.
                         """
-                        import torch
+                        def _clean(t):
+                            return t.replace("Ġ", "").replace("##", "").lower()
+
                         sims = []
                         for sent_key in ("stereo", "anti", "unrelated"):
-                            a = attn_A.get(sent_key)
-                            b = attn_B.get(sent_key)
+                            pack_a = attn_A.get(sent_key)
+                            pack_b = attn_B.get(sent_key)
+                            if not pack_a or not pack_b:
+                                continue
+                            toks_a, a = pack_a
+                            toks_b, b = pack_b
                             if a is None or b is None:
                                 continue
-                            # a and b are tuples of tensors, one per layer
-                            # Each tensor shape: (1, num_heads, seq_len, seq_len)
+                            min_seq = min(len(toks_a), len(toks_b))
+                            shared = [i for i in range(min_seq)
+                                      if _clean(toks_a[i]) == _clean(toks_b[i])]
+                            if min_seq == 0 or len(shared) / min_seq < 0.7 or len(shared) < 3:
+                                continue  # tokenizations diverge — not comparable
+                            import numpy as _np
+                            idx = _np.asarray(shared)
                             for layer_idx in range(min(len(a), len(b))):
-                                mat_a = a[layer_idx][0].cpu().float()  # (heads, seq, seq)
-                                mat_b = b[layer_idx][0].cpu().float()
-                                # Truncate to same seq length
-                                min_seq = min(mat_a.shape[-1], mat_b.shape[-1])
-                                flat_a = mat_a[:, :min_seq, :min_seq].flatten()
-                                flat_b = mat_b[:, :min_seq, :min_seq].flatten()
-                                n = flat_a.shape[0]
-                                if n == 0:
-                                    continue
-                                ma = flat_a.mean()
-                                mb = flat_b.mean()
-                                cov = ((flat_a - ma) * (flat_b - mb)).sum()
-                                sa = ((flat_a - ma) ** 2).sum().sqrt()
-                                sb = ((flat_b - mb) ** 2).sum().sqrt()
+                                mat_a = a[layer_idx][0].cpu().float().numpy()  # (heads, seq, seq)
+                                mat_b = b[layer_idx][0].cpu().float().numpy()
+                                if mat_a.shape[0] != mat_b.shape[0]:
+                                    continue  # different head counts — skip layer
+                                sub_a = mat_a[:, idx[:, None], idx[None, :]].ravel()
+                                sub_b = mat_b[:, idx[:, None], idx[None, :]].ravel()
+                                sa = sub_a.std()
+                                sb = sub_b.std()
                                 if sa > 0 and sb > 0:
-                                    r = (cov / (sa * sb)).item()
-                                    sims.append(r)
+                                    r = float(_np.corrcoef(sub_a, sub_b)[0, 1])
+                                    if _np.isfinite(r):
+                                        sims.append(r)
                         if not sims:
                             return None
                         avg_r = sum(sims) / len(sims)
-                        # Normalise from [-1,1] to [0,100]
-                        return round(max(0, (avg_r + 1) / 2) * 100, 1)
+                        return round(max(0.0, avg_r) * 100, 1)
 
                     if has_B and ex_B_detail:
                         # ── Compare Models: side-by-side with aligned layout ──

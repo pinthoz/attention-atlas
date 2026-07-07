@@ -109,23 +109,28 @@ def create_attention_bias_matrix(
             hover_text.append(row)
 
     # Dynamic range anchored at the alpha=0.01 threshold (5.3) so the colorscale
-    # spans uniform (1.0) -> alpha=0.05 (2.5) -> alpha=0.01 (5.3). Heat data above
-    # 5.3 expand the range further but the empirical breakpoints stay readable.
+    # spans uniform (1.0) -> specialised (bar_threshold) -> alpha=0.01 (5.3).
+    # In compare mode the range is shared with the OTHER matrix so the A/B
+    # heatmaps use one colour scale (different scales side by side read as
+    # "this model attends more" when only the normalisation differs).
     max_val = float(bias_matrix.max())
-    # Anchor z_max at the alpha=0.01 threshold so the colorscale spans the
-    # full meaningful range (0 -> uniform -> alpha=0.05 -> alpha=0.01).
+    if has_bar_delta:
+        max_val = max(max_val, float(bias_matrix_other.max()))
     z_max = max(5.3, max_val)
     z_min = 0.0
 
     # Custom colorscale calibrated to the empirical thresholds:
-    #   0.0  -> blue            (head avoids biased tokens)
-    #   1.0  -> white            (uniform baseline)
-    #   2.5  -> light red        (alpha=0.05 - specialised)
-    #   5.3  -> dark red         (alpha=0.01 - strongly specialised)
+    #   0.0            -> blue      (head avoids biased tokens)
+    #   1.0            -> white     (uniform baseline)
+    #   bar_threshold  -> light red (specialised; slider, default 2.5 = alpha 0.05)
+    #   5.3            -> dark red  (alpha=0.01 - strongly specialised)
     # See dataset/thresholds_results/THRESHOLDS_CALIBRATION.md
+    # Plotly requires strictly increasing colorscale stops; clamp so the
+    # ordering mid < specialised < alpha01 survives any slider value.
     mid_point = 1.0 / z_max if z_max > 0 else 0.5
-    alpha_05_point = min(1.0, 2.5 / z_max)
     alpha_01_point = min(1.0, 5.3 / z_max)
+    alpha_05_point = min(alpha_01_point - 1e-4,
+                         max(mid_point + 1e-4, bar_threshold / z_max))
 
     colorscale = [
         [0.0, '#dbeafe'],            # 0.0: Light Blue (avoiding)
@@ -607,18 +612,32 @@ def create_inline_bias_html(
     Returns an HTML string where biased spans are wrapped in coloured
     ``<span>`` elements with hover tooltips showing category, score,
     method and explanation.
+
+    Display filter: unless ``show_neutral`` is set, spans whose average
+    score falls below ``_INLINE_MIN_SCORE`` are hidden. This is a
+    PRESENTATION filter on top of the detection thresholds (weak spans
+    clutter the reading view) — it is disclosed in the legend so hidden
+    spans are not mistaken for non-detections.
     """
+    _INLINE_MIN_SCORE = 0.35
     # Filter spans if show_neutral is False
     display_spans = bias_spans
+    n_hidden = 0
     if not show_neutral:
-        display_spans = [s for s in bias_spans if s.get("avg_score", 0) >= 0.35]
+        display_spans = [s for s in bias_spans if s.get("avg_score", 0) >= _INLINE_MIN_SCORE]
+        n_hidden = len(bias_spans) - len(display_spans)
 
     if not display_spans:
+        _hidden_note = (
+            f' ({n_hidden} weak span{"s" if n_hidden != 1 else ""} below the '
+            f'{_INLINE_MIN_SCORE:.2f} display filter hidden)'
+            if n_hidden else ''
+        )
         return (
             '<div class="bias-inline-text">'
             f'<p style="font-size:15px;line-height:1.8;">{html_lib.escape(text)}</p>'
             '<div style="color:#10b981;font-size:13px;margin-top:12px;">'
-            'No bias patterns detected' + (' above threshold' if not show_neutral and bias_spans else '') + '.</div></div>'
+            'No bias patterns displayed' + _hidden_note + '.</div></div>'
         )
 
     # Reconstruct text from tokens, mapping token indices -> char positions
@@ -699,6 +718,12 @@ def create_inline_bias_html(
             f'background:{info["bg"]};border-bottom:2px solid {info["border"]};"></span>'
             f'<span style="font-size:11px;color:#64748b;">{info["label"]}</span></span>'
         )
+    if n_hidden:
+        legend_items.append(
+            f'<span style="font-size:10px;color:#94a3b8;font-style:italic;">'
+            f'{n_hidden} weak span{"s" if n_hidden != 1 else ""} hidden '
+            f'(avg score &lt; {_INLINE_MIN_SCORE:.2f} display filter)</span>'
+        )
 
     return (
         '<div class="bias-inline-text">'
@@ -733,11 +758,12 @@ def _align_tokens_to_text(text: str, tokens: List[str]) -> List[tuple]:
             positions.append((None, None))
             continue
 
-        # Search forward from cursor
+        # Search forward from cursor. On a miss, do NOT restart from the
+        # beginning: with repeated words a backward jump re-matches an
+        # EARLIER occurrence and every later span highlights the wrong
+        # text. Degrading this one token to (None, None) keeps the cursor
+        # monotone and the remaining spans correct.
         idx = text_lower.find(clean_lower, cursor)
-        if idx == -1:
-            # Fallback: try from beginning (shouldn't normally happen)
-            idx = text_lower.find(clean_lower)
         if idx == -1:
             positions.append((None, None))
             continue
@@ -1144,10 +1170,12 @@ def create_token_bias_strip(
     selected_token_idx: Optional[Union[int, List[int]]] = None
 ) -> str:
     """Render a compact HTML strip showing per-token bias categories.
-    
-    Logic:
-    - BERT (detected by "##"): Keep split and show "##" (e.g. "nur", "##turing").
-    - GPT-2 (detected by "Ġ" absence): Merge subwords.
+
+    Display convention: subwords are kept SPLIT for both tokenizers (BERT
+    shows the ``##`` markers; GPT-2 shows raw BPE pieces) — the strip is a
+    token-level view by design. Word-level statistics live in the summary
+    (``get_bias_summary``), which merges subwords; this view deliberately
+    does not.
     """
     # Normalize selection
     selected_indices = set()
@@ -1159,64 +1187,31 @@ def create_token_bias_strip(
     cats = ["O", "GEN", "UNFAIR", "STEREO"]
     cat_colors = {"O": "#64748b", "GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
 
-    # Detect global tokenizer mode for safe merging defaults
-    has_gpt2_tokens = any("\u0120" in lbl["token"] for lbl in token_labels)
-    # If we see Ġ, assume GPT-2 merging logic is active. 
-    # But if we see ##, that takes precedence for blocking merge on that specific token.
-    
     merged_tokens = []
-    current_token = None
 
-    for i, lbl in enumerate(token_labels):
+    for lbl in token_labels:
         tok = lbl["token"]
         if tok in ("[CLS]", "[SEP]", "[PAD]", "<|endoftext|>"):
             continue
-            
-        # Determine if this token is a subword that should be merged
-        # It is a merge candidate if:
-        # 1. We are in GPT-2 mode (have seen Ġ in sequence)
-        # 2. It does NOT have a Ġ (continuation in GPT-2)
-        # 3. It does NOT start with ## (BERT subword - keep split)
-        # 4. It is not the first token (current_token exists)
-        
-        is_gpt2_subword = ("\u0120" not in tok) and has_gpt2_tokens
-        is_bert_subword = tok.startswith("##")
 
-        # Prepare text for display (remove markers)
-        # For BERT ##, we want to KEEP ## in the visual text per user request.
-        # For GPT-2 Ġ, we remove it.
-        clean_text = tok.replace("\u0120", "").replace("##", "")
+        # Strip tokenizer markers for display (Ġ removed; ## removed here,
+        # but the subword stays its own cell - no merging, see docstring).
+        clean_text = tok.replace("Ġ", "").replace("##", "")
 
-        # Standalone punctuation (no alphanumeric chars) should NOT be merged
-        is_standalone_punct = clean_text and not any(c.isalnum() for c in clean_text)
-        
-        # USER CHANGE: For GPT-2, do NOT merge. Show raw tokens as is.
-        if has_gpt2_tokens:
-            should_merge_this = False
-        else:
-            should_merge_this = is_gpt2_subword and not is_bert_subword and (current_token is not None) and not is_standalone_punct
-        
         if not clean_text:
             continue
 
-        if should_merge_this:
-            # Merge with previous
-            current_token["text"] += clean_text
-            current_token["is_biased"] = current_token["is_biased"] or lbl.get("is_biased", False)
-            current_token["bias_types"] = list(set(current_token["bias_types"] + lbl.get("bias_types", [])))
-            for cat, score in lbl.get("scores", {}).items():
-                current_token["scores"][cat] = max(current_token["scores"].get(cat, 0), score)
-            current_token["indices"].append(lbl.get("index", -1))
-        else:
-            # New token (or preserved split BERT token)
-            current_token = {
-                "text": clean_text,
-                "is_biased": lbl.get("is_biased", False),
-                "bias_types": lbl.get("bias_types", []),
-                "scores": lbl.get("scores", {}).copy(),
-                "indices": [lbl.get("index", -1)]
-            }
-            merged_tokens.append(current_token)
+        # No merging: subwords stay split for both tokenizers (see
+        # docstring). The dead GPT-2 merge branch that used to live here
+        # was unreachable and contradicted its own comment.
+        current_token = {
+            "text": clean_text,
+            "is_biased": lbl.get("is_biased", False),
+            "bias_types": lbl.get("bias_types", []),
+            "scores": lbl.get("scores", {}).copy(),
+            "indices": [lbl.get("index", -1)]
+        }
+        merged_tokens.append(current_token)
 
     # 2. Render HTML
     cells = []
@@ -1292,55 +1287,33 @@ def create_bias_sentence_preview(tokens: List[str], token_labels: List[Dict],
                                  trailing_html: str = "") -> str:
     """Create a token-viz style sentence preview with bias coloring.
 
-    Logic matches create_token_bias_strip:
-    - BERT (##): Split and show ##
-    - GPT-2 (Ġ): Merge subwords
+    Display convention matches create_token_bias_strip: subwords stay
+    SPLIT for both tokenizers (this is a token-level view; word-level
+    statistics live in the summary, which merges subwords).
 
     ``trailing_html``, when given, is placed inside the legend row, pushed
     to the right edge (used for the batch prev/next navigation).
     """
     token_html = []
     
-    # Detect global mode
-    has_gpt2_tokens = any("\u0120" in tok for tok in tokens)
-
     merged_tokens = []
-    current_token = None
 
     for tok, label in zip(tokens, token_labels):
         if tok in ("[CLS]", "[SEP]", "[PAD]", "<|endoftext|>"):
             continue
 
-        is_gpt2_subword = ("\u0120" not in tok) and has_gpt2_tokens
-        is_bert_subword = tok.startswith("##")
-
-        clean_text = tok.replace("\u0120", "").replace("##", "")
+        # Strip tokenizer markers; each subword stays its own cell
+        # (no merging - see docstring).
+        clean_text = tok.replace("Ġ", "").replace("##", "")
         if not clean_text:
             continue
 
-        is_standalone_punct = not any(c.isalnum() for c in clean_text)
-        
-        # USER CHANGE: For GPT-2, do NOT merge. Show raw tokens as is.
-        if has_gpt2_tokens:
-            should_merge_this = False
-        else:
-            should_merge_this = is_gpt2_subword and not is_bert_subword and (current_token is not None) and not is_standalone_punct
-
-        if should_merge_this:
-            # Merge
-            current_token["text"] += clean_text
-            current_token["is_biased"] = current_token["is_biased"] or label["is_biased"]
-            current_token["bias_types"] = list(set(current_token["bias_types"] + label.get("bias_types", [])))
-            for cat, score in label.get("scores", {}).items():
-                current_token["scores"][cat] = max(current_token["scores"].get(cat, 0), score)
-        else:
-            current_token = {
-                "text": clean_text,
-                "is_biased": label.get("is_biased", False),
-                "bias_types": label.get("bias_types", []),
-                "scores": label.get("scores", {}).copy()
-            }
-            merged_tokens.append(current_token)
+        merged_tokens.append({
+            "text": clean_text,
+            "is_biased": label.get("is_biased", False),
+            "bias_types": label.get("bias_types", []),
+            "scores": label.get("scores", {}).copy()
+        })
 
     # 2. Generate HTML
     for item in merged_tokens:
@@ -1406,7 +1379,7 @@ def create_bias_sentence_preview(tokens: List[str], token_labels: List[Dict],
 
     # Note for GPT-2 visualization
     gpt2_note = ""
-    if has_gpt2_tokens:
+    if any("Ġ" in t for t in tokens):
         gpt2_note = (
             '<div style="font-size:9px;color:#94a3b8;font-style:italic;margin-top:4px;text-align:right;">'
             'Ġ (space token) removed for visualization</div>'
@@ -1548,7 +1521,16 @@ def create_confidence_breakdown(
         scores = lbl.get("scores", {})
         if not types:
             continue
-        conf = max(scores.get(t, 0) for t in types)
+        # Prefer the probability that actually FIRED the detection (see
+        # gusnet_detector.apply_thresholds): with optimized per-label
+        # thresholds, max(B,I) can differ from the label that crossed its
+        # threshold, and the tier should reflect the decision.
+        fired = lbl.get("fired") or {}
+        fired_probs = [fired[t]["prob"] for t in types if t in fired and "prob" in fired[t]]
+        if fired_probs:
+            conf = max(fired_probs)
+        else:
+            conf = max(scores.get(t, 0) for t in types)
         biased.append({"label": lbl, "conf": conf, "types": types, "scores": scores})
 
     if not biased:
@@ -2877,7 +2859,7 @@ def create_stereoset_head_sensitivity_heatmap(
     num_layers, num_heads = z.shape
 
     hover_text = [
-        [f"<b>Layer {l}, Head {h}</b><br>Variance: {z[l, h]:.2e}"
+        [f"<b>Layer {l}, Head {h}</b><br>Sensitivity: {z[l, h]:.3g}"
          for h in range(num_heads)]
         for l in range(num_layers)
     ]
@@ -2889,7 +2871,7 @@ def create_stereoset_head_sensitivity_heatmap(
         colorscale="Blues",
         showscale=True,
         colorbar=dict(
-            title=dict(text="Variance", font=dict(size=11, color="#64748b")),
+            title=dict(text="Sensitivity", font=dict(size=11, color="#64748b")),
             tickfont=dict(size=10, color="#64748b"),
             thickness=10,
             len=0.6,
@@ -2913,7 +2895,8 @@ def create_stereoset_head_sensitivity_heatmap(
     fig.update_layout(
         title=dict(
             text="Head Sensitivity to Bias Categories<br>"
-                 "<sub>Variance of mean attention across gender/race/religion/profession (* = top 10)</sub>",
+                 "<sub>Mean η² effect size across gender/race/religion/profession, computed on paired "
+                 "stereo−anti feature differences (★ = top 10; legacy JSONs show raw variance)</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         xaxis=dict(title="Attention Head", tickfont=dict(size=10, color="#475569"), side="bottom"),
@@ -3003,14 +2986,29 @@ def create_stereoset_demographic_chart(
         if ex.get("stereo_pll", 0) > ex.get("anti_pll", 0):
             target_data[t]["stereo_wins"] += 1
 
-    # Filter by minimum sample size and compute SS
+    def _wilson_ci(wins, n, z=1.96):
+        """95% Wilson score interval for a binomial proportion, in percent."""
+        if n == 0:
+            return 0.0, 0.0
+        p = wins / n
+        denom = 1 + z * z / n
+        centre = (p + z * z / (2 * n)) / denom
+        half = (z / denom) * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5)
+        return max(0.0, (centre - half) * 100), min(100.0, (centre + half) * 100)
+
+    # Filter by minimum sample size and compute SS with a 95% Wilson CI —
+    # with n=10 the SS point estimate has roughly ±15pp of uncertainty, and
+    # sorting by SS surfaces exactly the targets most likely to be extreme
+    # by chance, so showing the interval is not optional.
     targets = []
     for t, d in target_data.items():
         if d["n"] >= min_n:
             ss = d["stereo_wins"] / d["n"] * 100
+            lo, hi = _wilson_ci(d["stereo_wins"], d["n"])
             mean_bias = d["bias_sum"] / d["n"]
             targets.append({
                 "target": t, "ss": ss, "n": d["n"],
+                "ci_lo": lo, "ci_hi": hi,
                 "mean_bias": mean_bias, "category": d["category"],
             })
 
@@ -3028,6 +3026,9 @@ def create_stereoset_demographic_chart(
     n_vals = [t["n"] for t in targets]
     colors = [STEREOSET_CATEGORY_COLORS.get(t["category"], "#94a3b8") for t in targets]
     bias_vals = [t["mean_bias"] for t in targets]
+    err_plus = [t["ci_hi"] - t["ss"] for t in targets]
+    err_minus = [t["ss"] - t["ci_lo"] for t in targets]
+    ci_ranges = [f"{t['ci_lo']:.0f}-{t['ci_hi']:.0f}%" for t in targets]
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
@@ -3036,17 +3037,21 @@ def create_stereoset_demographic_chart(
         orientation="h",
         marker_color=colors,
         marker_line=dict(width=0),
+        error_x=dict(
+            type="data", array=err_plus, arrayminus=err_minus,
+            color="rgba(100,116,139,0.55)", thickness=1.2, width=3,
+        ),
         text=[f"{v:.1f}%" for v in ss_vals],
         textposition="outside",
         textfont=dict(size=10),
         hovertemplate=(
             "<b>%{y}</b><br>"
-            "SS: %{x:.1f}%<br>"
+            "SS: %{x:.1f}% (95% CI %{customdata[2]})<br>"
             "n = %{customdata[0]}<br>"
             "Mean bias: %{customdata[1]:+.4f}"
             "<extra></extra>"
         ),
-        customdata=list(zip(n_vals, bias_vals)),
+        customdata=list(zip(n_vals, bias_vals, ci_ranges)),
     ))
 
     fig.add_vline(
@@ -3059,7 +3064,8 @@ def create_stereoset_demographic_chart(
     fig.update_layout(
         title=dict(
             text=f"Stereotype Score by {title_cat}<br>"
-                 f"<sub>Targets with n ≥ {min_n} | sorted by SS descending</sub>",
+                 f"<sub>Targets with n ≥ {min_n} | sorted by SS descending | whiskers = 95% Wilson CI "
+                 f"(small n makes extremes uncertain)</sub>",
             font=dict(size=14, color="#1e293b", family="Inter, sans-serif"),
         ),
         xaxis=dict(
@@ -3406,7 +3412,18 @@ def create_stereoset_example_html(
                 f'background:rgba({int(sc[1:3],16)},{int(sc[3:5],16)},{int(sc[5:7],16)},0.12);'
                 f'color:{sc};font-weight:700;font-family:JetBrains Mono,monospace;'
                 f'border:1px solid rgba({int(sc[1:3],16)},{int(sc[3:5],16)},{int(sc[5:7],16)},0.25);'
-                f'margin-left:8px;">{attn_sim_pct:.0f}% attention similar</span>'
+                f'margin-left:8px;" title="Pearson r of attention on positions where both '
+                f'models hold the same token (0% = unrelated); hidden when tokenizations '
+                f'diverge too much to compare.">{attn_sim_pct:.0f}% attention similar</span>'
+            )
+        else:
+            attn_sim_html = (
+                '<span style="font-size:10px;padding:2px 8px;border-radius:4px;'
+                'background:rgba(148,163,184,0.10);color:#94a3b8;font-weight:600;'
+                'border:1px solid rgba(148,163,184,0.25);margin-left:8px;" '
+                'title="The two models tokenize this example differently (or have different '
+                'head counts), so a positional attention correlation would compare unrelated '
+                'token pairs.">attention not comparable</span>'
             )
         bs_html = (
             f'<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">'
@@ -3642,8 +3659,15 @@ def create_stereoset_attention_diff_heatmap(
 
     Red = more attention in stereotype sentence.
     Blue = more attention in anti-stereotype sentence.
-    Only works when both sentences have the same token count (same context
-    prefix with similar completions).  Falls back gracefully when sizes differ.
+
+    Alignment: the two sentences share only the context prefix — once the
+    completions diverge (or tokenize into a different number of subwords)
+    position i no longer holds the same token in both sentences, and a
+    positional difference would compare attention between UNRELATED token
+    pairs while labelling the axes with the stereotype tokens. Cells whose
+    query or key position holds different tokens in the two sentences are
+    therefore blanked (shown as gaps), and the number of blanked positions
+    is reported in the subtitle.
     """
     s_att = stereo_data["attentions"][layer][0, head].cpu().numpy()
     a_att = anti_data["attentions"][layer][0, head].cpu().numpy()
@@ -3654,13 +3678,37 @@ def create_stereoset_attention_diff_heatmap(
     # Use the shorter sequence length for alignment
     min_len = min(s_att.shape[0], a_att.shape[0])
     diff = s_att[:min_len, :min_len] - a_att[:min_len, :min_len]
-    display_tokens = s_tokens[:min_len]
-    abs_max = max(abs(diff.min()), abs(diff.max()), 1e-6)
+
+    # Position-level identity mask: only positions holding the SAME token
+    # in both sentences are comparable.
+    same = np.array([
+        (s_tokens[i] if i < len(s_tokens) else None)
+        == (a_tokens[i] if i < len(a_tokens) else None)
+        for i in range(min_len)
+    ])
+    n_mismatch = int((~same).sum())
+    cell_valid = same[:, None] & same[None, :]
+    diff = np.where(cell_valid, diff, np.nan)
+
+    # Mark mismatched positions in the axis labels.
+    display_tokens = [
+        s_tokens[i] if same[i] else f"{s_tokens[i]}≠{a_tokens[i] if i < len(a_tokens) else '·'}"
+        for i in range(min_len)
+    ]
+    finite = diff[np.isfinite(diff)]
+    abs_max = max(
+        (abs(float(finite.min())) if finite.size else 0.0),
+        (abs(float(finite.max())) if finite.size else 0.0),
+        1e-6,
+    )
 
     hover_text = [
-        [f"<b>{display_tokens[i]} -> {display_tokens[j]}</b><br>"
-         f"Δ Attention: {diff[i, j]:+.4f}<br>"
-         f"Stereo: {s_att[i, j]:.4f} | Anti: {a_att[i, j]:.4f}"
+        [(f"<b>{display_tokens[i]} -> {display_tokens[j]}</b><br>"
+          f"Δ Attention: {diff[i, j]:+.4f}<br>"
+          f"Stereo: {s_att[i, j]:.4f} | Anti: {a_att[i, j]:.4f}")
+         if cell_valid[i, j] else
+         (f"<b>{display_tokens[i]} -> {display_tokens[j]}</b><br>"
+          f"Not comparable: the two sentences hold different tokens here")
          for j in range(min_len)]
         for i in range(min_len)
     ]
@@ -3688,12 +3736,16 @@ def create_stereoset_attention_diff_heatmap(
         text=hover_text,
     ))
 
+    _mism_note = (
+        f" | {n_mismatch} position{'s' if n_mismatch != 1 else ''} blanked (different tokens)"
+        if n_mismatch else ""
+    )
     fig.update_layout(
         title=dict(
             text=(
                 f"Attention Difference (Stereo - Anti) - L{layer}.H{head}<br>"
                 f"<sub><span style='color:#ef4444'>Red</span> = more attention in stereotype | "
-                f"<span style='color:#2563eb'>Blue</span> = more in anti-stereotype</sub>"
+                f"<span style='color:#2563eb'>Blue</span> = more in anti-stereotype{_mism_note}</sub>"
             ),
             font=dict(size=14, color="#e2e8f0", family="Inter, sans-serif"),
         ),

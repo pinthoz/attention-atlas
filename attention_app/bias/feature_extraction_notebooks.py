@@ -1,8 +1,31 @@
+"""Feature extraction shared by the classification notebooks and the
+StereoSet pre-computation pipeline.
+
+FEATURE SEMANTICS ARE VERSIONED. Feature matrices extracted at different
+times are only comparable when their ``FEATURE_VERSION`` matches — the
+meaning of individual features has changed over time (notably the ISA
+default aggregation switched from "max" to "mean" on 2026-06-12, so
+``ISA_flat_*`` values from older pickles live on a different scale).
+
+Deliberate legacy convention (do not "fix" without re-extracting all
+feature matrices): ``compute_all_attention_metrics`` is called with its
+defaults (``has_cls=True``, no causal correction) for BOTH BERT and
+GPT-2. For GPT-2 this means ``balance`` is computed as if position 0 were
+a [CLS] token and confidence/sparsity/uniformity include the structurally
+zero upper triangle. The training pickles and every downstream classifier
+were built with these semantics; changing them silently would break
+comparability with all previously extracted data.
+"""
+
 import numpy as np
 import torch
 from ..metrics import compute_all_attention_metrics, calculate_flow_change
 from ..head_specialization import compute_head_metrics, get_linguistic_tags
 from ..isa import compute_isa
+
+# Bump when the MEANING of any feature changes (see module docstring).
+# 2026-06-12: ISA default aggregation max -> mean.
+FEATURE_VERSION = "2026-06-12-isa-mean"
 
 def pad_or_truncate_vector(vector, target_length, padding_value=0.0):
     """Ensure vector is exactly target_length. Truncates or pads with padding_value."""
@@ -219,8 +242,10 @@ def extract_tree_features(attentions, tokens, max_leaves=50):
     mock_att = [mock_tensor]
     
     # Extract leaves
-    # Root = 0 ([CLS]), Depth=3, TopK=3 (matches UI default)
-    # 3^3 = 27 leaves max usually, but branching can vary
+    # Root = 0 ([CLS]), Depth=3, TopK=5 (NOTE: deeper branching than the
+    # UI tree default of top_k=3; 5^3 = 125 potential paths, truncated to
+    # max_leaves below). Kept as-is for comparability with the extracted
+    # training feature matrices.
     leaves = _collect_tree_leaves(mock_att, tokens, root_idx=0, layer_idx=0, head_idx=0, max_depth=3, top_k=5)
     
     # Pad/Truncate
