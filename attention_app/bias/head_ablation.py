@@ -15,7 +15,7 @@ For each head (l, h):
     5. Remove the hook (guaranteed via ``finally``).
 
 This tells us whether a head that *attends* to biased tokens actually
-*affects* the model's output — bridging the gap between attention-based
+*affects* the model's output - bridging the gap between attention-based
 analysis and causal faithfulness.
 """
 
@@ -83,10 +83,10 @@ def _run_single_ablation(
 
     ``mode`` selects the ablation value for the head's output slice:
 
-    - ``"zero"`` — replace with zeros. Matches the calibrated null
+    - ``"zero"`` - replace with zeros. Matches the calibrated null
       thresholds (THRESHOLDS_CALIBRATION.md), but pushes activations
       off-manifold, which tends to OVERSTATE impact.
-    - ``"mean"`` — replace with the head's mean activation over the
+    - ``"mean"`` - replace with the head's mean activation over the
       sequence positions of this same forward pass. Keeps the input closer
       to the activation distribution (the standard critique of
       zero-ablation in the interventionist literature); NOT covered by the
@@ -115,7 +115,7 @@ def _run_single_ablation(
         # GPT2Attention's module OUTPUT is post-c_proj: head channels are
         # already mixed across the hidden dim there, so zeroing a slice of
         # it does NOT ablate head h. Ablate the head BEFORE the output
-        # projection instead — the input of c_proj is merge_heads(context),
+        # projection instead - the input of c_proj is merge_heads(context),
         # where head h occupies the contiguous slice [start:end].
         def ablation_pre_hook(module, args):
             x = _ablate_slice(args[0].clone())

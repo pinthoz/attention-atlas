@@ -2,8 +2,8 @@
 
 Supports two backbone architectures for token-level social bias detection:
 
-  1. BERT  (pinthoz/gus-net-bert)   — 7-label BIO scheme
-  2. GPT-2 (pinthoz/gus-net-gpt2)  — 7-label BIO scheme
+  1. BERT  (pinthoz/gus-net-bert)   - 7-label BIO scheme
+  2. GPT-2 (pinthoz/gus-net-gpt2)  - 7-label BIO scheme
 
 Both models share the same label layout:
 
@@ -38,7 +38,7 @@ _logger = logging.getLogger(__name__)
 
 
 # NOTE on GPT-2 masking: the GUS-Net GPT-2 models are fine-tuned with the
-# standard CAUSAL mask (see attention_app/bias/training/ — no mask removal
+# standard CAUSAL mask (see attention_app/bias/training/ - no mask removal
 # anywhere), so inference below intentionally keeps the causal mask too.
 # A `_make_gpt2_bidirectional` helper used to live here with a docstring
 # claiming it "must be called" after loading; it was never called and its
@@ -47,14 +47,14 @@ _logger = logging.getLogger(__name__)
 
 
 # ── Punctuation filter ───────────────────────────────────────────────────────
-# Punctuation tokens are never bias carriers — suppress any model predictions on them.
+# Punctuation tokens are never bias carriers - suppress any model predictions on them.
 _PUNCTUATION_TOKENS: frozenset = frozenset({
     ".", ",", "!", "?", ";", ":", "(", ")", "[", "]", "{", "}",
-    "-", "–", "—", "'", '"', "`", "``", "''", "'s", "/", "\\",
+    "-", "–", "-", "'", '"', "`", "``", "''", "'s", "/", "\\",
 })
 
 
-# ── Shared label scheme (7 labels — identical for BERT and GPT-2) ────────────
+# ── Shared label scheme (7 labels - identical for BERT and GPT-2) ────────────
 
 NUM_LABELS = 7
 CATEGORY_INDICES = {
@@ -167,7 +167,7 @@ MODEL_REGISTRY = {
         # registry key and display name intentionally omit the training
         # detail. These thresholds are the per-label F1-optimised values
         # produced by that run's training script (optimized_thresholds.npy)
-        # — they match "gusnet-bert-sparse" below by construction, not by
+        # - they match "gusnet-bert-sparse" below by construction, not by
         # accident. If the published checkpoint is ever retrained, refresh
         # these together.
         "optimized_thresholds": [0.476, 0.375, 0.3475, 0.3251, 0.3975, 0.342, 0.3309],
@@ -377,14 +377,14 @@ class GusNetDetector:
                     )
                     if tokenizer.pad_token is None:
                         tokenizer.pad_token = tokenizer.eos_token
-                    # Silence "Using sep_token, but it is not set yet." —
+                    # Silence "Using sep_token, but it is not set yet." -
                     # GPT-2 has no sep/cls/mask tokens and transformers logs
                     # this on every internal special-token access otherwise.
                     tokenizer.verbose = False
                     model = GPT2ForTokenClassification.from_pretrained(model_path)
                 else:
                     # BERT: prefer the tokenizer PUBLISHED WITH the
-                    # fine-tuned checkpoint — if a future checkpoint ever
+                    # fine-tuned checkpoint - if a future checkpoint ever
                     # extends the vocabulary, a generic bert-base-uncased
                     # tokenizer would produce ids misaligned with the
                     # model's embedding matrix and the predictions would be
@@ -395,7 +395,7 @@ class GusNetDetector:
                     except Exception:
                         tok_name = cfg.get("tokenizer", "bert-base-uncased")
                         _logger.info(
-                            "[GUS-Net] %s ships no tokenizer — falling back to %s",
+                            "[GUS-Net] %s ships no tokenizer - falling back to %s",
                             model_path, tok_name)
                         tokenizer = BertTokenizerFast.from_pretrained(tok_name)
                     model = BertForTokenClassification.from_pretrained(
@@ -409,7 +409,7 @@ class GusNetDetector:
                     if len(tokenizer) > n_emb:
                         _logger.warning(
                             "[GUS-Net] Tokenizer vocab (%d) exceeds model "
-                            "embeddings (%d) for %s — predictions may be "
+                            "embeddings (%d) for %s - predictions may be "
                             "wrong for out-of-range tokens.",
                             len(tokenizer), n_emb, cfg["display_name"])
                 except Exception:
@@ -542,7 +542,7 @@ class GusNetDetector:
                             "label": cat,
                         }
 
-            # Punctuation is never a bias carrier — suppress span-bleed scores
+            # Punctuation is never a bias carrier - suppress span-bleed scores
             if bias_types and token.lstrip("\u0120") in _PUNCTUATION_TOKENS:
                 bias_types = []
                 fired = {}
@@ -628,7 +628,7 @@ class GusNetDetector:
                 # that total_tokens / bias_percentage / category counts are
                 # word-level and comparable across BERT and GPT-2 in
                 # compare-mode. (Display views such as the span list may
-                # still show BERT subwords split — that is presentation,
+                # still show BERT subwords split - that is presentation,
                 # not the denominator of a statistic.)
                 should_merge = tok.startswith("##") and current_word is not None
 

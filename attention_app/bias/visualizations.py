@@ -529,7 +529,7 @@ def create_combined_bias_visualization(
         y=list(range(n)),
         colorscale=att_colorscale,
         # Colour scale: local max for a single view (max contrast), but the
-        # SHARED max of both matrices in compare mode — otherwise the A and
+        # SHARED max of both matrices in compare mode - otherwise the A and
         # B heatmaps sit side by side with different scales and the darker
         # panel is misread as "more attention".
         zmin=0,
@@ -616,7 +616,7 @@ def create_inline_bias_html(
     Display filter: unless ``show_neutral`` is set, spans whose average
     score falls below ``_INLINE_MIN_SCORE`` are hidden. This is a
     PRESENTATION filter on top of the detection thresholds (weak spans
-    clutter the reading view) — it is disclosed in the legend so hidden
+    clutter the reading view) - it is disclosed in the legend so hidden
     spans are not mistaken for non-detections.
     """
     _INLINE_MIN_SCORE = 0.35
@@ -934,7 +934,7 @@ def create_ratio_formula_html() -> str:
             f'line-height:1.2;">{den}</span></span>'
         )
 
-    # Variable colour tokens — bright palette for dark formula background
+    # Variable colour tokens - bright palette for dark formula background
     mu_hat = '<span style="color:#60a5fa;">μ&#770;<sub style="font-size:80%;">𝐵</sub></span>'
     mu_hat_lh = f'{mu_hat}<sup style="font-size:75%;color:#94a3b8;">(<i>l,h</i>)</sup>'
     mu_0 = '<span style="color:#f59e0b;">μ<sub style="font-size:80%;">0</sub></span>'
@@ -948,7 +948,7 @@ def create_ratio_formula_html() -> str:
     B_set_dark = '<span style="color:#be185d;font-weight:600;">𝐵</span>'
     N_dark = '<span style="color:#0f172a;font-weight:600;"><i>N</i></span>'
 
-    # Calibration tooltip — uses the same dark-popup styling as the
+    # Calibration tooltip - uses the same dark-popup styling as the
     # tooltips elsewhere in the bias section (see bias_styles.py).
     _TH = ("font-size:10px;font-weight:700;text-transform:uppercase;"
            "letter-spacing:0.6px;color:#94a3b8;margin:0 0 4px;display:block;")
@@ -1065,7 +1065,7 @@ def create_ratio_formula_html() -> str:
         f'and are not distinguishable from chance.</div>'
     )
 
-    # NOTE: no outer card here — the caller (bias_ratio_formula) wraps this
+    # NOTE: no outer card here - the caller (bias_ratio_formula) wraps this
     # content together with the alpha control in a single shared card.
     return (
         # ── Title with hover (i) info icon (matches other bias tooltips) ──
@@ -1172,7 +1172,7 @@ def create_token_bias_strip(
     """Render a compact HTML strip showing per-token bias categories.
 
     Display convention: subwords are kept SPLIT for both tokenizers (BERT
-    shows the ``##`` markers; GPT-2 shows raw BPE pieces) — the strip is a
+    shows the ``##`` markers; GPT-2 shows raw BPE pieces) - the strip is a
     token-level view by design. Word-level statistics live in the summary
     (``get_bias_summary``), which merges subwords; this view deliberately
     does not.
@@ -2102,11 +2102,11 @@ def create_ig_token_comparison_chart(
         yaxis=dict(title="Normalized importance", tickfont=dict(size=10, color="#475569")),
         height=400,
         autosize=True,
-        margin=dict(l=60, r=40, t=100, b=100),
+        margin=dict(l=60, r=40, t=100, b=130),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif"),
-        legend=dict(x=0.5, y=-0.3, xanchor="center", orientation="h",
+        legend=dict(x=0.5, y=-0.45, xanchor="center", orientation="h",
                     font=dict(size=10)),
     )
     return fig
@@ -2996,7 +2996,7 @@ def create_stereoset_demographic_chart(
         half = (z / denom) * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5)
         return max(0.0, (centre - half) * 100), min(100.0, (centre + half) * 100)
 
-    # Filter by minimum sample size and compute SS with a 95% Wilson CI —
+    # Filter by minimum sample size and compute SS with a 95% Wilson CI -
     # with n=10 the SS point estimate has roughly ±15pp of uncertainty, and
     # sorting by SS surfaces exactly the targets most likely to be extreme
     # by chance, so showing the interval is not optional.
@@ -3207,7 +3207,7 @@ def create_sensitive_head_panel_html(
             for profile_key in ("stereo", "anti"):
                 dict_a = hp_A.get(profile_key, {})
                 dict_b = hp_B.get(profile_key, {})
-                # Use union of all keys — 0.0 for keys absent in one model
+                # Use union of all keys - 0.0 for keys absent in one model
                 all_keys = sorted(set(dict_a.keys()) | set(dict_b.keys()))
                 for k in all_keys:
                     va = dict_a.get(k)
@@ -3649,25 +3649,23 @@ def create_stereoset_attention_heatmaps(
     return fig
 
 
-def create_stereoset_attention_diff_heatmap(
+def create_stereoset_context_attention_comparison(
     stereo_data: Dict,
     anti_data: Dict,
     layer: int,
     head: int,
 ) -> go.Figure:
-    """Difference heatmap: Stereotype attention - Anti-Stereotype attention.
+    """Attention received by each SHARED context token: stereo vs anti.
 
-    Red = more attention in stereotype sentence.
-    Blue = more attention in anti-stereotype sentence.
-
-    Alignment: the two sentences share only the context prefix — once the
-    completions diverge (or tokenize into a different number of subwords)
-    position i no longer holds the same token in both sentences, and a
-    positional difference would compare attention between UNRELATED token
-    pairs while labelling the axes with the stereotype tokens. Cells whose
-    query or key position holds different tokens in the two sentences are
-    therefore blanked (shown as gaps), and the number of blanked positions
-    is reported in the subtitle.
+    The stereo and anti sentences share only the context prefix; the
+    completions differ, so a positional difference of the full attention
+    matrices would compare attention between unrelated token pairs.
+    Instead, this compares a quantity that is well defined for both
+    sentences: the mean attention each shared prefix token RECEIVES from
+    all query positions of its own sentence (column mean of the attention
+    matrix). The compared tokens are identical (same word, same position),
+    so a difference reflects how the differing completion redistributes
+    attention over the same context.
     """
     s_att = stereo_data["attentions"][layer][0, head].cpu().numpy()
     a_att = anti_data["attentions"][layer][0, head].cpu().numpy()
@@ -3675,90 +3673,86 @@ def create_stereoset_attention_diff_heatmap(
     s_tokens = [_clean_token_label(t) for t in stereo_data["tokens"]]
     a_tokens = [_clean_token_label(t) for t in anti_data["tokens"]]
 
-    # Use the shorter sequence length for alignment
-    min_len = min(s_att.shape[0], a_att.shape[0])
-    diff = s_att[:min_len, :min_len] - a_att[:min_len, :min_len]
+    # Longest common prefix - the only positions guaranteed to hold the
+    # same token at the same position in both sentences.
+    min_len = min(len(s_tokens), len(a_tokens))
+    n_shared = 0
+    while n_shared < min_len and s_tokens[n_shared] == a_tokens[n_shared]:
+        n_shared += 1
 
-    # Position-level identity mask: only positions holding the SAME token
-    # in both sentences are comparable.
-    same = np.array([
-        (s_tokens[i] if i < len(s_tokens) else None)
-        == (a_tokens[i] if i < len(a_tokens) else None)
-        for i in range(min_len)
-    ])
-    n_mismatch = int((~same).sum())
-    cell_valid = same[:, None] & same[None, :]
-    diff = np.where(cell_valid, diff, np.nan)
+    fig = go.Figure()
+    if n_shared < 2:
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            annotations=[{
+                "text": "Sentences share no usable context prefix - not comparable",
+                "showarrow": False,
+                "font": {"color": "#94a3b8", "size": 11},
+            }],
+        )
+        return fig
 
-    # Mark mismatched positions in the axis labels.
-    display_tokens = [
-        s_tokens[i] if same[i] else f"{s_tokens[i]}≠{a_tokens[i] if i < len(a_tokens) else '·'}"
-        for i in range(min_len)
-    ]
-    finite = diff[np.isfinite(diff)]
-    abs_max = max(
-        (abs(float(finite.min())) if finite.size else 0.0),
-        (abs(float(finite.max())) if finite.size else 0.0),
-        1e-6,
-    )
+    shared_tokens = s_tokens[:n_shared]
+    recv_s = s_att[:, :n_shared].mean(axis=0)
+    recv_a = a_att[:, :n_shared].mean(axis=0)
+    delta = recv_s - recv_a
 
-    hover_text = [
-        [(f"<b>{display_tokens[i]} -> {display_tokens[j]}</b><br>"
-          f"Δ Attention: {diff[i, j]:+.4f}<br>"
-          f"Stereo: {s_att[i, j]:.4f} | Anti: {a_att[i, j]:.4f}")
-         if cell_valid[i, j] else
-         (f"<b>{display_tokens[i]} -> {display_tokens[j]}</b><br>"
-          f"Not comparable: the two sentences hold different tokens here")
-         for j in range(min_len)]
-        for i in range(min_len)
+    hover = [
+        (f"<b>{tok}</b><br>Stereo: {vs:.4f}<br>Anti: {va:.4f}<br>"
+         f"Δ (S−A): {d:+.4f}")
+        for tok, vs, va, d in zip(shared_tokens, recv_s, recv_a, delta)
     ]
 
-    fig = go.Figure(data=go.Heatmap(
-        z=diff.tolist(),
-        x=display_tokens,
-        y=display_tokens,
-        colorscale=[
-            [0.0, "#2563eb"],     # Blue: anti > stereo
-            [0.5, "#1e1e2f"],     # Neutral
-            [1.0, "#ef4444"],     # Red: stereo > anti
-        ],
-        zmid=0,
-        zmin=-abs_max,
-        zmax=abs_max,
-        showscale=True,
-        colorbar=dict(
-            title=dict(text="Δ Attention", font=dict(size=10, color="#94a3b8")),
-            tickfont=dict(size=9, color="#94a3b8"),
-            thickness=8,
-            len=0.8,
-        ),
-        hovertemplate="%{text}<extra></extra>",
-        text=hover_text,
+    # Numeric x + ticktext so repeated tokens (e.g. two "the") keep
+    # separate bars instead of being merged into one category.
+    x_pos = list(range(n_shared))
+
+    fig.add_trace(go.Bar(
+        x=x_pos, y=recv_s.tolist(), name="Stereo",
+        marker_color="#ef4444", opacity=0.85,
+        hovertext=hover, hoverinfo="text",
+    ))
+    fig.add_trace(go.Bar(
+        x=x_pos, y=recv_a.tolist(), name="Anti",
+        marker_color="#22c55e", opacity=0.85,
+        hovertext=hover, hoverinfo="text",
     ))
 
-    _mism_note = (
-        f" | {n_mismatch} position{'s' if n_mismatch != 1 else ''} blanked (different tokens)"
-        if n_mismatch else ""
-    )
     fig.update_layout(
+        barmode="group",
         title=dict(
             text=(
-                f"Attention Difference (Stereo - Anti) - L{layer}.H{head}<br>"
-                f"<sub><span style='color:#ef4444'>Red</span> = more attention in stereotype | "
-                f"<span style='color:#2563eb'>Blue</span> = more in anti-stereotype{_mism_note}</sub>"
+                f"Attention to Shared Context (Stereo vs Anti) - L{layer}.H{head}<br>"
+                f"<sub>Mean attention each shared context token receives from its own "
+                f"sentence. Completions differ, so only the {n_shared} identical "
+                f"prefix tokens are compared.</sub>"
             ),
             font=dict(size=14, color="#e2e8f0", family="Inter, sans-serif"),
         ),
-        xaxis=dict(tickfont=dict(size=8, color="#94a3b8"), tickangle=45),
-        yaxis=dict(tickfont=dict(size=8, color="#94a3b8"), autorange="reversed"),
-        height=max(350, min(500, 20 * min_len + 100)),
+        xaxis=dict(
+            tickmode="array",
+            tickvals=x_pos,
+            ticktext=shared_tokens,
+            tickfont=dict(size=9, color="#94a3b8"),
+            tickangle=45,
+        ),
+        yaxis=dict(
+            title=dict(text="Mean attention received", font=dict(size=10, color="#94a3b8")),
+            tickfont=dict(size=9, color="#94a3b8"),
+            gridcolor="rgba(148,163,184,0.15)",
+        ),
+        legend=dict(
+            orientation="h", x=0.5, xanchor="center", y=-0.28,
+            font=dict(size=10, color="#94a3b8"), bgcolor="rgba(0,0,0,0)",
+        ),
+        height=360,
         autosize=True,
-        margin=dict(l=80, r=60, t=90, b=60),
+        margin=dict(l=70, r=40, t=90, b=70),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif", color="#94a3b8"),
     )
-
     return fig
 
 
@@ -3766,8 +3760,10 @@ def create_stereoset_head_distributions(
     examples: list,
     sensitive_heads: list,
     top_n: int = 5,
+    correction: str = "fdr",
+    alpha: float = 0.05,
 ) -> "go.Figure":
-    """Obj 3 — Box plots of stereo vs anti attention values per sensitive head.
+    """Obj 3 - Box plots of stereo vs anti attention values per sensitive head.
 
     Shows SYSTEMATICALLY how each sensitive head behaves differently across all
     StereoSet examples for stereotyped vs anti-stereotyped sentences.
@@ -3776,6 +3772,11 @@ def create_stereoset_head_distributions(
         examples: from get_stereoset_examples()
         sensitive_heads: from get_sensitive_heads()
         top_n: how many heads to include
+        correction: multiplicity correction for the Mann-Whitney p-values -
+            "fdr" (Benjamini-Hochberg), "bonferroni" or "none". Applied
+            across ALL stored sensitive heads (the full tested family), not
+            just the displayed top_n.
+        alpha: significance level for the "*" annotation tier
 
     Returns:
         Plotly Figure
@@ -3796,14 +3797,17 @@ def create_stereoset_head_distributions(
     head_labels = [f"L{h['layer']}·H{h['head']}" for h in heads]
     head_keys   = [f"L{h['layer']}_H{h['head']}" for h in heads]
 
-    stereo_data = {k: [] for k in head_keys}
-    anti_data   = {k: [] for k in head_keys}
+    # Collect values for the FULL family of stored sensitive heads so the
+    # multiplicity correction covers every test, not only the displayed ones.
+    family_keys = [f"L{h['layer']}_H{h['head']}" for h in sensitive_heads]
+    stereo_data = {k: [] for k in family_keys}
+    anti_data   = {k: [] for k in family_keys}
 
     for ex in examples:
         hp = ex.get("head_profile", {})
         s_vals = hp.get("stereo", {})
         a_vals = hp.get("anti", {})
-        for k in head_keys:
+        for k in family_keys:
             sv = s_vals.get(k)
             av = a_vals.get(k)
             if sv is not None:
@@ -3813,7 +3817,7 @@ def create_stereoset_head_distributions(
 
     fig = go.Figure()
 
-    # Stereo boxes (red) — one trace per head for grouped layout
+    # Stereo boxes (red) - one trace per head for grouped layout
     fig.add_trace(go.Box(
         x=[lbl for i, lbl in enumerate(head_labels) for _ in stereo_data[head_keys[i]]],
         y=[v for k in head_keys for v in stereo_data[k]],
@@ -3841,27 +3845,51 @@ def create_stereoset_head_distributions(
         hovertemplate="<b>%{x}</b><br>%{y:.3f}<extra>Anti</extra>",
     ))
 
-    # Mann-Whitney p-value annotations above each head
-    annotations = []
-    for k, lbl in zip(head_keys, head_labels):
+    # Mann-Whitney p-values over the full family, then the selected
+    # multiplicity correction; displayed heads get the corrected value.
+    raw_p = {}
+    for k in family_keys:
         s = stereo_data[k]
         a = anti_data[k]
         if len(s) > 2 and len(a) > 2:
             _, pval = scipy_stats.mannwhitneyu(s, a, alternative="two-sided")
-            if pval < 1e-10:
-                sig = "***"
-            elif pval < 0.001:
-                sig = f"** {pval:.0e}"
-            elif pval < 0.05:
-                sig = f"* {pval:.3f}"
-            else:
-                sig = f"ns {pval:.2f}"
-            annotations.append(dict(
-                x=lbl, y=1.03, xref="x", yref="paper",
-                text=sig, showarrow=False,
-                font=dict(size=8, color="#1e293b"),
-                xanchor="center",
-            ))
+            raw_p[k] = float(pval)
+
+    m = len(raw_p)
+    corr = (correction or "none").lower()
+    if corr == "bonferroni" and m > 0:
+        adj_p = {k: min(1.0, p * m) for k, p in raw_p.items()}
+    elif corr == "fdr" and m > 0:
+        # Benjamini-Hochberg step-up: q_(i) = min_{j>=i} p_(j) * m / j
+        items = sorted(raw_p.items(), key=lambda kv: kv[1])
+        adj_p = {}
+        prev = 1.0
+        for rank in range(m, 0, -1):
+            k, p = items[rank - 1]
+            prev = min(prev, p * m / rank)
+            adj_p[k] = prev
+    else:
+        adj_p = dict(raw_p)
+
+    annotations = []
+    for k, lbl in zip(head_keys, head_labels):
+        if k not in adj_p:
+            continue
+        pval = adj_p[k]
+        if pval < 0.001:
+            sig = f"*** {pval:.0e}"
+        elif pval < 0.01:
+            sig = f"** {pval:.3f}"
+        elif pval < alpha:
+            sig = f"* {pval:.3f}"
+        else:
+            sig = f"ns {pval:.2f}"
+        annotations.append(dict(
+            x=lbl, y=1.03, xref="x", yref="paper",
+            text=sig, showarrow=False,
+            font=dict(size=8, color="#1e293b"),
+            xanchor="center",
+        ))
 
     fig.update_layout(
         boxmode="group",
@@ -3902,7 +3930,7 @@ def create_stereoset_attention_scatter(
     sensitive_heads: list,
     head_key: str = None,
 ) -> "go.Figure":
-    """Obj 4 — Binned means: Δ attention (stereo−anti) vs bias_score.
+    """Obj 4 - Binned means: Δ attention (stereo−anti) vs bias_score.
 
     X axis is split into decile bins. For each bin: mean bias_score ± 1 SD,
     coloured by dominant demographic category. Shows the trend clearly without
@@ -4121,7 +4149,7 @@ def compute_cf_attention_consistency(tokens_A, attentions_A, tokens_B, attention
     """
     from difflib import SequenceMatcher
 
-    # 1. Align token sequences — equal tokens stay paired, differing = swapped
+    # 1. Align token sequences - equal tokens stay paired, differing = swapped
     matcher = SequenceMatcher(None, tokens_A, tokens_B)
     aligned = []
     swap_A = set(range(len(tokens_A)))
@@ -4284,21 +4312,21 @@ def create_cf_consistency_html(consistency, tokens_A, tokens_B, applied_swaps,
 
     metrics_html = (
         f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">'
-        # Cosine similarity — emerald
+        # Cosine similarity - emerald
         f'<div style="background:rgba(5,150,105,0.06);border:1px solid rgba(5,150,105,0.15);'
         f'border-radius:8px;padding:12px;text-align:center;">'
         f'<div style="font-size:20px;font-weight:700;color:#059669;font-family:JetBrains Mono,monospace;margin-top:2px;">{cos:.3f}</div>'
         f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Attention Similarity</div>'
         f'<div style="font-size:9px;color:#94a3b8;margin-top:2px;">{cos_label} - cosine of attention profiles</div>'
         f'</div>'
-        # Concentration — cyan
+        # Concentration - cyan
         f'<div style="background:rgba(6,182,212,0.06);border:1px solid rgba(6,182,212,0.15);'
         f'border-radius:8px;padding:12px;text-align:center;">'
         f'<div style="font-size:20px;font-weight:700;color:#06b6d4;font-family:JetBrains Mono,monospace;margin-top:2px;">{conc_pct:.1f}%</div>'
         f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Swap Focus</div>'
         f'<div style="font-size:9px;color:#94a3b8;margin-top:2px;">of attention change at swapped tokens</div>'
         f'</div>'
-        # Token counts — rose
+        # Token counts - rose
         f'<div style="background:rgba(225,29,72,0.06);border:1px solid rgba(225,29,72,0.15);'
         f'border-radius:8px;padding:12px;text-align:center;">'
         f'<div style="font-size:20px;font-weight:700;color:#e11d48;font-family:JetBrains Mono,monospace;margin-top:2px;">{n_aligned}<span style="font-size:13px;color:#e11d48;">/{n_aligned + n_swapped}</span></div>'
@@ -4395,7 +4423,7 @@ __all__ = [
     "create_stereoset_example_html",
     "create_sensitive_head_panel_html",
     "create_stereoset_attention_heatmaps",
-    "create_stereoset_attention_diff_heatmap",
+    "create_stereoset_context_attention_comparison",
     "create_stereoset_head_distributions",
     "create_stereoset_attention_scatter",
     "compute_cf_attention_consistency",

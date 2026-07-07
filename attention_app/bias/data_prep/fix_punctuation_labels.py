@@ -79,7 +79,7 @@ def repair_bio_continuity(tags: list) -> tuple:
     """Fix BIO violations after punctuation gets O labels.
 
     When a punctuation token (now ["O"]) breaks a span, the next token
-    that still has I-X tags becomes invalid — it needs B-X instead.
+    that still has I-X tags becomes invalid - it needs B-X instead.
 
     For each bias type (STEREO, GEN, UNFAIR) we track whether a span is
     "open".  If we hit an O token the span closes.  If the next non-O

@@ -1,7 +1,7 @@
 """Pure CSV body functions for bias export handlers.
 
 Each function takes a result dict/bundle and returns a CSV string.
-No reactive dependencies — these can be imported and tested independently.
+No reactive dependencies - these can be imported and tested independently.
 """
 
 import numpy as np
@@ -94,7 +94,7 @@ def csv_matrix(res, bar_threshold=2.5):
 
 def csv_propagation(res):
     # layer_propagation is a list of per-layer mean BARs (floats), not
-    # dicts — the previous dict indexing made this export raise on every
+    # dicts - the previous dict indexing made this export raise on every
     # click. Per-layer max/min are derived from the per-head metrics.
     prop = res["propagation_analysis"]["layer_propagation"]
     if not prop:

@@ -28,7 +28,7 @@ def register_export_handlers(
     """Wire up all attention-section download handlers.
 
     Parameters are the reactive values / helpers that live inside
-    ``server()`` — passed in to avoid closure coupling.
+    ``server()`` - passed in to avoid closure coupling.
     """
 
     # ── Attention heatmap CSV ───────────────────────────────────────────
@@ -71,7 +71,7 @@ def register_export_handlers(
             _logger.exception("Error exporting metrics")
             yield "Error exporting metrics"
 
-    # ── Scaled attention (Q·K scores) — A / B ───────────────────────────
+    # ── Scaled attention (Q·K scores) - A / B ───────────────────────────
 
     def _export_scaled_attention(suffix=""):
         res = get_active_result(suffix)

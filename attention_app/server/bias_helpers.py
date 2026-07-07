@@ -443,7 +443,7 @@ def _process_raw_bias_result(raw_res, thresholds, use_optimized=False,
         # per-label thresholds, pass thresholds=None so apply_thresholds
         # uses the true per-index (B-/I-) rule. Passing the per-category
         # "effective" thresholds (mean of B and I) would silently switch to
-        # a max(B,I) >= mean(optB,optI) approximation — a DIFFERENT rule,
+        # a max(B,I) >= mean(optB,optI) approximation - a DIFFERENT rule,
         # which made Base-vs-GUS-Net panels differ for threshold reasons
         # rather than model reasons.
         gusnet_labels = det.apply_thresholds(
@@ -500,7 +500,7 @@ def _process_raw_bias_result(raw_res, thresholds, use_optimized=False,
                 list(attentions), biased_indices, tokens,
                 bar_threshold=bar_threshold,
             )
-            # Reuse the per-head metrics — propagation and the L x H matrix
+            # Reuse the per-head metrics - propagation and the L x H matrix
             # are derived views of the same BARs (previously each recomputed
             # the full grid, tripling the work for identical numbers).
             propagation_analysis = attention_analyzer.analyze_bias_propagation(

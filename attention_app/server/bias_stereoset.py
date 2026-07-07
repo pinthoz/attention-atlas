@@ -54,7 +54,7 @@ from ..bias.visualizations import (
     create_stereoset_head_distributions,
     create_stereoset_attention_scatter,
     create_stereoset_attention_heatmaps,
-    create_stereoset_attention_diff_heatmap,
+    create_stereoset_context_attention_comparison,
     create_stereoset_example_html,
 )
 
@@ -1032,6 +1032,16 @@ def register_stereoset_handlers(
         except Exception:
             top_k = 5
 
+        # Multiplicity-correction controls (shared with the head-survival card)
+        try:
+            correction = str(input.bias_correction() or "fdr").lower()
+        except Exception:
+            correction = "fdr"
+        try:
+            alpha = float(input.bias_alpha())
+        except Exception:
+            alpha = 0.05
+
         def _render_pair_blocks(mk, suffix=""):
             """Return (dist_html, scatter_html) strings for one model.
 
@@ -1056,7 +1066,10 @@ def register_stereoset_handlers(
 
             # Obj 3 - box distributions; clicking a head fires click_input_name
             try:
-                fig_dist = create_stereoset_head_distributions(examples, top_heads, top_n=min(top_k, 6))
+                fig_dist = create_stereoset_head_distributions(
+                    examples, top_heads, top_n=min(top_k, 6),
+                    correction=correction, alpha=alpha,
+                )
                 if selected_head:
                     lbl = selected_head.replace("_", "·")
                     sub_extra = (
@@ -1066,6 +1079,24 @@ def register_stereoset_handlers(
                     )
                 else:
                     sub_extra = ' · <span style="color:#94a3b8;">click a box to filter →</span>'
+                if correction == "bonferroni":
+                    corr_note = (
+                        f'<span style="color:#94a3b8;font-style:italic;">'
+                        f'(Bonferroni-corrected across all {len(top_heads)} stored '
+                        f'sensitive heads, &alpha;={alpha:g})</span>'
+                    )
+                elif correction == "none":
+                    corr_note = (
+                        f'<span style="color:#f59e0b;font-style:italic;">'
+                        f'(uncorrected, &alpha;={alpha:g} - switch the correction '
+                        f'toggle to FDR or Bonf for confirmation-grade values)</span>'
+                    )
+                else:
+                    corr_note = (
+                        f'<span style="color:#94a3b8;font-style:italic;">'
+                        f'(BH-FDR q-values across all {len(top_heads)} stored '
+                        f'sensitive heads, &alpha;={alpha:g})</span>'
+                    )
                 dist_block = (
                     '<div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;'
                     'letter-spacing:0.5px;margin-bottom:4px;">Stereo vs Anti Distributions per Head</div>'
@@ -1073,8 +1104,7 @@ def register_stereoset_handlers(
                     'Attention feature values across all examples. '
                     '<span style="color:#ef4444;">●</span> Stereo &nbsp;'
                     f'<span style="color:#22c55e;">●</span> Anti · p-values = Mann-Whitney{sub_extra} '
-                    '<span style="color:#94a3b8;font-style:italic;">(uncorrected display heuristic; '
-                    'apply a Bonferroni or BH-FDR correction for confirmation-grade claims)</span></div>'
+                    f'{corr_note}</div>'
                     + _chart_with_png_btn(
                         _deferred_plotly(
                             fig_dist,
@@ -1393,7 +1423,7 @@ def register_stereoset_handlers(
                         sel_head = sensitive[0]["head"] if sensitive else 0
 
                     def _generate_model_heatmaps(model_key, example_data, suffix=""):
-                        """Generate trio + diff HTML for one model.
+                        """Generate trio + shared-context comparison HTML for one model.
                         
                         Returns:
                             tuple: (trio_html, diff_html, raw_attentions)
@@ -1438,7 +1468,7 @@ def register_stereoset_handlers(
                             f"stereoset_attn_heatmap_{model_key}_{suffix}",
                             controls=[str(csv_btn)]
                         )
-                        fig_d = create_stereoset_attention_diff_heatmap(
+                        fig_d = create_stereoset_context_attention_comparison(
                             sd, ad, layer=sel_layer, head=sel_head,
                         )
                         cid_d = f"stereoset-attn-diff-{model_key}-{suffix}"
@@ -1466,7 +1496,7 @@ def register_stereoset_handlers(
                         where position i holds the SAME token in both models.
                         Different tokenizers (BERT vs GPT-2) produce different
                         sequences, and different architectures different head
-                        counts — the previous implementation truncated to
+                        counts - the previous implementation truncated to
                         min_seq and correlated unrelated token pairs (and
                         crashed outright on 12- vs 16-head models). Now:
 
@@ -1475,7 +1505,7 @@ def register_stereoset_handlers(
                           models enter the correlation;
                         - returns None (badge hidden) when fewer than 70% of
                           positions are shared or nothing is comparable;
-                        - score is max(0, mean r) x 100 — unrelated attention
+                        - score is max(0, mean r) x 100 - unrelated attention
                           reads 0%, not 50%.
                         """
                         def _clean(t):
@@ -1495,14 +1525,14 @@ def register_stereoset_handlers(
                             shared = [i for i in range(min_seq)
                                       if _clean(toks_a[i]) == _clean(toks_b[i])]
                             if min_seq == 0 or len(shared) / min_seq < 0.7 or len(shared) < 3:
-                                continue  # tokenizations diverge — not comparable
+                                continue  # tokenizations diverge - not comparable
                             import numpy as _np
                             idx = _np.asarray(shared)
                             for layer_idx in range(min(len(a), len(b))):
                                 mat_a = a[layer_idx][0].cpu().float().numpy()  # (heads, seq, seq)
                                 mat_b = b[layer_idx][0].cpu().float().numpy()
                                 if mat_a.shape[0] != mat_b.shape[0]:
-                                    continue  # different head counts — skip layer
+                                    continue  # different head counts - skip layer
                                 sub_a = mat_a[:, idx[:, None], idx[None, :]].ravel()
                                 sub_b = mat_b[:, idx[:, None], idx[None, :]].ravel()
                                 sa = sub_a.std()
@@ -1549,7 +1579,7 @@ def register_stereoset_handlers(
                             f'    <div>{trio_B}</div>'
                             f'  </div>'
                             f'</div>'
-                            # Row 2: Attention Differences side by side
+                            # Row 2: Shared-context attention comparisons side by side
                             f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">'
                             f'  <div>{diff_A}</div>'
                             f'  <div>{diff_B}</div>'
@@ -1819,40 +1849,38 @@ def register_stereoset_handlers(
         if u_tok:
             for r in _dump_attn("unrelated", u_tok, u_a): yield r
 
-    @render.download(filename="stereoset_example_attention_diff.csv")
+    @render.download(filename="stereoset_shared_context_attention.csv")
     def export_stereoset_example_diff_csv():
         mk = _stereoset_model_key()
         return _export_stereoset_example_diff_cmn(mk)
 
-    @render.download(filename="stereoset_example_attention_diff_B.csv")
+    @render.download(filename="stereoset_shared_context_attention_B.csv")
     def export_stereoset_example_diff_csv_B():
         mk = _stereoset_model_key_B()
         return _export_stereoset_example_diff_cmn(mk)
 
     def _export_stereoset_example_diff_cmn(mk):
-        # Re-use the same extraction logic but compute difference (Stereo - Anti)
-        # For simplicity, we can just call `_export_stereoset_example_cmn` logic but modify output.
-        # But that function yields strings directly.
-        # So we'll duplicate the setup logic.
-        
+        """Export the data behind the shared-context attention comparison:
+        mean attention received by each shared prefix token in the stereo
+        vs anti sentence (mirrors create_stereoset_context_attention_comparison).
+        """
         examples = get_stereoset_examples(mk)
         if not examples:
             yield "No examples data"
             return
-        
+
         try:
             idx = int(input.stereoset_selected_example())
         except Exception:
             yield "No example selected"
             return
-            
+
         if idx < 0 or idx >= len(examples):
             yield "Invalid example index"
             return
 
         ex = examples[idx]
-        
-        # Get selected layer/head
+
         try:
             sel_layer = int(input.bias_attn_layer())
         except Exception:
@@ -1860,9 +1888,8 @@ def register_stereoset_handlers(
         try:
             sel_head = int(input.bias_attn_head())
         except Exception:
-             sel_head = 0
+            sel_head = 0
 
-        # Re-extract
         base = _GUSNET_TO_ENCODER.get(mk, "bert-base-uncased")
         ctx = ex.get("context", "")
         s_text = ctx + " " + ex.get("stereo_sentence", "")
@@ -1871,12 +1898,10 @@ def register_stereoset_handlers(
         s_tok, s_a = extract_attention_for_text(s_text, base, ModelManager)
         a_tok, a_a = extract_attention_for_text(a_text, base, ModelManager)
 
-        # We need the attention matrix for the selected head
         def _get_mat(attns):
             try:
-                mat = attns[sel_layer][sel_head]
-                if hasattr(mat, "tolist"): mat = mat.tolist()
-                return mat
+                mat = attns[sel_layer][0, sel_head]
+                return mat.cpu().numpy() if hasattr(mat, "cpu") else mat
             except Exception:
                 _logger.debug("Suppressed exception", exc_info=True)
                 return None
@@ -1887,35 +1912,22 @@ def register_stereoset_handlers(
         if mat_s is None or mat_a is None:
             yield "Error extracting attention"
             return
-            
-        yield "token_idx,token,stereo_attn,anti_attn,diff"
-        
-        # We assume s_tok and a_tok align on the context, but differ at the end.
-        # Heatmap usually aligns them or shows them side-by-side?
-        # `create_stereoset_attention_diff_heatmap` usually aligns them by common prefix or just shows difference on common tokens?
-        # Actually diff heatmap is usually S - A. 
-        # But if they have different tokens, how do we subtract?
-        # Usually they differ by one word.
-        # If lengths differ, we truncate or pad?
-        # Let's assume lengths are same or we take min length.
-        
+
+        # Longest common prefix - the only positions holding the same token
+        # in both sentences (the completions differ, so positions beyond the
+        # prefix are not comparable).
         min_len = min(len(s_tok), len(a_tok))
-        
-        # Using prediction time attention (last token attending to others)
-        last_idx_s = len(s_tok) - 1
-        last_idx_a = len(a_tok) - 1
-        
-        for i in range(min_len):
+        n_shared = 0
+        while n_shared < min_len and s_tok[n_shared] == a_tok[n_shared]:
+            n_shared += 1
+
+        yield "token_idx,token,stereo_mean_received,anti_mean_received,delta"
+        for i in range(n_shared):
             try:
-                val_s = float(mat_s[last_idx_s][i])
-                val_a = float(mat_a[last_idx_a][i])
-                diff = val_s - val_a
-                # Use stereo token as label if it matches, else "stereo/anti"
-                tok = s_tok[i]
-                if i < len(a_tok) and s_tok[i] != a_tok[i]:
-                    tok = f"{s_tok[i]}/{a_tok[i]}"
-                    
-                yield f"{i},{_csv_safe(tok)},{val_s:.6f},{val_a:.6f},{diff:.6f}"
+                val_s = float(mat_s[:, i].mean())
+                val_a = float(mat_a[:, i].mean())
+                yield (f"{i},{_csv_safe(s_tok[i])},"
+                       f"{val_s:.6f},{val_a:.6f},{val_s - val_a:.6f}")
             except Exception:
                 _logger.debug("Suppressed exception", exc_info=True)
                 pass

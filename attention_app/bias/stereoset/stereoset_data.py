@@ -5,8 +5,8 @@ access scores, examples, and head sensitivity data without reloading.
 All JSON files live in the ``results/`` subdirectory.
 
 Files (inside results/):
-    stereoset_precomputed_bert.json  — BERT PLL scoring
-    stereoset_precomputed_gpt2.json  — GPT-2 autoregressive scoring
+    stereoset_precomputed_bert.json  - BERT PLL scoring
+    stereoset_precomputed_gpt2.json  - GPT-2 autoregressive scoring
 """
 
 import json
@@ -22,13 +22,13 @@ _cache: Dict[str, dict] = {}
 #
 # NOTE the deliberate (and potentially surprising) convention: dashed
 # GUS-Net keys ("gusnet-bert") resolve to the BASE model's data ("bert").
-# This is intentional — the upper StereoSet sections (Overview, Category
+# This is intentional - the upper StereoSet sections (Overview, Category
 # Breakdown, Demographic Slices) always show base-LM scores because
 # GUS-Net is a token classifier, not a language model. Callers that want
 # the GUS-Net-trunk data (head sensitivity, example explorer) must go
 # through get_gusnet_key(), which returns the underscore file keys
 # ("gusnet_bert"). Passing a dashed key expecting GUS-Net data silently
-# yields base data — do not "fix" this mapping without updating callers.
+# yields base data - do not "fix" this mapping without updating callers.
 _MODEL_KEY_MAP = {
     # Short keys
     "bert": "bert",
@@ -189,7 +189,7 @@ def get_metadata(model: Optional[str] = None) -> Optional[Dict]:
 def compute_model_similarity(base_key: str, gusnet_key: str) -> Optional[Dict]:
     """Composite similarity of base vs GUS-NET **head-sensitivity profiles**.
 
-    IMPORTANT — what this does and does not measure: it compares the two
+    IMPORTANT - what this does and does not measure: it compares the two
     models' HEAD-SENSITIVITY matrices (how strongly each head separates the
     StereoSet demographic categories) and the overlap of their top
     sensitive heads. It does NOT correlate raw attention matrices; UI copy
@@ -197,7 +197,7 @@ def compute_model_similarity(base_key: str, gusnet_key: str) -> Optional[Dict]:
 
     Signals, equally weighted into a 0-100% score:
       - Pearson r between the flattened sensitivity matrices, floored at 0
-        (an anti-correlated or unrelated profile contributes 0, not 50% —
+        (an anti-correlated or unrelated profile contributes 0, not 50% -
         the previous (r+1)/2 mapping made "no relationship" read as
         "50% similar").
       - Jaccard overlap of the top-20 sensitive heads.
@@ -225,7 +225,7 @@ def compute_model_similarity(base_key: str, gusnet_key: str) -> Optional[Dict]:
     method_base = meta_base.get("sensitivity_method")
     method_gus = meta_gus.get("sensitivity_method")
     if method_base is None or method_gus is None or method_base != method_gus:
-        # Unknown or mismatched estimators — regenerate both JSONs with the
+        # Unknown or mismatched estimators - regenerate both JSONs with the
         # current pipeline to re-enable the badge.
         return None
 

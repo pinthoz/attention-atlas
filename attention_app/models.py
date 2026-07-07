@@ -163,7 +163,7 @@ class ModelManager:
 
             with cls._lock:
                 # Another thread may have loaded the same model while we were
-                # downloading — check again to avoid duplicates.
+                # downloading - check again to avoid duplicates.
                 if model_name in cls._instances:
                     cls._instances.move_to_end(model_name)
                     return cls._instances[model_name]

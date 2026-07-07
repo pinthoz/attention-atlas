@@ -117,7 +117,7 @@ def server(input, output, session):
     running = reactive.value(False)
     cached_result = reactive.value(None)
     cached_result_B = reactive.value(None) # For comparison
-    # Register Auditor Notebook handlers — wire in the live result
+    # Register Auditor Notebook handlers - wire in the live result
     # reactives so each entry's captured context can include computed
     # metrics, not just input state.
     notebook_server_handlers(
@@ -975,7 +975,7 @@ def server(input, output, session):
 
         try:
             # ``res`` may be missing fields if a previous run failed mid-way
-            # or if the schema changed across versions — pull required bits
+            # or if the schema changed across versions - pull required bits
             # inside the try so we don't crash the effect.
             tokenizer = res.tokenizer
             model = res.encoder_model
@@ -987,7 +987,7 @@ def server(input, output, session):
                 stats = await loop.run_in_executor(
                     pool, compute_baselines, model, tokenizer, is_gpt2
                 )
-            # The model may have changed again while we were computing —
+            # The model may have changed again while we were computing -
             # don't overwrite newer state with stale baselines.
             try:
                 if input.model_name() != model_name:
@@ -1528,9 +1528,9 @@ def server(input, output, session):
         # Reject re-entry while a previous run is still in flight. Without
         # this, rapid double-clicks on "Generate All" launch two parallel
         # ``heavy_compute`` invocations whose results race on the same
-        # reactive values — wasting GPU and producing inconsistent state.
+        # reactive values - wasting GPU and producing inconsistent state.
         if running.get():
-            _logger.debug("compute_all ignored — a run is already in progress")
+            _logger.debug("compute_all ignored - a run is already in progress")
             return
 
         # ── Batch mode intercept ──
@@ -1635,7 +1635,7 @@ def server(input, output, session):
             return
 
         # Every model in the app is English-only (BERT/GPT-2 pre-training,
-        # GUS-Net fine-tuning, spaCy en_core_web_sm). Warn — don't block —
+        # GUS-Net fine-tuning, spaCy en_core_web_sm). Warn - don't block -
         # when the input doesn't look like English, because the outputs
         # would otherwise be rendered with full confidence and no caveat.
         try:
@@ -1762,7 +1762,7 @@ def server(input, output, session):
         })
 
     # History dropdown is rendered by ``@render.ui history_list`` (above);
-    # no script injection is needed — keeping one would leak <script> tags
+    # no script injection is needed - keeping one would leak <script> tags
     # into the DOM on every history update.
 
     # -------------------------------------------------------------------------

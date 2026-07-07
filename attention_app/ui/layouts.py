@@ -989,7 +989,7 @@ app_ui = ui.page_navbar(
                     if (!sidebars.length) return;
                     var target = null;
                     sidebars.forEach(function(s) {
-                        // offsetParent is null for position:fixed — use rect+style instead
+                        // offsetParent is null for position:fixed - use rect+style instead
                         var r = s.getBoundingClientRect();
                         var st = window.getComputedStyle(s);
                         if (st.display !== 'none' && st.visibility !== 'hidden' && r.width > 0 && r.height > 0) {

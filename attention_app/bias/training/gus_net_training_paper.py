@@ -1,5 +1,5 @@
 """
-GUS-Net Training — Paper-Faithful Version
+GUS-Net Training - Paper-Faithful Version
 ==========================================
 
 Reproduces the ORIGINAL GUS-Net training pipeline from:
@@ -11,9 +11,9 @@ Key differences vs gus_net_training.py (our modified version):
     - Scalar alpha=0.65 per-SAMPLE (NOT per-class from frequencies)
     - gamma=3.5 (from paper's code, not 2.0 from paper's text)
     - No probability clipping (no ASL clip mechanism)
-    - No LLRD — single learning rate for all parameters
+    - No LLRD - single learning rate for all parameters
     - No span decay or label smoothing
-    - No early stopping — trains full MAX_EPOCHS
+    - No early stopping - trains full MAX_EPOCHS
     - Linear scheduler with warmup (not cosine)
 
 Purpose: ablation experiment to compare paper's simpler approach
@@ -87,7 +87,7 @@ def load_from_clean_json():
 
 
 # ============================================================================
-# HYPERPARAMETERS — matching the paper's code exactly
+# HYPERPARAMETERS - matching the paper's code exactly
 # ============================================================================
 
 BATCH_SIZE = 16
@@ -97,7 +97,7 @@ PATIENCE = 30             # stop if no improvement for 5 epochs
 THRESHOLD = 0.5          # paper uses fixed 0.5
 MAX_LENGTH = 128
 
-# Focal loss — paper's values (from their published code)
+# Focal loss - paper's values (from their published code)
 ALPHA = 0.55             # scalar, applied per-sample (not per-class)
 GAMMA = 2              # from code; paper text says 2 
 
@@ -150,7 +150,7 @@ def focal_loss_paper(logits, labels, alpha=ALPHA, gamma=GAMMA):
 
 
 # ============================================================================
-# BERT TRAINING — paper-faithful
+# BERT TRAINING - paper-faithful
 # ============================================================================
 
 def train_bert_paper(dataset_source="hf"):
@@ -198,7 +198,7 @@ def train_bert_paper(dataset_source="hf"):
             if word_idx is None:
                 aligned_labels.append([-100] * num_labels)
             elif word_idx == prev_word_id:
-                # Mask secondary subtokens — only first subtoken is labelled
+                # Mask secondary subtokens - only first subtoken is labelled
                 aligned_labels.append([-100] * num_labels)
             else:
                 tags = annotations[word_idx]
@@ -237,7 +237,7 @@ def train_bert_paper(dataset_source="hf"):
                 torch.tensor(self.labels[idx]),
             )
 
-    # DataModule — 70/15/15 split, stratified by bias presence
+    # DataModule - 70/15/15 split, stratified by bias presence
     class NERDataModule(pl.LightningDataModule):
         def __init__(self, tokenized_texts, labels, batch_size=BATCH_SIZE,
                      val_split=0.15, test_split=0.15):
@@ -296,7 +296,7 @@ def train_bert_paper(dataset_source="hf"):
                 self.test_ds, batch_size=self.batch_size, num_workers=0,
             )
 
-    # Lightning Model — paper's architecture (no LLRD, simple AdamW)
+    # Lightning Model - paper's architecture (no LLRD, simple AdamW)
     class GUSNetBERTPaper(pl.LightningModule):
         def __init__(self, learning_rate=LEARNING_RATE, threshold=THRESHOLD):
             super().__init__()
@@ -368,7 +368,7 @@ def train_bert_paper(dataset_source="hf"):
     data_module = NERDataModule(tokenized_texts, labels)
     data_module.setup()
 
-    # Train — early stopping with patience
+    # Train - early stopping with patience
     print("\n" + "=" * 60)
     print("TRAINING (no early stopping)")
     print("=" * 60)
@@ -421,7 +421,7 @@ def train_bert_paper(dataset_source="hf"):
     # We report results with BOTH fixed 0.5 and optimised thresholds.
     # ----------------------------------------------------------------
     print("\n" + "=" * 60)
-    print("THRESHOLD OPTIMIZATION (for comparison — paper uses 0.5)")
+    print("THRESHOLD OPTIMIZATION (for comparison - paper uses 0.5)")
     print("=" * 60)
 
     val_loader = data_module.val_dataloader()
@@ -480,7 +480,7 @@ def train_bert_paper(dataset_source="hf"):
     print(f"\nOptimised thresholds: {opt_thr}")
 
     # ----------------------------------------------------------------
-    # TEST SET EVALUATION — run twice: fixed 0.5 and optimised
+    # TEST SET EVALUATION - run twice: fixed 0.5 and optimised
     # ----------------------------------------------------------------
     test_loader = data_module.test_dataloader()
 
@@ -540,7 +540,7 @@ def train_bert_paper(dataset_source="hf"):
         return report_cat, report_bio, exact_match
 
     print("\n" + "=" * 60)
-    print("TEST SET — FIXED THRESHOLD 0.5 (paper's approach)")
+    print("TEST SET - FIXED THRESHOLD 0.5 (paper's approach)")
     print("=" * 60)
     fixed_thr = np.full(num_labels, 0.5, dtype=np.float32)
     rep_cat_fixed, rep_bio_fixed, em_fixed = evaluate_with_thresholds(
@@ -548,7 +548,7 @@ def train_bert_paper(dataset_source="hf"):
     )
 
     print("\n" + "=" * 60)
-    print("TEST SET — OPTIMISED THRESHOLDS (for comparison)")
+    print("TEST SET - OPTIMISED THRESHOLDS (for comparison)")
     print("=" * 60)
     rep_cat_opt, rep_bio_opt, em_opt = evaluate_with_thresholds(
         best_model, test_loader, opt_thr, "Optimised thresholds",
@@ -627,10 +627,10 @@ def train_bert_paper(dataset_source="hf"):
 
 
 # ============================================================================
-# GPT-2 TRAINING — paper-faithful
+# GPT-2 TRAINING - paper-faithful
 # ============================================================================
 
-# Lightning Model — GPT-2 Paper Version
+# Lightning Model - GPT-2 Paper Version
 class GUSNetGPT2Paper(pl.LightningModule):
     def __init__(self, learning_rate=LEARNING_RATE, threshold=THRESHOLD):
         super().__init__()
@@ -848,7 +848,7 @@ def train_gpt2_paper(dataset_source="hf"):
                 torch.tensor(self.labels[idx]),
             )
 
-    # DataModule — 70/15/15 split, stratified by bias presence
+    # DataModule - 70/15/15 split, stratified by bias presence
     class NERDataModule(pl.LightningDataModule):
         def __init__(self, tokenized_texts, labels, batch_size=BATCH_SIZE,
                      val_split=0.15, test_split=0.15):
@@ -911,7 +911,7 @@ def train_gpt2_paper(dataset_source="hf"):
     data_module = NERDataModule(tokenized_list, labels_list)
     data_module.setup()
 
-    # Train — early stopping with patience
+    # Train - early stopping with patience
     print("\n" + "=" * 60)
     print("TRAINING (PyTorch Lightning)")
     print("=" * 60)
@@ -1085,7 +1085,7 @@ def train_gpt2_paper(dataset_source="hf"):
         return report_cat, report_bio, exact_match
 
     print("\n" + "=" * 60)
-    print("TEST SET — FIXED THRESHOLD 0.5")
+    print("TEST SET - FIXED THRESHOLD 0.5")
     print("=" * 60)
     fixed_thr = np.full(num_labels, 0.5, dtype=np.float32)
     rep_cat_fixed, rep_bio_fixed, em_fixed = evaluate_with_thresholds(
@@ -1093,7 +1093,7 @@ def train_gpt2_paper(dataset_source="hf"):
     )
 
     print("\n" + "=" * 60)
-    print("TEST SET — OPTIMISED THRESHOLDS")
+    print("TEST SET - OPTIMISED THRESHOLDS")
     print("=" * 60)
     rep_cat_opt, rep_bio_opt, em_opt = evaluate_with_thresholds(
         best_model, test_loader, opt_thr, "Optimised thresholds",
@@ -1180,7 +1180,7 @@ if __name__ == "__main__":
     print("GUS-Net Training (Paper-Faithful) - Dataset Selection")
     print("=" * 60)
     print("\nSelect dataset:")
-    print("  1. Cleaned dataset (gus_dataset_clean.json — punct-fixed)")
+    print("  1. Cleaned dataset (gus_dataset_clean.json - punct-fixed)")
     print("  2. Hugging Face (ethical-spectacle/gus-dataset-v1)")
     print("  3. Gemini Annotations (gemini_annotations.json)")
     print()

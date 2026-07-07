@@ -21,7 +21,7 @@ def _token_to_sent_via_offsets(text, tokens, tokenizer, char_to_sent):
     Returns the per-token sentence list, or ``None`` when offsets are
     unavailable or the re-encoded token sequence does not reproduce
     ``tokens`` exactly (word-aggregated pseudo-tokens, sentence-pair
-    encodings with a mid-sequence [SEP], slow tokenizers) — the caller then
+    encodings with a mid-sequence [SEP], slow tokenizers) - the caller then
     uses the character-matching heuristic.
     """
     try:
@@ -75,7 +75,7 @@ def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> 
     #     sync on curly quotes / accents / emoji; offsets cannot. Only
     #     usable when re-encoding the plain text reproduces the exact token
     #     sequence we were given (it does NOT for BERT sentence-pair
-    #     encoding, whose mid-sequence [SEP] changes the layout — that case
+    #     encoding, whose mid-sequence [SEP] changes the layout - that case
     #     falls through to the heuristic).
     token_to_sent = _token_to_sent_via_offsets(text, tokens, tokenizer, char_to_sent)
     if token_to_sent is not None:
@@ -132,7 +132,7 @@ def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> 
             else:
                 # Resync: an exact match at the cursor failed (curly quote,
                 # accent normalisation, unicode artefact...). Without
-                # advancing, EVERY subsequent token would also fail — a
+                # advancing, EVERY subsequent token would also fail - a
                 # cascade that silently degrades the whole mapping. Search
                 # ahead in a small window and resync the cursor if found.
                 found = text.lower().find(clean_tok.lower(), current_text_pos,
@@ -180,7 +180,7 @@ def _sentence_token_indices(tokens: List[str], sentence_boundaries_ids: List[int
     """Per-sentence token index lists, EXCLUDING special tokens.
 
     Contiguous ranges would otherwise sweep in [SEP] (both the final one and
-    the mid-sequence one from sentence-pair encoding) — and attention to
+    the mid-sequence one from sentence-pair encoding) - and attention to
     [SEP] is a well-documented sink (Clark et al., 2019), which would
     distort the affected sentence's ISA row/column.
     """
@@ -198,7 +198,7 @@ def _isa_pair_score(stacked: torch.Tensor, row_ix: List[int], col_ix: List[int],
                     aggregation_method: str) -> float:
     """Score one sentence pair (Sa=row queries, Sb=col keys).
 
-    "mean" (default since 2026-06-12) — attention MASS:
+    "mean" (default since 2026-06-12) - attention MASS:
         ᾱ = mean over layers and heads → (seq, seq)
         ISA(Sa, Sb) = (1/|Sa|) Σ_{i∈Sa} Σ_{j∈Sb} ᾱ[i, j]
         = the average fraction of Sa's attention that lands on Sb.
@@ -206,12 +206,12 @@ def _isa_pair_score(stacked: torch.Tensor, row_ix: List[int], col_ix: List[int],
         to 1 across sentences because attention to special tokens (the
         [CLS]/[SEP] sink mass) is deliberately excluded.
 
-    "max" — legacy salience measure (pre-2026-06-12 default):
+    "max" - legacy salience measure (pre-2026-06-12 default):
         ISA(Sa, Sb) = max over layers, heads and token pairs of α.
         A single strong token link sets the whole pair's score; kept as
         an explicit option for "does ANY strong link exist?" questions.
 
-    "last_layer" — mass computed on the last layer only (mean over heads).
+    "last_layer" - mass computed on the last layer only (mean over heads).
     """
     if not row_ix or not col_ix:
         return 0.0
@@ -242,7 +242,7 @@ def compute_isa(attentions, tokens: List[str], text: str, tokenizer, inputs,
     ISA(Sa, Sb) = average fraction of Sa's attention received by Sb,
     with attention to special tokens excluded. The previous default
     ("max": max over layers, heads and token pairs) is available via
-    ``aggregation_method="max"`` — it measures the existence of a single
+    ``aggregation_method="max"`` - it measures the existence of a single
     strong link, not coupling, and is outlier-dominated by construction.
 
     Args:

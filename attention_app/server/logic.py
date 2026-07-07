@@ -24,7 +24,7 @@ class ComputeResult:
         attentions: Tuple of attention tensors from each layer
         hidden_states: Tuple of hidden state tensors from each layer
         inputs: Tokenized inputs dict
-        model_name: HuggingFace model id — tokenizer / encoder / MLM head
+        model_name: HuggingFace model id - tokenizer / encoder / MLM head
             are resolved lazily through ModelManager (see properties below)
         head_specialization: Head specialization metrics
         isa_data: Inter-sentence attention data
@@ -143,8 +143,8 @@ def heavy_compute(text, model_name):
     tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
     # Token embeddings for the Deep Dive "Token Embeddings" card: the
     # context-independent vocabulary vectors (word_embeddings / wte), as the
-    # card text claims. The previous behaviour exposed last_hidden_state —
-    # the OUTPUT of the final layer, maximally contextual — which is still
+    # card text claims. The previous behaviour exposed last_hidden_state -
+    # the OUTPUT of the final layer, maximally contextual - which is still
     # available as hidden_states[-1] where needed.
     with torch.no_grad():
         if hasattr(encoder_model, "embeddings"):  # BERT
@@ -156,7 +156,7 @@ def heavy_compute(text, model_name):
     hidden_states = outputs.hidden_states
     # Positional embeddings: show the model's REAL learned position
     # embeddings (BERT: embeddings.position_embeddings; GPT-2: wpe). Both
-    # models learn them — the Deep Dive card says so explicitly — so the
+    # models learn them - the Deep Dive card says so explicitly - so the
     # sinusoidal formula from the original Transformer (previous behaviour)
     # displayed values the models never use. Kept as a fallback only.
     try:

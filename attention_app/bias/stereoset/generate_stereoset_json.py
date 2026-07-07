@@ -69,7 +69,7 @@ MODEL_CONFIGS = {
     },
     # ── GUS-Net variants ─────────────────────────────────────────────
     # SS/LMS/ICAT are language-model metrics, so they are scored with the
-    # BASE LM (scorer_model_name) — GUS-Net is a token classifier and has
+    # BASE LM (scorer_model_name) - GUS-Net is a token classifier and has
     # no LM head. The attention features, however, are extracted from the
     # fine-tuned GUS-Net trunk (model_name). This matches how the
     # stereoset_precomputed_gusnet_*.json files consumed by the dashboard
@@ -211,7 +211,7 @@ def _scores_for(examples):
     the anti-stereotype sentence as TWO separate comparisons per example.
     The previous implementation counted a single ``max(stereo, anti) >
     unrelated`` test per example, which only requires the BEST related
-    sentence to beat the unrelated one — that systematically inflates LMS
+    sentence to beat the unrelated one - that systematically inflates LMS
     (and therefore ICAT) relative to published values.
 
     Sentinel handling: scoring returns -9999.0 for over-length sentences.
@@ -234,7 +234,7 @@ def _scores_for(examples):
 
     # SS tie convention: a strict ">" means an EXACT score tie counts as an
     # anti-stereotype preference. With float log-likelihoods ties are
-    # essentially impossible, so this has no practical effect — documented
+    # essentially impossible, so this has no practical effect - documented
     # here so the convention is explicit rather than accidental.
     stereo_preferred = sum(1 for e in examples if e["stereo_pll"] > e["anti_pll"])
     ss = (stereo_preferred / n * 100)
@@ -297,7 +297,7 @@ def _compute_head_sensitivity(df, num_layers=12, num_heads=12):
     """Compute head sensitivity matrix and top heads.
 
     Uses ALL features per head (GAM, AttMap, Spec). Sensitivity is the mean
-    η² (between-category effect size) across the head's features — a
+    η² (between-category effect size) across the head's features - a
     scale-free measure of how strongly the head's features separate the
     StereoSet demographic categories.
 

@@ -4213,7 +4213,7 @@ __all__ = ["CSS"]
             }
 
             /* Absolute-positioned vertical arrows inside cards (Segment→Sum,
-               Q/K/V→Add&Norm, Exit, etc.) — bring them into normal flow so
+               Q/K/V→Add&Norm, Exit, etc.) - bring them into normal flow so
                they appear inline below/above the card content, pointing down. */
             .flex-card .transition-arrow.arrow-vertical,
             .flex-card .transition-arrow {

@@ -2,7 +2,7 @@
 StereoSet pre-computation pipeline.
 
 FEATURE SEMANTICS ARE VERSIONED. Feature matrices extracted at different
-times are only comparable when their ``FEATURE_VERSION`` matches — the
+times are only comparable when their ``FEATURE_VERSION`` matches - the
 meaning of individual features has changed over time (notably the ISA
 default aggregation switched from "max" to "mean" on 2026-06-12, so
 ``ISA_flat_*`` values from older pickles live on a different scale).

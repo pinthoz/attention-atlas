@@ -88,7 +88,7 @@ def _rho_color_and_label(rho: float) -> tuple:
 # Empirical permutation-null thresholds from the faithfulness calibration
 # on the full v9 corpus. BERT: 2026-06-06 run. GPT-2: re-calibrated
 # 2026-06-12 with the CORRECTED head-ablation mechanism (the previous run
-# zeroed a post-c_proj slice, not the head — see THRESHOLDS_CALIBRATION.md
+# zeroed a post-c_proj slice, not the head - see THRESHOLDS_CALIBRATION.md
 # §21). Per-model because BERT and GPT-2 operate at different scales.
 # Both metrics are stored: representation_impact (cosine-distance on hidden
 # states; sensitive to LayerNorm scaling) and KL divergence on LM-head
@@ -96,7 +96,7 @@ def _rho_color_and_label(rho: float) -> tuple:
 #
 # Post-correction picture (combined masks): GPT-2 BAR ranking is marginally
 # faithful under both metrics (rep 5.90%, KL 6.55% > a=0.05); the strong
-# signal is per-category — UNFAIR/STEREO reach 11-13% under KL and 8.6-10.1%
+# signal is per-category - UNFAIR/STEREO reach 11-13% under KL and 8.6-10.1%
 # under rep_impact (see §16 + §21 addendum).
 IMPACT_THRESHOLDS = {
     "bert-base-uncased": {
@@ -131,11 +131,11 @@ def _resolve_bias_target_model(res: dict):
 
     Faithfulness is only meaningful relative to a decision, so IG /
     perturbation / LRP attribute the GUS-Net detected-bias evidence instead
-    of the legacy pooled-norm — but ONLY when the attentions in ``res`` come
+    of the legacy pooled-norm - but ONLY when the attentions in ``res`` come
     from the GUS-Net encoder trunk (attention source "gusnet", where
     model_name is a ``pinthoz/gus-net-*`` id). In "base" mode the attention
     maps belong to the pretrained encoder while the gradients would flow
-    through the fine-tuned trunk — a model mismatch — so we fall back to the
+    through the fine-tuned trunk - a model mismatch - so we fall back to the
     pooled-norm target and the bundles' ``target`` field says so.
 
     Returns the model or ``None`` (fallback).
@@ -157,7 +157,7 @@ def _resolve_bias_target_model(res: dict):
         return model
     except Exception:
         _logger.warning(
-            "Could not load GUS-Net target model %s — falling back to the "
+            "Could not load GUS-Net target model %s - falling back to the "
             "pooled-norm attribution target.", key, exc_info=True)
         return None
 
@@ -211,7 +211,7 @@ def _render_live_elbow_block(
             f"You are seeing exactly the heads that carry the impact."
         )
     elif diff < 0:
-        # Elbow is lower than slider — user is showing more heads than needed.
+        # Elbow is lower than slider - user is showing more heads than needed.
         excess = -diff
         note = (
             f"The slider shows <b>{excess}</b> more head{'s' if excess > 1 else ''} "
@@ -219,7 +219,7 @@ def _render_live_elbow_block(
             f"rows {live_elbow + 1}..{slider_k} each contribute &lt;5% of the total."
         )
     else:
-        # Elbow is higher than slider — user is missing signal.
+        # Elbow is higher than slider - user is missing signal.
         missing = diff
         note = (
             f"The slider is <b>{missing}</b> below this sentence's elbow. "
@@ -467,7 +467,7 @@ def register_xai_handlers(
                 slider_k = int(input.bias_top_k())
             except Exception:
                 slider_k = 5
-            # Calibrated corpus elbows: BERT K=5 (§11); GPT-2 K=3 — re-run
+            # Calibrated corpus elbows: BERT K=5 (§11); GPT-2 K=3 - re-run
             # 2026-06-12 with the corrected ablation mechanism (was K=1
             # under the old mechanism, which over-concentrated the impact
             # in the single top head; see MD §21).
@@ -817,7 +817,14 @@ def register_xai_handlers(
 
         try: top_k = int(input.bias_top_k())
         except Exception: top_k = 5
-            
+
+        # Multiplicity mode from the floating toolbar (shared with the
+        # head-survival and StereoSet cards)
+        try: correction = str(input.bias_correction() or "fdr").lower()
+        except Exception: correction = "fdr"
+        try: alpha = float(input.bias_alpha())
+        except Exception: alpha = 0.05
+
         def _render_ig_single(bundle, container_suffix="", context_results=None):
             if not bundle: return "No data"
             
@@ -897,21 +904,38 @@ def register_xai_handlers(
             )
 
             # ── Summary stats ──
-            # Significance uses BH-FDR q-values: with ~144 heads, ~7 raw
-            # p<0.05 hits are expected by chance, so raw counts overstate.
+            # Significance follows the toolbar correction/α controls
+            # (default BH-FDR): with ~144 heads, ~α·144 raw p<α hits are
+            # expected by chance, so raw counts overstate.
             def _q(r):
                 return getattr(r, "spearman_qvalue", None)
             has_q = all(_q(r) is not None for r in results)
-            if has_q:
-                sig_results = [r for r in results if _q(r) < 0.05]
-                sig_label = "Significant (FDR q&lt;0.05)"
-                n_raw_sig = sum(1 for r in results if r.spearman_pvalue < 0.05)
-                sig_note = (f"raw p&lt;0.05: {n_raw_sig} "
-                            f"(≈{0.05 * len(results):.0f} expected by chance)")
+            m = len(results)
+
+            def _is_significant(r):
+                if correction == "bonferroni":
+                    return r.spearman_pvalue * m < alpha
+                if correction == "none" or not has_q:
+                    return r.spearman_pvalue < alpha
+                return _q(r) < alpha
+
+            sig_results = [r for r in results if _is_significant(r)]
+            n_raw_sig = sum(1 for r in results if r.spearman_pvalue < alpha)
+            raw_note = (f"raw p&lt;{alpha:g}: {n_raw_sig} "
+                        f"(≈{alpha * m:.0f} expected by chance)")
+            if correction == "bonferroni":
+                sig_label = f"Significant (Bonferroni, α={alpha:g})"
+                sig_note = raw_note
+            elif correction == "none":
+                sig_label = f"Significant (raw p&lt;{alpha:g}, uncorrected)"
+                sig_note = (f"≈{alpha * m:.0f} expected by chance - "
+                            f"switch the toolbar to FDR or Bonf")
+            elif has_q:
+                sig_label = f"Significant (FDR q&lt;{alpha:g})"
+                sig_note = raw_note
             else:
-                sig_results = [r for r in results if r.spearman_pvalue < 0.05]
-                sig_label = "Significant (raw p&lt;0.05, uncorrected)"
-                sig_note = "no FDR data — re-run the analysis"
+                sig_label = f"Significant (raw p&lt;{alpha:g}, uncorrected)"
+                sig_note = "no FDR data - re-run the analysis"
             mean_rho = np.mean([r.spearman_rho for r in results])
             n_positive = sum(1 for r in sig_results if r.spearman_rho > 0)
             n_negative = sum(1 for r in sig_results if r.spearman_rho < 0)
@@ -941,7 +965,7 @@ def register_xai_handlers(
                            '(attributions explain the detected-bias evidence)')
             elif _target == "pooled-norm":
                 _t_html = ('<span style="color:#d97706;font-weight:600;">pooled-norm (legacy fallback)</span> '
-                           '— a geometric quantity, not a model decision; agreement here does '
+                           '- a geometric quantity, not a model decision; agreement here does '
                            'NOT validate the bias explanations')
             else:
                 _t_html = None
@@ -951,7 +975,8 @@ def register_xai_handlers(
                     _d_color = "#dc2626" if _delta > 0.05 else "#64748b"
                     _d_html = (f' &middot; IG completeness residual: '
                                f'<span style="color:{_d_color};font-weight:600;">{_delta * 100:.1f}%</span>'
-                               + (' (&gt;5% — attributions approximate, increase steps)' if _delta > 0.05 else ''))
+                               + (' (&gt;5% even after automatic step escalation '
+                                  '- treat attribution rankings as approximate)' if _delta > 0.05 else ''))
                 summary_html += (
                     f'<div style="font-size:10.5px;color:#94a3b8;margin-top:8px;text-align:center;">'
                     f'Attribution target: {_t_html}{_d_html}</div>'
@@ -963,11 +988,11 @@ def register_xai_handlers(
             for rank, r in enumerate(top_heads, 1):
                 rho_color, rho_label = _rho_color_and_label(r.spearman_rho)
                 r_q = _q(r)
-                # Star = significant after BH-FDR correction (falls back to
-                # raw p only for stale bundles without q-values).
-                _is_sig = (r_q < 0.05) if r_q is not None else (r.spearman_pvalue < 0.05)
+                # Star = significant under the toolbar correction/α (falls
+                # back to raw p for stale bundles without q-values).
+                _is_sig = _is_significant(r)
                 sig_badge = '<span style="color:#22c55e;font-weight:600;">★</span>' if _is_sig else ""
-                q_cell = f"{r_q:.4f}" if r_q is not None else "—"
+                q_cell = f"{r_q:.4f}" if r_q is not None else "-"
                 specialized = "Yes" if r.bar_original > bar_threshold else "No"
                 row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
                 table_rows.append(
@@ -1036,8 +1061,14 @@ def register_xai_handlers(
                 'margin-top:8px;font-style:italic;">'
                 'Negative correlations use the same magnitude bands in red. '
                 '<span style="color:#22c55e;font-style:normal;font-weight:700;">&#9733;</span> '
-                'marks rows significant after Benjamini-Hochberg FDR correction (q &lt; 0.05); '
-                'with one test per head, ~5% of heads clear raw p &lt; 0.05 by chance alone.'
+                + (
+                    f'marks rows significant under Bonferroni (p&middot;{m} &lt; {alpha:g});'
+                    if correction == "bonferroni" else
+                    f'marks rows with raw p &lt; {alpha:g} (uncorrected);'
+                    if (correction == "none" or not has_q) else
+                    f'marks rows significant after Benjamini-Hochberg FDR correction (q &lt; {alpha:g});'
+                )
+                + f' with one test per head, ~{alpha * 100:g}% of heads clear raw p &lt; {alpha:g} by chance alone.'
                 '</div>'
                 '</div>'
             )
@@ -1132,7 +1163,7 @@ def register_xai_handlers(
             f"<div style='{_TR};font-family:JetBrains Mono,monospace;font-size:10px;color:#e2e8f0;'>"
             f"IG(x) = (x−x′) × ∫₀¹ ∂F/∂x dα</div>"
             f"<div style='{_TN}; margin-bottom:4px;'>Steps=64 (bias target; 30 for the pooled-norm fallback) · Baseline=[PAD] (BERT) / &lt;|endoftext|&gt; (GPT-2) · via Captum LayerIntegratedGradients</div>"
-            f"<div style='{_TN}; margin-bottom:4px;'>Target F = GUS-Net detected-bias evidence (Σ sigmoid of the bias-label logits) — "
+            f"<div style='{_TN}; margin-bottom:4px;'>Target F = GUS-Net detected-bias evidence (Σ sigmoid of the bias-label logits) - "
             f"attributions answer <i>which input tokens drive the bias detections</i>. Falls back to the pooled hidden-state norm "
             f"(labelled under the summary cards) only when the GUS-Net head is unavailable or the attention source is the base encoder.</div>"
             f"<hr style='{_TS}'>"
@@ -1142,8 +1173,8 @@ def register_xai_handlers(
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
             f"<span><span style='{_TBR}'>ρ &lt; 0</span>&nbsp;attention focuses on tokens gradients ignore</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
-            f"<span><span style='{_TBA}'>★ marker</span>&nbsp;significant after BH-FDR correction (q &lt; 0.05) — "
-            f"raw p&lt;0.05 over ~144 heads includes ≈7 chance hits</span></div>"
+            f"<span><span style='{_TBA}'>★ marker</span>&nbsp;significant under the correction and α selected in the "
+            f"floating toolbar (default BH-FDR, q &lt; 0.05) - raw p&lt;0.05 over ~144 heads includes ≈7 chance hits</span></div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Sub-charts</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
@@ -1477,7 +1508,7 @@ def register_xai_handlers(
 
             ig_attrs = ig_bundle.token_attributions if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else None
 
-            # Summary cards — Cohen 1988 magnitude bands on the rho values.
+            # Summary cards - Cohen 1988 magnitude bands on the rho values.
             rho_ig = bundle.perturb_vs_ig_spearman
             mean_attn_rho = np.mean([r[2] for r in bundle.perturb_vs_attn_spearman]) if bundle.perturb_vs_attn_spearman else 0.0
             max_imp = max(r.importance for r in bundle.token_results) if bundle.token_results else 0.0
@@ -1797,7 +1828,7 @@ def register_xai_handlers(
             # Downstream cards/charts use the SELECTED bundle.
             bundle = displayed
 
-            # Transformer-LRP can still fail and fall back to IG — in that case
+            # Transformer-LRP can still fail and fall back to IG - in that case
             # ρ(LRP, IG) compares IG with itself and proves nothing. Say so.
             if getattr(bundle, "method", "Chefer-LRP") == "IG-fallback":
                 summary_html += (

@@ -3,11 +3,11 @@
 Quantifies how each attention head interacts with tokens flagged as
 socially biased (by GUS-Net NER), using two complementary metrics:
 
-  BAR  — Bias Attention Ratio
+  BAR  - Bias Attention Ratio
          Measures whether a head *over-attends* to biased tokens
          relative to a uniform baseline.
 
-  BSR  — Bias Self-Reinforcement
+  BSR  - Bias Self-Reinforcement
          Measures whether biased tokens disproportionately attend
          to *each other*, forming attention "echo-chambers".
 
@@ -39,15 +39,15 @@ class HeadBiasMetrics:
         Measures bias self-reinforcement (biased→biased attention).
         Centred at 1.0; high values indicate echo-chamber patterns.
 
-        Degenerate case |B| = 1: the double sum collapses to α_ii — the
+        Degenerate case |B| = 1: the double sum collapses to α_ii - the
         single flagged token's SELF-attention scaled by N. There is no
         "each other" with one token, so an "echo-chamber" reading is
         vacuous; interpret BSR only when at least two tokens are flagged.
     """
     layer: int
     head: int
-    bias_attention_ratio: float   # BAR — observed / expected attention to biased tokens
-    amplification_score: float    # BSR — biased-to-biased self-reinforcement
+    bias_attention_ratio: float   # BAR - observed / expected attention to biased tokens
+    amplification_score: float    # BSR - biased-to-biased self-reinforcement
     max_bias_attention: float     # max α_ij where j ∈ B
     specialized_for_bias: bool    # BAR > 2.5 (empirical α=0.05)
 
@@ -150,7 +150,7 @@ class AttentionBiasAnalyzer:
         # ── BSR: Bias Self-Reinforcement ───────────────────────
         # ν̂ = (1/|B|) Σ_{i∈B} Σ_{j∈B} α_ij
         #    → average attention from a biased query to all biased keys
-        # |B| = 1 degenerates to scaled self-attention of the lone token —
+        # |B| = 1 degenerates to scaled self-attention of the lone token -
         # not an "echo chamber" (see HeadBiasMetrics docstring).
         nu_observed = attention_matrix[biased_mask][:, biased_mask].sum() / n_biased
         # ν₀ = |B| / N  (same expected baseline)
@@ -158,10 +158,10 @@ class AttentionBiasAnalyzer:
 
         # Maximum single attention weight to any biased key.
         # Causal models: α_00 = 1.0 by construction (token 0 can only attend
-        # to itself), so exclude row 0 from the max — otherwise the hover
+        # to itself), so exclude row 0 from the max - otherwise the hover
         # shows a structural 1.0 for every head whenever the first token is
         # flagged (common in GPT-2, which has no [CLS]). NOTE: BAR/BSR above
-        # deliberately keep row 0 — the calibrated thresholds were derived
+        # deliberately keep row 0 - the calibrated thresholds were derived
         # with that exact estimator and must stay consistent with it.
         is_causal = seq_len > 1 and float(np.triu(attention_matrix, k=1).sum()) < 1e-6
         if is_causal:
@@ -213,7 +213,7 @@ class AttentionBiasAnalyzer:
             tokens: List of tokens
             precomputed_metrics: Optional output of analyze_attention_to_bias
                 for the SAME (attentions, biased indices). When given, the
-                per-head BARs are reused instead of being recomputed — the
+                per-head BARs are reused instead of being recomputed - the
                 three public methods otherwise each recompute the full
                 L x H metric grid for the same inputs.
 
@@ -274,7 +274,7 @@ class AttentionBiasAnalyzer:
             attention_weights: List of attention tensors
             biased_token_indices: Indices of biased tokens
             precomputed_metrics: Optional output of analyze_attention_to_bias
-                for the SAME inputs — reused instead of recomputing.
+                for the SAME inputs - reused instead of recomputing.
 
         Returns:
             Matrix of shape [num_layers, num_heads] with bias attention ratios
@@ -316,7 +316,7 @@ class AttentionBiasAnalyzer:
 
         Returns:
             Dictionary with influence metrics. NOTE: ``is_bias_influenced``
-            uses a fixed 30%-of-attention-mass cut-off — a heuristic
+            uses a fixed 30%-of-attention-mass cut-off - a heuristic
             convenience flag, NOT a calibrated threshold (unlike the BAR
             2.5 cut-off, which comes from a permutation null). Treat it as
             a rough marker; the continuous ``bias_percentage`` is the

@@ -52,10 +52,10 @@ def get_layer_block(model, layer_idx):
 def extract_qkv(layer_block, hidden_states):
     """Extract Q, K, V from a layer block given the layer's INPUT hidden states.
 
-    Architecture note: BERT is post-LN — BertSelfAttention applies the
+    Architecture note: BERT is post-LN - BertSelfAttention applies the
     query/key/value projections directly to the layer input, so projecting
     ``hidden_states`` reproduces the model's computation exactly. GPT-2 is
-    pre-LN — the block applies ``ln_1`` BEFORE ``c_attn``, so the
+    pre-LN - the block applies ``ln_1`` BEFORE ``c_attn``, so the
     normalisation must be applied here too. Skipping it produces vectors
     that are nearly orthogonal to the real ones (measured cosine ≈ 0.10,
     norms ≈ 135× off on gpt2 layer 3).
@@ -98,7 +98,7 @@ def compute_sublayer_states(layer_block, hidden_states_in):
     state between the attention and FFN sublayers is never returned, so the
     Deep Dive sublayer cards must recompute it. Architectures differ:
 
-    - BERT (post-LN): mid = BertAttention(x) — self-attention followed by
+    - BERT (post-LN): mid = BertAttention(x) - self-attention followed by
       the Add & Norm inside ``BertSelfOutput``. The FFN consumes ``mid``
       directly.
     - GPT-2 (pre-LN): mid = x + attn(ln_1(x)); the FFN consumes
@@ -109,7 +109,7 @@ def compute_sublayer_states(layer_block, hidden_states_in):
         hidden_states_in: layer input WITH batch dim, shape (1, seq, hidden).
 
     Returns:
-        (mid, ffn_inter_act, ffn_proj) — all (1, seq, ...) torch tensors:
+        (mid, ffn_inter_act, ffn_proj) - all (1, seq, ...) torch tensors:
         the post-attention residual state, the FFN intermediate activation,
         and the FFN output projection (before the final residual).
     """
@@ -159,7 +159,7 @@ def arrow(from_section, to_section, direction="horizontal", suffix="", model_typ
     Uniform arrow component - centered positioning
     direction: "horizontal" | "vertical" | "initial"
 
-    model_dims: optional dict from ``aa_model_dims`` — when given, the arrow
+    model_dims: optional dict from ``aa_model_dims`` - when given, the arrow
     also emits a small script that exposes the active model's real dimensions
     to the transition modals via ``window.AA_DIMS``.
     """
@@ -211,7 +211,7 @@ def _hex_to_rgb(hex_color):
 def get_architecture_diagram(model_type, accent_color, title_prefix=None, layer_count_val=12):
     """Return raw HTML string for a single architecture column diagram.
 
-    Matches the design in architecture.html — dark blocks on page background.
+    Matches the design in architecture.html - dark blocks on page background.
     model_type: 'bert' | 'gpt2'
     accent_color: hex colour string e.g. '#3b82f6'
     title_prefix: Optional string like "Model A" or "Prompt B"
@@ -252,7 +252,7 @@ def get_architecture_diagram(model_type, accent_color, title_prefix=None, layer_
     # Title assembly
     model_label = f'<span style="opacity:0.5;font-weight:400;">{title_prefix}:</span> {model_name}' if title_prefix else model_name
 
-    # Shared inline styles — sidebar-blue blocks on page bg ------------------
+    # Shared inline styles - sidebar-blue blocks on page bg ------------------
     block = (
         "position:relative;z-index:10;display:flex;align-items:center;justify-content:center;"
         "text-align:center;height:34px;font-size:10px;padding:0 10px;border-radius:6px;"
@@ -433,7 +433,7 @@ def get_paired_architecture_section(model_type_a="bert", model_type_b="gpt2",
                                      active_model="both", dual_color=False,
                                      layers_a=12, layers_b=12):
     """
-    Compare-mode — always show both diagrams side-by-side.
+    Compare-mode - always show both diagrams side-by-side.
     active_model: "both" (default), "A", or "B".
                   If "A", dim B. If "B", dim A.
     dual_color: If True (compare models), A gets blue border, B gets pink.
@@ -551,7 +551,7 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
     connector_pulse = "position:relative;width:1px;background-color:#cbd5e1;margin:0 auto;overflow:hidden;"
     pulse_anim = "position:absolute;top:0;width:100%;height:60%;animation:archMovePulse 2.5s linear infinite;"
 
-    # Optimizer params — gus_net_training_paper.py (α=0.65, γ=3.5, no LLRD)
+    # Optimizer params - gus_net_training_paper.py (α=0.65, γ=3.5, no LLRD)
     bert_focal_sub = "α=0.65, γ=3.5"
     bert_opt_label = "AdamW + Lin. Warmup"
     bert_opt_sub   = "Single LR=5e-5"
@@ -1949,7 +1949,7 @@ def get_add_norm_view(res, layer_idx, suffix=""):
 def get_ffn_view(res, layer_idx, suffix=""):
     """FFN activations computed on the TRUE FFN input: the post-attention
     state (BERT) / ln_2 of the post-attention residual (GPT-2). Feeding the
-    raw layer input into the FFN weights — the pre-2026-06-12 behaviour —
+    raw layer input into the FFN weights - the pre-2026-06-12 behaviour -
     skips the whole attention sublayer and shows activations the model
     never produces."""
     tokens, hidden_states, encoder_model = res.tokens, res.hidden_states, res.encoder_model
@@ -2296,8 +2296,8 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
             width = max(4, int(pval * 100))
             logit_val = float(logits_tensor[i, idx])
             # Display-only walkthrough of the softmax. Computed in
-            # max-shifted form (exp(l - max) / Σ exp(l - max)) — the
-            # standard stable evaluation — so large logits cannot render
+            # max-shifted form (exp(l - max) / Σ exp(l - max)) - the
+            # standard stable evaluation - so large logits cannot render
             # as "inf"; the ratio is identical.
             _row = logits_tensor[i]
             _max_logit = float(_row.max())
@@ -2490,7 +2490,7 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
     flow_change = calculate_flow_change(att_layers)
     
     # Balance is in metrics_dict. It is ``None`` for models without a [CLS]
-    # token (e.g. GPT-2) — in that case we simply skip the Balance card
+    # token (e.g. GPT-2) - in that case we simply skip the Balance card
     # below instead of rendering a meaningless number.
     balance = current_metrics.get('balance')
 
@@ -2562,7 +2562,7 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
         # The interpretation bands, layer percentiles and corpus baselines
         # are all calibrated on RAW softmax attention (row-stochastic
         # matrices). Column-normalised or rollout matrices live on a
-        # different scale — the numbers are valid, the coloured bands and
+        # different scale - the numbers are valid, the coloured bands and
         # baseline markers are not.
         _mode_label = "column-normalised" if norm_mode == "col" else "rollout"
         cards_html += (
@@ -2570,7 +2570,7 @@ def get_metrics_display(res, layer_idx=None, head_idx=None, use_full_scale=False
             f'border-radius:6px;font-size:10.5px;color:#b45309;background:rgba(245,158,11,0.06);">'
             f'Metrics below are computed on the <b>{_mode_label}</b> matrix. The colour bands, '
             f'layer ranks and baseline markers are calibrated for raw softmax attention and '
-            f'do not apply in this mode — read the numbers, not the colours.</div>'
+            f'do not apply in this mode - read the numbers, not the colours.</div>'
         )
     cards_html += '<div class="metrics-grid">'
     for label, raw_value, fmt, key, modal_name in metrics:
@@ -2802,7 +2802,7 @@ def compute_attention_rollout(attentions, discard_ratio=0.9, head_fusion="mean")
 def head_specialization_radar(res, layer_idx, head_idx, mode, suffix=""):
     """Render a radar chart (single/all heads) or a t-SNE cluster map.
 
-    Pure function — takes a ``ComputeResult`` and explicit parameters,
+    Pure function - takes a ``ComputeResult`` and explicit parameters,
     returns a ``ui.HTML`` element.  No reactive references.
     """
     if not res:
@@ -2933,10 +2933,10 @@ def head_specialization_radar(res, layer_idx, head_idx, mode, suffix=""):
             # K-Means runs in the 7-D metric space; t-SNE is ONLY the 2-D
             # layout. Same-cluster points may land far apart (and vice
             # versa), and t-SNE distances/axes carry no meaning
-            # (Wattenberg et al., 2016) — say so under the plot.
+            # (Wattenberg et al., 2016) - say so under the plot.
             annotations=[dict(
                 text=("Clusters are computed in the 7-D metric space; t-SNE only lays them out in 2-D. "
-                      "Distances between points are not meaningful — read cluster membership, not geometry."),
+                      "Distances between points are not meaningful - read cluster membership, not geometry."),
                 xref="paper", yref="paper", x=0.5, y=-0.14,
                 xanchor="center", yanchor="top", showarrow=False,
                 font=dict(size=10, color="#94a3b8"),
@@ -3041,7 +3041,7 @@ def head_specialization_radar(res, layer_idx, head_idx, mode, suffix=""):
 def get_influence_tree_ui(res, root_idx=0, layer_idx=0, head_idx=0, suffix="", use_global=False, max_depth=3, top_k=3, norm_mode="raw"):
     """Render a D3 influence tree visualisation.
 
-    Pure function — takes a ``ComputeResult`` and explicit parameters,
+    Pure function - takes a ``ComputeResult`` and explicit parameters,
     returns a ``ui.HTML`` element.  No reactive references.
     """
     if not res:
@@ -3110,13 +3110,13 @@ def get_influence_tree_ui(res, root_idx=0, layer_idx=0, head_idx=0, suffix="", u
 def get_isa_scatter_view(res, suffix="", vertical_layout=False, plot_only=False, export_filename_fn=None):
     """Render the Inter-Sentence Attention scatter/bubble plot.
 
-    Pure function — takes a ``ComputeResult`` and explicit parameters,
+    Pure function - takes a ``ComputeResult`` and explicit parameters,
     returns Shiny UI elements.  No reactive references.
 
     Parameters
     ----------
     export_filename_fn : callable, optional
-        ``generate_export_filename(section, ext, ...)`` — passed in from
+        ``generate_export_filename(section, ext, ...)`` - passed in from
         ``server()`` so this function stays free of reactive closures.
     """
     _logger.debug(f"get_isa_scatter_view called for {suffix} with vertical_layout={vertical_layout} plot_only={plot_only}")
@@ -3355,7 +3355,7 @@ def get_isa_scatter_view(res, suffix="", vertical_layout=False, plot_only=False,
                 ui.div(
                     {"id": f"isa-token-container{suffix}"},
                     # Until a cell is clicked there is no token heatmap to
-                    # export — grey the button out instead of letting the
+                    # export - grey the button out instead of letting the
                     # click die silently in a console.error.
                     ui.tags.style(
                         f"#isa-token-container{suffix}:not(:has(.js-plotly-plot)) "

@@ -2218,7 +2218,7 @@ def create_floating_bias_toolbar():
             .bias-bar-left.cw-active .cw-btn-col .control-label {
                 display: none;
             }
-            /* Button + sliders panel stay intact; Layer/Head keep their size too —
+            /* Button + sliders panel stay intact; Layer/Head keep their size too -
                the centre token box is what gives way on tight screens. */
             .bias-bar-left.cw-active .cw-section {
                 flex-shrink: 0;
@@ -2398,7 +2398,7 @@ def create_floating_bias_toolbar():
                 background: linear-gradient(90deg, #60a5fa, #ff5ca9);
             }
             /* Hide the Compare source-attention option when the user is in
-               any compare mode (models or prompts) — the side-by-side Base
+               any compare mode (models or prompts) - the side-by-side Base
                vs GUS-Net layout can't coexist with the A vs B layout. */
             body.bias-compare-prompts-active #bias-src-compare,
             body.bias-compare-models-active #bias-src-compare {

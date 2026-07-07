@@ -89,7 +89,7 @@ class AsymmetricFocalLoss(nn.Module):
 
         probs = torch.sigmoid(inputs)
         # Shift negative probs down: p < clip → 0, reduces false-positive gradient
-        # clip=0.01 is conservative — avoids killing gradients for weakly-predicted bias tokens
+        # clip=0.01 is conservative - avoids killing gradients for weakly-predicted bias tokens
         probs_neg = torch.clamp(probs - self.clip, min=0.0)
 
         # Separate BCE components (clamp to fp32-safe floor 1e-4 instead of 1e-8)
@@ -263,7 +263,7 @@ def compute_span_mass(logits, labels):
                 valid-token mask (tokens with label[..., 0] == -100 are padding)
 
     Returns:
-        Scalar tensor (differentiable, fp32) — batch-averaged span mass.
+        Scalar tensor (differentiable, fp32) - batch-averaged span mass.
     """
     # Cast to fp32 for numerical safety under AMP / fp16
     logits_f = logits.float()
@@ -315,7 +315,7 @@ def compute_itag_span_weights(labels, id2label,
         decay:       loss weight reduction per I-tag position (default 0.18)
         min_weight:  weight floor (default 0.30)
         label_decay: label target reduction per I-tag position (default 0.08)
-        label_floor: minimum label target — must stay > 0.5 so focal loss
+        label_floor: minimum label target - must stay > 0.5 so focal loss
                      treats it as a positive (default 0.55)
 
     Returns:
@@ -398,12 +398,12 @@ MAX_LENGTH = 128
 # Per-class minimum threshold floors applied after grid/scalar optimisation.
 # I-tags use higher floors than B-tags to prevent span bleed:
 # once a span starts (B-), the model tends to assign high I- scores to all
-# subsequent tokens including function words — forcing a higher floor on I-tags
+# subsequent tokens including function words - forcing a higher floor on I-tags
 # keeps only the most confident in-span tokens.
 MIN_THR_PER_CLASS = {
     "O":        0.45,
     "B-STEREO": 0.50,
-    "I-STEREO": 0.80,   # high — prevent stereotype bleed to function words
+    "I-STEREO": 0.80,   # high - prevent stereotype bleed to function words
     "B-GEN":    0.40,
     "I-GEN":    0.65,
     "B-UNFAIR": 0.40,
@@ -415,8 +415,8 @@ MIN_THR_PER_CLASS = {
 # later in-span tokens (typically function words like "are", "and", "for").
 #
 # Two complementary mechanisms:
-#   1) Weight decay  — model cares LESS about deep I-tags (lower gradient)
-#   2) Label softening — target itself drops (model learns lower probabilities)
+#   1) Weight decay  - model cares LESS about deep I-tags (lower gradient)
+#   2) Label softening - target itself drops (model learns lower probabilities)
 SPAN_DECAY = 0.18           # loss weight reduction per I-tag position
 SPAN_MIN_WEIGHT = 0.30      # weight floor (deep I-tags → 30 % of normal loss)
 SPAN_LABEL_DECAY = 0.08     # label target reduction per I-tag position
@@ -784,7 +784,7 @@ def train_bert(config=None, dataset_source="hf"):
             llrd_decay = 0.9
             param_groups = []
 
-            # Classifier head — 10× base LR, no weight decay
+            # Classifier head - 10× base LR, no weight decay
             param_groups.append({
                 "params": [p for n, p in self.named_parameters() if "classifier" in n],
                 "lr": self.learning_rate * 10,
@@ -802,7 +802,7 @@ def train_bert(config=None, dataset_source="hf"):
                 if d:  param_groups.append({"params": d,  "lr": lr, "weight_decay": 0.01})
                 if nd: param_groups.append({"params": nd, "lr": lr, "weight_decay": 0.0})
 
-            # Embeddings — lowest LR
+            # Embeddings - lowest LR
             emb_lr = self.learning_rate * (llrd_decay ** n_layers)
             d  = [p for n, p in self.named_parameters()
                   if "bert.bert.embeddings" in n and not any(k in n for k in no_decay)]

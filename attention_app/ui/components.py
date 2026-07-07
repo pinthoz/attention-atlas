@@ -36,7 +36,7 @@ try:
 except Exception:
     ICON_DATA_URL = ""
 
-# Auditor Notebook FAB icon — multi-resolution .ico embedded as a data
+# Auditor Notebook FAB icon - multi-resolution .ico embedded as a data
 # URL so it loads without depending on the static-asset route.
 _AUDIT_ICON_PATH = Path(__file__).resolve().parent.parent.parent / "static" / "audit-ico.ico"
 try:

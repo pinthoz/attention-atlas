@@ -106,7 +106,6 @@ from ..bias.visualizations import (
     create_stereoset_bias_distribution,
     create_stereoset_example_html,
     create_stereoset_attention_heatmaps,
-    create_stereoset_attention_diff_heatmap,
     create_stereoset_head_distributions,
     create_stereoset_attention_scatter,
 )
@@ -116,7 +115,7 @@ from ..ui.bias_ui import create_bias_accordion, create_floating_bias_toolbar
 from ..ui.components import viz_header
 
 # Pure helpers, constants, and CSV body functions are now in separate
-# modules — imported at the top of this file from bias_helpers,
+# modules - imported at the top of this file from bias_helpers,
 # bias_styles, and bias_exports.
 #
 
@@ -305,7 +304,7 @@ def _alpha_survival_html(data, alpha, correction):
 def _release_snapshot_bias(snap):
     """Drop references to a bias snapshot's tensors and force a collection.
     Mirrors ``_release_snapshot`` in ``main`` (kept local to avoid a circular
-    import — ``main`` imports this module)."""
+    import - ``main`` imports this module)."""
     if snap is None:
         return
     try:
@@ -454,7 +453,7 @@ def bias_server_handlers(input, output, session):
 
     # Signature of the (text, model, tokens) most recently reflected in the JS
     # selection sets. Used to decide when to clear client-side token highlights
-    # — threshold tweaks re-emit ``bias_results`` without changing tokens, so a
+    # - threshold tweaks re-emit ``bias_results`` without changing tokens, so a
     # blanket clear on every update would wipe valid selections.
     _bias_selection_signature = reactive.value(None)
 
@@ -589,7 +588,7 @@ def bias_server_handlers(input, output, session):
             raw_base = _load_base_encoder_attention_for_text(res["text"], res["bias_model_key"])
             thresholds = raw_base.get("effective_thresholds", {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5})
             # Mirror the UI's optimized-thresholds toggle so the base-encoder
-            # view applies the SAME decision rule as the GUS-Net view —
+            # view applies the SAME decision rule as the GUS-Net view -
             # otherwise Base-vs-GUS-Net detection differences can come from
             # the threshold approximation instead of the models.
             try:
@@ -963,7 +962,7 @@ def bias_server_handlers(input, output, session):
         - Compare Models mode             → "Analyze Bias"
         - Single mode                     → "Analyze Bias"
 
-        Pure read-only — the wizard step reset lives in
+        Pure read-only - the wizard step reset lives in
         ``reset_bias_prompt_step_on_mode_off``.
         """
         try:
@@ -1434,11 +1433,11 @@ def bias_server_handlers(input, output, session):
     async def compute_bias():
         log_debug("BUTTON CLICKED: compute_bias triggered")
         # Reject re-entry while a previous run is still in flight. Symmetric
-        # with the guard in compute_all — without it, rapid double-clicks on
+        # with the guard in compute_all - without it, rapid double-clicks on
         # "Analyze Bias" launch two heavy_bias_compute invocations in
         # parallel and race on bias_results.
         if bias_running.get():
-            log_debug("compute_bias ignored — a run is already in progress")
+            log_debug("compute_bias ignored - a run is already in progress")
             return
 
         try:
@@ -1476,7 +1475,7 @@ def bias_server_handlers(input, output, session):
                 if not looks_english(text):
                     ui.notification_show(
                         "This input does not look like English. GUS-Net was "
-                        "fine-tuned on English only — bias detections and "
+                        "fine-tuned on English only - bias detections and "
                         "attention-bias metrics on non-English text are "
                         "unreliable.",
                         type="warning", duration=12,
@@ -1539,7 +1538,7 @@ def bias_server_handlers(input, output, session):
             # Reset state when switching modes to ensure clean state
             if mode_switched_to_prompts or mode_switched_to_models or mode_switched_off:
                 log_debug("Mode switch detected - resetting bias state")
-                # Preserve cf_applied_swaps — trigger_counterfactual sets it
+                # Preserve cf_applied_swaps - trigger_counterfactual sets it
                 # right before this mode switch happens
                 _saved_cf_swaps = cf_applied_swaps.get()
                 bias_raw_results.set(None)
@@ -1558,7 +1557,7 @@ def bias_server_handlers(input, output, session):
             active_bias_compare_prompts.set(compare_prompts)
 
             # Clear previous results
-            # cf_applied_swaps is preserved here — trigger_counterfactual sets it
+            # cf_applied_swaps is preserved here - trigger_counterfactual sets it
             # right before triggering this handler. Clear it only for non-CF runs.
             if not compare_prompts:
                 cf_applied_swaps.set(None)
@@ -1794,7 +1793,7 @@ def bias_server_handlers(input, output, session):
         active_bias_compare_models.set(snap.get('compare_models', False))
         active_bias_compare_prompts.set(snap.get('compare_prompts', False))
         bias_snapshot.set(None)
-        # Capture flags before releasing the dict — _release_snapshot_bias
+        # Capture flags before releasing the dict - _release_snapshot_bias
         # clears ``snap`` in place.
         _restored_cm = snap.get('compare_models', False)
         _restored_cpm = snap.get('compare_prompts', False)
@@ -2031,8 +2030,8 @@ def bias_server_handlers(input, output, session):
                 # Use the SAME word-level summary as the interactive
                 # dashboard (det.get_bias_summary, already computed inside
                 # _process_raw_bias_result). The batch used to recount over
-                # raw token_labels — subword-level AND including [CLS]/[SEP]
-                # in the denominator — so the report's bias_percentage
+                # raw token_labels - subword-level AND including [CLS]/[SEP]
+                # in the denominator - so the report's bias_percentage
                 # disagreed with the dashboard for the very same sentence.
                 summary = processed.get("bias_summary") or {}
                 biased_count = int(summary.get("biased_tokens", 0))
@@ -2965,7 +2964,7 @@ def bias_server_handlers(input, output, session):
             else:
                 bar_val, bar_color, bar_sub = "-", "#94a3b8", "run Analyze Bias first"
 
-            # IG ρ — median of |ρ| across heads. A signed mean lets positive
+            # IG ρ - median of |ρ| across heads. A signed mean lets positive
             # and negative heads cancel (heads have different roles), and a
             # raw "n significant at p<0.05" count over 144 heads is expected
             # to be ~7 by chance alone; the magnitude summary is honest.
@@ -2985,7 +2984,7 @@ def bias_server_handlers(input, output, session):
             else:
                 rho_val, rho_color, rho_sub = "-", "#94a3b8", "run IG analysis first"
 
-            # Ablation Δ — coloured against the calibrated α=0.05 impact
+            # Ablation Δ - coloured against the calibrated α=0.05 impact
             # threshold for the active model (THRESHOLDS_CALIBRATION.md §13)
             _impact_th = _get_impact_thresholds(res_data.get("model_name", ""))
             if abl_data:
@@ -3775,7 +3774,7 @@ def bias_server_handlers(input, output, session):
                 _wrap_card(ui.HTML(f'<div style="flex: 1; display: flex; flex-direction: column;">{produce_html(res_B, True)}</div>' + method_footer_B), manual_header=man_header, help_text=_detected_bias_help, style="border: 2px solid #ff5ca9; height: 100%;")
             )
 
-            # Counterfactual consistency card — only when triggered via CF swap
+            # Counterfactual consistency card - only when triggered via CF swap
             swaps_applied = cf_applied_swaps.get()
             log_debug(f"CF consistency check: compare_prompts={compare_prompts}, swaps={bool(swaps_applied)}, attn_A={bool(res.get('attentions'))}, attn_B={bool(res_B.get('attentions') if res_B else False)}")
             if compare_prompts and swaps_applied and res.get("attentions") and res_B and res_B.get("attentions"):
@@ -3962,7 +3961,7 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TN}'>Detection thresholds default to each model's optimised per-category values (not a fixed 0.5); spans below them are suppressed entirely. Adjust via the toolbar to surface or hide borderline detections.</div>"
             f"<hr style='{_TS}'/>"
             f"<div style='{_TN}'><b>Note:</b> the tier boundaries 0.70 and 0.85 are <b>display heuristics</b>, not empirical calibration. Use them as qualitative grouping, not as significance cutoffs.</div>"
-            f"<div style='{_TN};margin-top:4px;'><b>Calibration caveat:</b> these are raw sigmoid <b>detection scores</b>, not calibrated probabilities — "
+            f"<div style='{_TN};margin-top:4px;'><b>Calibration caveat:</b> these are raw sigmoid <b>detection scores</b>, not calibrated probabilities - "
             f"fine-tuned transformers are typically overconfident (Guo et al., 2017), so a score of 0.9 does not mean a 90% chance the token is biased. "
             f"Scores are comparable with each other, not readable as frequencies.</div>"
         )
@@ -4717,7 +4716,7 @@ def bias_server_handlers(input, output, session):
         _get_attn_source_mode=_get_attn_source_mode,
     )
 
-    # Replaced block — original ablation_results_display was here
+    # Replaced block - original ablation_results_display was here
     # (see bias_xai.py and bias_stereoset.py for extracted code)
 
     # ── Helpers ────────────────────────────────────────────────────────

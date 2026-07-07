@@ -155,7 +155,7 @@ _CLIENT_EVENT_INPUTS = {
 }
 
 # Computed-metric keys, grouped by side. These are *outputs* of the
-# analysis (not user inputs), so they are not restorable — only readable
+# analysis (not user inputs), so they are not restorable - only readable
 # evidence.
 _METRIC_LABELS: Dict[str, str]
 _METRIC_LABELS = {
@@ -299,9 +299,9 @@ def _adjust_labels_for_context(labels: Dict[str, str],
 # evidence to the rule that demands it.
 #
 # Sources:
-# - ISO/IEC 42001:2023 — catalogue page (full text is not free).
-# - EU AI Act (Regulation (EU) 2024/1689) — official EUR-Lex link.
-# - NYC Local Law 144 of 2021 — DCWP Automated Employment Decision
+# - ISO/IEC 42001:2023 - catalogue page (full text is not free).
+# - EU AI Act (Regulation (EU) 2024/1689) - official EUR-Lex link.
+# - NYC Local Law 144 of 2021 - DCWP Automated Employment Decision
 #   Tools rule page.
 _URL_ISO_42001 = "https://www.iso.org/standard/81230.html"
 _URL_EU_AI_ACT = "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689"
@@ -517,7 +517,7 @@ def _reg_link_html(json_key: str) -> str:
     label, tooltip, url = entry
     # "Mapped to", not "required by": the association between a captured
     # field and a regulatory clause is this tool's interpretation of the
-    # clause, not a legal determination — overclaiming compliance is worse
+    # clause, not a legal determination - overclaiming compliance is worse
     # than claiming none.
     safe_tooltip = _html.escape(
         f"Mapped to {label} (interpretive, not legal advice): {tooltip}",
@@ -560,7 +560,7 @@ def _disconfirming_keys(ctx: Dict[str, Any]) -> set:
     - Perturbation ↔ IG Spearman ρ below ~0.30.
     - LRP ↔ IG Spearman ρ below ~0.30.
     - The selected head sends > 60 % of its attention to special
-      tokens ([CLS]/[SEP]/[PAD]) — a known "attention sink" failure
+      tokens ([CLS]/[SEP]/[PAD]) - a known "attention sink" failure
       mode that undermines any claim that the head encodes linguistic
       content.
     - In compare mode, a counterfactual or cross-model contrast in which
@@ -748,7 +748,7 @@ def _capture_context(input, *, cached_result=None, cached_result_B=None,
     context.update(bias_metrics)
 
     # Bias model identity (sources A and B). The bias_results dict stores
-    # the REGISTRY KEY ("gusnet-bert"), which is NOT the checkpoint id —
+    # the REGISTRY KEY ("gusnet-bert"), which is NOT the checkpoint id -
     # a traceability field mapped to EU AI Act Art. 12 must record the
     # actual artefact ("pinthoz/gus-net-bert" or a local path), so the key
     # is resolved through MODEL_REGISTRY and kept alongside for context.
@@ -854,7 +854,7 @@ def _normalized_row_entropies(mat, causal):
     """Per-row attention entropy normalised to [0, 1] by each row's maximum.
 
     For causal matrices row i only has support i+1, so its maximum entropy
-    is log(i+1) — ranking RAW entropies makes the first rows (and the
+    is log(i+1) - ranking RAW entropies makes the first rows (and the
     early positions of every head) look "most concentrated" purely because
     of the mask: row 0 is exactly 0 bits by construction. Normalising each
     row by its own log(support) removes the artefact; rows with support 1
@@ -939,7 +939,7 @@ def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, 
                 arr = lt[0].detach().cpu().numpy()
             except Exception:
                 continue
-            # arr shape: (heads, seq, seq) — trim to first n_tok rows/cols.
+            # arr shape: (heads, seq, seq) - trim to first n_tok rows/cols.
             arr = arr[:, :n_tok, :n_tok]
             if arr.size == 0:
                 continue
@@ -966,7 +966,7 @@ def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, 
 
         if head_entropies:
             head_entropies.sort(key=lambda x: x[0])  # ascending = most concentrated
-            # "H=" — this is (normalised) entropy, NOT a correlation; the
+            # "H=" - this is (normalised) entropy, NOT a correlation; the
             # previous "ρ=" label collided with Spearman ρ everywhere else.
             top_concentrated = [
                 f"L{li}H{hi_} H={ent:.3f}" for ent, li, hi_ in head_entropies[:5]
@@ -1086,8 +1086,8 @@ def _summarise_bias_result(bias_result) -> Dict[str, Any]:
     """Turn the rich bias-processing dict into a structured summary.
 
     Evidence-consistency rule: counts, percentages and the mean score are
-    taken from ``bias_result["bias_summary"]`` — the SAME word-level
-    summary (``get_bias_summary``) the dashboard cards render — so the
+    taken from ``bias_result["bias_summary"]`` - the SAME word-level
+    summary (``get_bias_summary``) the dashboard cards render - so the
     Notebook records exactly the numbers the analyst saw. Recomputing them
     here over raw ``token_labels`` (subword-level, [CLS]/[SEP] included)
     used to produce different values from the cards, which defeats the
@@ -1237,7 +1237,7 @@ def _extract_ig_metrics(ig_bundle, tokens_hint=None) -> Dict[str, Any]:
         if delta is not None:
             out["bias_metric_ig_completeness"] = (
                 f"{float(delta) * 100:.1f}%"
-                + (" (>5% — approximate)" if float(delta) > 0.05 else "")
+                + (" (>5% - approximate)" if float(delta) > 0.05 else "")
             )
     except Exception:
         pass
@@ -1586,7 +1586,7 @@ def _now_iso() -> str:
     """Local timestamp in real ISO 8601 WITH the UTC offset.
 
     Audit-trail timestamps without a timezone are ambiguous (DST
-    transitions, machines in different zones) — for evidence mapped to
+    transitions, machines in different zones) - for evidence mapped to
     EU AI Act Art. 12 logging, the offset is part of the record.
     """
     return datetime.now().astimezone().isoformat(timespec="seconds")
@@ -1907,7 +1907,7 @@ def notebook_server_handlers(input, output, session, *,
                 "ok",
             )
         )
-        # Reset form (free-text only — context is captured fresh next time).
+        # Reset form (free-text only - context is captured fresh next time).
         # ``nb_case_id`` is intentionally preserved so that consecutive
         # entries belonging to the same investigation share the same ID
         # without re-typing.
@@ -2020,7 +2020,7 @@ def notebook_server_handlers(input, output, session, *,
         last_status.set(
             (
                 f"Restored {n_applied} input field(s) from the saved entry. "
-                "The panels still show the PREVIOUS run — click Generate All / "
+                "The panels still show the PREVIOUS run - click Generate All / "
                 "Analyze Bias to recompute the evidence for the restored inputs.",
                 "ok",
             )

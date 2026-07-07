@@ -72,7 +72,7 @@ def looks_english(text: str) -> bool:
     bias detections are unreliable, silently. This gate exists so the UI
     can WARN instead of presenting confident nonsense.
 
-    Returns True for short inputs (< 6 words) — too little evidence to
+    Returns True for short inputs (< 6 words) - too little evidence to
     accuse the user of writing another language.
     """
     words = re.findall(r"[a-zA-Z']+", text.lower())
@@ -417,7 +417,7 @@ def aggregate_data_to_words(res, filter_special=True):
     # Recompute derived metrics on aggregated data
     # We do this here so visualizations downstream don't crash or show nothing.
     # IMPORTANT: use clean_words (no " (*)" display markers) for text-based
-    # recomputation — markers in the joined text would distort nltk
+    # recomputation - markers in the joined text would distort nltk
     # sentence-splitting and the spaCy POS/NER alignment. clean_words and
     # new_tokens are index-aligned, so ISA boundaries computed on clean_words
     # remain valid for the display tokens.
@@ -432,7 +432,7 @@ def aggregate_data_to_words(res, filter_special=True):
         new_isa_data = compute_isa(new_attentions, clean_words, agg_text,
                                    tokenizer, inputs, model_type=isa_model_type)
 
-        # 2. Head Specialization — clean_words have tokenizer markers
+        # 2. Head Specialization - clean_words have tokenizer markers
         # stripped, so causal-model detection must be passed explicitly.
         new_head_specialization = compute_all_heads_specialization(
             new_attentions, clean_words, agg_text, is_gpt_style=has_gpt2_markers)

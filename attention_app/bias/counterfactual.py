@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple
 Category = str  # "gender" | "race" | "religion" | "age" | "nationality"
 
 # ── Bidirectional swap pairs ──────────────────────────────────────────
-# (term_a, term_b, category) — both directions are valid.
+# (term_a, term_b, category) - both directions are valid.
 
 SWAP_PAIRS: List[Tuple[str, str, Category]] = [
     # ── Gender (CrowS-Pairs: 262 examples) ────────────────────────────
@@ -286,7 +286,7 @@ _POS_DISAMBIGUATION: Dict[str, Dict[str, Tuple[str, Category]]] = {
 # ── Polysemous terms: only swap in person-referential contexts ────────
 # Colour / size / wealth / weight adjectives double as ordinary descriptors:
 # "a large dataset", "a white shirt", "poor performance", "a heavy box".
-# Swapping those produces invalid counterfactuals — the pair no longer
+# Swapping those produces invalid counterfactuals - the pair no longer
 # differs only in the demographic attribute, which is the whole premise of
 # minimal-pair analysis (Nangia et al., 2020). For the terms below we
 # require evidence that the mention refers to people: the token is a
@@ -399,7 +399,7 @@ def find_swappable_terms(text: str) -> List[Dict]:
                 continue
 
             # Polysemous terms ("black", "poor", "large"…): only swap when
-            # the mention is person-referential — otherwise the pair is not
+            # the mention is person-referential - otherwise the pair is not
             # a minimal demographic pair ("a large dataset" ≠ demographic).
             # When spaCy is unavailable the term is SKIPPED (a missed swap
             # is recoverable; a corrupted counterfactual is not).
@@ -489,7 +489,7 @@ def _match_case(original: str, replacement: str) -> str:
         return replacement.title()
     if original.islower():
         return replacement.lower()
-    # Mixed case — keep replacement as-is (lower by default in SWAP_PAIRS).
+    # Mixed case - keep replacement as-is (lower by default in SWAP_PAIRS).
     return replacement
 
 
@@ -520,7 +520,7 @@ def _correct_article(word: str) -> str:
 def _fix_article_before(text: str, word_start: int) -> str:
     """Fix a/an agreement for the article immediately preceding the word
     at *word_start* (a replacement site). Leaves the rest of the text
-    untouched — the swap cannot have broken articles anywhere else."""
+    untouched - the swap cannot have broken articles anywhere else."""
     m = re.search(r"\b(an?|An?)(\s+)$", text[:word_start])
     if not m:
         return text
@@ -540,7 +540,7 @@ def _fix_article_before(text: str, word_start: int) -> str:
 def _fix_articles(text: str) -> str:
     """Fix a/an agreement for EVERY article in *text*.
 
-    Kept for backward compatibility only — prefer the targeted
+    Kept for backward compatibility only - prefer the targeted
     :func:`_fix_article_before`, which cannot corrupt articles the
     counterfactual swap never touched."""
 

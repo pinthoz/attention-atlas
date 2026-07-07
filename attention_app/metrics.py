@@ -13,7 +13,7 @@ def calculate_confidence(attention_matrix, causal=False):
     Higher values = more confident attention (head focuses strongly on specific tokens)
 
     Causal-model handling: in a causal (GPT-2-style) attention matrix the
-    first row is degenerate — token 0 can only attend to itself, so its max
+    first row is degenerate - token 0 can only attend to itself, so its max
     is 1.0 by construction, which makes the matrix-wide max meaningless and
     inflates the row-max average. Pass ``causal=True`` to exclude row 0.
     """
@@ -34,7 +34,7 @@ def calculate_focus(attention_matrix):
     Note: each of the n rows sums to 1, so the matrix's total mass is n and
     the maximum (uniform attention) is n·log(n) for a bidirectional model.
     Callers should normalise with :func:`max_focus_entropy` (which is
-    causal-mask-aware) rather than hand-rolling n·log(n) — for a causal
+    causal-mask-aware) rather than hand-rolling n·log(n) - for a causal
     model row i only has support i+1, so the uniform maximum is
     Σᵢ log(i+1) = log(n!), NOT n·log(n).
     """
@@ -54,7 +54,7 @@ def max_focus_entropy(seq_len, causal=False):
 
     Without the causal correction, GPT-2 heads look systematically more
     "focused" than BERT heads purely because half the matrix is
-    structurally zero — a mask artefact, not model behaviour.
+    structurally zero - a mask artefact, not model behaviour.
     """
     if seq_len <= 1:
         return 1.0
@@ -150,7 +150,7 @@ def calculate_flow_change(all_layer_attentions):
     Returns:
         float: JS distance between 0 (identical) and √ln2 ≈ 0.833 (maximally
         different). scipy's ``jensenshannon`` uses the natural-log base; the
-        base is kept as-is so historical values stay comparable — do not
+        base is kept as-is so historical values stay comparable - do not
         read the metric against a [0, 1] ceiling.
     """
     from scipy.spatial.distance import jensenshannon
@@ -176,7 +176,7 @@ def calculate_flow_change(all_layer_attentions):
 
 def calculate_balance(attention_matrix, cls_index=0, has_cls=True):
     """
-    CLS Attention Fraction — fraction of total attention mass directed to the
+    CLS Attention Fraction - fraction of total attention mass directed to the
     [CLS] token.
 
     Balance = attn_to_CLS / attn_total
@@ -188,7 +188,7 @@ def calculate_balance(attention_matrix, cls_index=0, has_cls=True):
 
     This metric is only meaningful for BERT-style encoders where position 0
     holds a special [CLS] summary token. For GPT-2 and other decoder-only
-    models without a dedicated summary token, the value is undefined — pass
+    models without a dedicated summary token, the value is undefined - pass
     ``has_cls=False`` to get ``None`` back so callers can render "N/A"
     instead of a misleading number.
 
@@ -244,14 +244,14 @@ def compute_all_attention_metrics(attention_matrix, has_cls=True, causal=None):
     - confidence_max: Max attention weight (Eq. 5)
     - confidence_avg: Average of row maxes (Eq. 6)
     - focus_entropy: Raw entropy (Eq. 8)
-    - focus_normalized: focus_entropy / max_focus_entropy(n, causal) — the
+    - focus_normalized: focus_entropy / max_focus_entropy(n, causal) - the
       causal-aware 0-1 normalisation (log(n!) for causal models, n·log(n)
       for bidirectional). Prefer this over hand-rolled n·log(n).
     - sparsity: Proportion below adaptive threshold (Eq. 11)
     - distribution_median: Median attention weight (Eq. 12)
     - uniformity: Standard deviation of weights (Eq. 15)
     - balance: CLS attention fraction (app-specific CLS-focus measure; NOT the
-      paper's Eq. 14 Euclidean class-vs-token Balance) — ``None`` when has_cls=False
+      paper's Eq. 14 Euclidean class-vs-token Balance) - ``None`` when has_cls=False
     """
     if causal is None:
         causal = not has_cls

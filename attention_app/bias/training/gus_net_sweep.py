@@ -13,7 +13,7 @@ import numpy as np
 from pathlib import Path
 
 # ============================================================================
-# SWEEP CONFIG — edita aqui
+# SWEEP CONFIG - edita aqui
 # ============================================================================
 
 DATASET_SOURCE = "clean"    # "clean" | "hf" | "gemini"
@@ -41,7 +41,7 @@ def _patch_module(alpha: float, gamma: float):
     m.GAMMA = gamma
 
     # Patching dos default args da focal_loss_paper
-    # (defaults são avaliados na definição — precisamos de os actualizar)
+    # (defaults são avaliados na definição - precisamos de os actualizar)
     m.focal_loss_paper.__defaults__ = (alpha, gamma)
 
     return m
@@ -58,7 +58,7 @@ def run_sweep():
     total  = len(combos)
 
     print("=" * 60)
-    print(f"GUS-Net Focal Loss Sweep  —  {total} combinações")
+    print(f"GUS-Net Focal Loss Sweep  -  {total} combinações")
     print(f"Backbone: {BACKBONE.upper()}  |  Dataset: {DATASET_SOURCE}")
     print(f"ALPHAS: {ALPHAS}")
     print(f"GAMMAS: {GAMMAS}")
@@ -68,7 +68,7 @@ def run_sweep():
 
     for i, (alpha, gamma) in enumerate(combos, 1):
         print(f"\n{'=' * 60}")
-        print(f"RUN {i}/{total}  —  ALPHA={alpha:.2f}, GAMMA={gamma:.1f}")
+        print(f"RUN {i}/{total}  -  ALPHA={alpha:.2f}, GAMMA={gamma:.1f}")
         print("=" * 60)
 
         try:
@@ -127,7 +127,7 @@ def run_sweep():
     results.sort(key=lambda x: x["macro_f1"], reverse=True)
 
     print("\n\n" + "=" * 72)
-    print("SWEEP COMPLETO — RESULTADOS (ordenados por Macro F1 fixo)")
+    print("SWEEP COMPLETO - RESULTADOS (ordenados por Macro F1 fixo)")
     print("=" * 72)
     header = f"{'ALPHA':>6}  {'GAMMA':>6}  {'MacroF1':>8}  {'WgtF1':>7}  {'EM':>7}  {'MacroF1opt':>10}  {'EMopt':>7}"
     print(header)

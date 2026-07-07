@@ -29,7 +29,7 @@ def _manual_silhouette_score(X, labels):
         label = labels[i]
 
         # a: mean dist to OTHER members of the same cluster. Per Rousseeuw
-        # (1987) — and sklearn — a singleton cluster has silhouette 0, and
+        # (1987) - and sklearn - a singleton cluster has silhouette 0, and
         # the point itself is excluded from the mean (otherwise small
         # clusters get inflated scores and auto-K is biased toward many
         # tiny clusters: a singleton would score a=0 → s=1.0).
@@ -156,7 +156,7 @@ def align_spacy_to_bert_tokens(model_tokens, spacy_doc):
     Character-consumption alignment: each subword consumes characters from
     the current spaCy token, and the cursor advances exactly when a spaCy
     token is fully consumed. This replaces the previous new-word/continuation
-    heuristic, whose cursor only advanced on an EXACT text match — any
+    heuristic, whose cursor only advanced on an EXACT text match - any
     tokenization disagreement (multi-subword words, hyphens, unicode
     normalisation) desynchronised it and every later token silently got the
     wrong POS/NER tag, which feeds directly into the syntax / semantics /
@@ -170,7 +170,7 @@ def align_spacy_to_bert_tokens(model_tokens, spacy_doc):
         takes the tags of the first.
       - On an unresolvable mismatch (e.g. accent stripping by an uncased
         tokenizer) only THAT token falls back to "X"/"O" and the cursor
-        resynchronises within a small look-ahead window — no cascade.
+        resynchronises within a small look-ahead window - no cascade.
 
     Args:
         model_tokens: List of sub-tokens from the attention model's tokenizer.
@@ -244,7 +244,7 @@ def align_spacy_to_bert_tokens(model_tokens, spacy_doc):
                 if ok:
                     matched = (scan, c_scan, c_cons)
                     break
-            # Mismatch at this spaCy token — resync one token ahead.
+            # Mismatch at this spaCy token - resync one token ahead.
             scan += 1
             sc_cons = 0
 
@@ -253,7 +253,7 @@ def align_spacy_to_bert_tokens(model_tokens, spacy_doc):
             pos_tags.append(spacy_pos[tag_idx])
             ner_tags.append(spacy_ner[tag_idx])
         else:
-            # Unresolvable (unicode artefact etc.) — degrade THIS token only.
+            # Unresolvable (unicode artefact etc.) - degrade THIS token only.
             pos_tags.append("X")
             ner_tags.append("O")
 
@@ -281,8 +281,8 @@ def compute_head_metrics(attention_matrix, tokens, pos_tags, ner_tags, is_gpt_st
     Compute all 7 behavioral metrics for a single attention head.
 
     Causal-model handling: for GPT-2-style tokenisations (detected via the
-    ``Ġ`` marker) the first row of the attention matrix is degenerate —
-    token 0 can only attend to itself, with weight 1.0 by construction — so
+    ``Ġ`` marker) the first row of the attention matrix is degenerate -
+    token 0 can only attend to itself, with weight 1.0 by construction - so
     the ``cls`` (first-token / sink focus) and ``self`` metrics exclude row 0
     to avoid a constant inflation artefact. For GPT-2 the ``cls`` metric
     measures attention received by the FIRST token (the attention-sink
@@ -299,7 +299,7 @@ def compute_head_metrics(attention_matrix, tokens, pos_tags, ner_tags, is_gpt_st
     """
     seq_len = len(tokens)
     # Auto-detect from the Ġ marker unless the caller passes the flag
-    # explicitly — word-aggregated tokens have the marker stripped, so the
+    # explicitly - word-aggregated tokens have the marker stripped, so the
     # aggregated path must pass is_gpt_style itself.
     if is_gpt_style is None:
         is_gpt_style = any("Ġ" in tok for tok in tokens)
@@ -329,7 +329,7 @@ def compute_head_metrics(attention_matrix, tokens, pos_tags, ner_tags, is_gpt_st
     else:
         long_range_att = 0.0
 
-    # 4. Punctuation focus — strip tokenizer markers before checking, so
+    # 4. Punctuation focus - strip tokenizer markers before checking, so
     #    GPT-2 tokens like "Ġ," are recognised as punctuation.
     def _is_punct(tok):
         clean = tok.replace("Ġ", "").replace("Ċ", "").replace("##", "")
@@ -605,7 +605,7 @@ def compute_head_clusters(head_specialization_data, is_gpt_style=False):
     Args:
         head_specialization_data: Output from compute_all_heads_specialization
                                  Dict {layer_idx: {head_idx: metrics_dict}}
-        is_gpt_style: True for causal models without a [CLS] token — only
+        is_gpt_style: True for causal models without a [CLS] token - only
                       affects cluster naming (the "cls" dimension is labelled
                       as first-token sink focus).
 
@@ -621,7 +621,7 @@ def compute_head_clusters(head_specialization_data, is_gpt_style=False):
     dimensions = ["syntax", "semantics", "cls", "punct", "entities", "long_range", "self"]
 
     # Cluster on the RAW metrics (absolute behaviour) with a single global
-    # standardisation below — not on the per-layer min-max values, which
+    # standardisation below - not on the per-layer min-max values, which
     # encode rank within a layer and destroy cross-layer comparability.
     # ``raw_<dim>`` keys are written by compute_all_heads_specialization;
     # fall back to the normalised values for cached results that predate them.

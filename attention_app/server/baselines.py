@@ -81,7 +81,7 @@ def compute_baselines(model, tokenizer, is_gpt2):
                             continue
 
                         # 'focus_normalized' now arrives causal-aware from
-                        # compute_all_attention_metrics — no local n·log(n).
+                        # compute_all_attention_metrics - no local n·log(n).
                         if m_key not in raw_stats[key]:
                             raw_stats[key][m_key] = []
                         raw_stats[key][m_key].append(m_val)

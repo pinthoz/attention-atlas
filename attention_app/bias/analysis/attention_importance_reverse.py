@@ -52,7 +52,6 @@ from head_ablation import batch_ablate_top_heads
 from attention_bias import AttentionBiasAnalyzer
 from integrated_gradients import (
     compute_token_attributions,
-    compute_lrp_attributions,
     compute_topk_overlap,
 )
 
@@ -75,32 +74,19 @@ class SentenceImportanceRecord:
     cf_bias_score: float
     frac_biased_tokens: float
     has_bias_predicted: bool
-    # IG / Jaccard — specialized heads (BAR > 2.5)
+    # IG / Jaccard - specialized heads (BAR > 2.5)
     ig_spec_mean_jaccard: Optional[float] = None
     ig_spec_mean_rbo: Optional[float] = None
     ig_spec_max_jaccard: Optional[float] = None
     ig_spec_max_jaccard_head: Optional[List[int]] = None
-    # IG — top-10 heads by BAR
+    # IG - top-10 heads by BAR
     ig_top_mean_jaccard: Optional[float] = None
     ig_top_mean_rbo: Optional[float] = None
     ig_top_max_jaccard: Optional[float] = None
     ig_top_max_jaccard_head: Optional[List[int]] = None
-    # IG — all heads (original, diluted)
+    # IG - all heads (original, diluted)
     ig_all_mean_jaccard: Optional[float] = None
     ig_all_mean_rbo: Optional[float] = None
-    # DeepLift — specialized heads (BAR > 2.5)
-    dl_spec_mean_jaccard: Optional[float] = None
-    dl_spec_mean_rbo: Optional[float] = None
-    dl_spec_max_jaccard: Optional[float] = None
-    dl_spec_max_jaccard_head: Optional[List[int]] = None
-    # DeepLift — top-10 heads by BAR
-    dl_top_mean_jaccard: Optional[float] = None
-    dl_top_mean_rbo: Optional[float] = None
-    dl_top_max_jaccard: Optional[float] = None
-    dl_top_max_jaccard_head: Optional[List[int]] = None
-    # DeepLift — all heads (original, diluted)
-    dl_all_mean_jaccard: Optional[float] = None
-    dl_all_mean_rbo: Optional[float] = None
     # Ablation (None if skipped)
     max_representation_impact: Optional[float] = None
     max_kl_divergence: Optional[float] = None
@@ -178,12 +164,21 @@ def run_per_sentence_faithfulness(
     mask_token_id: int,
     device: str,
     batch_size: int = 16,
+    is_gpt2: bool = False,
 ) -> Tuple[dict, List[dict]]:
-    """Run faithfulness evaluation with per-sentence tracking."""
+    """Run faithfulness evaluation with per-sentence tracking.
+
+    Uses the upgraded protocol from span_faithfulness_eval: special tokens
+    are excluded from every mask, a random control arm yields delta_net,
+    and GPT-2 removes tokens via the attention mask instead of the
+    non-neutral eos replacement.
+    """
     dataset = SimpleNERDataset(test_data, tokenizer)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
-    print(f"  Running faithfulness on {len(dataset)} sentences...")
+    mask_strategy = "attn" if is_gpt2 else "token"
+    print(f"  Running faithfulness on {len(dataset)} sentences "
+          f"(mask_strategy={mask_strategy})...")
     aggregated, per_sentence = evaluate_faithfulness(
         model_fn=model_fn,
         dataloader=dataloader,
@@ -192,6 +187,8 @@ def run_per_sentence_faithfulness(
         num_labels=num_labels,
         device=device,
         return_per_sentence=True,
+        special_ids=set(tokenizer.all_special_ids),
+        mask_strategy=mask_strategy,
     )
 
     # Attach original text
@@ -215,14 +212,13 @@ _ZERO_SUMMARY = {
 }
 
 
-def _empty_ig_dl_record():
-    """Return a zeroed-out IG+DeepLift record."""
+def _empty_ig_record():
+    """Return a zeroed-out IG record."""
     out = {}
-    for method in ("ig", "dl"):
-        for scope in ("all", "spec", "top"):
-            key = f"{method}_{scope}"
-            for metric, default in _ZERO_SUMMARY.items():
-                out[f"{key}_{metric}"] = default
+    for scope in ("all", "spec", "top"):
+        key = f"ig_{scope}"
+        for metric, default in _ZERO_SUMMARY.items():
+            out[f"{key}_{metric}"] = default
     return out
 
 
@@ -246,7 +242,7 @@ def _topk_to_summary(topk_overlaps, head_metrics, prefix, top_n_heads=10,
     # Build BAR lookup from head_metrics
     bar_lookup = {(m.layer, m.head): m.bias_attention_ratio for m in head_metrics}
 
-    # Identify head sets — use bar_threshold instead of m.specialized_for_bias
+    # Identify head sets - use bar_threshold instead of m.specialized_for_bias
     specialized = {(m.layer, m.head) for m in head_metrics
                    if m.bias_attention_ratio > bar_threshold}
     top_n_set = {(m.layer, m.head) for m in sorted(
@@ -294,27 +290,38 @@ def run_per_sentence_ig_jaccard(
     n_steps: int = 30,
     sentence_indices: Optional[List[int]] = None,
     bar_threshold: float = 2.5,
+    target_model=None,
 ) -> Dict[int, dict]:
     """
-    Run IG + DeepLift attributions and top-K Jaccard/RBO for selected sentences.
+    Run IG attributions and top-K Jaccard/RBO for selected sentences.
+
+    ``target_model``: pass the GUS-Net ``*ForTokenClassification`` model to
+    attribute the detected-bias evidence (the decision-level target the
+    dashboard uses) instead of the legacy pooled-norm. With the bias target
+    the IG step count is raised to 64 (the sigmoid sum saturates and the
+    path integral converges slowly - measured residual ~68% at 30 steps
+    vs ~3% at 64).
 
     For each sentence:
       1. Run NER model to get biased token indices
       2. Run encoder with output_attentions to get attention weights
       3. Compute IG attributions (Captum LayerIntegratedGradients)
-      4. Compute DeepLift attributions (Captum LayerDeepLift)
-      5. Compute top-K overlap (Jaccard + RBO) per head for both methods
-      6. Return mean/max Jaccard and RBO for IG and DeepLift
+      4. Compute top-K overlap (Jaccard + RBO) per head
+
+    NOTE: a second attribution branch labelled "DeepLift" used to live
+    here. It never called Captum's DeepLift (it called the LRP helper)
+    and was broken by a signature change; it has been removed rather
+    than repaired because the analysis no longer uses it.
     """
     analyzer = AttentionBiasAnalyzer()
     indices = sentence_indices if sentence_indices is not None else range(len(test_data))
     results = {}
 
-    # IG needs gradients — temporarily enable
+    # IG needs gradients - temporarily enable
     was_training = encoder_model.training
     encoder_model.eval()
 
-    print(f"  Running IG + DeepLift + Jaccard on {len(indices)} sentences "
+    print(f"  Running IG + Jaccard on {len(indices)} sentences "
           f"(n_steps={n_steps})...")
     for idx in tqdm(indices, desc="  IG+DL Jaccard"):
         text = test_data[idx]["text_str"]
@@ -333,7 +340,7 @@ def run_per_sentence_ig_jaccard(
             biased_indices = [biased_indices]
 
         if not biased_indices:
-            results[idx] = _empty_ig_dl_record()
+            results[idx] = _empty_ig_record()
             continue
 
         # Get attention weights
@@ -349,14 +356,16 @@ def run_per_sentence_ig_jaccard(
         )
 
         if not head_metrics:
-            results[idx] = _empty_ig_dl_record()
+            results[idx] = _empty_ig_record()
             continue
 
         # ── IG attributions ─────────────────────────────────────
         ig_record = {}
         try:
+            _steps = 64 if target_model is not None else n_steps
             ig_attrs, _ = compute_token_attributions(
-                encoder_model, tokenizer, text, is_gpt2, n_steps=n_steps,
+                encoder_model, tokenizer, text, is_gpt2, n_steps=_steps,
+                target_model=target_model,
             )
             ig_topk = compute_topk_overlap(
                 attentions, ig_attrs, head_metrics, k=ig_k,
@@ -368,23 +377,7 @@ def run_per_sentence_ig_jaccard(
             ig_record = _topk_to_summary([], head_metrics, "ig",
                                         bar_threshold=bar_threshold)
 
-        # ── DeepLift attributions ───────────────────────────────
-        dl_record = {}
-        try:
-            dl_attrs, _ = compute_lrp_attributions(
-                encoder_model, tokenizer, text, is_gpt2,
-            )
-            dl_topk = compute_topk_overlap(
-                attentions, dl_attrs, head_metrics, k=ig_k,
-            )
-            dl_record = _topk_to_summary(dl_topk, head_metrics, "dl",
-                                        bar_threshold=bar_threshold)
-        except Exception as e:
-            print(f"    Warning: DeepLift failed for idx={idx}: {e}")
-            dl_record = _topk_to_summary([], head_metrics, "dl",
-                                        bar_threshold=bar_threshold)
-
-        results[idx] = {**ig_record, **dl_record}
+        results[idx] = ig_record
 
     return results
 
@@ -552,16 +545,6 @@ def merge_and_rank(
             ig_top_max_jaccard_head=ig.get("ig_top_max_jaccard_head"),
             ig_all_mean_jaccard=ig.get("ig_all_mean_jaccard"),
             ig_all_mean_rbo=ig.get("ig_all_mean_rbo"),
-            dl_spec_mean_jaccard=ig.get("dl_spec_mean_jaccard"),
-            dl_spec_mean_rbo=ig.get("dl_spec_mean_rbo"),
-            dl_spec_max_jaccard=ig.get("dl_spec_max_jaccard"),
-            dl_spec_max_jaccard_head=ig.get("dl_spec_max_jaccard_head"),
-            dl_top_mean_jaccard=ig.get("dl_top_mean_jaccard"),
-            dl_top_mean_rbo=ig.get("dl_top_mean_rbo"),
-            dl_top_max_jaccard=ig.get("dl_top_max_jaccard"),
-            dl_top_max_jaccard_head=ig.get("dl_top_max_jaccard_head"),
-            dl_all_mean_jaccard=ig.get("dl_all_mean_jaccard"),
-            dl_all_mean_rbo=ig.get("dl_all_mean_rbo"),
             max_representation_impact=abl.get("max_representation_impact"),
             max_kl_divergence=abl.get("max_kl_divergence"),
             most_impactful_head=abl.get("most_impactful_head"),
@@ -583,18 +566,12 @@ def merge_and_rank(
 
     # Use specialized-head Jaccard (_spec) for composite score
     norm_ig_jaccard = None
-    norm_dl_jaccard = None
     if has_ig:
         ig_jaccards = np.array([
             r.ig_spec_mean_jaccard if r.ig_spec_mean_jaccard is not None else 0.0
             for r in records
         ])
-        dl_jaccards = np.array([
-            r.dl_spec_mean_jaccard if r.dl_spec_mean_jaccard is not None else 0.0
-            for r in records
-        ])
         norm_ig_jaccard = percentile_normalize(ig_jaccards)
-        norm_dl_jaccard = percentile_normalize(dl_jaccards)
 
     norm_impact = None
     if has_ablation:
@@ -604,17 +581,18 @@ def merge_and_rank(
         ])
         norm_impact = percentile_normalize(impacts)
 
-    # Composite weights depend on which phases are available:
-    #   all 3:    delta=0.25  ig_jac=0.15  dl_jac=0.15  ablation=0.20  orig=0.15  frac=0.10
-    #   IG only:  delta=0.35  ig_jac=0.20  dl_jac=0.15  orig=0.20  frac=0.10
+    # Composite weights depend on which phases are available (design
+    # choices, rank-normalised inputs; the former DeepLift component's
+    # weight was folded into the IG Jaccard when that branch was removed):
+    #   all:      delta=0.25  ig_jac=0.30  ablation=0.20  orig=0.15  frac=0.10
+    #   IG only:  delta=0.35  ig_jac=0.35  orig=0.20  frac=0.10
     #   abl only: delta=0.40  ablation=0.30  orig=0.20  frac=0.10
     #   none:     delta=0.60  orig=0.25  frac=0.15
     for i, rec in enumerate(records):
         if has_ig and has_ablation:
             rec.composite_score = round(
                 0.25 * norm_delta[i]
-                + 0.15 * norm_ig_jaccard[i]
-                + 0.15 * norm_dl_jaccard[i]
+                + 0.30 * norm_ig_jaccard[i]
                 + 0.20 * norm_impact[i]
                 + 0.15 * norm_orig[i]
                 + 0.10 * norm_frac[i],
@@ -623,8 +601,7 @@ def merge_and_rank(
         elif has_ig:
             rec.composite_score = round(
                 0.35 * norm_delta[i]
-                + 0.20 * norm_ig_jaccard[i]
-                + 0.15 * norm_dl_jaccard[i]
+                + 0.35 * norm_ig_jaccard[i]
                 + 0.20 * norm_orig[i]
                 + 0.10 * norm_frac[i],
                 4,
@@ -685,13 +662,9 @@ def print_importance_report(
                               ("top", "Top-10 by BAR"),
                               ("all", "All 144 heads")]:
             ig_attr = f"ig_{scope}_mean_jaccard"
-            dl_attr = f"dl_{scope}_mean_jaccard"
             ig_vals = [getattr(r, ig_attr) for r in ranked
                        if getattr(r, ig_attr, None) is not None
                        and getattr(r, ig_attr) > 0]
-            dl_vals = [getattr(r, dl_attr) for r in ranked
-                       if getattr(r, dl_attr, None) is not None
-                       and getattr(r, dl_attr) > 0]
             if ig_vals:
                 j = np.array(ig_vals)
                 print(f"\n  IG Jaccard [{label}]:")
@@ -699,13 +672,6 @@ def print_importance_report(
                       f"P75={np.percentile(j, 75):.4f}  "
                       f"P90={np.percentile(j, 90):.4f}  "
                       f"P95={np.percentile(j, 95):.4f}")
-            if dl_vals:
-                d = np.array(dl_vals)
-                print(f"  DL Jaccard [{label}]:")
-                print(f"    mean={d.mean():.4f}  "
-                      f"P75={np.percentile(d, 75):.4f}  "
-                      f"P90={np.percentile(d, 90):.4f}  "
-                      f"P95={np.percentile(d, 95):.4f}")
 
     print()
     print("  Distribution of per-sentence delta_bias:")
@@ -728,11 +694,6 @@ def print_importance_report(
                  if rec.ig_spec_max_jaccard_head else "?")
             extras.append(f"ig_jac={rec.ig_spec_mean_jaccard:.4f}"
                           f"(max={rec.ig_spec_max_jaccard:.3f} {h})")
-        if rec.dl_spec_mean_jaccard is not None and rec.dl_spec_mean_jaccard > 0:
-            h = (f"L{rec.dl_spec_max_jaccard_head[0]}H{rec.dl_spec_max_jaccard_head[1]}"
-                 if rec.dl_spec_max_jaccard_head else "?")
-            extras.append(f"dl_jac={rec.dl_spec_mean_jaccard:.4f}"
-                          f"(max={rec.dl_spec_max_jaccard:.3f} {h})")
         if rec.max_representation_impact is not None:
             h = (f"L{rec.most_impactful_head[0]}H{rec.most_impactful_head[1]}"
                  if rec.most_impactful_head else "?")
@@ -757,8 +718,6 @@ def print_importance_report(
         rbo_parts = []
         if rec.ig_spec_mean_rbo is not None and rec.ig_spec_mean_rbo > 0:
             rbo_parts.append(f"ig_rbo={rec.ig_spec_mean_rbo:.4f}")
-        if rec.dl_spec_mean_rbo is not None and rec.dl_spec_mean_rbo > 0:
-            rbo_parts.append(f"dl_rbo={rec.dl_spec_mean_rbo:.4f}")
         # Also show top-10 and all-heads for comparison
         if rec.ig_top_mean_jaccard is not None and rec.ig_top_mean_jaccard > 0:
             rbo_parts.append(f"ig_top10={rec.ig_top_mean_jaccard:.4f}")
@@ -793,8 +752,8 @@ def save_json_report(
         "composite_p99": round(float(np.percentile(composites, 99)), 4),
     }
 
-    # Add IG/DL Jaccard distribution for each scope
-    for method in ("ig", "dl"):
+    # Add IG Jaccard distribution for each scope
+    for method in ("ig",):
         for scope, label in [("spec", "specialized"), ("top", "top10"), ("all", "all")]:
             attr = f"{method}_{scope}_mean_jaccard"
             vals = [getattr(r, attr) for r in ranked
@@ -839,11 +798,6 @@ def save_csv_report(
         "ig_spec_max_jaccard", "ig_spec_max_jaccard_head",
         "ig_top_mean_jaccard", "ig_top_mean_rbo",
         "ig_all_mean_jaccard", "ig_all_mean_rbo",
-        # DL scoped
-        "dl_spec_mean_jaccard", "dl_spec_mean_rbo",
-        "dl_spec_max_jaccard", "dl_spec_max_jaccard_head",
-        "dl_top_mean_jaccard", "dl_top_mean_rbo",
-        "dl_all_mean_jaccard", "dl_all_mean_rbo",
         # Ablation
         "max_representation_impact", "most_impactful_head",
         "num_specialized_heads", "text",
@@ -878,14 +832,6 @@ def save_csv_report(
                 "ig_top_mean_rbo": _fmt_val(rec.ig_top_mean_rbo),
                 "ig_all_mean_jaccard": _fmt_val(rec.ig_all_mean_jaccard),
                 "ig_all_mean_rbo": _fmt_val(rec.ig_all_mean_rbo),
-                "dl_spec_mean_jaccard": _fmt_val(rec.dl_spec_mean_jaccard),
-                "dl_spec_mean_rbo": _fmt_val(rec.dl_spec_mean_rbo),
-                "dl_spec_max_jaccard": _fmt_val(rec.dl_spec_max_jaccard),
-                "dl_spec_max_jaccard_head": _fmt_head(rec.dl_spec_max_jaccard_head),
-                "dl_top_mean_jaccard": _fmt_val(rec.dl_top_mean_jaccard),
-                "dl_top_mean_rbo": _fmt_val(rec.dl_top_mean_rbo),
-                "dl_all_mean_jaccard": _fmt_val(rec.dl_all_mean_jaccard),
-                "dl_all_mean_rbo": _fmt_val(rec.dl_all_mean_rbo),
                 "max_representation_impact": _fmt_val(rec.max_representation_impact),
                 "most_impactful_head": _fmt_head(rec.most_impactful_head),
                 "num_specialized_heads": _fmt_val(rec.num_specialized_heads),
@@ -1102,10 +1048,6 @@ def main():
         help="Only show sentences with ig_spec_mean_jaccard >= this value",
     )
     parser.add_argument(
-        "--min-dl-jaccard", type=float, default=0.0,
-        help="Only show sentences with dl_spec_mean_jaccard >= this value",
-    )
-    parser.add_argument(
         "--skip-ig", action="store_true",
         help="Skip IG + Jaccard computation",
     )
@@ -1215,6 +1157,7 @@ def main():
         mask_token_id=mask_token_id,
         device=device,
         batch_size=args.batch_size,
+        is_gpt2=is_gpt2,
     )
 
     # ── Phase 1.5: Per-sentence IG + Jaccard ───────────────────
@@ -1246,6 +1189,9 @@ def main():
             n_steps=args.ig_steps,
             sentence_indices=ig_pool_indices,
             bar_threshold=args.bar_threshold,
+            # Attribute the GUS-Net detected-bias evidence (decision-level
+            # target, same as the dashboard) instead of the pooled-norm.
+            target_model=ner_model,
         )
     else:
         print("\n[Phase 1.5] IG + Jaccard: SKIPPED (--skip-ig)")
@@ -1291,21 +1237,14 @@ def main():
     has_ig = ig_records is not None and len(ig_records) > 0
     has_ablation = ablation_records is not None and len(ablation_records) > 0
 
-    if args.min_ig_jaccard > 0 or args.min_dl_jaccard > 0:
+    if args.min_ig_jaccard > 0:
         before = len(ranked)
-        filtered = ranked
-        if args.min_ig_jaccard > 0:
-            filtered = [
-                r for r in filtered
-                if (r.ig_spec_mean_jaccard or 0) >= args.min_ig_jaccard
-            ]
-        if args.min_dl_jaccard > 0:
-            filtered = [
-                r for r in filtered
-                if (r.dl_spec_mean_jaccard or 0) >= args.min_dl_jaccard
-            ]
-        print(f"\n  Post-hoc filter: {before} → {len(filtered)} sentences "
-              f"(min_ig_jac={args.min_ig_jaccard}, min_dl_jac={args.min_dl_jaccard})")
+        filtered = [
+            r for r in ranked
+            if (r.ig_spec_mean_jaccard or 0) >= args.min_ig_jaccard
+        ]
+        print(f"\n  Post-hoc filter: {before} -> {len(filtered)} sentences "
+              f"(min_ig_jac={args.min_ig_jaccard})")
         ranked = filtered
 
     # ── Output ──────────────────────────────────────────────────
@@ -1326,6 +1265,10 @@ def main():
         "skip_ig": args.skip_ig,
         "skip_ablation": args.skip_ablation,
         "bar_threshold": args.bar_threshold,
+        # Provenance: which scalar the IG attributions explain. Values from
+        # runs with different targets are NOT comparable with each other.
+        "attribution_target": "gusnet-bias-logits" if not args.skip_ig else None,
+        "faithfulness_protocol": "comprehensiveness+random-control+sufficiency",
         "timestamp": datetime.now().isoformat(),
     }
 

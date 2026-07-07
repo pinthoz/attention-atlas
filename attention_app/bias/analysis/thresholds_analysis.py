@@ -3,14 +3,14 @@
 This script produces defensible values for four currently-hardcoded
 thresholds:
 
-  1. BAR (Bias Attention Ratio) — calibrated to 2.5 in
+  1. BAR (Bias Attention Ratio) - calibrated to 2.5 in
      ``attention_app/bias/attention_bias.py`` (was 1.5 pre-calibration;
      the ``current_default=1.5`` in the JSON output is kept as a
      historical anchor so the calibration delta stays visible).
-  2. BSR (Bias Self-Reinforcement) — same family of metric as BAR.
-  3. GUS-Net per-category thresholds (GEN / UNFAIR / STEREO) —
+  2. BSR (Bias Self-Reinforcement) - same family of metric as BAR.
+  3. GUS-Net per-category thresholds (GEN / UNFAIR / STEREO) -
      currently 0.5 in the dashboard sliders.
-  4. Top-K heads for ablation — currently ``min(10, len(metrics))``
+  4. Top-K heads for ablation - currently ``min(10, len(metrics))``
      in ``attention_app/server/bias_handlers.py``.
 
 The methodology is:
@@ -49,6 +49,12 @@ Usage:
     python -m attention_app.bias.analysis.thresholds_analysis --bar --n 300 --perms 200
     python -m attention_app.bias.analysis.thresholds_analysis --gusnet
     python -m attention_app.bias.analysis.thresholds_analysis --ablation --abl-n 100
+
+    # Recalibrate on the GUS-Net fine-tuned trunks (the dashboard's default
+    # attention source) - outputs/checkpoints are tagged '_gusnet' /
+    # 'gusnet_bert' so they never overwrite the base-model calibration:
+    python -m attention_app.bias.analysis.thresholds_analysis --bar --n 0 --perms 200 --encoders gusnet
+    python -m attention_app.bias.analysis.thresholds_analysis --faithfulness --faith-n 0 --faith-model both --encoders gusnet
 """
 
 from __future__ import annotations
@@ -115,7 +121,7 @@ sys.path.insert(0, str(ROOT))
 # crash mid-save does not corrupt the on-disk state.
 
 def _text_hash(text: str) -> str:
-    """Stable short hash of a sentence — used to key processed entries."""
+    """Stable short hash of a sentence - used to key processed entries."""
     return hashlib.sha1(text.encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
@@ -127,7 +133,7 @@ def _args_signature(*parts: Any) -> str:
 
 
 def _save_checkpoint(path: Path, state: Dict[str, Any]) -> None:
-    """Atomic pickle write — temp file then rename."""
+    """Atomic pickle write - temp file then rename."""
     tmp = path.with_suffix(path.suffix + ".tmp")
     try:
         with open(tmp, "wb") as f:
@@ -172,9 +178,9 @@ class _GracefulInterrupt:
 
     def _handle(self, signum, frame):
         if self.interrupted:
-            # Second Ctrl-C — restore default handler and re-raise.
+            # Second Ctrl-C - restore default handler and re-raise.
             signal.signal(signal.SIGINT, signal.SIG_DFL)
-            print("\nSecond interrupt — aborting now.", flush=True)
+            print("\nSecond interrupt - aborting now.", flush=True)
             raise KeyboardInterrupt()
         self.interrupted = True
         print(
@@ -244,7 +250,7 @@ def load_v9_stratified(n_sentences: int, seed: int = 42,
         Shuffle seed for reproducibility.
     max_tokens
         Optional cap on whitespace-token count. Sentences longer than
-        this are dropped before sampling — a cheap proxy that keeps
+        this are dropped before sampling - a cheap proxy that keeps
         runtime bounded and avoids pathologically slow forward passes.
     """
     with open(ROOT / "dataset" / "bias_sentences_v9.json", encoding="utf-8") as f:
@@ -310,7 +316,7 @@ def _merge_subtokens_to_words(
     Returns a list of ``(lowercased_word, [sub_token_indices])``. Handles
     both WordPiece (``##`` = continuation) and BPE (``Ġ`` = word start)
     auto-detected from marker presence. Punctuation and special tokens act
-    as word separators and are not themselves emitted as words — both are
+    as word separators and are not themselves emitted as words - both are
     never bias carriers so dropping them keeps the alignment clean.
     """
     if special_tokens is None:
@@ -357,7 +363,7 @@ def _merge_subtokens_to_words(
                 current_word = tok
                 current_indices = [i]
         else:
-            # No marker characters detected — treat each token as its own word.
+            # No marker characters detected - treat each token as its own word.
             flush()
             current_word = tok
             current_indices = [i]
@@ -591,7 +597,7 @@ def _detect_per_category_indices(
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Analysis 1 — BAR / BSR permutation null
+# Analysis 1 - BAR / BSR permutation null
 # ──────────────────────────────────────────────────────────────────────
 
 def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
@@ -641,10 +647,14 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
     rng = np.random.default_rng(42)
     detector_cache: Dict[str, Any] = {}
 
+    # Encoder-family tag: GUS-Net-trunk calibrations get their own
+    # checkpoint AND output files - overwriting the base-model artefacts
+    # would silently mix two different null distributions.
+    _enc_tag = "_gusnet" if any("gus" in m.lower() for m in models) else ""
     _aud_tag = "_audited" if audited_labels else ""
     checkpoint_path = CHECKPOINT_DIR / (
-        f"bar_bsr_per_category{_aud_tag}.pkl" if per_category
-        else f"bar_bsr{_aud_tag}.pkl"
+        f"bar_bsr_per_category{_enc_tag}{_aud_tag}.pkl" if per_category
+        else f"bar_bsr{_enc_tag}{_aud_tag}.pkl"
     )
     sig = _args_signature(
         "bar_bsr_v2" if per_category else "bar_bsr_v1",
@@ -839,18 +849,18 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
                 if since_last_save >= checkpoint_every:
                     _save_checkpoint(checkpoint_path, _snapshot())
                     since_last_save = 0
-        # Save the final state — even on interrupt — so the next run resumes.
+        # Save the final state - even on interrupt - so the next run resumes.
         _save_checkpoint(checkpoint_path, _snapshot())
 
     elapsed = time.time() - start
     if interrupted:
-        print(f"\nInterrupted after {elapsed:.1f}s — checkpoint saved at "
+        print(f"\nInterrupted after {elapsed:.1f}s - checkpoint saved at "
               f"{checkpoint_path}. Re-run the same command to resume.",
               flush=True)
         return {"interrupted": True, "checkpoint": str(checkpoint_path),
                 "processed_so_far": len(processed_keys),
                 "n_ok": n_ok, "n_skipped": n_skipped}
-    print(f"\nDone in {elapsed:.1f}s — ok={n_ok}, skipped={n_skipped}")
+    print(f"\nDone in {elapsed:.1f}s - ok={n_ok}, skipped={n_skipped}")
 
     def _to_np(acc) -> np.ndarray:
         """Zero-copy view of an ``array.array('f')`` as a float32 numpy
@@ -900,7 +910,7 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
     }
 
     # Combined (across models) summary. Concatenate per-model arrays
-    # only as numpy views — never materialise a giant Python list.
+    # only as numpy views - never materialise a giant Python list.
     def _concat(per_model_accs) -> np.ndarray:
         parts = [_to_np(per_model_accs[m]) for m in per_model_accs
                  if len(per_model_accs[m]) > 0]
@@ -948,14 +958,14 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
         }
 
     out_path = BAR_BSR_DIR / (
-        f"per_category{_aud_tag}.json" if per_category
-        else f"thresholds{_aud_tag}.json"
+        f"per_category{_enc_tag}{_aud_tag}.json" if per_category
+        else f"thresholds{_enc_tag}{_aud_tag}.json"
     )
     out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False),
                         encoding="utf-8")
     print(f"Saved {out_path}")
 
-    # Plot histograms — subsample to keep matplotlib responsive.
+    # Plot histograms - subsample to keep matplotlib responsive.
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -995,7 +1005,7 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
             ax.set_title(f"{name}: observed vs permutation-null")
             ax.legend(fontsize=8)
         fig.tight_layout()
-        plot_path = BAR_BSR_DIR / f"distribution{_aud_tag}.png"
+        plot_path = BAR_BSR_DIR / f"distribution{_enc_tag}{_aud_tag}.png"
         fig.savefig(plot_path, dpi=120)
         plt.close(fig)
         print(f"Saved {plot_path}")
@@ -1012,7 +1022,7 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Analysis 2 — GUS-Net per-category threshold calibration
+# Analysis 2 - GUS-Net per-category threshold calibration
 # ──────────────────────────────────────────────────────────────────────
 
 def _truth_from_verdict(row: pd.Series) -> Optional[bool]:
@@ -1055,8 +1065,46 @@ def run_gusnet_calibration(model_keys: Optional[List[str]] = None) -> Dict[str, 
         from sklearn.metrics import (
             precision_recall_curve, roc_auc_score, f1_score
         )
+        from sklearn.model_selection import StratifiedKFold
     except Exception as e:
         raise RuntimeError("scikit-learn is required for calibration") from e
+
+    def _f1_opt_threshold(y, s):
+        """Threshold that maximises F1 on (y, s); returns (th, f1)."""
+        precision, recall, ths = precision_recall_curve(y, s)
+        f1 = 2 * precision * recall / (precision + recall + 1e-9)
+        f1_aligned = f1[:-1]
+        if len(f1_aligned) == 0 or len(ths) == 0:
+            return None, None
+        best_idx = int(np.argmax(f1_aligned))
+        return float(ths[best_idx]), float(f1_aligned[best_idx])
+
+    def _cv5_f1(y, s, seed=42):
+        """5-fold CV estimate of the F1-optimal-threshold procedure.
+
+        The in-sample best_f1 selects the threshold on the SAME data it is
+        evaluated on, which is optimistic on a ~300-sentence audit set.
+        Here the threshold is chosen on the train folds and F1 measured on
+        the held-out fold - the honest generalisation estimate.
+        Returns (f1_mean, f1_std, threshold_mean) or (None, None, None).
+        """
+        y = np.asarray(y)
+        s = np.asarray(s)
+        if len(np.unique(y)) < 2 or len(y) < 10:
+            return None, None, None
+        f1s, ths_used = [], []
+        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+        for tr_idx, te_idx in skf.split(s.reshape(-1, 1), y):
+            th, _ = _f1_opt_threshold(y[tr_idx], s[tr_idx])
+            if th is None:
+                continue
+            preds = s[te_idx] >= th
+            f1s.append(float(f1_score(y[te_idx], preds, zero_division=0)))
+            ths_used.append(th)
+        if not f1s:
+            return None, None, None
+        return (float(np.mean(f1s)), float(np.std(f1s)),
+                float(np.mean(ths_used)))
 
     summary: Dict[str, Any] = {
         "n_sentences": int(len(clear)),
@@ -1114,24 +1162,23 @@ def run_gusnet_calibration(model_keys: Optional[List[str]] = None) -> Dict[str, 
                 continue
             scores_np = np.asarray(scores)
             try:
-                precision, recall, ths = precision_recall_curve(truths_np, scores_np)
-                # Exclude the trivial recall=0 endpoint when computing F1.
-                f1 = 2 * precision * recall / (precision + recall + 1e-9)
-                if len(ths) == 0:
+                best_th, best_f1 = _f1_opt_threshold(truths_np, scores_np)
+                if best_th is None:
                     continue
-                # ths corresponds to precision[:-1] / recall[:-1]; align lengths.
-                f1_aligned = f1[:-1]
-                best_idx = int(np.argmax(f1_aligned)) if len(f1_aligned) else 0
-                best_th = float(ths[best_idx])
-                best_f1 = float(f1_aligned[best_idx])
                 auc = float(roc_auc_score(truths_np, scores_np))
+                cv_f1, cv_f1_std, cv_th = _cv5_f1(truths_np, scores_np)
             except Exception as e:
                 _logger.debug("PR curve for %s failed: %s", cat, e)
                 continue
             model_result[cat] = {
                 "current_default": 0.5,
                 "recommended_threshold_f1_opt": best_th,
-                "best_f1": best_f1,
+                # In-sample: the threshold is selected AND evaluated on the
+                # same audit set, so this F1 is optimistic. Cite cv5_f1_mean.
+                "best_f1_in_sample": best_f1,
+                "cv5_f1_mean": cv_f1,
+                "cv5_f1_std": cv_f1_std,
+                "cv5_threshold_mean": cv_th,
                 "auc_roc": auc,
                 "score_mean_pos": float(scores_np[truths_np].mean()) if truths_np.any() else None,
                 "score_mean_neg": float(scores_np[~truths_np].mean()) if (~truths_np).any() else None,
@@ -1139,15 +1186,17 @@ def run_gusnet_calibration(model_keys: Optional[List[str]] = None) -> Dict[str, 
         # Combined: use max across categories.
         if max_any and len(max_any) == len(truths):
             try:
-                precision, recall, ths = precision_recall_curve(truths_np, np.asarray(max_any))
-                f1 = 2 * precision * recall / (precision + recall + 1e-9)
-                f1_aligned = f1[:-1]
-                if len(f1_aligned):
-                    best_idx = int(np.argmax(f1_aligned))
+                any_np = np.asarray(max_any)
+                best_th, best_f1 = _f1_opt_threshold(truths_np, any_np)
+                if best_th is not None:
+                    cv_f1, cv_f1_std, cv_th = _cv5_f1(truths_np, any_np)
                     model_result["ANY_CATEGORY"] = {
-                        "recommended_threshold_f1_opt": float(ths[best_idx]),
-                        "best_f1": float(f1_aligned[best_idx]),
-                        "auc_roc": float(roc_auc_score(truths_np, np.asarray(max_any))),
+                        "recommended_threshold_f1_opt": best_th,
+                        "best_f1_in_sample": best_f1,
+                        "cv5_f1_mean": cv_f1,
+                        "cv5_f1_std": cv_f1_std,
+                        "cv5_threshold_mean": cv_th,
+                        "auc_roc": float(roc_auc_score(truths_np, any_np)),
                     }
             except Exception:
                 pass
@@ -1161,7 +1210,7 @@ def run_gusnet_calibration(model_keys: Optional[List[str]] = None) -> Dict[str, 
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Analysis 2b — GUS-Net per-category TOKEN-level threshold calibration
+# Analysis 2b - GUS-Net per-category TOKEN-level threshold calibration
 # against the human-audited gold labels
 # ──────────────────────────────────────────────────────────────────────
 
@@ -1345,12 +1394,17 @@ def run_gusnet_token_calibration(
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Analysis 3 — top-K cumulative ablation impact
+# Analysis 3 - top-K cumulative ablation impact
 # ──────────────────────────────────────────────────────────────────────
 
 def _model_short(model_name: str) -> str:
-    """Short tag used in output / checkpoint filenames."""
-    return "gpt2" if "gpt2" in model_name.lower() else "bert"
+    """Short tag used in output / checkpoint filenames.
+
+    Distinguishes the GUS-Net fine-tuned encoders from the pretrained base
+    models so that a --encoders gusnet calibration never overwrites the
+    base-model artefacts (their nulls are NOT interchangeable)."""
+    base = "gpt2" if "gpt2" in model_name.lower() else "bert"
+    return f"gusnet_{base}" if "gus" in model_name.lower() else base
 
 
 def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
@@ -1424,7 +1478,7 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
             print(f"Resuming from checkpoint: {len(processed_keys)} "
                   f"sentences already done.", flush=True)
         elif state is not None:
-            print("Checkpoint exists but parameters differ — starting fresh.",
+            print("Checkpoint exists but parameters differ - starting fresh.",
                   flush=True)
 
     def _snapshot() -> Dict[str, Any]:
@@ -1546,7 +1600,7 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
         _save_checkpoint(checkpoint_path, _snapshot())
 
     if interrupted:
-        print(f"\nInterrupted — checkpoint saved at {checkpoint_path}. "
+        print(f"\nInterrupted - checkpoint saved at {checkpoint_path}. "
               f"Re-run to resume.", flush=True)
         return {"interrupted": True, "checkpoint": str(checkpoint_path),
                 "processed_so_far": len(processed_keys), "n_ok": n_ok}
@@ -1660,7 +1714,7 @@ def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Analysis 4 — Faithfulness validation: representation_impact bands
+# Analysis 4 - Faithfulness validation: representation_impact bands
 # ──────────────────────────────────────────────────────────────────────
 
 def run_faithfulness_calibration(
@@ -2385,6 +2439,15 @@ def main() -> int:
                              "Applies to --bar and --faithfulness. Optional PATH "
                              f"defaults to {AUDITED_LABELS_DEFAULT.name}. "
                              "Outputs get an _audited suffix.")
+    parser.add_argument("--encoders", choices=["base", "gusnet"], default="base",
+                        help="Which encoder family to calibrate: 'base' = the "
+                             "pretrained bert-base-uncased / gpt2 (historical "
+                             "default), 'gusnet' = the fine-tuned GUS-Net trunks "
+                             "(pinthoz/gus-net-*). The dashboard's default "
+                             "attention source is GUS-Net, so thresholds quoted "
+                             "for that view should come from --encoders gusnet; "
+                             "outputs/checkpoints are tagged so the two families "
+                             "never overwrite each other.")
     parser.add_argument("--max-tokens", type=int, default=None,
                         help="Skip sentences with more than this many whitespace "
                              "tokens (cheap filter to keep runtime bounded). "
@@ -2425,7 +2488,7 @@ def main() -> int:
 
     # Same warning for ablation. Each biased sentence does ~(K_max+2) forward
     # passes (baseline + K ablations + GUS-Net), so it is ~10x more expensive
-    # per sentence than BAR/BSR — adjust seconds_per_unit accordingly.
+    # per sentence than BAR/BSR - adjust seconds_per_unit accordingly.
     if args.ablation:
         n_models_abl = 2 if args.abl_model == "both" else 1
         # Empirical: ~23 s / (sentence, model) at K_max=20 on CPU.
@@ -2453,12 +2516,21 @@ def main() -> int:
         pass
 
     resume = not args.no_resume
+    # Encoder-family map: which HF model each short name resolves to.
+    _ENC = {
+        "base":   {"bert": "bert-base-uncased",      "gpt2": "gpt2"},
+        "gusnet": {"bert": "pinthoz/gus-net-bert",   "gpt2": "pinthoz/gus-net-gpt2"},
+    }[args.encoders]
+    if args.encoders == "gusnet":
+        print("Encoder family: GUS-Net fine-tuned trunks "
+              f"({_ENC['bert']}, {_ENC['gpt2']}) - outputs tagged '_gusnet'.")
     if args.bar:
         print("\n========== BAR/BSR analysis ==========")
         try:
             run_bar_bsr_analysis(
                 n_sentences=args.n,
                 n_permutations=args.perms,
+                models=[_ENC["bert"], _ENC["gpt2"]],
                 max_tokens=args.max_tokens,
                 resume=resume,
                 checkpoint_every=args.checkpoint_every,
@@ -2482,9 +2554,9 @@ def main() -> int:
     if args.ablation:
         ablation_models: List[str] = []
         if args.abl_model in ("bert", "both"):
-            ablation_models.append("bert-base-uncased")
+            ablation_models.append(_ENC["bert"])
         if args.abl_model in ("gpt2", "both"):
-            ablation_models.append("gpt2")
+            ablation_models.append(_ENC["gpt2"])
         for _m in ablation_models:
             print(f"\n========== Top-K ablation curve ({_m}) ==========")
             try:
@@ -2502,9 +2574,9 @@ def main() -> int:
     if args.faithfulness:
         faith_models: List[str] = []
         if args.faith_model in ("bert", "both"):
-            faith_models.append("bert-base-uncased")
+            faith_models.append(_ENC["bert"])
         if args.faith_model in ("gpt2", "both"):
-            faith_models.append("gpt2")
+            faith_models.append(_ENC["gpt2"])
         for _m in faith_models:
             print(f"\n========== Faithfulness calibration ({_m}) ==========")
             try:
