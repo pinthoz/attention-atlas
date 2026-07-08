@@ -99,6 +99,8 @@ def _rho_color_and_label(rho: float) -> tuple:
 # signal is per-category - UNFAIR/STEREO reach 11-13% under KL and 8.6-10.1%
 # under rep_impact (see §16 + §21 addendum).
 IMPACT_THRESHOLDS = {
+    # Base pretrained encoders (attention source = "base"). Calibrated with
+    # the legacy pooled-norm target.
     "bert-base-uncased": {
         "high": 0.0093,        # null p95, alpha=0.05
         "very_high": 0.0190,   # null p99, alpha=0.01
@@ -115,15 +117,47 @@ IMPACT_THRESHOLDS = {
         "kl_very_high": 0.3079,    # KL null p99
         "kl_obs_above_alpha_05_pct": 6.55,
     },
+    # GUS-Net fine-tuned trunks (attention source = "gusnet"). Re-calibrated
+    # 2026-07-08 on the full v9 corpus (thresholds_analysis --faithfulness
+    # --encoders gusnet); files: dataset/thresholds_results/faithfulness/
+    # gusnet_{bert,gpt2}.json. These MUST be used when the ablation deltas
+    # come from the fine-tuned trunk: applying the base-encoder floor there
+    # was the T1 mismatch (base GPT-2 high=0.000965 is ~20x too low for the
+    # GUS-Net GPT-2 trunk, whose null p95 is 0.0194).
+    "gusnet-bert": {
+        "high": 0.0156,        # null p95, alpha=0.05
+        "very_high": 0.0339,   # null p99, alpha=0.01
+        "obs_above_alpha_05_pct": 13.83,
+        "kl_high": 0.0190,         # KL null p95
+        "kl_very_high": 0.0440,    # KL null p99
+        "kl_obs_above_alpha_05_pct": 13.39,
+    },
+    "gusnet-gpt2": {
+        "high": 0.0194,        # null p95, alpha=0.05
+        "very_high": 0.0744,   # null p99, alpha=0.01
+        "obs_above_alpha_05_pct": 2.57,
+        "kl_high": 0.0164,         # KL null p95
+        "kl_very_high": 0.0419,    # KL null p99
+        "kl_obs_above_alpha_05_pct": 2.58,
+    },
 }
 
 
 def _get_impact_thresholds(model_name: str) -> dict:
-    """Return the calibrated impact thresholds for the given attention model.
-    Falls back to BERT defaults when the model is unknown."""
-    if model_name and "gpt2" in model_name.lower():
-        return IMPACT_THRESHOLDS["gpt2"]
-    return IMPACT_THRESHOLDS["bert-base-uncased"]
+    """Return the calibrated ablation-impact thresholds for the attention
+    model that produced the deltas.
+
+    The noise floor depends on the TRUNK the attentions came from, not just
+    the architecture: the GUS-Net fine-tuned trunk has a materially higher
+    floor than the pretrained base encoder (see IMPACT_THRESHOLDS). GUS-Net
+    attention results carry a ``pinthoz/gus-net-*`` model_name; base results
+    carry ``bert-base-uncased`` / ``gpt2``. Falls back to BERT-base when the
+    model is unknown."""
+    name = (model_name or "").lower()
+    is_gpt2 = "gpt2" in name
+    if "gus-net" in name or "gusnet" in name:
+        return IMPACT_THRESHOLDS["gusnet-gpt2" if is_gpt2 else "gusnet-bert"]
+    return IMPACT_THRESHOLDS["gpt2" if is_gpt2 else "bert-base-uncased"]
 
 
 def _resolve_bias_target_model(res: dict):
@@ -417,7 +451,7 @@ def register_xai_handlers(
             return None
         
         results_B = ablation_results_B.get()
-        _, _, resolved_show_comparison = _resolve_faithfulness_results()
+        res_A_ctx, res_B_ctx, resolved_show_comparison = _resolve_faithfulness_results()
         show_comparison = resolved_show_comparison and results_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
@@ -436,14 +470,20 @@ def register_xai_handlers(
         def _render_ablation_single(results_data, container_suffix=""):
             if not results_data: return "No data"
 
-            # Pick calibrated thresholds based on the active attention model
-            # (BERT and GPT-2 differ by ~100x). input.model_name() is the
-            # attention model; resolving from bias_results gives the GUS-Net
-            # detector path instead, which is the wrong scale.
-            try:
-                model_name = input.model_name() or "bert-base-uncased"
-            except Exception:
-                model_name = "bert-base-uncased"
+            # Pick calibrated thresholds from the attention model that
+            # produced THESE deltas. The faithfulness context carries the
+            # right model_name per column: in source-compare mode "_B" is the
+            # GUS-Net trunk (pinthoz/gus-net-*) and "_A" the base encoder; in
+            # single mode res_A_ctx already reflects the active source. Base
+            # and GUS-Net floors differ (and BERT vs GPT-2 by ~20x), so this
+            # must not fall back to the global model selector.
+            _ctx = res_B_ctx if container_suffix == "_B" else res_A_ctx
+            model_name = (_ctx or {}).get("model_name")
+            if not model_name:
+                try:
+                    model_name = input.model_name() or "bert-base-uncased"
+                except Exception:
+                    model_name = "bert-base-uncased"
             thresholds = _get_impact_thresholds(model_name)
             is_gpt2 = "gpt2" in model_name.lower()
 

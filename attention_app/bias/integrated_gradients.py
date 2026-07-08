@@ -1015,7 +1015,8 @@ def compute_lrp_attributions(
        \\citet{Achtibat2024} via the ``lxt`` library, when it is installed and
        compatible with the loaded Transformers version.
     2. ``"Chefer-LRP"``- the attention-rollout relevance of Chefer, Gur & Wolf
-       (CVPR 2021): for every layer take the head-averaged positive part of
+       (ICCV 2021, Generic Attention-model Explainability): for every layer
+       take the head-averaged positive part of
        (attention ⊙ ∂target/∂attention) and roll it through the layers with a
        residual, ``R₀ = I, Āₗ = mean_h((Aₗ ⊙ ∇Aₗ)⁺), Rₗ = Rₗ₋₁ + Āₗ·Rₗ₋₁``.
        Self-contained, so it always runs on BERT/GPT-2.

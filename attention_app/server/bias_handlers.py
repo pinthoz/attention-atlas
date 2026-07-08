@@ -2843,6 +2843,12 @@ def bias_server_handlers(input, output, session):
         abl_B = ablation_results_B.get()
         ig_B = ig_results_B.get()
 
+        # Ablation deltas are computed on the faithfulness-context trunk
+        # (base encoder when the attention source is "base"/"compare"), so
+        # the impact colour threshold must come from that context, not from
+        # `res` (which always carries the GUS-Net encoder id).
+        _faith_A, _faith_B, _ = _resolve_faithfulness_results()
+
         # Composite-score weights, tunable from the sidebar sliders (feature 3).
         # Each weight falls back to its calibrated default if the slider has not
         # been touched, and the set is renormalised to sum to 1 so the
@@ -2865,7 +2871,7 @@ def bias_server_handlers(input, output, session):
         _cw_sum = sum(_cw_raw.values()) or 1.0
         composite_weights = {k: v / _cw_sum for k, v in _cw_raw.items()}
 
-        def get_summary_cards(res_data, abl_data=None, ig_bundle=None):
+        def get_summary_cards(res_data, abl_data=None, ig_bundle=None, impact_ctx=None):
             summary = res_data["bias_summary"]
             # Criteria breakdown
             criteria_html = create_bias_criteria_html(summary, composite_weights)
@@ -2986,7 +2992,8 @@ def bias_server_handlers(input, output, session):
 
             # Ablation Δ - coloured against the calibrated α=0.05 impact
             # threshold for the active model (THRESHOLDS_CALIBRATION.md §13)
-            _impact_th = _get_impact_thresholds(res_data.get("model_name", ""))
+            _impact_th = _get_impact_thresholds(
+                (impact_ctx or res_data).get("model_name", ""))
             if abl_data:
                 max_delta = max(r.representation_impact for r in abl_data)
                 top = abl_data[0]
@@ -3012,7 +3019,9 @@ def bias_server_handlers(input, output, session):
                 f"<span style='{_TH_lc}'>Why 2.5?</span>"
                 f"<div style='{_TN};margin-top:2px;'>95th percentile of a permutation-null distribution computed over the full v9 corpus "
                 f"(10 304 sentences × {{BERT, GPT-2}}, 200 permutations per head). At BAR=2.5, a head has &lt;5% "
-                f"probability of looking this bias-focused by chance.</div>"
+                f"probability of looking this bias-focused by chance. Re-validated on the GUS-Net fine-tuned "
+                f"trunks (null p95 = 2.37 BERT / 2.29 GPT-2), so the 2.5 cut-off transfers and is slightly "
+                f"conservative.</div>"
             )
             _tt_rho = (
                 f"<span style='{_TH_lc}'>What it measures</span>"
@@ -3037,7 +3046,8 @@ def bias_server_handlers(input, output, session):
                 f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
                 f"<span>Δ &ge; {_impact_th['high']:g} → <span style='{_TBP}'>high-impact head</span></span></div>"
                 f"<div style='{_TN};margin-top:6px;'>Calibrated α=0.05 cut-off: 95th percentile of a random-head ablation null on the full v9 corpus, "
-                f"per model (this model: {_impact_th['high']:g}; interpolated from the calibration table, not hand-typed).</div>"
+                f"per trunk (this model: {_impact_th['high']:g}). The base encoder and the GUS-Net fine-tuned trunk have "
+                f"different noise floors, so the cut-off follows the active attention source.</div>"
                 f"<div style='{_TN};margin-top:6px;'>Identifies the head whose removal most disrupts the model's internal representation.</div>"
             )
             bench_cards = (
@@ -3052,8 +3062,8 @@ def bias_server_handlers(input, output, session):
             return criteria_html + cards + bench_cards
 
         if (compare_models or compare_prompts) and res_B:
-            content_A = get_summary_cards(res, abl, ig) + _render_input_warnings(res)
-            content_B = get_summary_cards(res_B, abl_B, ig_B) + _render_input_warnings(res_B)
+            content_A = get_summary_cards(res, abl, ig, _faith_A) + _render_input_warnings(res)
+            content_B = get_summary_cards(res_B, abl_B, ig_B, _faith_B) + _render_input_warnings(res_B)
 
             header_args = (
                 "Bias Detection Summary",
@@ -3117,7 +3127,7 @@ def bias_server_handlers(input, output, session):
                 f"<div style='{_TN}; margin-top:6px;'>High token density + low stereotype score → loaded language without group-specific targeting.</div>"
                 f"<div style='{_TN}; margin-top:6px;'>The composite level is a communication aid, not a calibrated metric; token-level detection uses the calibrated GUS-Net thresholds.</div>"
             )
-            body = get_summary_cards(res, abl, ig) + _render_input_warnings(res)
+            body = get_summary_cards(res, abl, ig, _faith_A) + _render_input_warnings(res)
             card = _wrap_card(ui.HTML(body), *header_args, style="margin-bottom: 24px;")
             return card
 
@@ -4187,7 +4197,8 @@ def bias_server_handlers(input, output, session):
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Why 2.5?</span>"
             f"<div style='{_TN};margin-top:2px;'>Empirical α=0.05 cut-off, the 95th percentile of a permutation null over the full v9 corpus (BERT + GPT-2). "
-            f"A head crossing 2.5 has &lt;5% chance of being this concentrated by accident.</div>"
+            f"A head crossing 2.5 has &lt;5% chance of being this concentrated by accident. Re-validated on the GUS-Net "
+            f"fine-tuned trunks (null p95 = 2.37 BERT / 2.29 GPT-2): the 2.5 cut-off transfers.</div>"
         )
         header_args = (
             f"Bias Attention Matrix{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
