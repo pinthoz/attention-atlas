@@ -1,0 +1,34 @@
+name: HF Space health monitor
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub may delay scheduled runs by a few minutes.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-space:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install huggingface_hub
+        run: pip install --quiet "huggingface_hub>=0.23"
+
+      - name: Check Space and restart if needed
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        # Each Actions run is a fresh VM, so the local cooldown state file
+        # never persists here; the 30-minute cron interval IS the cooldown.
+        run: python huggingface/hf_space_monitor.py --space pinthoz/attention-atlas --min-gap-minutes 0
