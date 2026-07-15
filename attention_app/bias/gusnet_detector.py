@@ -199,7 +199,11 @@ MODEL_REGISTRY = {
         "optimized_thresholds": None,
     },
     "gusnet-gpt2": {
-        "path": "pinthoz/gus-net-gpt2",
+        # TEMP: points at the LOCAL sparse checkpoint (per-label thresholds
+        # auto-load from its optimized_thresholds.npy) so the app/calibration
+        # use sparse before it is published. Revert to "pinthoz/gus-net-gpt2"
+        # once the sparse weights are uploaded to the Hub.
+        "path": str(_BIAS_DIR / "gus-net-gpt2-sparse"),
         "architecture": "gpt2",
         "num_labels": NUM_LABELS,
         "has_o_label": True,
@@ -208,7 +212,8 @@ MODEL_REGISTRY = {
         "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (GPT-2)",
         "public": True,
-        "optimized_thresholds": [0.5119, 0.5000, 0.5250, 0.5118, 0.4944, 0.4457, 0.4393],
+        # Sparse variant's F1-optimised thresholds (matches its .npy).
+        "optimized_thresholds": [0.4745, 0.3548, 0.2878, 0.2984, 0.3618, 0.3206, 0.3250],
     },
     "gusnet-gpt2-medium": {
         "path": "pinthoz/gus-net-gpt2-medium",

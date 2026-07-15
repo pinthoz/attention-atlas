@@ -104,6 +104,11 @@ GUSNET_DIR = RESULTS_DIR / "gusnet"
 for _d in (BAR_BSR_DIR, TOPK_DIR, FAITHFULNESS_DIR, GUSNET_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
+# Optional suffix appended to every output filename (e.g. "sparse" -> *_sparse.json)
+# so re-calibrating on a different trunk does not overwrite earlier artefacts.
+# Set from --out-suffix in main(); normalised to a leading underscore.
+OUT_SUFFIX = ""
+
 # Make the app package importable when this is run as a script (e.g.
 # python attention_app/bias/analysis/thresholds_analysis.py) rather than as
 # `python -m attention_app.bias.analysis.thresholds_analysis`.
@@ -650,7 +655,7 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
     # Encoder-family tag: GUS-Net-trunk calibrations get their own
     # checkpoint AND output files - overwriting the base-model artefacts
     # would silently mix two different null distributions.
-    _enc_tag = "_gusnet" if any("gus" in m.lower() for m in models) else ""
+    _enc_tag = ("_gusnet" if any("gus" in m.lower() for m in models) else "") + OUT_SUFFIX
     _aud_tag = "_audited" if audited_labels else ""
     checkpoint_path = CHECKPOINT_DIR / (
         f"bar_bsr_per_category{_enc_tag}{_aud_tag}.pkl" if per_category
@@ -1404,7 +1409,7 @@ def _model_short(model_name: str) -> str:
     models so that a --encoders gusnet calibration never overwrites the
     base-model artefacts (their nulls are NOT interchangeable)."""
     base = "gpt2" if "gpt2" in model_name.lower() else "bert"
-    return f"gusnet_{base}" if "gus" in model_name.lower() else base
+    return (f"gusnet_{base}" if "gus" in model_name.lower() else base) + OUT_SUFFIX
 
 
 def run_topk_ablation(n_sentences: int = 50, k_max: int = 20,
@@ -2402,6 +2407,10 @@ def main() -> int:
                              "category (GEN, UNFAIR, STEREO) with their own "
                              "permutation nulls. Output goes to "
                              "bar_bsr/per_category.json.")
+    parser.add_argument("--bar-model", choices=["bert", "gpt2", "both"],
+                        default="both",
+                        help="Which trunk(s) to run BAR/BSR on (default both). "
+                             "Use 'gpt2' to recalibrate only the GPT-2 trunk.")
     parser.add_argument("--abl-n", type=_parse_n_arg, default=50,
                         help="Sentences for top-K ablation (int or 'all'; default 50).")
     parser.add_argument("--k-max", type=int, default=20,
@@ -2452,6 +2461,11 @@ def main() -> int:
                         help="Skip sentences with more than this many whitespace "
                              "tokens (cheap filter to keep runtime bounded). "
                              "Default: no filter.")
+    parser.add_argument("--out-suffix", type=str, default="",
+                        help="Append a tag to every output filename (e.g. "
+                             "'sparse' -> thresholds_gusnet_sparse.json, "
+                             "gusnet_gpt2_sparse.json) so a re-calibration on a "
+                             "different trunk keeps the earlier artefacts.")
     parser.add_argument("--no-resume", action="store_true",
                         help="Ignore any existing checkpoint and start fresh. "
                              "Default: resume if a matching checkpoint exists.")
@@ -2463,6 +2477,10 @@ def main() -> int:
                              "JSON + plot from the existing checkpoint. Useful "
                              "to recover when the summary step itself crashed.")
     args = parser.parse_args()
+
+    if args.out_suffix:
+        global OUT_SUFFIX
+        OUT_SUFFIX = "_" + args.out_suffix.strip().lstrip("_")
 
     if args.summarise_from_checkpoint:
         return _summarise_existing_checkpoints(args)
@@ -2517,20 +2535,30 @@ def main() -> int:
 
     resume = not args.no_resume
     # Encoder-family map: which HF model each short name resolves to.
+    # TEMP (local sparse calibration): the gusnet gpt2 trunk is redirected to
+    # the LOCAL sparse checkpoint so this run calibrates on sparse before it is
+    # published to HF. Revert "gpt2" to "pinthoz/gus-net-gpt2" once the sparse
+    # weights are uploaded.
+    _gpt2_sparse_local = str(ROOT / "attention_app" / "bias" / "models" / "gus-net-gpt2-sparse")
     _ENC = {
         "base":   {"bert": "bert-base-uncased",      "gpt2": "gpt2"},
-        "gusnet": {"bert": "pinthoz/gus-net-bert",   "gpt2": "pinthoz/gus-net-gpt2"},
+        "gusnet": {"bert": "pinthoz/gus-net-bert",   "gpt2": _gpt2_sparse_local},
     }[args.encoders]
     if args.encoders == "gusnet":
         print("Encoder family: GUS-Net fine-tuned trunks "
               f"({_ENC['bert']}, {_ENC['gpt2']}) - outputs tagged '_gusnet'.")
     if args.bar:
         print("\n========== BAR/BSR analysis ==========")
+        _bar_models: List[str] = []
+        if args.bar_model in ("bert", "both"):
+            _bar_models.append(_ENC["bert"])
+        if args.bar_model in ("gpt2", "both"):
+            _bar_models.append(_ENC["gpt2"])
         try:
             run_bar_bsr_analysis(
                 n_sentences=args.n,
                 n_permutations=args.perms,
-                models=[_ENC["bert"], _ENC["gpt2"]],
+                models=_bar_models,
                 max_tokens=args.max_tokens,
                 resume=resume,
                 checkpoint_every=args.checkpoint_every,

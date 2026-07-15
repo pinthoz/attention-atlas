@@ -133,12 +133,19 @@ IMPACT_THRESHOLDS = {
         "kl_obs_above_alpha_05_pct": 13.39,
     },
     "gusnet-gpt2": {
-        "high": 0.0194,        # null p95, alpha=0.05
-        "very_high": 0.0744,   # null p99, alpha=0.01
-        "obs_above_alpha_05_pct": 2.57,
-        "kl_high": 0.0164,         # KL null p95
-        "kl_very_high": 0.0419,    # KL null p99
-        "kl_obs_above_alpha_05_pct": 2.58,
+        # Re-calibrated 2026-07-15 on the SPARSE trunk, after gus-net-gpt2 was
+        # switched from the paper-clean to the sparsity-regularised checkpoint;
+        # file: dataset/thresholds_results/faithfulness/gusnet_gpt2_sparse.json
+        # (5476 sentences). The sparse trunk's null floor is ~2-3x the
+        # paper-clean one (old: high=0.0194, very_high=0.0744), so reusing the
+        # paper-clean values here would under-report the noise floor - the same
+        # class of mismatch as the T1 base-vs-GUS-Net error noted above.
+        "high": 0.0465,        # null p95, alpha=0.05
+        "very_high": 0.2040,   # null p99, alpha=0.01
+        "obs_above_alpha_05_pct": 5.36,
+        "kl_high": 0.0663,         # KL null p95
+        "kl_very_high": 0.2172,    # KL null p99
+        "kl_obs_above_alpha_05_pct": 6.45,
     },
 }
 

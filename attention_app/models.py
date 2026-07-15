@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 import warnings
 import torch
@@ -77,7 +78,10 @@ class ModelManager:
         Returns (tokenizer, encoder_model, mlm_model) for the specified model_name.
         Loads from cache if available, otherwise loads from HuggingFace.
         """
-        if model_name not in cls._ALLOWED_MODELS:
+        # Local directories (e.g. a not-yet-published checkpoint) are trusted:
+        # allow them through so calibration/eval can run on a local folder
+        # before it is uploaded to the Hub.
+        if model_name not in cls._ALLOWED_MODELS and not os.path.isdir(model_name):
             raise ValueError(
                 f"Model '{model_name}' is not in the allowed list. "
                 f"Allowed: {sorted(cls._ALLOWED_MODELS)}"
