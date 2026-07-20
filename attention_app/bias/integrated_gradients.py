@@ -209,11 +209,15 @@ class LRPAnalysisBundle:
     tokens: List[str]
     lrp_vs_ig_spearman: float
     correlations: List[tuple]
-    # Which attribution method actually produced token_attributions:
-    # "AttnLRP" (Achtibat et al. 2024, via lxt), "Chefer-LRP" (Chefer et al.
-    # 2021), or "IG-fallback" when both failed. In the fallback case
-    # lrp_vs_ig_spearman compares IG with IG and is NOT an independent
-    # cross-validation- renderers must surface this.
+    # Which attribution method produced token_attributions, as surfaced by
+    # batch_compute_lrp: "AttnLRP" (Achtibat et al. 2024, via lxt), "Chefer-LRP"
+    # (Chefer et al. 2021), or "unavailable" when no relevance-propagation method
+    # could run for the model. In the "unavailable" case there are no
+    # attributions and the renderer degrades by pointing to the Gradient
+    # Agreement (IG) and Perturbation panels, which already provide an
+    # IG-independent check- it never substitutes a redundant occlusion/IG chart.
+    # (The low-level compute_lrp_attributions may still return an internal
+    # "IG-fallback" label, but batch_compute_lrp never promotes it to a result.)
     method: str = "AttnLRP"
     # Optional alternate-method bundle (e.g. Chefer-LRP when this one is
     # AttnLRP), so the panel can show both ρ(method, IG) and switch charts
@@ -1204,17 +1208,35 @@ def batch_compute_lrp(
         target_model=target_model,
     )
 
+    # Keep only genuine relevance-propagation results (AttnLRP / Chefer-LRP).
+    # compute_lrp_attributions(force="chefer") returns method "IG-fallback" when
+    # Chefer itself fails; that is IG reused, not a genuine second method, so it
+    # is excluded here and handled by the occlusion branch below.
     bundles = []
     if attn is not None:
         bundles.append(_build(attn[0], attn[1], attn[2]))
-    if chef is not None:
+    if chef is not None and chef[2] != "IG-fallback":
         bundles.append(_build(chef[0], chef[1], chef[2]))
 
     if not bundles:
-        d = compute_lrp_attributions(
-            encoder_model, tokenizer, text, is_gpt2, target_model=target_model
+        # No transformer-LRP method (relevance propagation) could run for this
+        # model. Do NOT substitute occlusion or IG here: both are already shown
+        # in the Perturbation & Minimality and Gradient Agreement panels, so
+        # recomputing them would duplicate those sections (and occlusion costs
+        # one forward pass per token). Return an "unavailable" marker; the
+        # renderer degrades by pointing to those panels instead of drawing a
+        # redundant chart or a meaningless IG-vs-IG agreement.
+        toks = tokenizer.convert_ids_to_tokens(
+            tokenizer(text, truncation=True, max_length=128)["input_ids"]
         )
-        return _build(d[0], d[1], d[2])
+        return LRPAnalysisBundle(
+            token_attributions=np.array([]),
+            tokens=toks,
+            lrp_vs_ig_spearman=0.0,
+            correlations=[],
+            method="unavailable",
+            target="gusnet-bias-logits" if target_model is not None else "pooled-norm",
+        )
 
     primary = bundles[0]
     if len(bundles) > 1:

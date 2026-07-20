@@ -2535,14 +2535,9 @@ def main() -> int:
 
     resume = not args.no_resume
     # Encoder-family map: which HF model each short name resolves to.
-    # TEMP (local sparse calibration): the gusnet gpt2 trunk is redirected to
-    # the LOCAL sparse checkpoint so this run calibrates on sparse before it is
-    # published to HF. Revert "gpt2" to "pinthoz/gus-net-gpt2" once the sparse
-    # weights are uploaded.
-    _gpt2_sparse_local = str(ROOT / "attention_app" / "bias" / "models" / "gus-net-gpt2-sparse")
     _ENC = {
         "base":   {"bert": "bert-base-uncased",      "gpt2": "gpt2"},
-        "gusnet": {"bert": "pinthoz/gus-net-bert",   "gpt2": _gpt2_sparse_local},
+        "gusnet": {"bert": "pinthoz/gus-net-bert",   "gpt2": "pinthoz/gus-net-gpt2"},
     }[args.encoders]
     if args.encoders == "gusnet":
         print("Encoder family: GUS-Net fine-tuned trunks "

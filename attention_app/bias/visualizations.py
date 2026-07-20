@@ -2773,8 +2773,9 @@ def create_lrp_comparison_chart(
     ig_attrs: np.ndarray,
     tokens: List[str],
     lrp_vs_ig_rho: float = 0.0,
+    method_label: str = "LRP",
 ) -> go.Figure:
-    """Grouped bar chart: LRP vs IG attribution per token.
+    """Grouped bar chart: second-method vs IG attribution per token.
 
     Parameters
     ----------
@@ -2782,6 +2783,10 @@ def create_lrp_comparison_chart(
     ig_attrs : np.ndarray
     tokens : list[str]
     lrp_vs_ig_rho : float
+    method_label : str
+        Name of the second method (e.g. "AttnLRP", "Chefer", "Occlusion"),
+        used for the trace and title so the chart never mislabels a non-LRP
+        fallback as "LRP".
     """
     n = min(len(lrp_attrs), len(ig_attrs), len(tokens))
     if n == 0:
@@ -2806,7 +2811,7 @@ def create_lrp_comparison_chart(
         go.Bar(
             x=tokens[:n],
             y=l_norm,
-            name="LRP",
+            name=method_label,
             marker_color="#8b5cf6",
             opacity=0.8,
         )
@@ -2823,7 +2828,7 @@ def create_lrp_comparison_chart(
 
     fig.update_layout(
         title=dict(
-            text=f"LRP vs IG Token Attribution<br>"
+            text=f"{method_label} vs IG Token Attribution<br>"
             f"<sub>Spearman ρ = {lrp_vs_ig_rho:.3f} | Normalized to [0,1]</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
@@ -2849,14 +2854,18 @@ def create_cross_method_agreement_chart(
     ig_correlations: list,
     lrp_correlations: List[tuple],
     bar_threshold: float = 2.5,
+    method_label: str = "LRP",
 ) -> go.Figure:
-    """Scatter: IG ρ (x) vs LRP ρ (y) per head, with diagonal = agreement.
+    """Scatter: IG ρ (x) vs second-method ρ (y) per head, diagonal = agreement.
 
     Parameters
     ----------
     ig_correlations : list[IGCorrelationResult]
     lrp_correlations : list of (layer, head, rho)
     bar_threshold : float
+    method_label : str
+        Name of the second method (e.g. "AttnLRP", "Chefer", "Occlusion") for
+        the axis/title/hover labels.
     """
     if not ig_correlations or not lrp_correlations:
         fig = go.Figure()
@@ -2915,8 +2924,8 @@ def create_cross_method_agreement_chart(
                 color=colors, size=7, opacity=0.7, line=dict(width=1, color="#ffffff")
             ),
             text=[
-                f"<b>{l}</b><br>IG ρ: {ig:.3f}<br>LRP ρ: {lrp:.3f}"
-                for l, ig, lrp in zip(labels, ig_rhos, lrp_rhos)
+                f"<b>{lbl}</b><br>IG ρ: {ig:.3f}<br>{method_label} ρ: {lrp:.3f}"
+                for lbl, ig, lrp in zip(labels, ig_rhos, lrp_rhos)
             ],
             hovertemplate="%{text}<extra></extra>",
             showlegend=False,
@@ -2936,7 +2945,7 @@ def create_cross_method_agreement_chart(
 
     fig.update_layout(
         title=dict(
-            text=f"Cross-Method Agreement: IG vs LRP<br><sub>{subtitle}</sub>",
+            text=f"Cross-Method Agreement: IG vs {method_label}<br><sub>{subtitle}</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         xaxis=dict(
@@ -2945,7 +2954,7 @@ def create_cross_method_agreement_chart(
             tickfont=dict(size=10, color="#475569"),
         ),
         yaxis=dict(
-            title="LRP Spearman ρ (vs attention)",
+            title=f"{method_label} Spearman ρ (vs attention)",
             range=[-1.05, 1.05],
             tickfont=dict(size=10, color="#475569"),
         ),

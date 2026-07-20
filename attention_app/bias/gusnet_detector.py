@@ -163,14 +163,14 @@ MODEL_REGISTRY = {
         "display_name": "GUS-Net (BERT)",
         "public": True,
         # The checkpoint published as pinthoz/gus-net-bert IS the
-        # sparsity-regularised training run (the "sparse" variant); the
-        # registry key and display name intentionally omit the training
-        # detail. These thresholds are the per-label F1-optimised values
-        # produced by that run's training script (optimized_thresholds.npy)
-        # - they match "gusnet-bert-sparse" below by construction, not by
-        # accident. If the published checkpoint is ever retrained, refresh
-        # these together.
-        "optimized_thresholds": [0.476, 0.375, 0.3475, 0.3251, 0.3975, 0.342, 0.3309],
+        # sparsity-regularised training run; the registry key and display name
+        # intentionally omit the training detail. Re-trained 2026-07-16 on the
+        # CLEANED corpus (see gus-net-bert-sparse-clean below) - the previous
+        # run's thresholds were [0.476, 0.375, 0.3475, 0.3251, 0.3975, 0.342,
+        # 0.3309]. These are the per-label F1-optimised values produced by that
+        # run (optimized_thresholds.npy). If the published checkpoint is ever
+        # retrained, refresh these together.
+        "optimized_thresholds": [0.4265, 0.4071, 0.3938, 0.3462, 0.3669, 0.3184, 0.3630],
     },
     "gusnet-bert-large": {
         "path": "pinthoz/gus-net-bert-large",
@@ -199,11 +199,7 @@ MODEL_REGISTRY = {
         "optimized_thresholds": None,
     },
     "gusnet-gpt2": {
-        # TEMP: points at the LOCAL sparse checkpoint (per-label thresholds
-        # auto-load from its optimized_thresholds.npy) so the app/calibration
-        # use sparse before it is published. Revert to "pinthoz/gus-net-gpt2"
-        # once the sparse weights are uploaded to the Hub.
-        "path": str(_BIAS_DIR / "gus-net-gpt2-sparse"),
+        "path": "pinthoz/gus-net-gpt2",
         "architecture": "gpt2",
         "num_labels": NUM_LABELS,
         "has_o_label": True,
@@ -212,8 +208,11 @@ MODEL_REGISTRY = {
         "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (GPT-2)",
         "public": True,
-        # Sparse variant's F1-optimised thresholds (matches its .npy).
-        "optimized_thresholds": [0.4745, 0.3548, 0.2878, 0.2984, 0.3618, 0.3206, 0.3250],
+        # Sparsity-regularised run, re-trained 2026-07-16 on the CLEANED corpus
+        # (see gus-net-gpt2-sparse-clean below). The previous published run was
+        # trained on the RAW corpus and predicted bias on sentence-final
+        # punctuation in 38% of sentences; this one does not.
+        "optimized_thresholds": [0.4250, 0.3977, 0.3500, 0.3617, 0.3913, 0.3278, 0.4174],
     },
     "gusnet-gpt2-medium": {
         "path": "pinthoz/gus-net-gpt2-medium",
@@ -386,7 +385,16 @@ class GusNetDetector:
                     # GPT-2 has no sep/cls/mask tokens and transformers logs
                     # this on every internal special-token access otherwise.
                     tokenizer.verbose = False
-                    model = GPT2ForTokenClassification.from_pretrained(model_path)
+                    # attn_implementation="eager" is REQUIRED: the transformers
+                    # default (SDPA) uses a fused kernel that never materialises
+                    # the attention weights, so output_attentions=True returns a
+                    # tuple of None on GPT-2. That breaks the Chefer-LRP
+                    # cross-check (no attention gradients -> IG fallback) and any
+                    # attention extraction on the decoder. Eager materialises the
+                    # softmax weights in the graph, so gradients flow through them.
+                    model = GPT2ForTokenClassification.from_pretrained(
+                        model_path, attn_implementation="eager"
+                    )
                 else:
                     # BERT: prefer the tokenizer PUBLISHED WITH the
                     # fine-tuned checkpoint - if a future checkpoint ever
@@ -403,8 +411,13 @@ class GusNetDetector:
                             "[GUS-Net] %s ships no tokenizer - falling back to %s",
                             model_path, tok_name)
                         tokenizer = BertTokenizerFast.from_pretrained(tok_name)
+                    # eager attention for the same reason as GPT-2 above: BERT
+                    # with SDPA falls back to eager per-call when attentions are
+                    # requested (with a warning), so loading eager up front keeps
+                    # the attention weights differentiable and silences it.
                     model = BertForTokenClassification.from_pretrained(
-                        model_path, num_labels=cfg["num_labels"]
+                        model_path, num_labels=cfg["num_labels"],
+                        attn_implementation="eager",
                     )
 
                 # Guard against the silent-misalignment failure mode: every
