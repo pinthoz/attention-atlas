@@ -43,6 +43,11 @@ TN = "font-size:10.5px;color:#64748b;font-style:italic;line-height:1.4;"
 #   requires_detections() the panel cannot be computed because it has no input.
 #                        Not an empty result - a dependency, named as such.
 
+# Marker carried by both empty states. `_wrap_card` looks for it and drops the
+# export controls: offering a CSV/PNG download of a panel that has nothing in
+# it is the same category of mixed signal the empty states exist to remove.
+EMPTY_STATE_MARKER = 'data-empty-state="1"'
+
 _EMPTY_WRAP = (
     "padding:16px 18px;border:1px dashed #cbd5e1;border-radius:8px;"
     "background:#f8fafc;line-height:1.55;"
@@ -58,16 +63,20 @@ def no_detections_html(thresholds: dict | None = None, note: str = "") -> str:
     definition, so that a sentence carrying bias the detector does not model
     (implicature, role assignment, presupposition) is not read as 'clean'.
     """
+    # Same hues the token strip and span table use for each category, so the
+    # thresholds read as the categories the analyst already recognises.
+    _CAT_COLOURS = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
     thr = ""
     if thresholds:
         parts = " &middot; ".join(
-            f"{k} {v:.2f}" for k, v in thresholds.items() if isinstance(v, (int, float))
+            f"<b style='color:{_CAT_COLOURS.get(k, '#64748b')};'>{k}</b> {v:.2f}"
+            for k, v in thresholds.items() if isinstance(v, (int, float))
         )
         if parts:
             thr = f" at the current thresholds ({parts})"
     extra = f"<span style='{_EMPTY_BODY}margin-top:6px;'>{note}</span>" if note else ""
     return (
-        f"<div style='{_EMPTY_WRAP}'>"
+        f"<div {EMPTY_STATE_MARKER} style='{_EMPTY_WRAP}'>"
         f"<span style='{_EMPTY_TITLE}'>No tokens matched the GUS-Net categories{thr}.</span>"
         f"<span style='{_EMPTY_BODY}'>This is a result, not an error. The detector flags "
         f"<b>explicit generalisations about a group</b>; bias carried by implicature, role "
@@ -80,7 +89,7 @@ def no_detections_html(thresholds: dict | None = None, note: str = "") -> str:
 def requires_detections_html(what: str = "This view") -> str:
     """Empty state for a DEPENDENT panel: no input to compute from."""
     return (
-        f"<div style='{_EMPTY_WRAP}'>"
+        f"<div {EMPTY_STATE_MARKER} style='{_EMPTY_WRAP}'>"
         f"<span style='{_EMPTY_TITLE}'>Requires at least one detected bias token.</span>"
         f"<span style='{_EMPTY_BODY}'>{what} is computed against the detected tokens, and the "
         f"detector flagged none in this prompt, so there is nothing to compute. This is a "

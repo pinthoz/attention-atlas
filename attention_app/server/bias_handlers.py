@@ -165,8 +165,13 @@ def _compute_head_pvalues(res):
         return None
     attn = res.get("attention_metrics", [])
     labels = res.get("token_labels", [])
-    if not attn or not labels:
+    if not labels:
         return None
+    if not attn:
+        # The analysis DID run; there are simply no detected tokens, so BAR was
+        # never computed for any head. Returning None here would render "Run
+        # Analyze Bias", pointing at a button that has already been pressed.
+        return {"status": "no_biased"}
 
     specials = ("[CLS]", "[SEP]", "[PAD]")
     # Exact biased set that produced the observed BAR, so observed and null
@@ -2991,6 +2996,14 @@ def bias_server_handlers(input, output, session):
                 )
 
             # BAR
+            # With nothing detected, these three metrics have no input rather
+            # than a pending run, so "run X first" would send the analyst to a
+            # button that cannot change the outcome.
+            _no_tokens = bool(res_data) and not any(
+                lbl.get("is_biased") for lbl in (res_data.get("token_labels") or [])
+            )
+            _pending = lambda hint: "no detected tokens" if _no_tokens else hint
+
             attn = res_data.get("attention_metrics", [])
             if attn:
                 bars = [m.bias_attention_ratio for m in attn]
@@ -2999,7 +3012,7 @@ def bias_server_handlers(input, output, session):
                 bar_color = "#dc2626" if mean_bar > 2.5 else ("#ea580c" if mean_bar > 2.0 else "#22c55e")
                 bar_val, bar_sub = f"{mean_bar:.3f}", f"{n_spec}/{len(attn)} heads specialized"
             else:
-                bar_val, bar_color, bar_sub = "-", "#94a3b8", "run Analyze Bias first"
+                bar_val, bar_color, bar_sub = "-", "#94a3b8", _pending("run Analyze Bias first")
 
             # IG ρ - median of |ρ| across heads. A signed mean lets positive
             # and negative heads cancel (heads have different roles), and a
@@ -3019,7 +3032,7 @@ def bias_server_handlers(input, output, session):
                 else:
                     rho_val, rho_color, rho_sub = "-", "#94a3b8", "no IG data"
             else:
-                rho_val, rho_color, rho_sub = "-", "#94a3b8", "run IG analysis first"
+                rho_val, rho_color, rho_sub = "-", "#94a3b8", _pending("run IG analysis first")
 
             # Ablation Δ - coloured against the calibrated α=0.05 impact
             # threshold for the active model (THRESHOLDS_CALIBRATION.md §13)
@@ -3031,7 +3044,7 @@ def bias_server_handlers(input, output, session):
                 abl_color = "#ff5ca9" if max_delta >= _impact_th["high"] else "#64748b"
                 abl_val, abl_sub = f"{max_delta:.3f}", f"top: L{top.layer}H{top.head}"
             else:
-                abl_val, abl_color, abl_sub = "-", "#94a3b8", "run ablation first"
+                abl_val, abl_color, abl_sub = "-", "#94a3b8", _pending("run ablation first")
 
             _tt_bar = (
                 f"<span style='{_TH_lc}'>What it measures</span>"

@@ -292,6 +292,27 @@ def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header
     if style:
         base_style += f" {style}"
 
+    # An empty state carries no data, so the card's chrome must not promise
+    # any. The export buttons would download nothing, and the subtitle
+    # describes content that is not there - often including an interaction
+    # ("hover a token for details", "click a layer to drill down") that the
+    # analyst cannot perform. Both are dropped, leaving the title and the
+    # explanation. Detected centrally rather than at each call site: the marker
+    # is emitted by the helpers in bias_styles, so every card inherits this
+    # without the dozens of renderers having to opt in.
+    _is_empty_state = False
+    if controls or manual_header or subtitle:
+        from .bias_styles import EMPTY_STATE_MARKER
+        try:
+            _is_empty_state = EMPTY_STATE_MARKER in str(content)
+        except Exception:
+            _is_empty_state = False
+    if _is_empty_state:
+        controls = None
+        subtitle = None
+        if manual_header:
+            manual_header = (manual_header[0], "")
+
     header = None
     if manual_header:
         _info_icon = None
@@ -317,7 +338,8 @@ def _wrap_card(content, title=None, subtitle=None, help_text=None, manual_header
                 {"style": "display:flex;align-items:center;gap:8px;flex-wrap:wrap;"},
                 *_title_row_children,
             ),
-            ui.p(ui.HTML(manual_header[1]), style="font-size:11px;color:#6b7280;margin:4px 0 0;"),
+            ui.p(ui.HTML(manual_header[1]), style="font-size:11px;color:#6b7280;margin:4px 0 0;")
+            if manual_header[1] else None,
         )
     elif title:
         header = viz_header(title, subtitle, help_text, controls=controls)
