@@ -125,27 +125,29 @@ IMPACT_THRESHOLDS = {
     # was the T1 mismatch (base GPT-2 high=0.000965 is ~20x too low for the
     # GUS-Net GPT-2 trunk, whose null p95 is 0.0194).
     "gusnet-bert": {
-        "high": 0.0156,        # null p95, alpha=0.05
-        "very_high": 0.0339,   # null p99, alpha=0.01
-        "obs_above_alpha_05_pct": 13.83,
-        "kl_high": 0.0190,         # KL null p95
-        "kl_very_high": 0.0440,    # KL null p99
-        "kl_obs_above_alpha_05_pct": 13.39,
+        # Re-calibrated 2026-07-20 on the sparse-clean trunk (5439 sentences);
+        # file: dataset/thresholds_results/faithfulness/gusnet_bert_sparse-clean.json
+        "high": 0.0149,        # null p95, alpha=0.05
+        "very_high": 0.0261,   # null p99, alpha=0.01
+        "obs_above_alpha_05_pct": 11.04,
+        "kl_high": 0.0195,         # KL null p95
+        "kl_very_high": 0.0341,    # KL null p99
+        "kl_obs_above_alpha_05_pct": 9.90,
     },
     "gusnet-gpt2": {
-        # Re-calibrated 2026-07-15 on the SPARSE trunk, after gus-net-gpt2 was
-        # switched from the paper-clean to the sparsity-regularised checkpoint;
-        # file: dataset/thresholds_results/faithfulness/gusnet_gpt2_sparse.json
-        # (5476 sentences). The sparse trunk's null floor is ~2-3x the
-        # paper-clean one (old: high=0.0194, very_high=0.0744), so reusing the
-        # paper-clean values here would under-report the noise floor - the same
-        # class of mismatch as the T1 base-vs-GUS-Net error noted above.
-        "high": 0.0465,        # null p95, alpha=0.05
-        "very_high": 0.2040,   # null p99, alpha=0.01
-        "obs_above_alpha_05_pct": 5.36,
-        "kl_high": 0.0663,         # KL null p95
-        "kl_very_high": 0.2172,    # KL null p99
-        "kl_obs_above_alpha_05_pct": 6.45,
+        # Re-calibrated 2026-07-21 on the sparse-CLEAN trunk (5444 sentences);
+        # file: dataset/thresholds_results/faithfulness/gusnet_gpt2_sparse-clean.json
+        # The floor moved a lot across retrains of this same repo id: the
+        # paper-clean trunk gave high=0.0194 and the raw-corpus sparse trunk
+        # 0.0465, against 0.0033 here. The representation_impact floor is a
+        # property of the specific weights, not of the architecture, so it has
+        # to be re-derived whenever pinthoz/gus-net-gpt2 is republished.
+        "high": 0.0033,        # null p95, alpha=0.05
+        "very_high": 0.0165,   # null p99, alpha=0.01
+        "obs_above_alpha_05_pct": 7.26,
+        "kl_high": 0.0682,         # KL null p95
+        "kl_very_high": 0.1824,    # KL null p99
+        "kl_obs_above_alpha_05_pct": 8.59,
     },
 }
 
@@ -1789,6 +1791,27 @@ def register_xai_handlers(
             ig_attrs = ig_bundle.token_attributions if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else None
             ig_corrs = ig_bundle.correlations if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else []
 
+            # No relevance-propagation method (AttnLRP / Chefer-LRP) could run
+            # for this model. Its role - an attribution independent of IG - is
+            # already served by the Gradient Agreement (IG) and Perturbation &
+            # Minimality panels above, so degrade by REFERENCE rather than
+            # duplicating them with a redundant occlusion/IG chart.
+            if getattr(bundle, "method", "") == "unavailable":
+                return ui.HTML(
+                    '<div style="padding:12px 16px;'
+                    'background:rgba(100,116,139,0.08);border:1px solid rgba(100,116,139,0.30);'
+                    'border-left:4px solid #64748b;border-radius:8px;font-size:12px;'
+                    'color:#475569;line-height:1.55;">'
+                    '<b>Transformer-LRP is not available for this model.</b> '
+                    'Layer-wise relevance propagation could not run here, so this '
+                    'cross-check is skipped rather than filled with a duplicate. Its '
+                    'purpose - an attribution method independent of Integrated '
+                    'Gradients - is already covered by the <b>Gradient Agreement</b> '
+                    'and <b>Perturbation &amp; Minimality</b> panels above; rely on '
+                    'those for convergent evidence.'
+                    '</div>'
+                )
+
             def _rho_card(value: float, label: str, color: str, mag_label: str) -> str:
                 return (
                     f'<div style="flex:1;min-width:120px;padding:12px;'
@@ -1803,7 +1826,7 @@ def register_xai_handlers(
                     f'{label}</div></div>'
                 )
 
-            _disp_names = {"AttnLRP": "AttnLRP", "Chefer-LRP": "Chefer", "IG-fallback": "IG (fallback)"}
+            _disp_names = {"AttnLRP": "AttnLRP", "Chefer-LRP": "Chefer"}
 
             # When both LRP variants were computed, offer a selector that switches
             # which one drives the cards and charts, and show both ρ(method, IG)
@@ -1854,7 +1877,6 @@ def register_xai_handlers(
                 _method_label = {
                     "AttnLRP": "AttnLRP &middot; Achtibat et al. 2024",
                     "Chefer-LRP": "Chefer-LRP &middot; Chefer et al. 2021",
-                    "IG-fallback": "Integrated Gradients fallback",
                 }.get(displayed.method, displayed.method)
                 _header_block = (
                     f'<div style="display:inline-block;margin-top:4px;padding:3px 10px;'
@@ -1874,22 +1896,10 @@ def register_xai_handlers(
 
             # Downstream cards/charts use the SELECTED bundle.
             bundle = displayed
-
-            # Transformer-LRP can still fail and fall back to IG - in that case
-            # ρ(LRP, IG) compares IG with itself and proves nothing. Say so.
-            if getattr(bundle, "method", "Chefer-LRP") == "IG-fallback":
-                summary_html += (
-                    '<div style="margin-top:12px;padding:10px 14px;'
-                    'background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.40);'
-                    'border-left:4px solid #f59e0b;border-radius:8px;font-size:11.5px;'
-                    'color:#78350f;line-height:1.5;">'
-                    '<b>Transformer-LRP could not be computed for this model.</b> The '
-                    'attributions shown are an Integrated Gradients fallback, so the '
-                    '&rho;(LRP, IG) agreement above is NOT an independent '
-                    'cross-validation. Rely on the Perturbation panel for convergent '
-                    'evidence instead.'
-                    '</div>'
-                )
+            # (The "no genuine LRP" case is handled by an early return above,
+            # which points to the IG and Perturbation panels instead of drawing
+            # a redundant chart, so every bundle reaching here is a real
+            # relevance-propagation result.)
 
             sections = [ui.HTML(summary_html)]
 
@@ -1897,7 +1907,7 @@ def register_xai_handlers(
             if ig_attrs is not None:
                 fig1 = create_lrp_comparison_chart(
                     bundle.token_attributions, ig_attrs, bundle.tokens,
-                    lrp_vs_ig_rho=rho_ig,
+                    lrp_vs_ig_rho=rho_ig, method_label=_dn,
                 )
                 cid1 = f"lrp-comparison-container{container_suffix}"
                 sections.append(ui.HTML(
@@ -1913,6 +1923,7 @@ def register_xai_handlers(
             if ig_corrs and bundle.correlations:
                 fig2 = create_cross_method_agreement_chart(
                     ig_corrs, bundle.correlations, bar_threshold=bar_threshold,
+                    method_label=_dn,
                 )
                 cid2 = f"lrp-agreement-container{container_suffix}"
                 _agree_csv_id = "export_cross_method_csv_B" if container_suffix == "_B" else "export_cross_method_csv"
@@ -1941,7 +1952,7 @@ def register_xai_handlers(
             f"<span>AttnLRP: conservation-preserving layer-wise relevance with transformer-specific rules (via <i>lxt</i>)</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>●</span>"
             f"<span>Chefer: head-averaged (attention &odot; attention-gradient)&#8314; rolled through layers, when <i>lxt</i> is unavailable</span></div>"
-            f"<div style='{_TN}; margin-bottom:4px;'>A genuine second method (relevance redistribution), independent of IG. Final fallback: Integrated Gradients if both fail.</div>"
+            f"<div style='{_TN}; margin-bottom:4px;'>A genuine second method (relevance redistribution), independent of IG. If no LRP variant runs for a model, this cross-check is skipped and the IG and Perturbation panels above carry the convergent evidence instead.</div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Metrics</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
