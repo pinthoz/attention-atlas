@@ -1120,6 +1120,15 @@ def create_bias_sidebar():
                         console.warn('[BiasUI] textarea not found:', data.id);
                     }
                 });
+                // Marks the panels that cannot be computed without detected
+                // bias tokens, so the analyst sees the dependency on the
+                // collapsed header rather than discovering it after opening.
+                Shiny.addCustomMessageHandler('bias_requires_detections', function(data) {
+                    ['attention_bias', 'ablation'].forEach(function(panel) {
+                        var el = document.getElementById('badge-requires-' + panel);
+                        if (el) el.style.display = data.show ? '' : 'none';
+                    });
+                });
                 Shiny.addCustomMessageHandler('bias_set_slider', function(data) {
                     var el = document.getElementById(data.id);
                     if (el) {
@@ -1514,6 +1523,15 @@ def create_bias_content():
                 color: #06b6d4 !important;
                 border: 1px solid rgba(6, 182, 212, 0.3) !important;
             }
+            /* Shown only when the detector flagged nothing, so that a panel
+               which cannot be computed says so on its header instead of
+               opening onto an empty grid. Deliberately muted: it reports a
+               dependency, not an error. */
+            .accordion-panel-badge.requires-detections {
+                background: rgba(100, 116, 139, 0.12) !important;
+                color: #64748b !important;
+                border: 1px dashed rgba(100, 116, 139, 0.45) !important;
+            }
             .accordion-button:not(.collapsed) .accordion-panel-badge {
                 background: rgba(255, 255, 255, 0.2) !important;
                 color: white !important;
@@ -1593,6 +1611,12 @@ def create_bias_accordion():
                 ui.span("Attention × Bias Correlation", class_="panel-title-full"),
                 ui.span("Attention × Bias Corr", class_="panel-title-short"),
                 ui.span({"class": "accordion-panel-badge explore"}, "Exploration"),
+                ui.span(
+                    {"class": "accordion-panel-badge requires-detections",
+                     "id": "badge-requires-attention_bias",
+                     "style": "display:none;"},
+                    "requires detections",
+                ),
             ),
             # Formula definition + live significance (alpha) control, in ONE card.
             # The whole card (gradient wrapper, formula and the head-survival
@@ -1619,6 +1643,12 @@ def create_bias_accordion():
             ui.span(
                 "Faithfulness Validation",
                 ui.span({"class": "accordion-panel-badge validation"}, "Validation"),
+                ui.span(
+                    {"class": "accordion-panel-badge requires-detections",
+                     "id": "badge-requires-ablation",
+                     "style": "display:none;"},
+                    "requires detections",
+                ),
             ),
             ui.div(
                 {"style": "padding: 8px 0;"},

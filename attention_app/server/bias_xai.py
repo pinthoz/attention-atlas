@@ -39,6 +39,7 @@ from .bias_styles import (
     TH as _TH, TR as _TR, TD as _TD, TC as _TC, TS as _TS,
     TBG as _TBG, TBR as _TBR, TBA as _TBA, TBB as _TBB, TBP as _TBP,
     TN as _TN,
+    requires_detections_html as _requires_detections,
 )
 from .bias_exports import (
     csv_ablation as _csv_ablation_fn,
@@ -376,6 +377,7 @@ def register_xai_handlers(
     lrp_results, lrp_results_B, lrp_running,
     active_bias_compare_models, active_bias_compare_prompts,
     bias_results_B_rv,
+    bias_results_rv,
     _get_attn_source_mode,
     _get_bias_model_label,
     _resolve_faithfulness_results,
@@ -395,6 +397,16 @@ def register_xai_handlers(
             or perturbation_results.get() or lrp_results.get()
         )
         if not ready:
+            # Every block in this panel renders only once its own analysis
+            # exists, so with nothing computed the panel body is empty and the
+            # accordion looks like it refuses to open. Say why instead: with no
+            # detected tokens there is nothing for any of these methods to
+            # attribute, which is a dependency rather than a failure.
+            res = bias_results_rv.get()
+            if res is not None and not any(
+                lbl.get("is_biased") for lbl in (res.get("token_labels") or [])
+            ):
+                return ui.HTML(_requires_detections("Faithfulness validation"))
             return None
         return _faithfulness_section_note(
             "This section organizes the internal validation evidence for the bias analysis. "
@@ -477,7 +489,8 @@ def register_xai_handlers(
             pass
 
         def _render_ablation_single(results_data, container_suffix=""):
-            if not results_data: return "No data"
+            if not results_data:
+                return _requires_detections("Causal head intervention")
 
             # Pick calibrated thresholds from the attention model that
             # produced THESE deltas. The faithfulness context carries the
@@ -875,7 +888,8 @@ def register_xai_handlers(
         except Exception: alpha = 0.05
 
         def _render_ig_single(bundle, container_suffix="", context_results=None):
-            if not bundle: return "No data"
+            if not bundle:
+                return _requires_detections("Gradient agreement (Integrated Gradients)")
             
             # Unpack bundle
             if isinstance(bundle, IGAnalysisBundle):
@@ -1553,7 +1567,7 @@ def register_xai_handlers(
 
         def _render_perturb_single(bundle, ig_bundle, container_suffix="", context_results=None):
             if not bundle:
-                return "No data"
+                return _requires_detections("Perturbation and minimality")
 
             ig_attrs = ig_bundle.token_attributions if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else None
 
@@ -1786,7 +1800,7 @@ def register_xai_handlers(
 
         def _render_lrp_single(bundle, ig_bundle, container_suffix=""):
             if not bundle:
-                return "No data"
+                return _requires_detections("Cross-validation with LRP")
 
             ig_attrs = ig_bundle.token_attributions if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else None
             ig_corrs = ig_bundle.correlations if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else []

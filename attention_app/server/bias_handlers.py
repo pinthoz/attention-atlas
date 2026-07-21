@@ -26,6 +26,8 @@ from .bias_styles import (
     TH as _TH, TR as _TR, TD as _TD, TC as _TC, TS as _TS,
     TBG as _TBG, TBR as _TBR, TBA as _TBA, TBB as _TBB, TBP as _TBP,
     TN as _TN,
+    no_detections_html as _no_detections,
+    requires_detections_html as _requires_detections,
 )
 from .bias_xai import register_xai_handlers, _get_impact_thresholds, _resolve_bias_target_model
 from .bias_stereoset import register_stereoset_handlers
@@ -474,6 +476,35 @@ def bias_server_handlers(input, output, session):
         _bias_selection_signature.set(new_sig)
         try:
             await session.send_custom_message("bias_clear_token_selection", {})
+        except Exception:
+            pass
+
+    @reactive.effect
+    async def _bias_requires_detections_badge():
+        """Flag the dependent panels on their accordion headers.
+
+        Attention x Bias and Faithfulness are computed *against* the detected
+        tokens, so with none they have no input at all. Saying so on the
+        collapsed header stops the analyst opening a panel and reading the
+        resulting emptiness as a broken view. Before any analysis has run
+        nothing is claimed either way.
+        """
+        def _has_detections(res):
+            if not res:
+                return False
+            if res.get("bias_spans"):
+                return True
+            return any(
+                lbl.get("is_biased") for lbl in (res.get("token_labels") or [])
+            )
+
+        show = bias_results.get() is not None and not (
+            _has_detections(bias_results.get()) or _has_detections(bias_results_B.get())
+        )
+        try:
+            await session.send_custom_message(
+                "bias_requires_detections", {"show": bool(show)}
+            )
         except Exception:
             pass
 
@@ -3410,7 +3441,11 @@ def bias_server_handlers(input, output, session):
         bias_spans = res.get("bias_spans", [])
         
         if not bias_spans:
-            return ui.HTML('<div style="color:#94a3b8;font-size:11px;padding:12px;">No bias detected.</div>')
+            try:
+                _thr = current_thresholds_A.get()
+            except Exception:
+                _thr = None
+            return ui.HTML(_no_detections(_thr))
 
         cat_colors = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
         # Update badge count
@@ -3625,7 +3660,8 @@ def bias_server_handlers(input, output, session):
                 
             token_labels = data.get("token_labels", [])
             biased = [l for l in token_labels if l.get("is_biased") and l["token"] not in ("[CLS]","[SEP]","[PAD]")]
-            if not biased: return '<div style="color:#9ca3af;font-size:12px;padding:12px;">No biased tokens detected.</div>'
+            if not biased:
+                return _no_detections(data.get("effective_thresholds"))
             
             cat_colors = {"GEN": "#f97316", "UNFAIR": "#ef4444", "STEREO": "#9c27b0"}
             items = []
@@ -4154,6 +4190,8 @@ def bias_server_handlers(input, output, session):
 
                 attentions = data["attentions"]
                 biased_indices = [l["index"] for l in data["token_labels"] if l.get("is_biased") and l["token"] not in ("[CLS]","[SEP]","[PAD]")]
+                if not biased_indices:
+                    return _requires_detections("The attention-bias matrix")
                 matrix = analyzer.create_attention_bias_matrix(attentions, biased_indices)
                 metrics = data.get("attention_metrics")
                 try: sl = int(input.bias_attn_layer())
@@ -4310,7 +4348,8 @@ def bias_server_handlers(input, output, session):
 
         def get_viz(data, container_id="bias-propagation-container"):
             p = data["propagation_analysis"]["layer_propagation"]
-            if not p: return "No data."
+            if not p:
+                return _requires_detections("Bias propagation across layers")
             fig = create_bias_propagation_plot(p, selected_layer=l_idx)
             return _deferred_plotly(fig, container_id, height="450px",
                                    click_input="propagation_layer_click")
@@ -4468,7 +4507,8 @@ def bias_server_handlers(input, output, session):
 
         def get_table(data):
             mets = data["attention_metrics"]
-            if not mets: return '<div style="color:#9ca3af;padding:20px;text-align:center;font-size:12px;">No metrics available.</div>'
+            if not mets:
+                return _requires_detections("Most bias-focused heads")
             top = sorted(mets, key=lambda x: x.bias_attention_ratio, reverse=True)[:k]
             any_above = any(m.bias_attention_ratio > bar_threshold for m in top)
 
@@ -4706,6 +4746,7 @@ def bias_server_handlers(input, output, session):
         active_bias_compare_models=active_bias_compare_models,
         active_bias_compare_prompts=active_bias_compare_prompts,
         bias_results_B_rv=bias_results_B,
+        bias_results_rv=bias_results,
         _get_attn_source_mode=_get_attn_source_mode,
         _get_bias_model_label=_get_bias_model_label,
         _resolve_faithfulness_results=_resolve_faithfulness_results,
