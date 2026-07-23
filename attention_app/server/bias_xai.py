@@ -220,18 +220,36 @@ def _render_live_elbow_block(
     slider_k: int,
     global_default: int,   # kept for backward-compat; unused now
     is_gpt2: bool,
+    n_heads: Optional[int] = None,
 ) -> str:
     """Render the per-sentence elbow comparison block shown above the
     ablation chart. Shows two values side-by-side (live elbow / slider K)
     and a one-line interpretation of how the user's slider choice
     compares to the elbow for THIS sentence."""
     if live_elbow is None:
+        # Two different reasons produce no elbow, and they need different
+        # explanations. The elbow is the point where an extra head stops
+        # adding impact, so it is only defined once at least two heads have
+        # been ablated: with Top-K = 1 there is a single row and nothing to
+        # compare against - not a lack of impact.
+        if n_heads is not None and n_heads < 2:
+            body = (
+                'The elbow marks where an extra head stops adding impact, so it '
+                f'needs at least two ablated heads. Top-K is set to <b>{slider_k}</b>, '
+                'so only one head is shown. Raise Top-K to 2 or more to see where '
+                'the cumulative impact levels off.'
+            )
+        else:
+            body = (
+                'The elbow is unavailable because every ablated head changed the '
+                'representation by essentially zero, so there is no impact curve to '
+                'find a plateau on.'
+            )
         return (
             '<div style="margin-bottom:14px;padding:10px 14px;text-align:center;'
             'font-size:11px;color:#94a3b8;line-height:1.5;border:1px dashed #e2e8f0;'
             'border-radius:8px;">'
-            '<b>*</b>&nbsp;Live elbow unavailable for this sentence '
-            '(no ablation impact accumulated).'
+            f'<b>*</b>&nbsp;{body}'
             '</div>'
         )
 
@@ -602,6 +620,7 @@ def register_xai_handlers(
             global_default = 3 if is_gpt2 else 5
             elbow_block_html = _render_live_elbow_block(
                 live_elbow, slider_k, global_default, is_gpt2,
+                n_heads=len(results_data) if results_data else 0,
             )
             # When a per-category ranking is active, say so explicitly: the
             # BAR column below is then BAR_C, not the combined value.
