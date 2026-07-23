@@ -45,8 +45,6 @@ from shiny import reactive, render, ui
 
 from .interaction_log import read_participant as _read_participant
 from .interaction_log import study_mode as _study_mode
-from .interaction_log import upload_in_background as _upload_in_background
-from .interaction_log import hub_upload_configured as _hub_upload_configured
 
 
 _logger = logging.getLogger(__name__)
@@ -1932,13 +1930,6 @@ def notebook_server_handlers(input, output, session, *,
                 return
             target = _NOTEBOOK_PATH
         _save_entries(current, target)
-        # The Notebook is the study's primary coded artefact. On a hosted
-        # Space the disk is ephemeral, so push a durable copy to the private
-        # dataset on every save (a Space restart between save and session-end
-        # would otherwise lose it). Off when the Hub upload is not configured.
-        pid = _read_participant(session)
-        if pid and _hub_upload_configured():
-            _upload_in_background(target, "notebooks", pid)
 
     def _capture() -> Dict[str, Any]:
         return _capture_context(

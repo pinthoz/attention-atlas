@@ -28,20 +28,14 @@ Two deployments, two mechanisms:
 The URL is read reactively, so the participant is known slightly after the
 session opens; the log file is renamed once it resolves.
 
-Persistence
------------
-A Space has an ephemeral filesystem: anything written to disk is lost when
-the Space restarts or rebuilds. Set ``ATLAS_LOG_HF_REPO`` (a **private**
-dataset repo id) plus a write-scoped ``HF_TOKEN`` secret and each session
-log is uploaded there, which is also what keeps the study data restricted
-to the team. Without those variables the log stays on local disk only.
+The log is a plain JSON file on local disk, one per session, as the study
+protocol asks. Run each session where that disk persists (localhost, or a
+Space with persistent storage), and collect the files afterwards.
 
 Environment
 -----------
 ``ATLAS_INTERACTION_LOG=0``   disable logging entirely
 ``ATLAS_PARTICIPANT_ID``      participant code (localhost)
-``ATLAS_LOG_HF_REPO``         private HF dataset repo id for upload
-``HF_TOKEN``                  write token used for that upload
 """
 
 from __future__ import annotations
@@ -50,7 +44,6 @@ import json
 import logging
 import os
 import re
-import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -136,77 +129,12 @@ def read_participant(session) -> Optional[str]:
     return pid or None
 
 
-def hub_upload_configured() -> bool:
-    """Whether a private HF dataset repo + token are set for durable copies."""
-    return bool((os.environ.get("ATLAS_LOG_HF_REPO") or "").strip()
-                and (os.environ.get("HF_TOKEN") or "").strip())
-
-
-def upload_study_file(path: Path, subdir: str, participant: Optional[str]) -> None:
-    """Copy a study artefact to the private HF dataset repo, if configured.
-
-    A Space's disk does not survive a restart, so for hosted sessions this is
-    the only durable copy. Used for both the interaction log and the Auditor
-    Notebook (the study's primary coded artefact). Failures are logged and
-    swallowed: losing an upload must never interrupt a running session.
-
-    ``subdir`` groups the artefact type (``interaction_logs`` /
-    ``notebooks``); the per-participant folder keeps a participant's files
-    together and out of the next participant's view.
-    """
-    repo = (os.environ.get("ATLAS_LOG_HF_REPO") or "").strip()
-    token = (os.environ.get("HF_TOKEN") or "").strip()
-    if not repo or not token:
-        return
-    try:
-        path = Path(path)
-    except TypeError:
-        return
-    if not path.is_file():
-        return
-    try:
-        from huggingface_hub import HfApi
-
-        who = _safe_slug(participant) if participant else "unassigned"
-        HfApi().upload_file(
-            path_or_fileobj=str(path),
-            path_in_repo=f"{subdir}/{who}/{path.name}",
-            repo_id=repo,
-            repo_type="dataset",
-            token=token,
-        )
-        _logger.info("Uploaded %s to %s", subdir, repo)
-    except Exception:
-        _logger.exception("Could not upload %s to %s", subdir, repo)
-
-
-def upload_in_background(path: Path, subdir: str, participant: Optional[str]) -> None:
-    """Fire-and-forget upload, so a network round-trip never blocks a session."""
-    if not hub_upload_configured():
-        return
-    threading.Thread(
-        target=upload_study_file, args=(path, subdir, participant), daemon=True
-    ).start()
-
-
-def _upload_to_hub(path: Path, participant: Optional[str]) -> None:
-    """Back-compat shim for the interaction log's own uploads."""
-    upload_study_file(path, "interaction_logs", participant)
-
-
 class _SessionLog:
     """Append-only event log for one Shiny session, persisted as JSON."""
-
-    # A hosted Space has an ephemeral filesystem and can be restarted at any
-    # time, so waiting for the session to end before uploading risks losing
-    # a whole participant's log - which cannot be re-collected. Push a copy
-    # every few events as well.
-    _UPLOAD_EVERY = 10
 
     def __init__(self, session_id: str, participant: Optional[str]) -> None:
         self._events: List[Dict[str, Any]] = []
         self._seq = 0
-        self._uploaded_at_seq = 0
         self._t0 = time.monotonic()
         self.started_at = datetime.now(timezone.utc)
         self.participant = participant
@@ -248,19 +176,8 @@ class _SessionLog:
                 "detail": detail or {},
             })
             self._flush()
-            if self._seq - self._uploaded_at_seq >= self._UPLOAD_EVERY:
-                self._uploaded_at_seq = self._seq
-                self._upload_in_background()
         except Exception:
             _logger.exception("Interaction log: could not record event %s", event)
-
-    def _upload_in_background(self) -> None:
-        """Push the log to the Hub without blocking the session.
-
-        The upload is a network round-trip; running it inline would stall
-        the participant's interaction while they are being timed.
-        """
-        upload_in_background(self.path, "interaction_logs", self.participant)
 
     def _flush(self) -> None:
         payload = {
@@ -283,9 +200,6 @@ class _SessionLog:
 
     def finish(self) -> None:
         self.record("session_end", {})
-        # Final synchronous copy: this runs in the session-end hook, so the
-        # daemon thread used mid-session might not outlive the process.
-        upload_study_file(self.path, "interaction_logs", self.participant)
 
 
 def register_interaction_logging(input, session) -> Optional[_SessionLog]:
@@ -419,7 +333,4 @@ def register_interaction_logging(input, session) -> Optional[_SessionLog]:
     return log
 
 
-__all__ = [
-    "register_interaction_logging", "read_participant", "study_mode",
-    "upload_in_background", "upload_study_file", "hub_upload_configured",
-]
+__all__ = ["register_interaction_logging", "read_participant", "study_mode"]

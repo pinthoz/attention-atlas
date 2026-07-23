@@ -440,18 +440,9 @@ def register_xai_handlers(
         except Exception:
             return None
 
-    def _selected_tokens(container_suffix: str = "") -> list:
-        """Token indices selected in the bias section, for this side.
-
-        A and B keep independent selections, so the suffix that already
-        identifies the rendered side picks the input to read. Returns an
-        empty list before the first click, when Shiny raises rather than
-        returning a value.
-        """
-        is_B = container_suffix == "_B"
+    def _read_token_sel(input_id: str) -> list:
         try:
-            raw = (input.bias_selected_tokens_B() if is_B
-                   else input.bias_selected_tokens_A())
+            raw = getattr(input, input_id)()
         except Exception:
             return []
         if raw is None or raw == "":
@@ -467,6 +458,37 @@ def register_xai_handlers(
             if idx >= 0:
                 out.append(idx)
         return out
+
+    def _selected_tokens(container_suffix: str = "") -> list:
+        """Token indices selected in the bias section, for this side.
+
+        A and B keep independent selections, so the suffix that already
+        identifies the rendered side picks the input to read.
+
+        Exception: source-compare shows ONE prompt with two attention
+        sources (Base Encoder vs GUS-Net), so both columns share token
+        indices, but a click only marks the clicked side and - unlike
+        compare-models, which mirrors A->B in JS - it is not propagated.
+        In that mode the two columns' selections are merged, so selecting a
+        token highlights both. Compare-prompts is left independent because
+        its two prompts do not share indices.
+        """
+        is_B = container_suffix == "_B"
+        own = _read_token_sel(
+            "bias_selected_tokens_B" if is_B else "bias_selected_tokens_A")
+        try:
+            source_compare = (
+                not active_bias_compare_models.get()
+                and not active_bias_compare_prompts.get()
+                and _get_attn_source_mode("bias_attn_source") == "compare"
+            )
+        except Exception:
+            source_compare = False
+        if source_compare:
+            other = _read_token_sel(
+                "bias_selected_tokens_A" if is_B else "bias_selected_tokens_B")
+            return list(dict.fromkeys(own + other))
+        return own
 
     # ── Gated panel copy ─────────────────────────────────────────────────
     # The Faithfulness Validation intro note and per-method subsection

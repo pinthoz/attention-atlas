@@ -2622,6 +2622,11 @@ def create_topk_overlap_chart(
 # ── Perturbation Visualizations ───────────────────────────────────────────
 
 
+def _clean_tok(token: str) -> str:
+    """Strip tokenizer artefacts for display (GPT-2 ``Ġ``, BERT ``##``)."""
+    return (token or "").replace("Ġ", "").replace("##", "")
+
+
 def _selected_index_set(selected_token_idx) -> set:
     """Normalise a token selection to a set of indices.
 
@@ -2747,7 +2752,7 @@ def create_perturbation_comparison_chart(
         return fig
 
     perturb_imp = [r.importance for r in perturb_bundle.token_results]
-    tok_labels = [r.token for r in perturb_bundle.token_results]
+    tok_labels = [_clean_tok(r.token) for r in perturb_bundle.token_results]
     n = min(len(perturb_imp), len(ig_attrs), len(tok_labels))
 
     # Normalize both to [0, 1] for comparison
@@ -2941,11 +2946,12 @@ def create_lrp_comparison_chart(
     # position is its token index.
     bar_indices = list(range(n))
     selected = _selected_index_set(selected_token_idx)
+    disp_tokens = [_clean_tok(t) for t in tokens[:n]]
 
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
-            x=tokens[:n],
+            x=disp_tokens,
             y=l_norm,
             name=method_label,
             marker=_selection_bar_marker("#8b5cf6", bar_indices, selected),
@@ -2953,7 +2959,7 @@ def create_lrp_comparison_chart(
     )
     fig.add_trace(
         go.Bar(
-            x=tokens[:n],
+            x=disp_tokens,
             y=g_norm,
             name="Integrated Gradients",
             marker=_selection_bar_marker("#3b82f6", bar_indices, selected),
