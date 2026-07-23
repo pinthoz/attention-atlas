@@ -30,3 +30,7 @@ pytest>=9.0.0
 
 # API & Datasets
 datasets>=2.14.0
+# Used by the user-study interaction log to upload each session to a private
+# dataset repo. Arrives transitively via transformers/datasets, but the log
+# imports it by name, so declare it.
+huggingface_hub>=0.20.0
