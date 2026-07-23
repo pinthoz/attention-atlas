@@ -78,6 +78,7 @@ from .renderers import (
 )
 from .bias_handlers import bias_server_handlers
 from .notebook_handlers import notebook_server_handlers
+from .interaction_log import register_interaction_logging
 from .export_handlers import register_export_handlers
 from .isa_handlers import register_isa_handlers
 from ..ui.components import viz_header
@@ -126,6 +127,10 @@ def server(input, output, session):
         cached_result_B=cached_result_B,
         bias_state=bias_state,
     )
+    # User-study interaction log (RQ4): records panel opens, calibration
+    # control use, view changes and Notebook entries to one JSON per
+    # session. Disable with ATLAS_INTERACTION_LOG=0.
+    register_interaction_logging(input, session)
 
     # Inject JavaScript for scroll position preservation
     scroll_preservation_js = """

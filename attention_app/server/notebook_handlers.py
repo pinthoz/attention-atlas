@@ -43,13 +43,37 @@ from typing import Any, Dict, List, Optional
 
 from shiny import reactive, render, ui
 
+from .interaction_log import read_participant as _read_participant
+from .interaction_log import study_mode as _study_mode
+from .interaction_log import upload_in_background as _upload_in_background
+from .interaction_log import hub_upload_configured as _hub_upload_configured
+
 
 _logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Persistence helpers
 # ---------------------------------------------------------------------------
-_NOTEBOOK_PATH = Path("downloads") / "sessions" / "auditor_notebook.json"
+def _notebook_path(participant: Optional[str] = None) -> Path:
+    """Where the Auditor Notebook is persisted.
+
+    During a user-study session the file is scoped to the participant.
+    Without this, every participant would open the drawer onto the previous
+    participant's entries: a confidentiality breach, and worse, a priming
+    effect on the study's primary coded artefact. Outside the study the
+    historical shared path is kept, so normal use is unaffected.
+    """
+    base = Path("downloads") / "sessions"
+    if participant is None:
+        participant = os.environ.get("ATLAS_PARTICIPANT_ID") or ""
+    participant = str(participant).strip()
+    if participant:
+        slug = re.sub(r"[^A-Za-z0-9_.-]", "-", participant)[:60]
+        return base / "participants" / f"auditor_notebook_{slug}.json"
+    return base / "auditor_notebook.json"
+
+
+_NOTEBOOK_PATH = _notebook_path()
 
 # Three free-text fields plus an optional title.
 _REQUIRED_FIELDS = ("hypothesis", "uncertainty", "next_steps")
@@ -622,10 +646,11 @@ def _disconfirming_keys(ctx: Dict[str, Any]) -> set:
     return flagged
 
 
-def _load_entries() -> List[Dict[str, Any]]:
+def _load_entries(path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    target = path or _NOTEBOOK_PATH
     try:
-        if _NOTEBOOK_PATH.is_file():
-            with _NOTEBOOK_PATH.open("r", encoding="utf-8") as f:
+        if target.is_file():
+            with target.open("r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list):
                 return [e for e in data if isinstance(e, dict)]
@@ -634,17 +659,18 @@ def _load_entries() -> List[Dict[str, Any]]:
     return []
 
 
-def _save_entries(entries: List[Dict[str, Any]]) -> None:
+def _save_entries(entries: List[Dict[str, Any]], path: Optional[Path] = None) -> None:
+    target = path or _NOTEBOOK_PATH
     try:
-        _NOTEBOOK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        target.parent.mkdir(parents=True, exist_ok=True)
         # Atomic write: dump to a temp file in the same directory, then
         # os.replace() it over the target. A crash mid-write would otherwise
         # leave a truncated JSON and _load_entries would silently return []
         # (total loss of the audit trail).
-        tmp_path = _NOTEBOOK_PATH.with_suffix(".json.tmp")
+        tmp_path = target.with_suffix(".json.tmp")
         with tmp_path.open("w", encoding="utf-8") as f:
             json.dump(entries, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, _NOTEBOOK_PATH)
+        os.replace(tmp_path, target)
     except Exception:
         _logger.exception("Could not save Auditor Notebook entries to disk")
 
@@ -1858,8 +1884,61 @@ def notebook_server_handlers(input, output, session, *,
         Used to summarise bias metrics in the captured context.
     """
 
-    entries = reactive.value(_load_entries())
+    # In study mode the notebook must start empty and belong to one
+    # participant: a hosted app serves every participant from the same
+    # process, so restoring the shared file would show the previous
+    # analyst's conclusions and prime the study's primary coded artefact.
+    _study = _study_mode()
+    nb_path = reactive.value(_notebook_path() if not _study else None)
+    entries = reactive.value([] if _study else _load_entries())
     last_status = reactive.value(("", "ok"))  # (message, kind)
+
+    @reactive.effect
+    def _bind_participant_notebook():
+        """Attach the notebook to this session's participant.
+
+        Registered unconditionally, not only in study mode: a participant
+        code is on its own enough to mean "these entries belong to one
+        person". Gating this on the study flag meant that forgetting the
+        flag silently funnelled every participant back into the shared
+        notebook, which is the cross-participant contamination the
+        per-participant file exists to prevent.
+
+        The code arrives from ``?pid=`` once the URL has been read, so it
+        is not available when the session first opens.
+        """
+        pid = _read_participant(session)
+        if not pid:
+            return
+        path = _notebook_path(pid)
+        if nb_path.get() == path:
+            return
+        nb_path.set(path)
+        entries.set(_load_entries(path))
+
+    def _persist(current: List[Dict[str, Any]]) -> None:
+        """Save to this session's notebook file.
+
+        In study mode a save before the participant is known is dropped
+        rather than written to the shared file, which would leak one
+        participant's entries into the next session.
+        """
+        target = nb_path.get()
+        if target is None:
+            if _study:
+                _logger.warning(
+                    "Notebook save skipped: no participant code yet "
+                    "(open the app with ?pid=<code>).")
+                return
+            target = _NOTEBOOK_PATH
+        _save_entries(current, target)
+        # The Notebook is the study's primary coded artefact. On a hosted
+        # Space the disk is ephemeral, so push a durable copy to the private
+        # dataset on every save (a Space restart between save and session-end
+        # would otherwise lose it). Off when the Hub upload is not configured.
+        pid = _read_participant(session)
+        if pid and _hub_upload_configured():
+            _upload_in_background(target, "notebooks", pid)
 
     def _capture() -> Dict[str, Any]:
         return _capture_context(
@@ -1900,7 +1979,7 @@ def notebook_server_handlers(input, output, session, *,
         current = list(entries.get())
         current.append(record)
         entries.set(current)
-        _save_entries(current)
+        _persist(current)
         last_status.set(
             (
                 f"Entry saved with {len(record['context'])} context field(s) captured.",
@@ -1941,7 +2020,7 @@ def notebook_server_handlers(input, output, session, *,
         if not entries.get():
             return
         entries.set([])
-        _save_entries([])
+        _persist([])
         last_status.set(("All entries cleared.", "ok"))
 
     # ---- Delete individual entry ---------------------------------------
@@ -1957,7 +2036,7 @@ def notebook_server_handlers(input, output, session, *,
         if 0 <= idx_int < len(current):
             del current[idx_int]
             entries.set(current)
-            _save_entries(current)
+            _persist(current)
             last_status.set(("Entry removed.", "ok"))
 
     # ---- Restore state from an entry -----------------------------------

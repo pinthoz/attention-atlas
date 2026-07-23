@@ -51,6 +51,21 @@ from .bias_exports import (
 )
 
 import numpy as np
+
+
+def _detections_present(data) -> bool:
+    """Whether the detector flagged at least one token in this result.
+
+    Gate for the "requires detections" empty state, which tells the analyst
+    that the detector found nothing. A dependent view can also be empty
+    because its own input (attention, propagation) is missing, and saying
+    "no tokens were detected" there would be false.
+    """
+    if not data:
+        return False
+    if data.get("bias_spans"):
+        return True
+    return any(lbl.get("is_biased") for lbl in (data.get("token_labels") or []))
 import torch
 from shiny import ui, render, reactive
 
@@ -2486,7 +2501,11 @@ def bias_server_handlers(input, output, session):
                         ),
                     ),
                     # Summary comparison cards
-                    create_bias_accordion(),
+                    create_bias_accordion(
+                        requires_detections=not (
+                            _detections_present(res) or _detections_present(res_B)
+                        )
+                    ),
                     create_floating_bias_toolbar(),
                     ui.div(style="height: 110px;"), # Spacer to clear floating bar
                     ui.tags.script("Shiny.setInputValue('toggle_bias_toolbar_visible', true, {priority: 'event'});"),
@@ -2548,7 +2567,9 @@ def bias_server_handlers(input, output, session):
                         ui.h4("Sentence Preview"),
                         ui.HTML(preview_html),
                     ),
-                    create_bias_accordion(),
+                    create_bias_accordion(
+                        requires_detections=not _detections_present(res)
+                    ),
                     create_floating_bias_toolbar(),
                     ui.div(style="height: 110px;"), # Spacer to clear floating bar
                     ui.tags.script("Shiny.setInputValue('toggle_bias_toolbar_visible', true, {priority: 'event'});"),
@@ -4362,6 +4383,8 @@ def bias_server_handlers(input, output, session):
         def get_viz(data, container_id="bias-propagation-container"):
             p = data["propagation_analysis"]["layer_propagation"]
             if not p:
+                if _detections_present(data):
+                    return "No propagation data for this analysis."
                 return _requires_detections("Bias propagation across layers")
             fig = create_bias_propagation_plot(p, selected_layer=l_idx)
             return _deferred_plotly(fig, container_id, height="450px",
@@ -4521,6 +4544,8 @@ def bias_server_handlers(input, output, session):
         def get_table(data):
             mets = data["attention_metrics"]
             if not mets:
+                if _detections_present(data):
+                    return "No per-head attention metrics for this analysis."
                 return _requires_detections("Most bias-focused heads")
             top = sorted(mets, key=lambda x: x.bias_attention_ratio, reverse=True)[:k]
             any_above = any(m.bias_attention_ratio > bar_threshold for m in top)

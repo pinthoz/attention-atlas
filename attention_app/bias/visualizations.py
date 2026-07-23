@@ -2110,6 +2110,7 @@ def create_ig_token_comparison_chart(
     attentions: list,
     top_heads: list,
     max_heads: int = 3,
+    selected_token_idx: Optional[Union[int, List[int]]] = None,
 ) -> go.Figure:
     """Grouped bar chart: IG attribution vs attention column-mean per token.
 
@@ -2128,6 +2129,9 @@ def create_ig_token_comparison_chart(
         Heads to display (will use first *max_heads*).
     max_heads : int
         Maximum number of heads to overlay (default 3).
+    selected_token_idx : int | list[int], optional
+        Tokens selected elsewhere in the bias section; highlighted here so a
+        selection made in one view carries into this comparison.
     """
     import torch
 
@@ -2154,6 +2158,10 @@ def create_ig_token_comparison_chart(
 
     head_colors = ["#2563eb", "#f59e0b", "#22c55e"]
 
+    # x is the token position here, so a bar's index is its token index.
+    bar_indices = list(range(seq_len))
+    selected = _selected_index_set(selected_token_idx)
+
     fig = go.Figure()
 
     # IG attribution bars
@@ -2162,8 +2170,8 @@ def create_ig_token_comparison_chart(
             x=list(range(seq_len)),
             y=ig_norm,
             name="IG Attribution",
-            marker_color="#dc2626",
-            opacity=0.7,
+            marker=_selection_bar_marker(
+                "#dc2626", bar_indices, selected, base_opacity=0.7),
             hovertemplate="<b>%{customdata}</b><br>IG (norm): %{y:.3f}<extra>IG</extra>",
             customdata=display_tokens[:seq_len],
             orientation="v",
@@ -2189,8 +2197,9 @@ def create_ig_token_comparison_chart(
                 x=list(range(seq_len)),
                 y=attn_norm,
                 name=f"Attn L{head.layer}H{head.head} (ρ={head.spearman_rho:.2f})",
-                marker_color=head_colors[i % len(head_colors)],
-                opacity=0.6,
+                marker=_selection_bar_marker(
+                    head_colors[i % len(head_colors)], bar_indices, selected,
+                    base_opacity=0.6),
                 hovertemplate=(
                     f"<b>%{{customdata}}</b><br>"
                     f"Attn L{head.layer}H{head.head} (norm): %{{y:.3f}}"
@@ -2206,7 +2215,8 @@ def create_ig_token_comparison_chart(
         bargap=0.15,
         title=dict(
             text="Token-Level: IG Attribution vs Attention<br>"
-            "<sub>Normalized comparison - do attention and gradients agree on important tokens?</sub>",
+            "<sub>Normalized comparison - do attention and gradients agree on "
+            f"important tokens?{_selection_subtitle(selected)}</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         xaxis=dict(
@@ -2544,6 +2554,9 @@ def create_topk_overlap_chart(
         col=1,
     )
 
+    # Frame the selected head on the Jaccard heatmap (left subplot).
+    _add_head_highlight(fig, selected_head, num_layers, num_heads, row=1, col=1)
+
     # Scatter: Jaccard vs BAR
     bars = [r.bar_original for r in topk_results]
     jaccards = [r.jaccard for r in topk_results]
@@ -2554,10 +2567,9 @@ def create_topk_overlap_chart(
         "#dc2626" if r.bar_original >= bar_threshold else "#3b82f6"
         for r in topk_results
     ]
-    sizes = [
-        10 if selected_head and (r.layer, r.head) == selected_head else 6
-        for r in topk_results
-    ]
+    sizes, line_widths, line_colors = _head_scatter_emphasis(
+        [(r.layer, r.head) for r in topk_results], selected_head, base_size=6
+    )
 
     fig.add_trace(
         go.Scatter(
@@ -2568,7 +2580,7 @@ def create_topk_overlap_chart(
                 color=colors,
                 size=sizes,
                 opacity=0.7,
-                line=dict(width=1, color="#ffffff"),
+                line=dict(width=line_widths, color=line_colors),
             ),
             text=[
                 f"<b>{l}</b><br>BAR: {b:.3f}<br>Jaccard: {j:.3f}<br>RBO: {rbo:.3f}"
@@ -2610,10 +2622,109 @@ def create_topk_overlap_chart(
 # ── Perturbation Visualizations ───────────────────────────────────────────
 
 
+def _selected_index_set(selected_token_idx) -> set:
+    """Normalise a token selection to a set of indices.
+
+    Same convention as the attention heatmap and the token strip: either a
+    single index or a list of them, with negatives meaning "no selection".
+    """
+    if isinstance(selected_token_idx, (list, tuple, set)):
+        out = set()
+        for i in selected_token_idx:
+            try:
+                v = int(i)
+            except (TypeError, ValueError):
+                continue
+            if v >= 0:
+                out.add(v)
+        return out
+    if isinstance(selected_token_idx, int) and selected_token_idx >= 0:
+        return {selected_token_idx}
+    return set()
+
+
+def _selection_bar_marker(
+    base_color: str,
+    bar_indices: List[int],
+    selected: set,
+    base_opacity: float = 0.8,
+) -> dict:
+    """Marker styling that makes the selected tokens the subject of a bar chart.
+
+    With a selection active the chosen bars keep full opacity and gain an
+    outline while the rest fade back, so the tokens the analyst clicked are
+    legible without discarding the surrounding distribution. With no
+    selection the original uniform styling is returned unchanged.
+
+    ``bar_indices`` holds the *token* index each bar stands for, which is not
+    always its position: the perturbation chart can cover a subset of tokens.
+    """
+    if not selected:
+        return dict(color=base_color, opacity=base_opacity)
+    return dict(
+        color=base_color,
+        opacity=[1.0 if idx in selected else 0.18 for idx in bar_indices],
+        line=dict(
+            color="#0f172a",
+            width=[1.8 if idx in selected else 0.0 for idx in bar_indices],
+        ),
+    )
+
+
+def _selection_subtitle(selected: set) -> str:
+    """Explain the dimming, so faded bars do not read as missing data."""
+    if not selected:
+        return ""
+    n = len(selected)
+    return f" | {n} token{'s' if n != 1 else ''} selected"
+
+
+def _add_head_highlight(fig, selected_head, num_layers: int, num_heads: int,
+                        row=None, col=None) -> None:
+    """Outline the selected (layer, head) cell on a per-head heatmap.
+
+    A categorical heatmap places head ``h`` at x=h and layer ``l`` at y=l, so
+    a unit rectangle centred there frames exactly that cell. The reversed
+    y-axis only flips the display, not the coordinates. Out-of-range or unset
+    selections are ignored.
+    """
+    if not selected_head:
+        return
+    layer, head = selected_head
+    if not (0 <= layer < num_layers and 0 <= head < num_heads):
+        return
+    kw = dict(row=row, col=col) if row is not None else {}
+    fig.add_shape(
+        type="rect",
+        x0=head - 0.5, x1=head + 0.5, y0=layer - 0.5, y1=layer + 0.5,
+        line=dict(color="#f59e0b", width=3),
+        fillcolor="rgba(0,0,0,0)",
+        layer="above",
+        **kw,
+    )
+
+
+def _head_scatter_emphasis(items, selected_head, base_size: int = 7):
+    """Per-point sizes and outlines for a per-head scatter.
+
+    The selected head grows and gains an amber ring; the rest keep the plain
+    white outline, so the clicked head is findable without hiding the cloud.
+    ``items`` yields ``(layer, head)`` per marker, in plot order.
+    """
+    sizes, widths, colors = [], [], []
+    for layer, head in items:
+        hit = bool(selected_head) and (layer, head) == tuple(selected_head)
+        sizes.append(base_size + 6 if hit else base_size)
+        widths.append(3 if hit else 1)
+        colors.append("#f59e0b" if hit else "#ffffff")
+    return sizes, widths, colors
+
+
 def create_perturbation_comparison_chart(
     perturb_bundle,
     ig_attrs: np.ndarray,
     tokens: List[str],
+    selected_token_idx: Optional[Union[int, List[int]]] = None,
 ) -> go.Figure:
     """Grouped bar chart: perturbation importance vs IG per token.
 
@@ -2622,6 +2733,9 @@ def create_perturbation_comparison_chart(
     perturb_bundle : PerturbationAnalysisBundle
     ig_attrs : np.ndarray
     tokens : list[str]
+    selected_token_idx : int | list[int], optional
+        Tokens selected elsewhere in the bias section; highlighted here so a
+        selection made in one view carries into this comparison.
     """
     if not perturb_bundle or not perturb_bundle.token_results:
         fig = go.Figure()
@@ -2645,14 +2759,22 @@ def create_perturbation_comparison_chart(
     p_norm = p_arr / p_max
     g_norm = g_arr / g_max
 
+    # Each bar stands for a specific token index, which the perturbation
+    # results carry explicitly: token_results can be a subset, so bar
+    # position is not a safe proxy for the token the selection refers to.
+    bar_indices = [
+        getattr(r, "token_index", i)
+        for i, r in enumerate(perturb_bundle.token_results[:n])
+    ]
+    selected = _selected_index_set(selected_token_idx)
+
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
             x=tok_labels[:n],
             y=p_norm,
             name="Perturbation",
-            marker_color="#f59e0b",
-            opacity=0.8,
+            marker=_selection_bar_marker("#f59e0b", bar_indices, selected),
         )
     )
     fig.add_trace(
@@ -2660,8 +2782,7 @@ def create_perturbation_comparison_chart(
             x=tok_labels[:n],
             y=g_norm,
             name="Integrated Gradients",
-            marker_color="#3b82f6",
-            opacity=0.8,
+            marker=_selection_bar_marker("#3b82f6", bar_indices, selected),
         )
     )
 
@@ -2669,7 +2790,8 @@ def create_perturbation_comparison_chart(
     fig.update_layout(
         title=dict(
             text=f"Perturbation vs IG Token Importance<br>"
-            f"<sub>Spearman ρ = {rho:.3f} | Normalized to [0,1]</sub>",
+            f"<sub>Spearman ρ = {rho:.3f} | Normalized to [0,1]"
+            f"{_selection_subtitle(selected)}</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         barmode="group",
@@ -2694,6 +2816,7 @@ def create_perturbation_attn_heatmap(
     perturb_vs_attn: List[tuple],
     num_layers: int,
     num_heads: int,
+    selected_head: Optional[tuple] = None,
 ) -> go.Figure:
     """Heatmap of Spearman(perturbation, attention) per head.
 
@@ -2702,6 +2825,8 @@ def create_perturbation_attn_heatmap(
     perturb_vs_attn : list of (layer, head, rho)
     num_layers : int
     num_heads : int
+    selected_head : (layer, head) or None
+        Head selected elsewhere in the bias section; its cell is outlined.
     """
     if not perturb_vs_attn:
         fig = go.Figure()
@@ -2745,6 +2870,8 @@ def create_perturbation_attn_heatmap(
         )
     )
 
+    _add_head_highlight(fig, selected_head, num_layers, num_heads)
+
     fig.update_layout(
         title=dict(
             text="Perturbation vs Attention Correlation<br>"
@@ -2774,6 +2901,7 @@ def create_lrp_comparison_chart(
     tokens: List[str],
     lrp_vs_ig_rho: float = 0.0,
     method_label: str = "LRP",
+    selected_token_idx: Optional[Union[int, List[int]]] = None,
 ) -> go.Figure:
     """Grouped bar chart: second-method vs IG attribution per token.
 
@@ -2787,6 +2915,9 @@ def create_lrp_comparison_chart(
         Name of the second method (e.g. "AttnLRP", "Chefer", "Occlusion"),
         used for the trace and title so the chart never mislabels a non-LRP
         fallback as "LRP".
+    selected_token_idx : int | list[int], optional
+        Tokens selected elsewhere in the bias section; highlighted here so a
+        selection made in one view carries into this comparison.
     """
     n = min(len(lrp_attrs), len(ig_attrs), len(tokens))
     if n == 0:
@@ -2806,14 +2937,18 @@ def create_lrp_comparison_chart(
     l_norm = l_arr / l_max
     g_norm = g_arr / g_max
 
+    # Here the arrays are positional over the full token list, so a bar's
+    # position is its token index.
+    bar_indices = list(range(n))
+    selected = _selected_index_set(selected_token_idx)
+
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
             x=tokens[:n],
             y=l_norm,
             name=method_label,
-            marker_color="#8b5cf6",
-            opacity=0.8,
+            marker=_selection_bar_marker("#8b5cf6", bar_indices, selected),
         )
     )
     fig.add_trace(
@@ -2821,15 +2956,15 @@ def create_lrp_comparison_chart(
             x=tokens[:n],
             y=g_norm,
             name="Integrated Gradients",
-            marker_color="#3b82f6",
-            opacity=0.8,
+            marker=_selection_bar_marker("#3b82f6", bar_indices, selected),
         )
     )
 
     fig.update_layout(
         title=dict(
             text=f"{method_label} vs IG Token Attribution<br>"
-            f"<sub>Spearman ρ = {lrp_vs_ig_rho:.3f} | Normalized to [0,1]</sub>",
+            f"<sub>Spearman ρ = {lrp_vs_ig_rho:.3f} | Normalized to [0,1]"
+            f"{_selection_subtitle(selected)}</sub>",
             font=dict(size=16, color="#1e293b", family="Inter, sans-serif"),
         ),
         barmode="group",
@@ -2855,6 +2990,7 @@ def create_cross_method_agreement_chart(
     lrp_correlations: List[tuple],
     bar_threshold: float = 2.5,
     method_label: str = "LRP",
+    selected_head: Optional[tuple] = None,
 ) -> go.Figure:
     """Scatter: IG ρ (x) vs second-method ρ (y) per head, diagonal = agreement.
 
@@ -2866,6 +3002,8 @@ def create_cross_method_agreement_chart(
     method_label : str
         Name of the second method (e.g. "AttnLRP", "Chefer", "Occlusion") for
         the axis/title/hover labels.
+    selected_head : (layer, head) or None
+        Head selected elsewhere in the bias section; emphasised in the scatter.
     """
     if not ig_correlations or not lrp_correlations:
         fig = go.Figure()
@@ -2883,6 +3021,7 @@ def create_cross_method_agreement_chart(
     lrp_rhos = []
     labels = []
     colors = []
+    head_ids = []
 
     for r in ig_correlations:
         lrp_rho = lrp_lookup.get((r.layer, r.head))
@@ -2891,6 +3030,7 @@ def create_cross_method_agreement_chart(
             lrp_rhos.append(lrp_rho)
             labels.append(f"L{r.layer}H{r.head}")
             colors.append("#dc2626" if r.bar_original >= bar_threshold else "#3b82f6")
+            head_ids.append((r.layer, r.head))
 
     if not ig_rhos:
         fig = go.Figure()
@@ -2915,13 +3055,18 @@ def create_cross_method_agreement_chart(
         )
     )
 
+    sizes, line_widths, line_colors = _head_scatter_emphasis(
+        head_ids, selected_head, base_size=7
+    )
+
     fig.add_trace(
         go.Scatter(
             x=ig_rhos,
             y=lrp_rhos,
             mode="markers",
             marker=dict(
-                color=colors, size=7, opacity=0.7, line=dict(width=1, color="#ffffff")
+                color=colors, size=sizes, opacity=0.7,
+                line=dict(width=line_widths, color=line_colors)
             ),
             text=[
                 f"<b>{lbl}</b><br>IG ρ: {ig:.3f}<br>{method_label} ρ: {lrp:.3f}"

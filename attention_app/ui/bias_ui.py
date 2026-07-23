@@ -1126,7 +1126,10 @@ def create_bias_sidebar():
                 Shiny.addCustomMessageHandler('bias_requires_detections', function(data) {
                     ['attention_bias', 'ablation'].forEach(function(panel) {
                         var el = document.getElementById('badge-requires-' + panel);
-                        if (el) el.style.display = data.show ? '' : 'none';
+                        // Toggle a class rather than element.style: the base
+                        // badge rule is display:inline-flex !important, which
+                        // an inline style cannot override.
+                        if (el) el.classList.toggle('is-visible', !!data.show);
                     });
                 });
                 Shiny.addCustomMessageHandler('bias_set_slider', function(data) {
@@ -1531,6 +1534,15 @@ def create_bias_content():
                 background: rgba(100, 116, 139, 0.12) !important;
                 color: #64748b !important;
                 border: 1px dashed rgba(100, 116, 139, 0.45) !important;
+                /* Hidden until the server says the detector found nothing.
+                   This has to be !important and toggled by class: the base
+                   .accordion-panel-badge rule sets display:inline-flex
+                   !important, which outranks both the inline display:none
+                   and anything JS writes to element.style. */
+                display: none !important;
+            }
+            .accordion-panel-badge.requires-detections.is-visible {
+                display: inline-flex !important;
             }
             .accordion-button:not(.collapsed) .accordion-panel-badge {
                 background: rgba(255, 255, 255, 0.2) !important;
@@ -1553,8 +1565,18 @@ def create_bias_content():
     )
 
 
-def create_bias_accordion():
-    """Build the accordion panels for bias analysis (rendered after analysis)."""
+def create_bias_accordion(requires_detections: bool = False):
+    """Build the accordion panels for bias analysis (rendered after analysis).
+
+    ``requires_detections`` marks the two dependent panels on their headers.
+    It is resolved here, at render time, rather than left to the
+    ``bias_requires_detections`` message alone: this function re-renders on
+    every new analysis, which recreates the badge elements and would drop a
+    class set by an earlier message.
+    """
+    _badge_cls = "accordion-panel-badge requires-detections" + (
+        " is-visible" if requires_detections else ""
+    )
     from .components import viz_header
 
     def section_note(body: str):
@@ -1612,9 +1634,8 @@ def create_bias_accordion():
                 ui.span("Attention × Bias Corr", class_="panel-title-short"),
                 ui.span({"class": "accordion-panel-badge explore"}, "Exploration"),
                 ui.span(
-                    {"class": "accordion-panel-badge requires-detections",
-                     "id": "badge-requires-attention_bias",
-                     "style": "display:none;"},
+                    {"class": _badge_cls,
+                     "id": "badge-requires-attention_bias"},
                     "requires detections",
                 ),
             ),
@@ -1644,9 +1665,8 @@ def create_bias_accordion():
                 "Faithfulness Validation",
                 ui.span({"class": "accordion-panel-badge validation"}, "Validation"),
                 ui.span(
-                    {"class": "accordion-panel-badge requires-detections",
-                     "id": "badge-requires-ablation",
-                     "style": "display:none;"},
+                    {"class": _badge_cls,
+                     "id": "badge-requires-ablation"},
                     "requires detections",
                 ),
             ),

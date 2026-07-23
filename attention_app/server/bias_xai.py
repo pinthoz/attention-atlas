@@ -384,6 +384,72 @@ def register_xai_handlers(
 ):
     """Wire up ablation / IG / perturbation / LRP renderers and exports."""
 
+    def _has_detected_tokens(container_suffix: str = "") -> bool:
+        """Whether the detector actually flagged a token on this side.
+
+        The "requires detections" empty state asserts that the detector
+        found nothing, so it may only be shown when that is true. A missing
+        analysis bundle is a different state entirely: the tokens exist, the
+        method simply has not been computed yet.
+        """
+        res = (bias_results_B_rv.get() if container_suffix == "_B"
+               else bias_results_rv.get())
+        if not res:
+            return False
+        if res.get("bias_spans"):
+            return True
+        return any(lbl.get("is_biased") for lbl in (res.get("token_labels") or []))
+
+    def _empty_or_silent(what: str, container_suffix: str = ""):
+        """Empty state for a dependent faithfulness block.
+
+        Explains the dependency only when it is the real reason; otherwise
+        renders nothing rather than claiming a detection failure that did
+        not happen.
+        """
+        if _has_detected_tokens(container_suffix):
+            return None
+        return _requires_detections(what)
+
+    def _selected_head():
+        """The (layer, head) selected in the bias toolbar, or None.
+
+        The same hidden selects drive every per-head view, so the four
+        cross-method charts highlight whichever head the analyst clicked.
+        """
+        try:
+            return (int(input.bias_attn_layer()), int(input.bias_attn_head()))
+        except Exception:
+            return None
+
+    def _selected_tokens(container_suffix: str = "") -> list:
+        """Token indices selected in the bias section, for this side.
+
+        A and B keep independent selections, so the suffix that already
+        identifies the rendered side picks the input to read. Returns an
+        empty list before the first click, when Shiny raises rather than
+        returning a value.
+        """
+        is_B = container_suffix == "_B"
+        try:
+            raw = (input.bias_selected_tokens_B() if is_B
+                   else input.bias_selected_tokens_A())
+        except Exception:
+            return []
+        if raw is None or raw == "":
+            return []
+        if isinstance(raw, (int, str)):
+            raw = [raw]
+        out = []
+        for value in raw:
+            try:
+                idx = int(value)
+            except (TypeError, ValueError):
+                continue
+            if idx >= 0:
+                out.append(idx)
+        return out
+
     # ── Gated panel copy ─────────────────────────────────────────────────
     # The Faithfulness Validation intro note and per-method subsection
     # headers are rendered server-side so they only appear once their
@@ -490,7 +556,7 @@ def register_xai_handlers(
 
         def _render_ablation_single(results_data, container_suffix=""):
             if not results_data:
-                return _requires_detections("Causal head intervention")
+                return _empty_or_silent("Causal head intervention", container_suffix)
 
             # Pick calibrated thresholds from the attention model that
             # produced THESE deltas. The faithfulness context carries the
@@ -889,7 +955,8 @@ def register_xai_handlers(
 
         def _render_ig_single(bundle, container_suffix="", context_results=None):
             if not bundle:
-                return _requires_detections("Gradient agreement (Integrated Gradients)")
+                return _empty_or_silent(
+                    "Gradient agreement (Integrated Gradients)", container_suffix)
             
             # Unpack bundle
             if isinstance(bundle, IGAnalysisBundle):
@@ -931,6 +998,7 @@ def register_xai_handlers(
                 try:
                     fig2 = create_ig_token_comparison_chart(
                         tokens, token_attrs, list(attentions), top_bar_heads,
+                        selected_token_idx=_selected_tokens(container_suffix),
                     )
                     _token_csv_id = "export_ig_token_comparison_csv_B" if container_suffix == "_B" else "export_ig_token_comparison_csv"
                     csv_btn = ui.download_button(_token_csv_id, "CSV", style=_BTN_STYLE_CSV)
@@ -1567,7 +1635,7 @@ def register_xai_handlers(
 
         def _render_perturb_single(bundle, ig_bundle, container_suffix="", context_results=None):
             if not bundle:
-                return _requires_detections("Perturbation and minimality")
+                return _empty_or_silent("Perturbation and minimality", container_suffix)
 
             ig_attrs = ig_bundle.token_attributions if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else None
 
@@ -1611,7 +1679,10 @@ def register_xai_handlers(
 
             # Chart 1: Perturbation vs IG bar chart
             if ig_attrs is not None:
-                fig1 = create_perturbation_comparison_chart(bundle, ig_attrs, bundle.tokens)
+                fig1 = create_perturbation_comparison_chart(
+                    bundle, ig_attrs, bundle.tokens,
+                    selected_token_idx=_selected_tokens(container_suffix),
+                )
                 cid1 = f"perturb-comparison-container{container_suffix}"
                 sections.append(ui.HTML(
                     f'<div style="margin-top:20px;">'
@@ -1626,7 +1697,10 @@ def register_xai_handlers(
             if bundle.perturb_vs_attn_spearman:
                 num_layers = max(r[0] for r in bundle.perturb_vs_attn_spearman) + 1
                 num_heads = max(r[1] for r in bundle.perturb_vs_attn_spearman) + 1
-                fig2 = create_perturbation_attn_heatmap(bundle.perturb_vs_attn_spearman, num_layers, num_heads)
+                fig2 = create_perturbation_attn_heatmap(
+                    bundle.perturb_vs_attn_spearman, num_layers, num_heads,
+                    selected_head=_selected_head(),
+                )
                 cid2 = f"perturb-attn-heatmap-container{container_suffix}"
                 _pattn_csv_id = "export_perturb_attn_csv_B" if container_suffix == "_B" else "export_perturb_attn_csv"
                 
@@ -1800,7 +1874,7 @@ def register_xai_handlers(
 
         def _render_lrp_single(bundle, ig_bundle, container_suffix=""):
             if not bundle:
-                return _requires_detections("Cross-validation with LRP")
+                return _empty_or_silent("Cross-validation with LRP", container_suffix)
 
             ig_attrs = ig_bundle.token_attributions if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else None
             ig_corrs = ig_bundle.correlations if ig_bundle and isinstance(ig_bundle, IGAnalysisBundle) else []
@@ -1922,6 +1996,7 @@ def register_xai_handlers(
                 fig1 = create_lrp_comparison_chart(
                     bundle.token_attributions, ig_attrs, bundle.tokens,
                     lrp_vs_ig_rho=rho_ig, method_label=_dn,
+                    selected_token_idx=_selected_tokens(container_suffix),
                 )
                 cid1 = f"lrp-comparison-container{container_suffix}"
                 sections.append(ui.HTML(
@@ -1937,7 +2012,7 @@ def register_xai_handlers(
             if ig_corrs and bundle.correlations:
                 fig2 = create_cross_method_agreement_chart(
                     ig_corrs, bundle.correlations, bar_threshold=bar_threshold,
-                    method_label=_dn,
+                    method_label=_dn, selected_head=_selected_head(),
                 )
                 cid2 = f"lrp-agreement-container{container_suffix}"
                 _agree_csv_id = "export_cross_method_csv_B" if container_suffix == "_B" else "export_cross_method_csv"
