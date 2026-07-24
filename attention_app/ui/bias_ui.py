@@ -2863,6 +2863,85 @@ def create_floating_bias_toolbar():
             });
         })();
 
+        // ── Panel consultation tracking (user study) ──
+        // The accordion click says a panel was expanded, not that it was
+        // read. To let the coding separate a deliberate consultation from a
+        // click that was immediately abandoned, this measures how long each
+        // panel's body was actually on screen WHILE expanded, and reports
+        // every visible period to the server. A panel that is never expanded
+        // produces nothing, so scrolling past it is not mistaken for
+        // consultation.
+        (function setupPanelDwellTracking() {
+            if (!window.Shiny) return;
+            var visibleSince = {};
+
+            function panelValue(el) {
+                var item = el.closest('.accordion-item');
+                return item ? item.getAttribute('data-value') : null;
+            }
+
+            function report(value, seconds) {
+                // Sub-second blips are scroll artefacts, not reading.
+                if (!value || seconds < 0.4) return;
+                Shiny.setInputValue('bias_panel_dwell', {
+                    panel: value,
+                    seconds: Math.round(seconds * 10) / 10,
+                    at: Date.now()
+                }, {priority: 'event'});
+            }
+
+            function endPeriod(value) {
+                if (!visibleSince[value]) return;
+                report(value, (performance.now() - visibleSince[value]) / 1000);
+                delete visibleSince[value];
+            }
+
+            var io = new IntersectionObserver(function(entries) {
+                entries.forEach(function(entry) {
+                    var value = panelValue(entry.target);
+                    if (!value) return;
+                    var expanded = entry.target.classList.contains('show');
+                    if (entry.isIntersecting && expanded) {
+                        if (!visibleSince[value]) visibleSince[value] = performance.now();
+                    } else {
+                        endPeriod(value);
+                    }
+                });
+            }, { threshold: 0.35 });  // a third of the body on screen counts as looking
+
+            function attach() {
+                document.querySelectorAll('#bias_accordion .accordion-collapse')
+                    .forEach(function(el) {
+                        if (el.dataset.dwellObserved) return;
+                        el.dataset.dwellObserved = '1';
+                        io.observe(el);
+                    });
+            }
+            attach();
+            // The accordion is rendered after the analysis runs, so re-attach
+            // whenever new nodes appear.
+            new MutationObserver(function() { setTimeout(attach, 50); })
+                .observe(document.body, { childList: true, subtree: true });
+
+            // Collapsing ends the period even though the header stays in view.
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('#bias_accordion .accordion-button')) return;
+                setTimeout(function() {
+                    Object.keys(visibleSince).forEach(function(value) {
+                        var body = document.querySelector(
+                            '#bias_accordion .accordion-item[data-value="' + value +
+                            '"] .accordion-collapse');
+                        if (body && !body.classList.contains('show')) endPeriod(value);
+                    });
+                }, 400);  // after the collapse animation
+            }, true);
+
+            // Closing the tab must not silently drop an open period.
+            window.addEventListener('pagehide', function() {
+                Object.keys(visibleSince).forEach(endPeriod);
+            });
+        })();
+
         // ── Token selection for Combined View ──
         // Two independent selection sets, one per side (A / B) so that in
         // compare mode clicking a token in A does NOT mirror to B and vice

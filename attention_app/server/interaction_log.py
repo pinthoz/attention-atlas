@@ -293,10 +293,17 @@ def register_interaction_logging(input, session) -> Optional[_SessionLog]:
                 "this log cannot be joined to the participant's other data.")
 
     # ── 1. Panel opening ────────────────────────────────────────────
-    # The accordion input holds the currently-open panels. Log only the
-    # newly-opened ones, so a panel the participant returns to is a fresh
-    # event while unrelated re-renders are not.
+    # Bound to the accordion input, which changes ONLY when a panel header
+    # is clicked to expand or collapse it. Scrolling a panel into view does
+    # not fire this, so an event here is a deliberate expansion, not a
+    # passing glance - the distinction the coding scheme depends on.
+    #
+    # One exception has to be marked: the accordion renders with a default
+    # panel already expanded (``open=`` in create_bias_accordion), so its
+    # first sighting is the initial state rather than a participant action.
+    # It carries ``initial_state: true`` so the analysis can exclude it.
     seen_open: set = set()
+    first_observation = {"pending": True}
 
     @reactive.effect
     def _log_panel_open():
@@ -307,14 +314,49 @@ def register_interaction_logging(input, session) -> Optional[_SessionLog]:
         if current is None:
             return
         values = {current} if isinstance(current, str) else set(current)
+        is_initial = first_observation["pending"]
+        first_observation["pending"] = False
         for value in values - seen_open:
             log.record("panel_open", {
                 "panel": value,
                 "label": _PANEL_LABELS.get(value, value),
                 "is_faithfulness": value == _FAITHFULNESS_PANEL,
+                "initial_state": is_initial,
             })
+        # Collapsing matters too: a panel opened and shut straight away is a
+        # different behaviour from one left open while the analyst works.
+        if not is_initial:
+            for value in seen_open - values:
+                log.record("panel_close", {
+                    "panel": value,
+                    "label": _PANEL_LABELS.get(value, value),
+                    "is_faithfulness": value == _FAITHFULNESS_PANEL,
+                })
         seen_open.clear()
         seen_open.update(values)
+
+    # ── 1b. Time the panel was actually on screen ───────────────────
+    # Sent from the browser (IntersectionObserver): expanding a panel is not
+    # the same as reading it, so each period the panel body spent visible
+    # while expanded is reported here. Summed per panel, this is what
+    # separates a genuine consultation from an abandoned click.
+    @reactive.effect
+    @reactive.event(input.bias_panel_dwell, ignore_init=True)
+    def _log_panel_dwell():
+        try:
+            payload = input.bias_panel_dwell() or {}
+            panel = payload.get("panel")
+            seconds = float(payload.get("seconds") or 0.0)
+        except Exception:
+            return
+        if not panel:
+            return
+        log.record("panel_dwell", {
+            "panel": panel,
+            "label": _PANEL_LABELS.get(panel, panel),
+            "is_faithfulness": panel == _FAITHFULNESS_PANEL,
+            "seconds": round(seconds, 1),
+        })
 
     # ── Change watcher ──────────────────────────────────────────────
     # A plain effect with explicit previous-value tracking, rather than
