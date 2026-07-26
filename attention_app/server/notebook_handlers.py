@@ -1890,6 +1890,13 @@ def notebook_server_handlers(input, output, session, *,
     nb_path = reactive.value(_notebook_path() if not _study else None)
     entries = reactive.value([] if _study else _load_entries())
     last_status = reactive.value(("", "ok"))  # (message, kind)
+    # Plain mirror of the participant code, for the download filenames: those
+    # callbacks run outside a reactive context and cannot read a reactive.
+    _pid_box: Dict[str, str] = {"code": ""}
+    # How many entries existed at the last export. In a study session the
+    # export is the only copy that leaves the browser, so the drawer has to
+    # show plainly when entries are still unexported.
+    exported_count = reactive.value(-1)
 
     @reactive.effect
     def _bind_participant_notebook():
@@ -1908,6 +1915,7 @@ def notebook_server_handlers(input, output, session, *,
         pid = _read_participant(session)
         if not pid:
             return
+        _pid_box["code"] = str(pid)
         path = _notebook_path(pid)
         if nb_path.get() == path:
             return
@@ -2139,6 +2147,39 @@ def notebook_server_handlers(input, output, session, *,
         label = "entry" if n == 1 else "entries"
         return ui.HTML(f'<span class="nb-count">{n} {label}</span>')
 
+    # ---- Export reminder -----------------------------------------------
+    @output
+    @render.ui
+    def nb_export_status():
+        """Where the entries live, and whether they have been exported.
+
+        In a study session the export is the only copy that survives the
+        session, so unexported entries are called out rather than left to
+        the facilitator's memory.
+        """
+        n = len(entries.get())
+        pending = n - max(exported_count.get(), 0)
+        if n and (exported_count.get() < 0 or pending > 0):
+            what = "entry" if pending == 1 else "entries"
+            return ui.tags.p(
+                ui.tags.strong("Not exported yet."),
+                f" {pending} {what} exist only in this browser. "
+                "Export before closing the session.",
+                class_="nb-section-sub nb-section-sub-warn",
+                style=(
+                    "color:#b45309;background:rgba(245,158,11,0.10);"
+                    "border-left:3px solid #f59e0b;padding:6px 10px;border-radius:4px;"
+                ),
+            )
+        if n:
+            return ui.tags.p(
+                f"All {n} entries exported.",
+                class_="nb-section-sub",
+            )
+        target = nb_path.get()
+        where = target.as_posix() if target else "this session only"
+        return ui.tags.p(f"Persisted to {where}.", class_="nb-section-sub")
+
     # ---- Live preview of what would be captured ------------------------
     @output
     @render.ui
@@ -2248,19 +2289,40 @@ def notebook_server_handlers(input, output, session, *,
         return ui.HTML("".join(pieces))
 
     # ---- Downloads -----------------------------------------------------
-    @render.download(filename=lambda: f"auditor_notebook_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
-    def nb_download_md():
-        yield _entries_to_markdown(list(entries.get()))
+    def _export_name(ext: str) -> str:
+        """Filename for an export.
 
-    @render.download(filename=lambda: f"auditor_notebook_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+        The participant code goes in the name because the study's export is
+        the only copy of the Notebook, and it has to be joinable to that
+        session's interaction log without anyone remembering to rename it.
+        """
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        who = _pid_box["code"]
+        return f"auditor_notebook_{who}_{stamp}.{ext}" if who else f"auditor_notebook_{stamp}.{ext}"
+
+    def _mark_exported(current: List[Dict[str, Any]]) -> None:
+        exported_count.set(len(current))
+
+    @render.download(filename=lambda: _export_name("md"))
+    def nb_download_md():
+        current = list(entries.get())
+        _mark_exported(current)
+        yield _entries_to_markdown(current)
+
+    @render.download(filename=lambda: _export_name("json"))
     def nb_download_json():
+        current = list(entries.get())
+        _mark_exported(current)
         payload = {
+            "participant": _pid_box["code"] or None,
             "exported_at": _now_iso(),
-            "n_entries": len(entries.get()),
-            "entries": list(entries.get()),
+            "n_entries": len(current),
+            "entries": current,
         }
         yield json.dumps(payload, ensure_ascii=False, indent=2)
 
-    @render.download(filename=lambda: f"auditor_notebook_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
+    @render.download(filename=lambda: _export_name("csv"))
     def nb_download_csv():
-        yield _entries_to_csv(list(entries.get()))
+        current = list(entries.get())
+        _mark_exported(current)
+        yield _entries_to_csv(current)

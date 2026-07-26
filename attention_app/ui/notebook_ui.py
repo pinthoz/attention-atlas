@@ -818,10 +818,7 @@ def create_notebook_drawer():
                         ui.output_ui("nb_count", inline=True),
                         class_="nb-section-head",
                     ),
-                    ui.tags.p(
-                        "Persisted to downloads/sessions/auditor_notebook.json.",
-                        class_="nb-section-sub",
-                    ),
+                    ui.output_ui("nb_export_status"),
                     ui.tags.div(
                         ui.download_button(
                             "nb_download_md",

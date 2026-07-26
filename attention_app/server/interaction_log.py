@@ -16,6 +16,17 @@ is only demonstrable from these logs. Because the inference rests on whether
 the panel was opened **before** the conclusion was written, every event
 carries a monotonic ``seq`` and a ``t_rel_s`` offset from session start.
 
+What counts as a consultation
+-----------------------------
+Expanding a panel is not reading it, so each Notebook entry carries the dwell
+accumulated on the faithfulness panel up to that point, the fact of an earlier
+expansion, and whether the panel is open at that moment. These are raw
+measurements: the dwell threshold that turns them into "consulted" is fixed
+from the pilot, pre-registered, and applied at analysis time, so the
+pre-registered sensitivity analysis re-runs on the same files. Dwell is
+measured in the browser and pushed while a panel is open, because an entry
+written with the panel still expanded would otherwise read zero.
+
 Identifying the participant
 ---------------------------
 Two deployments, two mechanisms:
@@ -302,7 +313,12 @@ def register_interaction_logging(input, session) -> Optional[_SessionLog]:
     # panel already expanded (``open=`` in create_bias_accordion), so its
     # first sighting is the initial state rather than a participant action.
     # It carries ``initial_state: true`` so the analysis can exclude it.
+    # ``seen_open`` is the accordion's CURRENT state; ``ever_opened`` is the
+    # history. The study's measure is whether the evidence was consulted at
+    # some point before a conclusion, so collapsing the panel after reading it
+    # must not erase the consultation.
     seen_open: set = set()
+    ever_opened: set = set()
     first_observation = {"pending": True}
 
     @reactive.effect
@@ -317,6 +333,10 @@ def register_interaction_logging(input, session) -> Optional[_SessionLog]:
         is_initial = first_observation["pending"]
         first_observation["pending"] = False
         for value in values - seen_open:
+            if not is_initial:
+                # A panel expanded by the accordion's own default was not
+                # chosen by the participant, so it is not a consultation.
+                ever_opened.add(value)
             log.record("panel_open", {
                 "panel": value,
                 "label": _PANEL_LABELS.get(value, value),
@@ -420,11 +440,30 @@ def register_interaction_logging(input, session) -> Optional[_SessionLog]:
             except Exception:
                 return False
 
+        def _faithfulness_seconds() -> float:
+            """Dwell accumulated on the faithfulness panel up to this entry.
+
+            Isolated: the browser refreshes this while a panel is open, and a
+            reactive dependency here would re-run the watcher on every tick.
+            """
+            try:
+                with reactive.isolate():
+                    totals = input.bias_panel_dwell_total() or {}
+                return round(float(totals.get(_FAITHFULNESS_PANEL) or 0.0), 1)
+            except Exception:
+                return 0.0
+
+        # Raw measurements, never a verdict. The consultation threshold is
+        # fixed from the pilot and applied at analysis time, so the
+        # sensitivity analysis re-runs on these files without repeating any
+        # session. ``clicked_before`` is the same measure at threshold zero.
         log.record("notebook_entry", {
             "has_hypothesis": _filled("nb_hypothesis"),
             "has_uncertainty": _filled("nb_uncertainty"),
             "has_next_steps": _filled("nb_next_steps"),
-            "faithfulness_opened_before": _FAITHFULNESS_PANEL in seen_open,
+            "faithfulness_seconds_before": _faithfulness_seconds(),
+            "faithfulness_clicked_before": _FAITHFULNESS_PANEL in ever_opened,
+            "faithfulness_open_now": _FAITHFULNESS_PANEL in seen_open,
         })
 
     # The un-clicked button reports 0; only an actual click is an entry.

@@ -2874,6 +2874,7 @@ def create_floating_bias_toolbar():
         (function setupPanelDwellTracking() {
             if (!window.Shiny) return;
             var visibleSince = {};
+            var totals = {};  // seconds already closed, per panel
 
             function panelValue(el) {
                 var item = el.closest('.accordion-item');
@@ -2890,11 +2891,41 @@ def create_floating_bias_toolbar():
                 }, {priority: 'event'});
             }
 
-            function endPeriod(value) {
-                if (!visibleSince[value]) return;
-                report(value, (performance.now() - visibleSince[value]) / 1000);
-                delete visibleSince[value];
+            // Running total, including the period still open. A Notebook entry
+            // can be written while the panel is still expanded, and the closed
+            // periods alone would then read zero for the very participant who
+            // read most carefully.
+            function currentTotal(value) {
+                var t = totals[value] || 0;
+                // Compared against undefined, not truthiness: performance.now()
+                // is 0 at document start and a running period would be missed.
+                if (visibleSince[value] !== undefined) {
+                    t += (performance.now() - visibleSince[value]) / 1000;
+                }
+                return Math.round(t * 10) / 10;
             }
+
+            function pushTotals() {
+                var out = {};
+                Object.keys(totals).forEach(function(v) { out[v] = currentTotal(v); });
+                Object.keys(visibleSince).forEach(function(v) { out[v] = currentTotal(v); });
+                Shiny.setInputValue('bias_panel_dwell_total', out);
+            }
+
+            function endPeriod(value) {
+                if (visibleSince[value] === undefined) return;
+                var seconds = (performance.now() - visibleSince[value]) / 1000;
+                totals[value] = (totals[value] || 0) + seconds;
+                delete visibleSince[value];
+                report(value, seconds);
+                pushTotals();
+            }
+
+            // Keep the server's copy fresh while a panel is open, so the value
+            // read when an entry is saved is at most one tick out of date.
+            setInterval(function() {
+                if (Object.keys(visibleSince).length) pushTotals();
+            }, 3000);
 
             var io = new IntersectionObserver(function(entries) {
                 entries.forEach(function(entry) {
@@ -2902,7 +2933,9 @@ def create_floating_bias_toolbar():
                     if (!value) return;
                     var expanded = entry.target.classList.contains('show');
                     if (entry.isIntersecting && expanded) {
-                        if (!visibleSince[value]) visibleSince[value] = performance.now();
+                        if (visibleSince[value] === undefined) {
+                            visibleSince[value] = performance.now();
+                        }
                     } else {
                         endPeriod(value);
                     }
