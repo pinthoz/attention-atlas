@@ -665,8 +665,50 @@ NOTEBOOK_JS = """
                 });
             }
         });
+
+        // ── Local backup of the Notebook (user study) ──
+        // The Notebook is deliberately never uploaded, so a crash or a stray
+        // refresh would lose the session's primary coded artefact. Keep a
+        // copy in this browser, keyed by participant: on a shared session
+        // machine one participant must never restore another's entries.
+        function nbBackupKey() {
+            var m = /[?&](?:pid|participant|p)=([^&#]+)/.exec(window.location.search);
+            return 'attention_atlas_notebook_' + (m ? decodeURIComponent(m[1]) : 'shared');
+        }
+
+        Shiny.addCustomMessageHandler('nb_backup', function(payload) {
+            try {
+                localStorage.setItem(
+                    nbBackupKey(), JSON.stringify((payload && payload.entries) || []));
+            } catch (e) {
+                // Private mode or quota exceeded: the server-side copy stands.
+            }
+        });
+
+        Shiny.addCustomMessageHandler('nb_unexported', function(payload) {
+            window._nbUnexported = (payload && payload.n) || 0;
+        });
+
+        // Offer whatever this browser kept; the server ignores it unless the
+        // notebook it loaded is empty, so a backup can never overwrite work.
+        try {
+            var saved = localStorage.getItem(nbBackupKey());
+            if (saved) {
+                Shiny.setInputValue('nb_restored_entries', JSON.parse(saved),
+                                    {priority: 'event'});
+            }
+        } catch (e) { /* nothing usable stored */ }
     }
     registerFabToggle();
+
+    // Closing with unexported entries loses them: the export is the only
+    // copy that leaves this machine. Browsers show their own wording here.
+    window.addEventListener('beforeunload', function(e) {
+        if (!window._nbUnexported) return;
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+    });
 })();
 </script>
 """

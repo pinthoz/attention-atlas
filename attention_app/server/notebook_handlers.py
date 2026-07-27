@@ -1920,7 +1920,13 @@ def notebook_server_handlers(input, output, session, *,
         if nb_path.get() == path:
             return
         nb_path.set(path)
-        entries.set(_load_entries(path))
+        loaded = _load_entries(path)
+        # Only overwrite what is in memory when the file actually has
+        # something. On a hosted Space the disk does not survive a restart,
+        # and a blank read would otherwise wipe entries just restored from
+        # the browser backup.
+        if loaded or not entries.get():
+            entries.set(loaded)
 
     def _persist(current: List[Dict[str, Any]]) -> None:
         """Save to this session's notebook file.
@@ -1938,6 +1944,41 @@ def notebook_server_handlers(input, output, session, *,
                 return
             target = _NOTEBOOK_PATH
         _save_entries(current, target)
+
+    # ---- Local safety net ----------------------------------------------
+    # Three layers, all local: this browser backup, the export reminder, and
+    # the export itself, which stays the official artefact. Nothing here
+    # leaves the machine, which is what keeps the free text out of the cloud.
+    @reactive.effect
+    async def _mirror_notebook_to_browser():
+        await session.send_custom_message(
+            "nb_backup", {"entries": list(entries.get())}
+        )
+
+    @reactive.effect
+    async def _tell_browser_unexported():
+        pending = len(entries.get()) - max(exported_count.get(), 0)
+        await session.send_custom_message("nb_unexported", {"n": max(pending, 0)})
+
+    @reactive.effect
+    @reactive.event(input.nb_restored_entries)
+    def _restore_from_browser():
+        """Take the browser's copy, but only into an empty notebook.
+
+        Guarded so a stale backup can never overwrite live work: it restores
+        after a refresh or a crash, and does nothing otherwise.
+        """
+        raw = input.nb_restored_entries()
+        if not raw or entries.get():
+            return
+        recovered = [e for e in raw if isinstance(e, dict)]
+        if not recovered:
+            return
+        entries.set(recovered)
+        _persist(recovered)
+        last_status.set(
+            (f"Restored {len(recovered)} entries from this browser.", "ok")
+        )
 
     def _capture() -> Dict[str, Any]:
         return _capture_context(
