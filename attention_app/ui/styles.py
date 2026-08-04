@@ -481,20 +481,39 @@ CSS = """
             font-family: 'JetBrains Mono', monospace;
         }
 
+        /* The element itself is the click target, so it must NOT be as thin as
+           the visible track: at height:4px the whole slider was a 4px strip and
+           missing it did nothing. The element is now a comfortable 18px of
+           transparent hit area and the thin bar is painted by the track
+           pseudo-elements instead, so it looks the same but is easy to grab. */
         .floating-control-bar input[type="range"] {
             -webkit-appearance: none;
+            appearance: none;
             width: 60px;
-            height: 4px;
-            background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
-            border-radius: 2px;
+            height: 18px;
+            background: transparent;
             outline: none;
+            box-shadow: none;
+            cursor: pointer;
+            margin: 0;
+            padding: 0;
+        }
+
+        .floating-control-bar input[type="range"]::-webkit-slider-runnable-track {
+            height: 6px;
+            background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
+            border-radius: 3px;
             box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+            border: 0;
         }
 
         .floating-control-bar input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 14px;
-            height: 14px;
+            box-sizing: border-box;
+            width: 16px;
+            height: 16px;
+            /* (track height - thumb height) / 2, to sit centred on the track */
+            margin-top: -5px;
             border-radius: 50%;
             background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
             border: 2px solid rgba(255, 255, 255, 0.2);
@@ -509,8 +528,9 @@ CSS = """
         }
 
         .floating-control-bar input[type="range"]::-moz-range-thumb {
-            width: 14px;
-            height: 14px;
+            box-sizing: border-box;
+            width: 16px;
+            height: 16px;
             border-radius: 50%;
             background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
             border: 2px solid rgba(255, 255, 255, 0.2);
@@ -519,7 +539,10 @@ CSS = """
         }
 
         .floating-control-bar input[type="range"]::-moz-range-track {
-            background: transparent;
+            height: 6px;
+            background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
+            border-radius: 3px;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
             border: 0;
         }
 
@@ -3378,11 +3401,21 @@ __all__ = ["CSS"]
             border-bottom: 0;
         }
         
+        /* The bar you drag to reach the tokens past the right edge of each
+           A/B row. Kept slim, as it was; only the thumb is lifted out of
+           near-invisibility so there is something to aim at. */
         .floating-control-bar .token-split-item::-webkit-scrollbar {
-             height: 2px;
+             height: 3px;
+        }
+        .floating-control-bar .token-split-item::-webkit-scrollbar-track {
+             background: transparent;
         }
         .floating-control-bar .token-split-item::-webkit-scrollbar-thumb {
-             background: rgba(255, 255, 255, 0.1);
+             background: rgba(255, 255, 255, 0.30);
+             border-radius: 2px;
+        }
+        .floating-control-bar .token-split-item::-webkit-scrollbar-thumb:hover {
+             background: rgba(255, 255, 255, 0.50);
         }
 
         .floating-control-bar .token-split-item.item-b {
@@ -3459,12 +3492,35 @@ __all__ = ["CSS"]
             box-shadow: 0 0 0 2px var(--chip-color, #ff5ca9), 0 0 10px var(--chip-color, rgba(255,92,169,0.4));
         }
         
-        /* Bias tokens - single mode uses .token-sentence, compare uses .token-row-split */
-        #bias-tokens-row .token-sentence {
+        /* Bias tokens - single mode uses .token-sentence, compare uses
+           .token-row-split. Both must obey the SAME box in the bias bar:
+           .token-row-split otherwise keeps its generic 600px/300px sizing and
+           grows wide enough to overlap Change α in compare-prompts mode. */
+        #bias-tokens-row .token-sentence,
+        #bias-tokens-row .token-row-split {
             max-width: 380px !important;   /* smaller box; chips wrap to more lines */
             min-width: 0 !important;
             flex: 0 1 auto !important;
             margin-top: 0 !important;
+        }
+        /* Keep A stacked directly above B. The generic .token-row-split is a
+           wrapping column whose items ask for flex-basis 100% - in a column
+           that is 100% of the HEIGHT, so as soon as the box is height-capped
+           the B row wraps into a second column beside A instead of sitting
+           under it. Never wrap here; let the box scroll vertically instead. */
+        #bias-tokens-row .token-row-split {
+            flex-direction: column !important;
+            flex-wrap: nowrap !important;
+            overflow-y: auto !important;
+        }
+        /* The A/B rows carry white-space:nowrap, so without min-width:0 their
+           content sets the floor for the box and the 380px cap above cannot
+           take effect. Zero lets each row scroll inside the box instead.
+           flex:0 0 auto stops each row demanding the full box height. */
+        #bias-tokens-row .token-split-item {
+            min-width: 0 !important;
+            flex: 0 0 auto !important;
+            width: 100% !important;
         }
 
         /* ==========================================
@@ -4484,7 +4540,9 @@ __all__ = ["CSS"]
             /* Sliders & Tiny Adjustments */
             #attention-controls-row input[type="range"] {
                 width: 40px !important;
-                height: 4px !important;
+                /* Hit area, not track thickness - the track is drawn by the
+                   ::-*-track pseudo-elements. Touch needs this more than mouse. */
+                height: 16px !important;
                 margin: 0 !important;
             }
             #attention-controls-row .btn-global,

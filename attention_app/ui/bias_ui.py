@@ -392,20 +392,36 @@ def create_bias_sidebar():
                 font-family: 'JetBrains Mono', monospace;
                 flex-shrink: 0;
             }
+            /* Same hit-area treatment as the floating bar: the element is a
+               generous transparent target, the thin visible rail is painted by
+               the track pseudo-elements. A 3px-tall element was almost
+               impossible to grab. */
             .sidebar-thresh-group input[type="range"] {
                 -webkit-appearance: none;
+                appearance: none;
                 flex: 1;
                 min-width: 0;
-                height: 3px;
-                background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
-                border-radius: 2px;
+                height: 16px;
+                background: transparent;
                 outline: none;
+                box-shadow: none;
+                cursor: pointer;
+                margin: 0;
+                padding: 0;
+            }
+            .sidebar-thresh-group input[type="range"]::-webkit-slider-runnable-track {
+                height: 5px;
+                background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
+                border-radius: 2.5px;
                 box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+                border: 0;
             }
             .sidebar-thresh-group input[type="range"]::-webkit-slider-thumb {
                 -webkit-appearance: none;
-                width: 10px;
-                height: 10px;
+                box-sizing: border-box;
+                width: 13px;
+                height: 13px;
+                margin-top: -4px;   /* (5 - 13) / 2 */
                 border-radius: 50%;
                 background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
                 border: 1.5px solid rgba(255, 255, 255, 0.2);
@@ -418,8 +434,9 @@ def create_bias_sidebar():
                 box-shadow: 0 2px 8px rgba(255, 92, 169, 0.6);
             }
             .sidebar-thresh-group input[type="range"]::-moz-range-thumb {
-                width: 10px;
-                height: 10px;
+                box-sizing: border-box;
+                width: 13px;
+                height: 13px;
                 border-radius: 50%;
                 background: linear-gradient(135deg, #ff5ca9 0%, #ff74b8 100%);
                 border: 1.5px solid rgba(255, 255, 255, 0.2);
@@ -427,7 +444,10 @@ def create_bias_sidebar():
                 box-shadow: 0 1px 4px rgba(255, 92, 169, 0.4);
             }
             .sidebar-thresh-group input[type="range"]::-moz-range-track {
-                background: transparent;
+                height: 5px;
+                background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
+                border-radius: 2.5px;
+                box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
                 border: 0;
             }
         """),
@@ -2331,7 +2351,9 @@ def create_floating_bias_toolbar():
                 /* When a panel is open, cap the token box so it stays centred
                    without crowding the side controls. */
                 #bias-controls-row:has(.cw-inline-panel.open) #bias-tokens-row .token-sentence,
-                #bias-controls-row:has(.alpha-inline-panel.open) #bias-tokens-row .token-sentence {
+                #bias-controls-row:has(.cw-inline-panel.open) #bias-tokens-row .token-row-split,
+                #bias-controls-row:has(.alpha-inline-panel.open) #bias-tokens-row .token-sentence,
+                #bias-controls-row:has(.alpha-inline-panel.open) #bias-tokens-row .token-row-split {
                     max-width: 260px !important;
                 }
             }
@@ -2403,11 +2425,19 @@ def create_floating_bias_toolbar():
                 #bias-floating-toolbar .control-label {
                     font-size: 9px;
                 }
-                #bias-tokens-row .token-sentence {
+                #bias-tokens-row .token-sentence,
+                #bias-tokens-row .token-row-split {
                     max-width: 380px !important;   /* smaller box, stays centred */
                     max-height: 54px;
                     gap: 4px;
                     padding: 4px 8px;
+                }
+                /* The split carries two stacked rows, so it needs the height
+                   of both; 54px would clip B behind a scrollbar. */
+                #bias-tokens-row .token-row-split {
+                    max-height: 60px;
+                    gap: 2px;
+                    padding: 3px 8px;
                 }
                 /* Plenty of width here: instead of a fixed gap, auto-balance the
                    Layer+Head block in the free space between STEREO and the token
@@ -2487,15 +2517,20 @@ def create_floating_bias_toolbar():
                     display: flex !important;
                     justify-content: center !important;
                 }
-                #bias-tokens-row .token-sentence {
+                #bias-tokens-row .token-sentence,
+                #bias-tokens-row .token-row-split {
                     width: 100% !important;
                     max-width: 360px !important;   /* narrower horizontally */
                     min-width: 0 !important;
                     max-height: 150px !important;   /* taller: many wrapped lines */
                     overflow-y: auto !important;
                     overflow-x: hidden !important;
-                    flex-wrap: wrap !important;
                     -webkit-overflow-scrolling: touch;
+                }
+                /* Chip wrapping is for the single-prompt strip only. The A/B
+                   split must stay a two-row stack (see styles.py). */
+                #bias-tokens-row .token-sentence {
+                    flex-wrap: wrap !important;
                 }
                 #bias-floating-toolbar {
                     padding: 6px 8px !important;
@@ -2557,7 +2592,9 @@ def create_floating_bias_toolbar():
                 .bias-bar-left input[type="range"],
                 .bias-bar-right input[type="range"] {
                     width: 40px !important;
-                    height: 4px !important;
+                    /* Hit area, not track thickness (track is drawn by the
+                       ::-*-track pseudo-elements). Touch needs the room. */
+                    height: 16px !important;
                     margin: 0 !important;
                 }
                 #bias-floating-toolbar .slider-container {

@@ -2936,7 +2936,7 @@ def bias_server_handlers(input, output, session):
             cards = f"""
             <div class="metrics-grid" style="margin-top:16px;">
                 <div class="metric-card">
-                    <div class="metric-label">Biased Tokens</div>
+                    <div class="metric-label" title="Whole words, with subwords merged and punctuation excluded from both sides of the ratio, so the denominator is words that could carry bias.">Biased Tokens</div>
                     <div class="metric-value">{summary['biased_tokens']} / {summary['total_tokens']}</div>
                 </div>
                 <div class="metric-card">

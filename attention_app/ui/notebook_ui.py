@@ -69,6 +69,97 @@ NOTEBOOK_CSS = """
     pointer-events: none;
 }
 
+/* ── Unexported-entries warning icon (left of the FAB) ────────── */
+/* A bare pink triangle, no circle behind it, breathing gently.     */
+/* Shown only after something has been typed in the notebook this   */
+/* session AND it holds entries that have not been exported yet.    */
+.nb-export-warn {
+    position: fixed;
+    top: 28px;
+    right: 108px;
+    width: 42px;
+    height: 42px;
+    background: none;
+    color: #ff5ca9;
+    border: none;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 9998;
+    padding: 0;
+    transition: transform 0.18s ease, color 0.18s ease;
+}
+.nb-export-warn.nb-warn-visible {
+    display: flex;
+    animation: nb-warn-pulse 2s ease-in-out infinite;
+}
+.nb-export-warn:hover {
+    color: #ff74b8;
+    transform: translateY(-1px);
+    animation: none;
+}
+.nb-export-warn:focus-visible {
+    outline: 2px solid #ff74b8;
+    outline-offset: 3px;
+    border-radius: 8px;
+}
+.nb-export-warn svg { pointer-events: none; }
+@keyframes nb-warn-pulse {
+    0%   { transform: scale(1);    opacity: 1; }
+    50%  { transform: scale(1.12); opacity: 0.75; }
+    100% { transform: scale(1);    opacity: 1; }
+}
+
+/* Click-to-explain popover under the icon */
+.nb-export-warn-pop {
+    position: fixed;
+    top: 80px;
+    right: 100px;
+    width: min(300px, calc(100vw - 112px));
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+    padding: 14px 16px;
+    display: none;
+    z-index: 9998;
+    font-family: 'Inter', -apple-system, sans-serif;
+}
+.nb-export-warn-pop.nb-warn-open { display: block; }
+.nb-export-warn-pop-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0 0 6px 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+.nb-export-warn-pop-title svg {
+    color: #ff5ca9;
+    flex-shrink: 0;
+}
+.nb-export-warn-pop-msg {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #475569;
+    margin: 0 0 12px 0;
+}
+.nb-export-warn-open-btn {
+    width: 100%;
+    background: #ff5ca9;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.18s ease;
+}
+.nb-export-warn-open-btn:hover { background: #ff74b8; }
+
 /* ── Backdrop overlay ─────────────────────────────────────────── */
 .nb-drawer-backdrop {
     position: fixed;
@@ -277,6 +368,19 @@ NOTEBOOK_CSS = """
     gap: 8px;
     margin: 14px 0 4px 0;
     flex-wrap: wrap;
+}
+/* Transient highlight when the export row is jumped to from the
+   unexported-entries warning, so the eye lands on the right buttons. */
+.nb-export-row {
+    border-radius: 10px;
+    padding: 4px;
+    margin-left: -4px;
+    margin-right: -4px;
+    transition: background 0.4s ease, box-shadow 0.4s ease;
+}
+.nb-export-row.nb-export-flash {
+    background: rgba(255, 92, 169, 0.12);
+    box-shadow: 0 0 0 2px rgba(255, 92, 169, 0.35);
 }
 .nb-btn {
     padding: 7px 14px;
@@ -556,6 +660,22 @@ NOTEBOOK_CSS = """
 NOTEBOOK_JS = """
 <script>
 (function() {
+    // The export-warning icon appears only once BOTH are true: the user
+    // has typed something in the notebook this session, and there are
+    // entries that have not been exported yet.
+    function updateWarnBadge() {
+        var badge = document.getElementById('nb-export-warn');
+        var pop = document.getElementById('nb-export-warn-pop');
+        if (!badge) return;
+        var show = (window._nbUnexported || 0) > 0 && window._nbNotebookTouched;
+        if (show) {
+            badge.classList.add('nb-warn-visible');
+        } else {
+            badge.classList.remove('nb-warn-visible');
+            if (pop) pop.classList.remove('nb-warn-open');
+        }
+    }
+
     function bindNotebookDrawer() {
         var fab = document.getElementById('nb-fab');
         var drawer = document.getElementById('nb-drawer');
@@ -573,6 +693,14 @@ NOTEBOOK_JS = """
             backdrop.classList.add('nb-open');
             document.body.style.overflow = 'hidden';
         }
+        // Any typing inside the drawer (the five entry fields, the
+        // participant code, ...) counts as "the notebook is being used";
+        // only then may the export warning appear.
+        drawer.addEventListener('input', function() {
+            if (window._nbNotebookTouched) return;
+            window._nbNotebookTouched = true;
+            updateWarnBadge();
+        });
         function closeDrawer() {
             drawer.classList.remove('nb-open');
             backdrop.classList.remove('nb-open');
@@ -584,6 +712,39 @@ NOTEBOOK_JS = """
         fab.addEventListener('click', openDrawer);
         closeBtn.addEventListener('click', closeDrawer);
         backdrop.addEventListener('click', closeDrawer);
+
+        // ── Unexported-entries warning badge ──
+        var warnBadge = document.getElementById('nb-export-warn');
+        var warnPop = document.getElementById('nb-export-warn-pop');
+        var warnOpenBtn = document.getElementById('nb-export-warn-open');
+        if (warnBadge && warnPop) {
+            warnBadge.addEventListener('click', function(e) {
+                e.stopPropagation();
+                warnPop.classList.toggle('nb-warn-open');
+            });
+            document.addEventListener('click', function(e) {
+                if (!warnPop.classList.contains('nb-warn-open')) return;
+                if (warnPop.contains(e.target) || warnBadge.contains(e.target)) return;
+                warnPop.classList.remove('nb-warn-open');
+            });
+            if (warnOpenBtn) {
+                warnOpenBtn.addEventListener('click', function() {
+                    warnPop.classList.remove('nb-warn-open');
+                    openDrawer();
+                    // Land straight on the export buttons rather than at the
+                    // top of the form: the warning is about exporting.
+                    var row = document.getElementById('nb-export-row');
+                    if (!row) return;
+                    setTimeout(function() {
+                        row.scrollIntoView({behavior: 'smooth', block: 'center'});
+                        row.classList.add('nb-export-flash');
+                        setTimeout(function() {
+                            row.classList.remove('nb-export-flash');
+                        }, 1600);
+                    }, 340);  // after the drawer's slide-in transition
+                });
+            }
+        }
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape' && drawer.classList.contains('nb-open')) {
                 closeDrawer();
@@ -687,6 +848,16 @@ NOTEBOOK_JS = """
 
         Shiny.addCustomMessageHandler('nb_unexported', function(payload) {
             window._nbUnexported = (payload && payload.n) || 0;
+            var n = window._nbUnexported;
+            var msgEl = document.getElementById('nb-export-warn-msg');
+            if (msgEl && n > 0) {
+                msgEl.textContent =
+                    n + (n === 1 ? ' entry exists' : ' entries exist') +
+                    ' only in this browser. If you close or refresh this ' +
+                    'tab without exporting, ' +
+                    (n === 1 ? 'it is' : 'they are') + ' lost.';
+            }
+            updateWarnBadge();
         });
 
         // Offer whatever this browser kept; the server ignores it unless the
@@ -754,6 +925,53 @@ def create_notebook_drawer():
             class_="nb-fab",
             type="button",
             **{"aria-label": "Open Auditor Notebook", "title": "Auditor Notebook"},
+        ),
+        # ── Unexported-entries warning badge + popover ───────────
+        ui.tags.button(
+            ui.HTML(
+                '<svg viewBox="0 0 24 24" width="27" height="27" fill="none" '
+                'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" '
+                'stroke-linejoin="round" aria-hidden="true">'
+                '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 '
+                '1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>'
+                '<line x1="12" y1="9" x2="12" y2="13"/>'
+                '<line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+            ),
+            id="nb-export-warn",
+            class_="nb-export-warn",
+            type="button",
+            **{
+                "aria-label": "Unexported notebook entries — click for details",
+                "title": "Unexported notebook entries",
+            },
+        ),
+        ui.tags.div(
+            ui.tags.p(
+                ui.HTML(
+                    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" '
+                    'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" '
+                    'stroke-linejoin="round" aria-hidden="true">'
+                    '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 '
+                    '1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>'
+                    '<line x1="12" y1="9" x2="12" y2="13"/>'
+                    '<line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+                ),
+                "Not exported yet",
+                class_="nb-export-warn-pop-title",
+            ),
+            ui.tags.p(
+                "",
+                id="nb-export-warn-msg",
+                class_="nb-export-warn-pop-msg",
+            ),
+            ui.tags.button(
+                "Open the notebook to export",
+                id="nb-export-warn-open",
+                class_="nb-export-warn-open-btn",
+                type="button",
+            ),
+            id="nb-export-warn-pop",
+            class_="nb-export-warn-pop",
         ),
         # ── Backdrop ─────────────────────────────────────────────
         ui.tags.div(id="nb-drawer-backdrop", class_="nb-drawer-backdrop"),
@@ -882,6 +1100,7 @@ def create_notebook_drawer():
                             "Clear all",
                             class_="nb-btn nb-btn-secondary",
                         ),
+                        id="nb-export-row",
                         class_="nb-export-row",
                     ),
                     ui.output_ui("nb_entries"),

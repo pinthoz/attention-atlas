@@ -145,6 +145,24 @@ def _load_gpt2_tokenizer_compat(model_path: str, **kwargs):
         return AutoTokenizer.from_pretrained(cached, **kwargs)
 
 
+def _is_punctuation_word(token: str) -> bool:
+    """True for a whole word that is punctuation or a symbol only.
+
+    The tokenizer markers are stripped first (GPT-2's ``Ġ`` space
+    marker and BERT's ``##`` continuation marker), then a word counts as
+    punctuation when it holds no letter or digit anywhere: ``.``, ``,``,
+    ``"``, ``...`` and ``--`` all qualify, while ``don't``, ``U.S.`` and
+    ``1990s`` do not.
+    """
+    clean = token.replace("Ġ", "")
+    if clean.startswith("##"):
+        clean = clean[2:]
+    clean = clean.strip()
+    if not clean:
+        return True
+    return not any(c.isalnum() for c in clean)
+
+
 # ── Model registry ───────────────────────────────────────────────────────────
 
 # Version: 2026-02-09-v2 - Models now loaded from HuggingFace Hub
@@ -670,6 +688,13 @@ class GusNetDetector:
                 }
         if current_word:
             whole_words.append(current_word)
+
+        # Punctuation is not a lexical item that can carry bias, so counting
+        # it inflates the denominator and deflates `bias_percentage` by an
+        # amount that depends only on how punctuated the sentence is. Drop
+        # pure-punctuation words from BOTH sides of the ratio, so the card
+        # reads "biased words / words" rather than "... / words + commas".
+        whole_words = [t for t in whole_words if not _is_punctuation_word(t["token"])]
 
         total = len(whole_words)
         biased = [t for t in whole_words if t["is_biased"]]
