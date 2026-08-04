@@ -2478,7 +2478,8 @@ def bias_server_handlers(input, output, session):
                     {"style": "display: flex; flex-direction: column; gap: 24px;"},
                     # Side-by-side sentence previews
                     ui.div(
-                        {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px;"},
+                        {"class": "bias-compare-preview-grid",
+                         "style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px;"},
                         # Column A
                         ui.div(
                             {"style": "display: flex; flex-direction: column;"},
@@ -2610,7 +2611,8 @@ def bias_server_handlers(input, output, session):
             )
             
             card = ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px;"},
+                {"class": "bias-compare-preview-grid",
+                 "style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px;"},
                 # Column A
                 ui.div(
                     {"style": "display: flex; flex-direction: column;"},
@@ -2640,7 +2642,8 @@ def bias_server_handlers(input, output, session):
             )
             
             card = ui.div(
-                {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px;"},
+                {"class": "bias-compare-preview-grid",
+                 "style": "display: grid; grid-template-columns: 1fr 1fr; gap: 32px;"},
                 # Column A
                 ui.div(
                     {"style": "display: flex; flex-direction: column;"},

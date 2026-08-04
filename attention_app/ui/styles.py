@@ -946,6 +946,17 @@ CSS = """
             margin: 0 auto !important;
         }
 
+        /* Compare mode starts with the PROMPT A / PROMPT B headings rather
+           than with a card, so its first line of content sits higher than in
+           single mode and runs under the fixed Notebook and export-warning
+           icons in the top-right corner. In single mode the icons only ever
+           overlap the first card's blank top padding, which is why it looks
+           fine there. Reserve the strip so the headings clear them.
+           Tune this one value if the icons still touch the PROMPT B rule. */
+        .bias-compare-preview-grid {
+            padding-top: 26px;
+        }
+
         /* Compare Mode Borders */
         /* Target the card directly inside the wrapper or the card itself */
         .compare-card-a,
