@@ -13,8 +13,12 @@ Usage (single check, suitable for cron / Task Scheduler / GitHub Actions):
 The token needs WRITE access to the Space. It is read from --token, or
 the HF_TOKEN / HUGGINGFACE_TOKEN environment variables.
 
-Exit codes: 0 = healthy (or restart issued), 1 = unexpected failure,
-2 = Space in an error state this script does not auto-fix.
+Exit codes: 0 = healthy, 1 = unexpected failure, 2 = Space in an error
+state this script does not auto-fix, 3 = restart issued.
+
+3 is deliberately distinct from 0: a caller that treats "restarted" as
+success cannot tell a one-off blip from a Space that is being restarted
+every cycle and never recovering.
 """
 
 import argparse
@@ -57,12 +61,28 @@ def _write_state(state_file: Path, state: dict) -> None:
         _log(f"warning: could not persist state file ({e})")
 
 
+def _get_runtime(api, space: str, attempts: int = 3):
+    # A DNS blip or a 5xx from the Hub is not a Space problem; without the
+    # retry the scheduled check reports a failure for something transient.
+    delay = 5.0
+    for i in range(1, attempts + 1):
+        try:
+            return api.get_space_runtime(repo_id=space)
+        except Exception as e:
+            if i == attempts:
+                raise
+            _log(f"could not read runtime ({type(e).__name__}: {e}); "
+                 f"retrying in {delay:.0f}s ({i}/{attempts - 1})")
+            time.sleep(delay)
+            delay *= 2
+
+
 def check_and_restart(space: str, token: str, factory: bool,
                       min_gap_minutes: float, state_file: Path) -> int:
     from huggingface_hub import HfApi
 
     api = HfApi(token=token)
-    runtime = api.get_space_runtime(repo_id=space)
+    runtime = _get_runtime(api, space)
     stage = str(getattr(runtime, "stage", "") or "").upper()
     _log(f"{space}: stage={stage}")
 
@@ -96,7 +116,7 @@ def check_and_restart(space: str, token: str, factory: bool,
                               "factory": factory})
     _log("restart requested. The Space takes a few minutes to come back; "
          "the next check will confirm.")
-    return 0
+    return 3
 
 
 def main() -> int:

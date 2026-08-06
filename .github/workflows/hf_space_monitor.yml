@@ -3,11 +3,21 @@ name: HF Space health monitor
 on:
   schedule:
     # Every 30 minutes. GitHub may delay scheduled runs by a few minutes.
+    # NOTE: GitHub disables scheduled workflows in repositories with no
+    # activity for 60 days, silently. If the repo goes quiet after the
+    # thesis is handed in, re-enable this from the Actions tab.
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
+  issues: write
+
+# A run stuck waiting for a hosted runner can overrun the next cron tick.
+# Without this, two runs could evaluate and restart the same Space at once.
+concurrency:
+  group: hf-space-monitor
+  cancel-in-progress: false
 
 jobs:
   check-space:
@@ -15,8 +25,10 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Checkout repository
+      - name: Checkout monitor script
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: huggingface
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -27,8 +39,59 @@ jobs:
         run: pip install --quiet "huggingface_hub>=0.23"
 
       - name: Check Space and restart if needed
+        id: check
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         # Each Actions run is a fresh VM, so the local cooldown state file
         # never persists here; the 30-minute cron interval IS the cooldown.
-        run: python huggingface/hf_space_monitor.py --space pinthoz/attention-atlas --min-gap-minutes 0
+        run: |
+          set +e
+          python huggingface/hf_space_monitor.py \
+            --space pinthoz/attention-atlas --min-gap-minutes 0 2>&1 | tee monitor.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          # 3 means a restart was issued: not a failure, but it must not pass
+          # silently either. The next step records it. Anything else non-zero
+          # is a real problem and should fail the run.
+          if [ "$code" -ne 0 ] && [ "$code" -ne 3 ]; then
+            exit "$code"
+          fi
+
+      - name: Record the restart in a tracking issue
+        if: steps.check.outputs.code == '3'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: "HF Space health monitor: automatic restart issued"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "The monitor found the Space in a restartable error stage and"
+            echo "issued a restart."
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo '```'
+            cat monitor.log
+            echo '```'
+            echo
+            echo "Every restart adds a comment here. Several comments in a row mean"
+            echo "the restart is **not** fixing the Space and it needs to be looked"
+            echo "at by hand: https://huggingface.co/spaces/pinthoz/attention-atlas"
+            echo
+            echo "Close this issue once the Space is healthy again; the monitor will"
+            echo "open a fresh one the next time it has to restart."
+          } > issue-body.md
+
+          # Also surface it on the run page, so the restart is visible even if
+          # the issue write below fails.
+          cat issue-body.md >> "$GITHUB_STEP_SUMMARY"
+
+          num=$(gh issue list --state open --limit 100 --json number,title \
+                --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
+
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body-file issue-body.md
+          else
+            gh issue create --title "$TITLE" --body-file issue-body.md
+          fi
