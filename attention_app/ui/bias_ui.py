@@ -1700,10 +1700,22 @@ def create_bias_accordion(requires_detections: bool = False):
                 ui.output_ui("ig_section_header"),
                 ui.output_ui("ig_results_display"),
                 ui.output_ui("ablation_section_header"),
-                # The "Rank heads by" selector is now rendered at the TOP of the
-                # Head Ablation Results card itself (see ablation_results_display
-                # in bias_xai.py); only its shared CSS lives here.
+                ui.output_ui("rank_pills_selector"),
+                # The ablation-pill CSS supports the "Rank heads by" selector
+                # rendered by rank_pills_selector in bias_xai.py.
                 ui.tags.style("""
+                    #ig_section_header,
+                    #ablation_section_header,
+                    #perturbation_section_header,
+                    #lrp_section_header {
+                        margin-bottom: 0 !important;
+                        height: auto !important;
+                    }
+                    #rank_pills_selector {
+                        margin-top: 6px !important;
+                        margin-bottom: 10px !important;
+                        height: auto !important;
+                    }
                     .ablation-pill {
                         display: flex; flex-direction: row; align-items: baseline; gap: 6px;
                         background: var(--pill-bg); padding: 4px 14px; border-radius: 6px;

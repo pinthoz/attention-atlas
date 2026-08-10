@@ -374,17 +374,17 @@ def _faithfulness_subsection_header(title: str, body: str | None = None):
     nodes = [
         ui.h5(
             title,
-            style="margin: 0 0 6px 0; font-size: 14px; font-weight: 700; color: #f8fafc; letter-spacing: 0.2px;",
+            style="margin: 0 0 4px 0; font-size: 14px; font-weight: 700; color: #f8fafc; letter-spacing: 0.2px;",
         )
     ]
     if body:
         nodes.append(
             ui.p(
                 body,
-                style="margin: 0 0 10px 0; font-size: 12px; line-height: 1.5; color: #94a3b8;",
+                style="margin: 0; font-size: 12px; line-height: 1.5; color: #94a3b8;",
             )
         )
-    return ui.div({"style": "margin: 12px 0 8px;"}, *nodes)
+    return ui.div({"style": "margin: 16px 0 6px 0;"}, *nodes)
 
 
 def register_xai_handlers(
@@ -531,6 +531,57 @@ def register_xai_handlers(
             "GUS-Net detected-bias evidence (which input tokens drive the bias detections). "
             "These outputs show whether heads that focus on biased tokens also align with "
             "gradient-based token importance for that decision.",
+        )
+
+    @output
+    @render.ui
+    def rank_pills_selector():
+        """Standalone 'Rank heads by' pill bar, placed between IG and Causal
+        Head Intervention. Gated on ablation results so it only appears once
+        the analysis has been computed."""
+        if ablation_running.get() or not ablation_results.get():
+            return None
+        try:
+            _rank_by = str(input.bias_ablation_rank_by())
+        except Exception:
+            _rank_by = "combined"
+        _pill_specs = [
+            ("combined", "Combined", "all biased", "#ff5ca9", "rgba(255,92,169,0.14)", "#ff5ca933"),
+            ("GEN", "GEN", "generalisation", "#f59e0b", "rgba(245,158,11,0.14)", "#f59e0b33"),
+            ("UNFAIR", "UNFAIR", "unfair language", "#ef4444", "rgba(239,68,68,0.14)", "#ef444433"),
+            ("STEREO", "STEREO", "stereotype", "#a78bfa", "rgba(167,139,250,0.14)", "#a78bfa33"),
+        ]
+        _pills = ""
+        for _val, _label, _sub, _col, _bg, _bd in _pill_specs:
+            _active = " active" if _rank_by == _val else ""
+            _onclick = (
+                "Shiny.setInputValue('bias_ablation_rank_by','" + _val + "',{priority:'event'});"
+                "this.parentNode.querySelectorAll('.ablation-pill').forEach(function(p){p.classList.remove('active');});"
+                "this.classList.add('active');"
+            )
+            _pills += (
+                f'<div class="ablation-pill{_active}" data-value="{_val}" '
+                f'title="BAR_{_val} ranking" '
+                f'style="--pill-color:{_col};--pill-bg:{_bg};--pill-border:{_bd};" '
+                f'onclick="{_onclick}">'
+                f'<span class="ablation-pill-label">{_label}</span>'
+                f'<span class="ablation-pill-sub">{_sub}</span>'
+                f'</div>'
+            )
+        return ui.div(
+            {"style": (
+                "display:flex;justify-content:center;align-items:center;"
+                "gap:12px;margin:0 auto;padding:6px 18px;"
+                "background:rgba(30,41,59,0.65);border-radius:8px;"
+                "border:1px solid rgba(148,163,184,0.12);"
+                "backdrop-filter:blur(6px);flex-wrap:wrap;"
+                "max-width:fit-content;"
+            )},
+            ui.HTML(
+                '<span style="font-size:10px;font-weight:700;color:#94a3b8;'
+                'text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;">Rank heads by</span>'
+                f'<div style="display:inline-flex;gap:8px;align-items:stretch;">{_pills}</div>'
+            ),
         )
 
     @output
@@ -790,50 +841,12 @@ def register_xai_handlers(
             f"<div style='{_TN}'>Ablation is useful, but not sufficient on its own. Cross-reference it with Integrated Gradients for convergent validity.</div>"
         )
 
-        # "Rank heads by" selector, rendered ABOVE the Head Ablation Results
-        # title. Server-rendered so the active pill reflects the current
-        # ranking; each pill sets bias_ablation_rank_by (and toggles active for
-        # instant feedback). Shared across A/B in compare mode.
-        try:
-            _rank_by = str(input.bias_ablation_rank_by())
-        except Exception:
-            _rank_by = "combined"
-        _pill_specs = [
-            ("combined", "Combined", "all biased", "#ff5ca9", "rgba(255,92,169,0.14)", "#ff5ca933"),
-            ("GEN", "GEN", "generalisation", "#f59e0b", "rgba(245,158,11,0.14)", "#f59e0b33"),
-            ("UNFAIR", "UNFAIR", "unfair language", "#ef4444", "rgba(239,68,68,0.14)", "#ef444433"),
-            ("STEREO", "STEREO", "stereotype", "#a78bfa", "rgba(167,139,250,0.14)", "#a78bfa33"),
-        ]
-        _pills = ""
-        for _val, _label, _sub, _col, _bg, _bd in _pill_specs:
-            _active = " active" if _rank_by == _val else ""
-            _onclick = (
-                "Shiny.setInputValue('bias_ablation_rank_by','" + _val + "',{priority:'event'});"
-                "this.parentNode.querySelectorAll('.ablation-pill').forEach(function(p){p.classList.remove('active');});"
-                "this.classList.add('active');"
-            )
-            _pills += (
-                f'<div class="ablation-pill{_active}" data-value="{_val}" '
-                f'title="BAR_{_val} ranking" '
-                f'style="--pill-color:{_col};--pill-bg:{_bg};--pill-border:{_bd};" '
-                f'onclick="{_onclick}">'
-                f'<span class="ablation-pill-label">{_label}</span>'
-                f'<span class="ablation-pill-sub">{_sub}</span>'
-                f'</div>'
-            )
-        rank_pills = ui.HTML(
-            '<div style="display:flex;justify-content:center;align-items:center;'
-            'gap:14px;margin:0 0 14px 0;flex-wrap:wrap;">'
-            '<span style="font-size:10px;font-weight:700;color:#94a3b8;'
-            'text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;">Rank heads by</span>'
-            f'<div style="display:inline-flex;gap:8px;align-items:stretch;">{_pills}</div>'
-            '</div>'
-        )
-
         if show_comparison:
             src_mode = _get_attn_source_mode("bias_attn_source")
             if src_mode == "compare":
                 lbl_A, lbl_B = "Base Encoder", "GUS-Net"
+            elif active_bias_compare_prompts.get():
+                lbl_A, lbl_B = "Prompt A", "Prompt B"
             else:
                 lbl_A, lbl_B = "Model A", "Model B"
             h_A = (f"Head Ablation Results{_source_badge_html(lbl_A)}", header_args[1], header_args[2])
@@ -842,14 +855,12 @@ def register_xai_handlers(
                 {"style": "display: grid; grid-template-columns: 1fr 1fr; gap: 24px;"},
                 _wrap_card(_render_ablation_single(results_A, "_A"), *h_A,
                            style="border: 2px solid #3b82f6; height: 100%;",
-                           top=rank_pills,
                            controls=[
                                ui.download_button("export_ablation_csv", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('ablation-chart-container_A', 'ablation_impact_A.png')", style=_BTN_STYLE_PNG),
                            ]),
                 _wrap_card(_render_ablation_single(results_B, "_B"), *h_B,
                            style="border: 2px solid #ff5ca9; height: 100%;",
-                           top=rank_pills,
                            controls=[
                                ui.download_button("export_ablation_csv_B", "CSV", style=_BTN_STYLE_CSV),
                                ui.tags.button("PNG", onclick="downloadPlotlyPNG('ablation-chart-container_B', 'ablation_impact_B.png')", style=_BTN_STYLE_PNG),
@@ -859,7 +870,6 @@ def register_xai_handlers(
         return _wrap_card(
             _render_ablation_single(results_A),
             *header_args,
-            top=rank_pills,
             controls=[
                 ui.download_button("export_ablation_csv", "CSV", style=_BTN_STYLE_CSV),
                 ui.tags.button("PNG", onclick="downloadPlotlyPNG('ablation-chart-container', 'ablation_impact.png')", style=_BTN_STYLE_PNG),
@@ -1364,8 +1374,10 @@ def register_xai_handlers(
                 # Source compare: A = Base Encoder, B = GUS-Net
                 label_A = "Base Encoder"
                 label_B = "GUS-Net"
+            elif active_bias_compare_prompts.get():
+                label_A = "Prompt A"
+                label_B = "Prompt B"
             else:
-                # Model/prompt compare: A vs B
                 label_A = "Model A"
                 label_B = "Model B"
             header_A = (
@@ -1801,6 +1813,8 @@ def register_xai_handlers(
             _src_m = _get_attn_source_mode("bias_attn_source")
             if _src_m == "compare":
                 _lA, _lB = "Base Encoder", "GUS-Net"
+            elif active_bias_compare_prompts.get():
+                _lA, _lB = "Prompt A", "Prompt B"
             else:
                 _lA, _lB = "Model A", "Model B"
             _hA = (f"Perturbation Analysis{_source_badge_html(_lA)}", header_args[1], header_args[2])
@@ -2106,6 +2120,8 @@ def register_xai_handlers(
             _src_m = _get_attn_source_mode("bias_attn_source")
             if _src_m == "compare":
                 _lA, _lB = "Base Encoder", "GUS-Net"
+            elif active_bias_compare_prompts.get():
+                _lA, _lB = "Prompt A", "Prompt B"
             else:
                 _lA, _lB = "Model A", "Model B"
             _hA = (f"LRP Cross-Validation{_source_badge_html(_lA)}", header_args[1], header_args[2])
