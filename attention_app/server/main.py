@@ -2508,7 +2508,7 @@ def server(input, output, session):
 
             opacity = 0.2 + (recv_norm * 0.6)
             bg_color = f"rgba({color_rgb}, {opacity})"
-            tooltip = _html.escape(f"Token: {clean_tok}&#10;Attention Received: {att_recv:.3f}", quote=True)
+            tooltip = f"Token: {clean_tok}&#10;Attention Received: {att_recv:.3f}"
             token_html.append(f'<span class="token-viz" style="background:{bg_color};" title="{tooltip}">{clean_tok}</span>')
             
         html = '<div class="token-viz-container">' + ''.join(token_html) + '</div>'
