@@ -807,7 +807,7 @@ def bias_server_handlers(input, output, session):
             js_arg = json.dumps(text.replace('\n', ' '))
             items.append(
                 ui.div(
-                    _html.escape(display_text),
+                    display_text,
                     class_="history-item",
                     onclick=f"selectBiasHistoryItem({js_arg})"
                 )
@@ -1188,7 +1188,9 @@ def bias_server_handlers(input, output, session):
         content = json.dumps(data, indent=2)
         # Also save to downloads/sessions/
         save_bias_export_to_folder(content, f"bias_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
-        return content
+        # Must yield, not return: @render.download treats a returned str as a
+        # file path and stats it (WinError 123 on the JSON payload).
+        yield content
 
     @reactive.Effect
     @reactive.event(input.load_bias_session_upload)

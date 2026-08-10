@@ -2432,7 +2432,7 @@ def server(input, output, session):
             return None
         
         # Restore live preview (Safe now that dashboard is isolated)
-        t = _html.escape(input.text_input().strip())
+        t = input.text_input().strip()
         if t:
             return ui.HTML(f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{_html.escape(t)}"</div>')
         else:
@@ -2451,7 +2451,7 @@ def server(input, output, session):
         if step == "B":
             return None
             
-        t = _html.escape(input.text_input().strip())
+        t = input.text_input().strip()
         if t:
             return ui.HTML(f'<div style="font-family:monospace;color:#3b82f6;font-size:14px;">"{_html.escape(t)}"</div>')
         else:
@@ -2470,7 +2470,7 @@ def server(input, output, session):
         # Check cached_result only if we were NOT editing (but we are, so skip check)
         # if cached_result.get(): return None 
         
-        try: t = _html.escape(input.text_input_B().strip())
+        try: t = input.text_input_B().strip()
         except Exception: t = ""
 
         if t:
@@ -2479,7 +2479,7 @@ def server(input, output, session):
             return ui.HTML('<div style="color:#9ca3af;font-size:12px;">Type a sentence and click Generate All.</div>')
 
     def get_preview_text_view(res, text_input, model_suffix="", footer_html=""):
-        t = _html.escape(text_input.strip()) if text_input else ""
+        t = text_input.strip() if text_input else ""
         
         # Determine colors based on model suffix
         color_rgb = "59, 130, 246"  # Blue (Default/Model A)
@@ -3946,7 +3946,7 @@ def server(input, output, session):
                 # Base models (bert-base, gpt2-small)
                 return 12
 
-            t = _html.escape(input.text_input().strip())
+            t = input.text_input().strip()
             # Placeholder changed to '(input)' per user request
             preview_html = f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{_html.escape(t)}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">(input)</div>'
 
@@ -3992,7 +3992,7 @@ def server(input, output, session):
                 else:
                     t_b = t # Same text if comparing models
                 
-                preview_b = f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{t_b}"</div>' if t_b else '<div style="color:#9ca3af;font-size:12px;">(input)</div>'
+                preview_b = f'<div style="font-family:monospace;color:#ff5ca9;font-size:14px;">"{_html.escape(t_b)}"</div>' if t_b else '<div style="color:#9ca3af;font-size:12px;">(input)</div>'
 
                 arch_type_a = "gpt2" if input.model_family() == "gpt2" else "bert"
                 arch_type_b = arch_type_a if live_compare_prompts else ("gpt2" if input.model_family_B() == "gpt2" else "bert")
