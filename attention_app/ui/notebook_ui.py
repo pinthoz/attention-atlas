@@ -779,6 +779,20 @@ NOTEBOOK_JS = """
                 Shiny.setInputValue(inputId, values[inputId], {priority: 'event'});
             });
 
+            // The four prompt boxes are plain <textarea> elements, not Shiny
+            // text-area widgets, so update_text_area() has no binding to talk
+            // to. Write the DOM value and push the input by hand instead.
+            var textareas = (payload && payload.textareas) || {};
+            Object.keys(textareas).forEach(function(elId) {
+                var ta = document.getElementById(elId);
+                if (!ta) {
+                    console.warn('[Notebook] textarea not found on restore:', elId);
+                    return;
+                }
+                ta.value = textareas[elId];
+                Shiny.setInputValue(elId, ta.value, {priority: 'event'});
+            });
+
             // Sync the bespoke toolbar widgets whose visual state lives in
             // the DOM rather than in a native Shiny widget.
             if (Object.prototype.hasOwnProperty.call(values, 'bias_attn_source') &&

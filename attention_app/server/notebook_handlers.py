@@ -2084,7 +2084,8 @@ def notebook_server_handlers(input, output, session, *,
 
     # ---- Dismiss transient status when leaving the drawer ----------------
     @reactive.effect
-    @reactive.event(input.nb_dismiss_status, ignore_init=True)
+    # See _delete_one: ignore_init would eat the first dismissal.
+    @reactive.event(input.nb_dismiss_status)
     def _dismiss_status():
         last_status.set(("", "ok"))
 
@@ -2099,8 +2100,14 @@ def notebook_server_handlers(input, output, session, *,
         last_status.set(("All entries cleared.", "ok"))
 
     # ---- Delete individual entry ---------------------------------------
+    # No ignore_init here: this input only exists once the client clicks, so
+    # at session start the event trigger already aborts on the unset read -
+    # which is the guard ignore_init was meant to give. With ignore_init the
+    # abort happens *before* the "initialized" flag is set, so the flag is
+    # still False on the first real click and that click gets swallowed.
+    # Same trap documented in interaction_log._watch.
     @reactive.effect
-    @reactive.event(input.nb_delete_idx, ignore_init=True)
+    @reactive.event(input.nb_delete_idx)
     def _delete_one():
         idx = input.nb_delete_idx()
         try:
@@ -2115,9 +2122,10 @@ def notebook_server_handlers(input, output, session, *,
             last_status.set(("Entry removed.", "ok"))
 
     # ---- Restore state from an entry -----------------------------------
+    # See _delete_one: ignore_init would eat the first click.
     @reactive.effect
-    @reactive.event(input.nb_restore_idx, ignore_init=True)
-    def _restore_state():
+    @reactive.event(input.nb_restore_idx)
+    async def _restore_state():
         raw = input.nb_restore_idx()
         try:
             idx_int = int(raw)
@@ -2133,6 +2141,7 @@ def notebook_server_handlers(input, output, session, *,
 
         n_applied = 0
         client_event_values: Dict[str, Any] = {}
+        textarea_values: Dict[str, Any] = {}
         for json_key, value in ctx.items():
             input_id = _RESTORE_MAP.get(json_key)
             if input_id is None:
@@ -2152,7 +2161,11 @@ def notebook_server_handlers(input, output, session, *,
                 elif json_key in _SELECT_INPUTS:
                     ui.update_select(input_id, selected=value)
                 elif json_key in _TEXT_AREA_INPUTS:
-                    ui.update_text_area(input_id, value=str(value))
+                    # Plain <textarea> elements, not Shiny widgets: there is
+                    # no binding for update_text_area to reach, so restoring
+                    # them that way silently did nothing. Push the value to
+                    # the browser instead.
+                    textarea_values[input_id] = str(value)
                 elif json_key in _CLIENT_EVENT_INPUTS:
                     client_event_values[input_id] = value
                 else:
@@ -2161,23 +2174,39 @@ def notebook_server_handlers(input, output, session, *,
             except Exception:
                 # Updates for unknown inputs are silent failures; keep going.
                 continue
-        if client_event_values:
+        if client_event_values or textarea_values:
             try:
-                asyncio.create_task(
-                    session.send_custom_message(
-                        "nb_restore_client_inputs",
-                        {"values": client_event_values},
-                    )
+                await session.send_custom_message(
+                    "nb_restore_client_inputs",
+                    {"values": client_event_values,
+                     "textareas": textarea_values},
                 )
             except Exception:
                 _logger.exception("Could not restore custom client inputs")
+
+        # Re-run the evidence for a bias entry, so "restore state" lands on
+        # the same panels the entry was written about instead of the previous
+        # run's. Give the pushed inputs a moment to reach the browser and come
+        # back as Shiny inputs first, otherwise the analysis reads stale text.
+        bias_entry = str(ctx.get("active_tab") or "").strip().lower() == "bias"
+        if bias_entry:
+            await asyncio.sleep(0.4)
+            # In compare-prompts the analyse button intercepts a step-A click
+            # as "Prompt B ->" instead of running, so land on B first.
+            if ctx.get("bias_compare_prompts"):
+                await session.send_custom_message(
+                    "bias_switch_prompt_tab", {"tab": "B"})
+                await asyncio.sleep(0.2)
+            await session.send_custom_message("bias_click_analyze", {})
+
+        if bias_entry:
+            tail = "Re-running Analyze Bias for the restored inputs."
+        else:
+            tail = ("The panels still show the PREVIOUS run - click Generate "
+                    "All to recompute the evidence for the restored inputs.")
         last_status.set(
-            (
-                f"Restored {n_applied} input field(s) from the saved entry. "
-                "The panels still show the PREVIOUS run - click Generate All / "
-                "Analyze Bias to recompute the evidence for the restored inputs.",
-                "ok",
-            )
+            (f"Restored {n_applied} input field(s) from the saved entry. {tail}",
+             "ok")
         )
 
     # ---- FAB visibility: only reveal after a run in Attention or Bias --

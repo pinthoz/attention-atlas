@@ -360,8 +360,13 @@ def register_interaction_logging(input, session) -> Optional[_SessionLog]:
     # the same as reading it, so each period the panel body spent visible
     # while expanded is reported here. Summed per panel, this is what
     # separates a genuine consultation from an abandoned click.
+    # No ignore_init: this input is browser-sent and does not exist at
+    # session start, so the trigger already aborts on the unset read. With
+    # ignore_init that abort precedes the "initialized" flag, so the first
+    # real dwell report would be swallowed - the same trap spelled out in
+    # the change-watcher note below.
     @reactive.effect
-    @reactive.event(input.bias_panel_dwell, ignore_init=True)
+    @reactive.event(input.bias_panel_dwell)
     def _log_panel_dwell():
         try:
             payload = input.bias_panel_dwell() or {}
