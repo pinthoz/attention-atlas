@@ -201,7 +201,14 @@ MODEL_REGISTRY = {
         "special_tokens": {"[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (BERT Large)",
         "public": True,
-        "optimized_thresholds": [0.4761, 0.4478, 0.4573, 0.4178, 0.4278, 0.4000, 0.3497],
+        # Recalibrated 2026-08-11 against the weights actually published
+        # (sha256 3228cba2..., the -paper-clean run), on that checkpoint's own
+        # fold-4 validation split. The previous values,
+        # [0.4761, 0.4478, 0.4573, 0.4178, 0.4278, 0.4000, 0.3497], came from a
+        # DIFFERENT run (-final-2nd) that was never published, and on the real
+        # weights they collapse UNFAIR precision to 0.16 (F1 0.278). With these
+        # the same checkpoint scores UNFAIR P=0.64 / F1=0.62, micro F1 0.764.
+        "optimized_thresholds": [0.5194, 0.4882, 0.5640, 0.4915, 0.4429, 0.5264, 0.5000],
     },
     "gusnet-bert-custom": {
         "path": "pinthoz/gus-net-bert-custom",
@@ -242,7 +249,14 @@ MODEL_REGISTRY = {
         "special_tokens": {"<|endoftext|>", "[CLS]", "[SEP]", "[PAD]"},
         "display_name": "GUS-Net (GPT-2 Medium)",
         "public": True,
-        "optimized_thresholds": [0.4912, 0.5042, 0.4213, 0.4204, 0.4000, 0.4618, 0.3848],
+        # Recalibrated 2026-08-11 against the published weights (sha256
+        # 6142802e..., the -paper-clean run) on their own fold-4 validation
+        # split. The previous values,
+        # [0.4912, 0.5042, 0.4213, 0.4204, 0.4000, 0.4618, 0.3848], are the
+        # ones shipped in the repo's optimized_thresholds.npy but they were
+        # calibrated on a different run (-final). They happen to work well
+        # here (micro F1 0.855); these give 0.864 with better precision.
+        "optimized_thresholds": [0.5090, 0.5500, 0.5500, 0.4814, 0.6376, 0.4170, 0.5252],
     },
     # ── Locally trained models (ASL + LLRD + BIO postprocessing) ─────────
     "gusnet-bert-new": {

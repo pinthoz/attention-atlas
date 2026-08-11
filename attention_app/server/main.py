@@ -4024,11 +4024,15 @@ def server(input, output, session):
 
                 if live_compare_models:
                     if same_family:
-                        # Same family: highlight only that one architecture
+                        # Both models share one architecture, so only that
+                        # diagram is in play; the other is not part of the
+                        # comparison and stays unlit.
                         arch_active_model = "A" if model_a_is_bert else "B"
                         arch_dual_color = False
                     else:
-                        # Different families: highlight both with blue/pink
+                        # Different families: light both. Blue follows model
+                        # A's family, so it lands on the GPT-2 diagram (the
+                        # right one) whenever GPT-2 is the model A.
                         arch_active_model = "both"
                         arch_dual_color = True
                 else:
@@ -4064,7 +4068,10 @@ def server(input, output, session):
                             active_model=arch_active_model,
                             dual_color=arch_dual_color,
                             layers_a=layers_for_bert, # Passes to Diagram A (BERT default)
-                            layers_b=layers_for_gpt2  # Passes to Diagram B (GPT2 default)
+                            layers_b=layers_for_gpt2, # Passes to Diagram B (GPT2 default)
+                            # Diagram A is BERT, diagram B is GPT-2, so blue
+                            # belongs to whichever of the two model A is.
+                            blue_side="a" if model_a_is_bert else "b"
                         )
                     ),
                     ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1'); document.body.style.overflow = 'auto';</script>")

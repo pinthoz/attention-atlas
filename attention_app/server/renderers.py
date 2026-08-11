@@ -431,15 +431,20 @@ def get_paired_architecture_section(model_type_a="bert", model_type_b="gpt2",
                                      color_a="#3b82f6", color_b="#ff5ca9",
                                      label_a="Model A", label_b="Model B",
                                      active_model="both", dual_color=False,
-                                     layers_a=12, layers_b=12):
+                                     layers_a=12, layers_b=12, blue_side="a"):
     """
     Compare-mode - always show both diagrams side-by-side.
     active_model: "both" (default), "A", or "B".
                   If "A", dim B. If "B", dim A.
-    dual_color: If True (compare models), A gets blue border, B gets pink.
+    dual_color: If True (compare models), one diagram gets blue, the other pink.
                 If False (single/compare prompts), selected model gets pink border.
     layers_a: Number of layers for Model A
     layers_b: Number of layers for Model B
+    blue_side: Which diagram carries the blue (model A) border, "a" or "b".
+               The two diagrams are fixed architectures (left BERT, right
+               GPT-2), so the caller has to say which of them the compared
+               model A actually belongs to - otherwise BERT would be painted
+               blue even when GPT-2 is the model A.
     """
     diagram_a = get_architecture_diagram(model_type_a, color_a, title_prefix=label_a, layer_count_val=layers_a)
     diagram_b = get_architecture_diagram(model_type_b, color_b, title_prefix=label_b, layer_count_val=layers_b)
@@ -456,9 +461,13 @@ def get_paired_architecture_section(model_type_a="bert", model_type_b="gpt2",
     style_inactive = f"{base_style} border: 2px solid transparent;"
     
     if dual_color and active_model == "both":
-        # Compare Models mode: A=blue, B=pink
-        style_a = style_blue
-        style_b = style_pink
+        # Compare Models: blue marks the architecture of model A, pink model B.
+        if str(blue_side).lower() == "b":
+            style_a = style_pink
+            style_b = style_blue
+        else:
+            style_a = style_blue
+            style_b = style_pink
     elif active_model == "A":
         # Single mode or Compare Prompts: selected model gets pink
         style_a = style_pink
@@ -528,16 +537,22 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
     bert_is_selected = _is_bert(selected_model)
     gpt2_is_selected = _is_gpt2(selected_model)
 
+    # Compare-models: the colour follows the *family* of each model, not the
+    # position, so the diagram that lights up blue is the architecture that is
+    # actually model A. Picking by position would paint BERT blue even when
+    # GPT-2 is the model A.
     if compare_mode:
-        bert_is_model_a = _is_bert(model_a) if model_a else False
-        bert_is_model_b = _is_bert(model_b) if model_b else False
-        gpt2_is_model_a = _is_gpt2(model_a) if model_a else False
-        gpt2_is_model_b = _is_gpt2(model_b) if model_b else False
+        bert_takes_blue = _is_bert(model_a) if model_a else False
+        bert_takes_pink = _is_bert(model_b) if model_b else False
+        gpt2_takes_blue = _is_gpt2(model_a) if model_a else False
+        gpt2_takes_pink = _is_gpt2(model_b) if model_b else False
+        # Same-family comparison (e.g. bert-base vs bert-large): both models
+        # land on one diagram. Blue wins the border there, and the unused
+        # architecture stays dimmed - lighting it would claim a model that is
+        # not in the comparison.
     else:
-        bert_is_model_a = False
-        bert_is_model_b = False
-        gpt2_is_model_a = False
-        gpt2_is_model_b = False
+        bert_takes_blue = bert_takes_pink = False
+        gpt2_takes_blue = gpt2_takes_pink = False
 
     # Styles
     base_section = "position:relative;padding:16px 8px 12px 8px;border-radius:12px;border:2px solid;display:flex;flex-direction:column;align-items:center;width:120px;transition:all 0.3s ease;gap:0;"
@@ -561,14 +576,14 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
     gpt2_opt_sub   = "Single LR=5e-5"
 
     # --- Helper to resolve diagram colors ---
-    def _resolve_colors(is_model_a, is_model_b, is_selected):
+    def _resolve_colors(takes_blue, takes_pink, is_selected):
         """Return (border, bg, accent, accent_rgb, text_dark, text_light, text_accent)."""
         if compare_mode:
-            if is_model_a:
+            if takes_blue:
                 return (f"border-color:{blue};box-shadow:0 0 20px rgba(59,130,246,0.2);",
                         "background-color:rgba(59,130,246,0.08);",
                         blue, "59,130,246", "#2563eb", "#93c5fd", "#60a5fa")
-            elif is_model_b:
+            elif takes_pink:
                 return (f"border-color:{pink};box-shadow:0 0 20px rgba(255,92,169,0.2);",
                         "background-color:rgba(255,92,169,0.08);",
                         pink, "255,92,169", "#db2777", "#fbcfe8", "#f9a8d4")
@@ -588,7 +603,7 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
     # --- BERT Diagram (dynamic: adapts to base/large) ---
     (bert_border, bert_bg, bert_accent, bert_accent_rgb,
      bert_text_dark, bert_text_light, bert_text_accent) = _resolve_colors(
-        bert_is_model_a, bert_is_model_b, bert_is_selected)
+        bert_takes_blue, bert_takes_pink, bert_is_selected)
 
     bert_html = f"""
         <div style="{base_section}{bert_border}{bert_bg}">
@@ -637,7 +652,7 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
     # --- GPT-2 Diagram (dynamic: adapts to base/medium) ---
     (gpt2_border, gpt2_bg, gpt2_accent, gpt2_accent_rgb,
      gpt2_text_dark, gpt2_text_light, gpt2_text_accent) = _resolve_colors(
-        gpt2_is_model_a, gpt2_is_model_b, gpt2_is_selected)
+        gpt2_takes_blue, gpt2_takes_pink, gpt2_is_selected)
 
     gpt2_html = f"""
         <div style="{base_section}{gpt2_border}{gpt2_bg}">
