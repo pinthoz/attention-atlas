@@ -698,11 +698,13 @@ def _capture_context(input, *, cached_result=None, cached_result_B=None,
 
     Captures only what is *relevant* to the current run:
 
-    - Attention ``B`` fields (model B, prompt B) are dropped if neither
-      ``compare_mode`` nor ``compare_prompts_mode`` is active.
-    - Bias ``B`` fields (model B, prompt B, thresholds B, selected
-      tokens B) are dropped if neither ``bias_compare_mode`` nor
-      ``bias_compare_prompts_mode`` is active.
+    - Only the active tab's half is kept. An entry made on the Bias tab
+      carries no attention-tab fields, and vice versa: the inactive tab's
+      untouched default prompt would otherwise be read as the prompt under
+      audit. An unrecognised tab keeps everything.
+    - ``B`` fields are gated on the mode that actually produces them:
+      model B and thresholds B need *compare-models*, prompt B needs
+      *compare-prompts*. Selected tokens B need either.
     - The flag fields themselves (``compare_models``, ``compare_prompts``)
       are kept only when they are actually ``True``; a flag set to
       ``False`` is noise, not signal, and would clutter the audit trail.
@@ -717,38 +719,66 @@ def _capture_context(input, *, cached_result=None, cached_result_B=None,
             value = list(value)
         raw[json_key] = value
 
-    att_compare_active = bool(
-        raw.get("att_compare_models") or raw.get("att_compare_prompts")
-    )
-    bias_compare_active = bool(
-        raw.get("bias_compare_models") or raw.get("bias_compare_prompts")
-    )
+    att_compare_models = bool(raw.get("att_compare_models"))
+    att_compare_prompts = bool(raw.get("att_compare_prompts"))
+    bias_compare_models = bool(raw.get("bias_compare_models"))
+    bias_compare_prompts = bool(raw.get("bias_compare_prompts"))
+    att_compare_active = att_compare_models or att_compare_prompts
+    bias_compare_active = bias_compare_models or bias_compare_prompts
 
-    # Fields to drop entirely when their compare mode is off.
-    att_b_only = {
-        "att_model_family_b", "att_model_name_b", "att_prompt_b",
-    }
-    bias_b_only = {
-        "bias_model_b", "bias_prompt_b",
+    # The entry belongs to one tab. The other tab's fields are not evidence
+    # for it, and its untouched default prompt is worse than noise: it reads
+    # as the prompt under audit. Every captured key is prefixed att_ / bias_,
+    # so the tab decides which half survives. An unrecognised tab keeps
+    # everything rather than silently dropping evidence.
+    active_tab = str(raw.get("active_tab") or "").strip().lower()
+
+    def _tab_allows(json_key: str) -> bool:
+        if active_tab not in ("attention", "bias"):
+            return True
+        if json_key.startswith("att_"):
+            return active_tab == "attention"
+        if json_key.startswith("bias_"):
+            return active_tab == "bias"
+        return True
+
+    # A "B" field is only evidence when the mode that actually creates it is
+    # on. Model and threshold B come from compare-MODELS; prompt B comes from
+    # compare-PROMPTS. Gating both on "either mode" leaks the stale model-B
+    # dropdown into every compare-prompts entry, where only model A runs.
+    att_models_only = {"att_model_family_b", "att_model_name_b"}
+    att_prompts_only = {"att_prompt_b"}
+    bias_models_only = {
+        "bias_model_b",
         "bias_thresh_unfair_b", "bias_thresh_gen_b", "bias_thresh_stereo_b",
-        "bias_selected_tokens_b",
     }
+    bias_prompts_only = {"bias_prompt_b"}
+    # A token selection exists on both sides under either compare mode.
+    bias_either_compare = {"bias_selected_tokens_b"}
 
     context: Dict[str, Any] = {}
     for json_key, value in raw.items():
+        if not _tab_allows(json_key):
+            continue
         # Hide compare flags when not active.
         if json_key in ("att_compare_models", "att_compare_prompts",
                         "bias_compare_models", "bias_compare_prompts"):
             if value:
                 context[json_key] = value
             continue
-        # Hide B-fields when their compare context is inactive.
-        if json_key in att_b_only and not att_compare_active:
+        # Hide B-fields when the mode that produces them is off.
+        if json_key in att_models_only and not att_compare_models:
             continue
-        if json_key in bias_b_only and not bias_compare_active:
+        if json_key in att_prompts_only and not att_compare_prompts:
+            continue
+        if json_key in bias_models_only and not bias_compare_models:
+            continue
+        if json_key in bias_prompts_only and not bias_compare_prompts:
+            continue
+        if json_key in bias_either_compare and not bias_compare_active:
             continue
         # bias_active_prompt only makes sense in compare-prompts mode.
-        if json_key == "bias_active_prompt" and not raw.get("bias_compare_prompts"):
+        if json_key == "bias_active_prompt" and not bias_compare_prompts:
             continue
         context[json_key] = value
 
@@ -757,10 +787,11 @@ def _capture_context(input, *, cached_result=None, cached_result_B=None,
     att_metrics = _extract_attention_metrics(
         cr, raw.get("att_layer"), raw.get("att_head")
     )
-    context.update(att_metrics)
+    if _tab_allows("att_metric_"):
+        context.update(att_metrics)
 
     # Model B identity (only when compare-models is active for attention).
-    if att_compare_active and cached_result_B is not None:
+    if att_compare_models and cached_result_B is not None and _tab_allows("att_metric_"):
         cr_b = _safe_get(cached_result_B)
         ident_b = _model_identity(cr_b)
         if "name_or_path" in ident_b:
@@ -769,7 +800,8 @@ def _capture_context(input, *, cached_result=None, cached_result_B=None,
             context["att_metric_model_param_hash_b"] = ident_b["param_hash"]
 
     bias_metrics = _extract_bias_metrics(bias_state, bias_compare_active)
-    context.update(bias_metrics)
+    if _tab_allows("bias_metric_"):
+        context.update(bias_metrics)
 
     # Bias model identity (sources A and B). The bias_results dict stores
     # the REGISTRY KEY ("gusnet-bert"), which is NOT the checkpoint id -
@@ -784,11 +816,14 @@ def _capture_context(input, *, cached_result=None, cached_result_B=None,
         except Exception:
             return str(key)
 
-    if bias_state is not None:
+    if bias_state is not None and _tab_allows("bias_metric_"):
         br_a = _safe_get(bias_state.get("bias_results"))
         if isinstance(br_a, dict) and br_a.get("bias_model_key"):
             context["bias_metric_model_id"] = _bias_checkpoint(br_a["bias_model_key"])
-        if bias_compare_active:
+        # Only compare-MODELS runs a second detector; in compare-prompts both
+        # prompts go through model A, so a "checkpoint B" there is a duplicate
+        # of A masquerading as a second audited artefact.
+        if bias_compare_models:
             br_b = _safe_get(bias_state.get("bias_results_B"))
             if isinstance(br_b, dict) and br_b.get("bias_model_key"):
                 context["bias_metric_model_id_b"] = _bias_checkpoint(br_b["bias_model_key"])
