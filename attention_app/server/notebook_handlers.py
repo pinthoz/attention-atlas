@@ -103,7 +103,7 @@ _CONTEXT_INPUTS = [
     ("bias_model_key",           "bias_model_a",           "Bias model A"),
     ("bias_model_key_B",         "bias_model_b",           "Bias model B"),
     ("bias_input_text",          "bias_prompt_a",          "Bias prompt A"),
-    ("bias_input_text_b",        "bias_prompt_b",          "Bias prompt B"),
+    ("bias_input_text_B",        "bias_prompt_b",          "Bias prompt B"),
     ("bias_compare_mode",        "bias_compare_models",    "Bias compare models"),
     ("bias_compare_prompts_mode","bias_compare_prompts",   "Bias compare prompts"),
     ("bias_active_prompt_tab",   "bias_active_prompt",     "Bias active prompt"),

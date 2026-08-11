@@ -1207,13 +1207,19 @@ def bias_server_handlers(input, output, session):
             compare_mode = data.get("bias_compare_mode", False)
             compare_prompts = data.get("bias_compare_prompts_mode", False)
 
-            # Use JS to set switch values (standard Shiny switches)
+            # Use JS to set switch values (standard Shiny switches). Pass
+            # shinyId so the handler also pushes the value back as a Shiny
+            # input: without it the server-side mode stays False, and every
+            # B-side field (prompt B, thresholds B) is then treated as
+            # inactive - including by the Auditor Notebook capture.
             if compare_mode:
                 await session.send_custom_message("bias_toggle_switch",
-                    {"id": "bias_compare_mode", "checked": True})
+                    {"id": "bias_compare_mode", "checked": True,
+                     "shinyId": "bias_compare_mode"})
             if compare_prompts:
                 await session.send_custom_message("bias_toggle_switch",
-                    {"id": "bias_compare_prompts_mode", "checked": True})
+                    {"id": "bias_compare_prompts_mode", "checked": True,
+                     "shinyId": "bias_compare_prompts_mode"})
 
             # 2. Wait for UI to rebuild, then restore controls via JS
             await asyncio.sleep(0.3)
@@ -1234,6 +1240,16 @@ def bias_server_handlers(input, output, session):
             if "bias_input_text_B" in data:
                 await session.send_custom_message("bias_set_textarea",
                     {"id": "bias_input_text_B", "value": data["bias_input_text_B"]})
+
+            # 3b. A compare-prompts session was saved from the *completed*
+            # two-prompt state, so land there. Without this the wizard step
+            # stays "A": prompt B is left hidden behind the tab and the
+            # analyse button intercepts the click as "Prompt B ->" instead of
+            # running (see the step == "A" branch in the analyse handler).
+            if compare_prompts:
+                await asyncio.sleep(0.3)
+                await session.send_custom_message("bias_switch_prompt_tab", {"tab": "B"})
+                bias_prompt_step.set("B")
 
             # 4. Restore per-class thresholds via JS slider updates
             thresh_map = {
