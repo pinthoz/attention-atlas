@@ -2184,6 +2184,13 @@ def notebook_server_handlers(input, output, session, *,
             except Exception:
                 _logger.exception("Could not restore custom client inputs")
 
+        # Minimise the notebook: the restored run plays out on the dashboard
+        # behind the drawer, so staying inside it hides the evidence.
+        try:
+            await session.send_custom_message("nb_close_drawer", {})
+        except Exception:
+            _logger.exception("Could not minimise the notebook drawer")
+
         # Re-run the evidence for a bias entry, so "restore state" lands on
         # the same panels the entry was written about instead of the previous
         # run's. Give the pushed inputs a moment to reach the browser and come

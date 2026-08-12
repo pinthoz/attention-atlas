@@ -566,14 +566,50 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
     connector_pulse = "position:relative;width:1px;background-color:#cbd5e1;margin:0 auto;overflow:hidden;"
     pulse_anim = "position:absolute;top:0;width:100%;height:60%;animation:archMovePulse 2.5s linear infinite;"
 
-    # Optimizer params - gus_net_training_paper.py (α=0.65, γ=3.5, no LLRD)
-    bert_focal_sub = "α=0.65, γ=3.5"
-    bert_opt_label = "AdamW + Lin. Warmup"
-    bert_opt_sub   = "Single LR=5e-5"
+    # Training configuration of the PUBLISHED checkpoints, taken from
+    # colab_sparse_training_clean.ipynb (the run that produced them; verified
+    # against the weights on the Hub by sha256). The loss is the symmetric,
+    # paper-faithful focal loss, not the asymmetric one of the older
+    # gus_net_training.py, and there is no layer-wise LR decay.
+    # The base checkpoints add the sparsity regulariser on the span mass
+    # (loss = focal + λ·span_mass); bert-large and gpt2-medium come from the
+    # same recipe with λ = 0. The block is rendered either way, greyed out
+    # when the term is off, so that selecting a large variant does not make
+    # its column shorter than the one beside it.
+    _SPARSE_KEYS = {"gusnet-bert", "gusnet-gpt2"}
+    _FOCAL_SUB = "α=0.55, γ=2"
+    _OPT_LABEL = "AdamW + Lin. Warmup"
+    _OPT_SUB = "Single LR=3e-5"
 
-    gpt2_focal_sub = "α=0.65, γ=3.5"
-    gpt2_opt_label = "AdamW + Lin. Warmup"
-    gpt2_opt_sub   = "Single LR=5e-5"
+    bert_focal_sub = _FOCAL_SUB
+    bert_opt_label = _OPT_LABEL
+    bert_opt_sub   = _OPT_SUB
+    bert_sparse_on = bert_key in _SPARSE_KEYS
+
+    gpt2_focal_sub = _FOCAL_SUB
+    gpt2_opt_label = _OPT_LABEL
+    gpt2_opt_sub   = _OPT_SUB
+    gpt2_sparse_on = gpt2_key in _SPARSE_KEYS
+
+    def _sparse_block(active, accent):
+        """The λ·span_mass term.
+
+        Always rendered, so both columns keep the same height whichever
+        variant is selected; when the checkpoint was trained without the term
+        the block is dimmed and reads λ=0 rather than disappearing.
+        """
+        sub = "λ=0.1 · span mass" if active else "λ=0 · not used"
+        label_col = "#ffffff" if active else "#64748b"
+        sub_col = "#cbd5e1" if active else "#64748b"
+        dim = "" if active else "opacity:0.45;"
+        return (
+            f'<div style="{connector_pulse}height:14px;{dim}">'
+            f'<div style="{pulse_anim}background:linear-gradient(transparent,{accent},transparent);"></div></div>'
+            f'<div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;{dim}">'
+            f'<span style="{block_label}font-size:7px;color:{label_col};">Sparsity Reg.</span>'
+            f'<span style="{block_sub}color:{sub_col};">{sub}</span>'
+            f'</div>'
+        )
 
     # --- Helper to resolve diagram colors ---
     def _resolve_colors(takes_blue, takes_pink, is_selected):
@@ -640,6 +676,7 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
                     <span style="{block_label}font-size:7px;color:#ffffff;">Focal Loss</span>
                     <span style="{block_sub}color:#cbd5e1;">{bert_focal_sub}</span>
                 </div>
+                {_sparse_block(bert_sparse_on, bert_accent)}
                 <div style="{connector_pulse}height:14px;"><div style="{pulse_anim}background:linear-gradient(transparent,{bert_accent},transparent);"></div></div>
                 <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;">
                     <span style="{block_label}font-size:7px;color:#ffffff;">{bert_opt_label}</span>
@@ -689,6 +726,7 @@ def get_gusnet_architecture_section(selected_model="gusnet-bert", compare_mode=F
                     <span style="{block_label}font-size:7px;color:#ffffff;">Focal Loss</span>
                     <span style="{block_sub}color:#cbd5e1;">{gpt2_focal_sub}</span>
                 </div>
+                {_sparse_block(gpt2_sparse_on, gpt2_accent)}
                 <div style="{connector_pulse}height:14px;"><div style="{pulse_anim}background:linear-gradient(transparent,{gpt2_accent},transparent);"></div></div>
                 <div style="{block_style}width:100%;padding:4px 2px;height:auto;min-height:0;">
                     <span style="{block_label}font-size:7px;color:#ffffff;">{gpt2_opt_label}</span>

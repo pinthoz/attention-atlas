@@ -712,6 +712,10 @@ NOTEBOOK_JS = """
         fab.addEventListener('click', openDrawer);
         closeBtn.addEventListener('click', closeDrawer);
         backdrop.addEventListener('click', closeDrawer);
+        // Exposed so the server can minimise the drawer after "Restore
+        // state": the restored run plays out on the dashboard behind it, so
+        // staying in the notebook hides the very evidence being restored.
+        window._nbCloseDrawer = closeDrawer;
 
         // ── Unexported-entries warning badge ──
         var warnBadge = document.getElementById('nb-export-warn');
@@ -771,6 +775,11 @@ NOTEBOOK_JS = """
                 fab.classList.add('nb-fab-visible');
             } else {
                 fab.classList.remove('nb-fab-visible');
+            }
+        });
+        Shiny.addCustomMessageHandler('nb_close_drawer', function() {
+            if (window._nbCloseDrawer) {
+                window._nbCloseDrawer();
             }
         });
         Shiny.addCustomMessageHandler('nb_restore_client_inputs', function(payload) {
