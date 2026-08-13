@@ -1071,9 +1071,32 @@ def bias_server_handlers(input, output, session):
             except Exception as e:
                 logging.getLogger(__name__).warning("save_bias_export_to_folder failed: %s", e)
 
+    def sticky_filename(gen):
+        """Wrap a filename generator so one download uses one name.
+
+        Shiny reads the `filename` thunk before it consumes the handler's
+        generator (shiny/session/_session.py, the download branch), so calling
+        the generator a second time for the on-disk copy re-runs
+        `datetime.now()` and the two names drift by a second or more. The
+        thunk keeps what it produced; `take()` returns that and clears it, so
+        the next download still gets a fresh timestamp.
+        """
+        box = {}
+
+        def thunk():
+            box["value"] = gen()
+            return box["value"]
+
+        def take():
+            return box.pop("value", None) or gen()
+
+        thunk.take = take
+        return thunk
+
     def auto_save_bias_download(section, ext, **gen_kwargs):
         """Decorator replacing @render.download that also saves a copy."""
-        filename_fn = lambda: generate_bias_export_filename(section, ext, **gen_kwargs)
+        filename_fn = sticky_filename(
+            lambda: generate_bias_export_filename(section, ext, **gen_kwargs))
         def decorator(fn):
             @render.download(filename=filename_fn)
             @functools.wraps(fn)
@@ -1084,7 +1107,7 @@ def bias_server_handlers(input, output, session):
                     yield chunk
                 if parts:
                     content = "".join(parts)
-                    fname = filename_fn()
+                    fname = filename_fn.take()
                     save_bias_export_to_folder(content, fname)
             return wrapper
         return decorator
@@ -1099,7 +1122,10 @@ def bias_server_handlers(input, output, session):
 
     # ── Session Logic ──
 
-    @render.download(filename=lambda: f"bias_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+    bias_session_filename = sticky_filename(
+        lambda: f"bias_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+
+    @render.download(filename=bias_session_filename)
     def save_bias_session():
         data = {
             "type": "bias_analysis",
@@ -1186,8 +1212,8 @@ def bias_server_handlers(input, output, session):
             pass
 
         content = json.dumps(data, indent=2)
-        # Also save to downloads/sessions/
-        save_bias_export_to_folder(content, f"bias_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+        # Also save to downloads/sessions/, under the same name the browser gets
+        save_bias_export_to_folder(content, bias_session_filename.take())
         # Must yield, not return: @render.download treats a returned str as a
         # file path and stats it (WinError 123 on the JSON payload).
         yield content
