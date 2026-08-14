@@ -111,7 +111,8 @@ def tokenize_with_segments(text: str, tokenizer):
     return tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
 
 
-def heavy_compute(text, model_name):
+def heavy_compute(text, model_name, *, with_specialization=True,
+                  with_clusters=True, with_isa=True):
     """Perform heavy computation for attention analysis.
 
     Loads the model, tokenizes the input, runs inference, and computes
@@ -120,6 +121,18 @@ def heavy_compute(text, model_name):
     Args:
         text: Input text to analyze
         model_name: Name of the model to use
+        with_specialization: compute head specialization metrics (spaCy
+            tagging + per-head metrics). Skipping it also skips clustering,
+            which is derived from it.
+        with_clusters: compute the t-SNE + K-Means head clusters.
+        with_isa: compute the inter-sentence attention data.
+
+    The three flags are keyword-only and default to ``True``, i.e. to the
+    behaviour every existing caller already gets - they exist for the HTTP
+    API, which only needs tokens + attentions for most requests and would
+    otherwise pay for spaCy, t-SNE and ISA on every call. Skipped stages
+    leave their ComputeResult field at the same value the corresponding
+    failure path produces (``None`` / ``[]``).
 
     Returns:
         ComputeResult dataclass (also iterable for backward compat).
@@ -171,16 +184,17 @@ def heavy_compute(text, model_name):
 
     # Compute head specialization metrics
     head_specialization = None
-    try:
-        _logger.debug("Computing head specialization")
-        head_specialization = compute_all_heads_specialization(attentions, tokens, text)
-        _logger.debug("Head specialization complete")
-    except Exception as e:
-        _logger.warning("Could not compute head specialization: %s", e)
+    if with_specialization:
+        try:
+            _logger.debug("Computing head specialization")
+            head_specialization = compute_all_heads_specialization(attentions, tokens, text)
+            _logger.debug("Head specialization complete")
+        except Exception as e:
+            _logger.warning("Could not compute head specialization: %s", e)
 
     # Compute head clusters (t-SNE + KMeans)
     head_clusters = []
-    if head_specialization:
+    if with_clusters and head_specialization:
         try:
             _logger.debug("Computing head clusters")
             head_clusters = compute_head_clusters(
@@ -195,14 +209,15 @@ def heavy_compute(text, model_name):
     # carry the Ġ marker; compute_isa also auto-detects causality from the
     # matrix, but the explicit flag keeps the metadata honest.
     isa_data = None
-    try:
-        _logger.debug("Computing ISA")
-        isa_model_type = "gpt" if any("Ġ" in t for t in tokens) else "bert"
-        isa_data = compute_isa(attentions, tokens, text, tokenizer, inputs,
-                               model_type=isa_model_type)
-        _logger.debug("ISA complete")
-    except Exception as e:
-        _logger.warning("Could not compute ISA: %s", e)
+    if with_isa:
+        try:
+            _logger.debug("Computing ISA")
+            isa_model_type = "gpt" if any("Ġ" in t for t in tokens) else "bert"
+            isa_data = compute_isa(attentions, tokens, text, tokenizer, inputs,
+                                   model_type=isa_model_type)
+            _logger.debug("ISA complete")
+        except Exception as e:
+            _logger.warning("Could not compute ISA: %s", e)
 
     _logger.debug("heavy_compute finished")
     return ComputeResult(

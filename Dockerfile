@@ -23,5 +23,5 @@ COPY . .
 # Expose port
 EXPOSE 8000
 
-# Run application
-CMD ["shiny", "run", "app.py", "--host", "0.0.0.0", "--port", "8000"]
+# Run application. service.api mounts the Shiny app at / unchanged.
+CMD ["uvicorn", "service.api:api", "--host", "0.0.0.0", "--port", "8000"]

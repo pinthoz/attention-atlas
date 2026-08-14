@@ -24,6 +24,10 @@ jobs:
           cp -r attention_app hf_sync/
           cp -r static hf_sync/
           cp app.py hf_sync/
+          # Entrypoint referenced by the Dockerfile (`uvicorn service.api:api`);
+          # it mounts the Shiny dashboard at /. Without this line the image has
+          # no service package and the Space fails to start.
+          cp -r service hf_sync/
           cp requirements.txt hf_sync/
           
           # Copy optional files if they exist

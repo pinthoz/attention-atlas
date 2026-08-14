@@ -1,11 +1,23 @@
 # Core Web Framework
 shiny>=0.10.0
 shinywidgets>=0.3.0
+# JSON HTTP API (api.py) - mounts the Shiny app at "/" and serves /api/*.
+# Both already arrive transitively via shiny, but api.py imports them by
+# name, so they are declared explicitly.
+fastapi>=0.110.0
+uvicorn>=0.27.0
 
 # Machine Learning & NLP
 # transformers must be >=4.51 (AttnLRP via lxt needs the qwen/gemma modeling
 # modules) and <5 (5.x drops attention weights under SDPA and breaks lxt).
 transformers>=4.51,<5
+# transformers >=4.51 declares accelerate>=0.26 and calls into it to
+# materialise weights during from_pretrained. With an older accelerate the
+# tensors are left on the meta device and the subsequent .to(device) in
+# ModelManager fails with "Cannot copy out of meta tensor; no data!". It was
+# unpinned here, so an environment could resolve an accelerate far too old
+# (0.20.3 locally) and every model load broke except the ones already resident.
+accelerate>=0.26
 torch>=2.0.0
 tokenizers>=0.15.0
 spacy>=3.7.0

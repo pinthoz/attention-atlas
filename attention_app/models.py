@@ -28,6 +28,35 @@ def _eager_kwargs():
         pass
     return {}
 
+
+def _release_to_cpu(entry):
+    """Move an evicted entry's weights off the accelerator before dropping it.
+
+    Dropping the cache's reference does NOT free device memory on its own: a
+    caller that fetched the tuple earlier, or a cached result built from it,
+    can still be holding the same modules alive. Moving them to CPU releases
+    the VRAM whoever else is holding on.
+
+    This matters more than it looks. When device memory runs out mid-load,
+    transformers cannot materialise the weights it initialised on the meta
+    device, and the failure surfaces from the later ``.to(device)`` as
+
+        Cannot copy out of meta tensor; no data!
+
+    which reads like a model or version problem rather than the plain
+    out-of-memory it is.
+    """
+    if not entry:
+        return
+    for obj in entry:
+        # Tokenizers have no .parameters(); only move real modules.
+        if hasattr(obj, "parameters") and hasattr(obj, "to"):
+            try:
+                obj.to("cpu")
+            except Exception:
+                _logger.debug("Could not move evicted module to CPU", exc_info=True)
+
+
 # Suppress warnings
 warnings.filterwarnings(
     "ignore",
@@ -95,8 +124,10 @@ class ModelManager:
 
             # Evict least-recently-used entries until we have room for one more
             while len(cls._instances) >= cls._MAX_CACHED:
-                old_name, _ = cls._instances.popitem(last=False)
+                old_name, old_entry = cls._instances.popitem(last=False)
                 _logger.info("Unloading previous model (%s) to free memory...", old_name)
+                _release_to_cpu(old_entry)
+                del old_entry
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -177,6 +208,24 @@ class ModelManager:
 
         except Exception as e:
             raise RuntimeError(f"Failed to load model {model_name}: {e}") from e
+
+    @classmethod
+    def free_all(cls):
+        """Drop every cached model and hand the device memory back.
+
+        For callers that hit an out-of-memory during a load and want to retry
+        with a clean device rather than fail. Already-fetched models keep
+        working: they are moved to CPU, not destroyed.
+        """
+        with cls._lock:
+            entries = list(cls._instances.values())
+            cls._instances.clear()
+        for entry in entries:
+            _release_to_cpu(entry)
+        del entries
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     @staticmethod
     def get_device():
