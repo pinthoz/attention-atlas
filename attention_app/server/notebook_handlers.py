@@ -2082,21 +2082,52 @@ def notebook_server_handlers(input, output, session, *,
         ui.update_text_area("nb_next_steps", value="")
         last_status.set(("Form cleared.", "ok"))
 
+    # Whether "Clear all" has been pressed and is waiting to be confirmed.
+    # Declared here because closing the drawer disarms it too.
+    confirm_clear = reactive.value(False)
+
     # ---- Dismiss transient status when leaving the drawer ----------------
     @reactive.effect
     # See _delete_one: ignore_init would eat the first dismissal.
     @reactive.event(input.nb_dismiss_status)
     def _dismiss_status():
         last_status.set(("", "ok"))
+        # Closing the drawer also disarms a pending clear, so it cannot sit
+        # waiting to be confirmed by an unrelated click on the next visit.
+        confirm_clear.set(False)
 
     # ---- Clear all entries ---------------------------------------------
+    # Clearing is the one irreversible action in the drawer, and it takes out
+    # all three local copies in one go: the file on disk, the browser backup
+    # (mirrored from `entries`, so it follows within the same flush), and the
+    # unexported-entries reminder, which goes quiet because the pending count
+    # falls to zero. Nothing is left to signal that work existed. So the
+    # button only arms a confirmation, and the clear runs from there.
     @reactive.effect
     @reactive.event(input.nb_clear_all)
+    def _arm_clear():
+        if not entries.get():
+            return
+        confirm_clear.set(True)
+
+    @reactive.effect
+    @reactive.event(input.nb_clear_cancel)
+    def _cancel_clear():
+        confirm_clear.set(False)
+
+    @reactive.effect
+    @reactive.event(input.nb_clear_confirm_go)
     def _clear_all():
+        confirm_clear.set(False)
         if not entries.get():
             return
         entries.set([])
         _persist([])
+        # Reset the export watermark too. Left at its old value it exceeds the
+        # count of anything written afterwards, and the "not exported yet"
+        # reminder stays silent for entries that genuinely have never been
+        # exported.
+        exported_count.set(-1)
         last_status.set(("All entries cleared.", "ok"))
 
     # ---- Delete individual entry ---------------------------------------
@@ -2291,6 +2322,53 @@ def notebook_server_handlers(input, output, session, *,
         target = nb_path.get()
         where = target.as_posix() if target else "this session only"
         return ui.tags.p(f"Persisted to {where}.", class_="nb-section-sub")
+
+    # ---- Clear confirmation --------------------------------------------
+    @output
+    @render.ui
+    def nb_clear_confirm():
+        """Ask before clearing, and name what is about to be lost.
+
+        The count is stated because "Clear all" gives no sense of scale, and
+        unexported entries are called out separately: those have no copy
+        anywhere else once this runs.
+        """
+        if not confirm_clear.get():
+            return ui.TagList()
+        n = len(entries.get())
+        what = "entry" if n == 1 else "entries"
+        pending = n - max(exported_count.get(), 0)
+        never_exported = exported_count.get() < 0
+        lines = [
+            ui.tags.p(
+                ui.tags.strong(f"Delete all {n} {what}?"),
+                " This also clears the browser backup, and cannot be undone.",
+            )
+        ]
+        if n and (never_exported or pending > 0):
+            unsaved = n if never_exported else pending
+            noun = "entry has" if unsaved == 1 else "entries have"
+            lines.append(
+                ui.tags.p(
+                    ui.tags.strong(f"{unsaved} {noun} never been exported."),
+                    " Export first if this session's trail is to survive.",
+                )
+            )
+        return ui.tags.div(
+            *lines,
+            ui.tags.div(
+                ui.input_action_button(
+                    "nb_clear_cancel", "Cancel",
+                    class_="nb-btn nb-btn-secondary",
+                ),
+                ui.input_action_button(
+                    "nb_clear_confirm_go", f"Delete {n} {what}",
+                    class_="nb-btn nb-btn-danger-solid",
+                ),
+                class_="nb-confirm-actions",
+            ),
+            class_="nb-confirm",
+        )
 
     # ---- Live preview of what would be captured ------------------------
     @output

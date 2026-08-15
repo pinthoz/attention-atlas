@@ -404,6 +404,44 @@ NOTEBOOK_CSS = """
     border-color: #ff5ca9;
 }
 .nb-btn-secondary:hover { background: #fff0f8; }
+/* Clearing destroys all three local copies at once - the file on disk, the
+   browser backup, and the unexported-entries reminder - so it is coloured
+   apart from the exports it sits beside. The spacing is deliberately left
+   even: the confirmation step below is what guards the action, and pushing
+   the button to the far end only bought a few pixels in a row this width.
+   Filled rather than outlined, so it reads as a different kind of control
+   from the three outlined exports beside it and not as a fourth one. The red
+   is kept in the rose family of the interface pink, so it separates by weight
+   and not by clashing. */
+.nb-btn-danger {
+    background: #e11d48;
+    color: #ffffff;
+    border-color: #e11d48;
+}
+.nb-btn-danger:hover { background: #be123c; border-color: #be123c; }
+
+/* ── Clear confirmation ───────────────────────────────────────── */
+.nb-confirm {
+    margin: 10px 0 4px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #fff1f2;
+    border: 1px solid #fda4af;
+    border-left: 3px solid #e11d48;
+    font-size: 12px;
+    color: #881337;
+    line-height: 1.5;
+}
+.nb-confirm p { margin: 0 0 8px 0; }
+.nb-confirm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* One step darker than the button that opened this box, so the two reds read
+   as the same action escalating rather than as two unrelated warnings. */
+.nb-btn-danger-solid {
+    background: #be123c;
+    color: #ffffff;
+    border-color: #be123c;
+}
+.nb-btn-danger-solid:hover { background: #9f1239; border-color: #9f1239; }
 
 /* ── Status banner ────────────────────────────────────────────── */
 .nb-status {
@@ -1121,11 +1159,14 @@ def create_notebook_drawer():
                         ui.input_action_button(
                             "nb_clear_all",
                             "Clear all",
-                            class_="nb-btn nb-btn-secondary",
+                            class_="nb-btn nb-btn-danger",
                         ),
                         id="nb-export-row",
                         class_="nb-export-row",
                     ),
+                    # Arms the confirmation strip; the clear itself only runs
+                    # from the button inside it.
+                    ui.output_ui("nb_clear_confirm"),
                     ui.output_ui("nb_entries"),
                     class_="nb-section",
                 ),
