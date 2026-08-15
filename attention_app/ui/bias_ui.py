@@ -2770,6 +2770,57 @@ def create_floating_bias_toolbar():
             });
         })();
 
+        // ── StereoSet: keep <details> panels open across re-renders ──
+        // Changing layer/head in the floating toolbar invalidates the whole
+        // Example Explorer output, so "Token-Level Attention Comparison" and
+        // "Sensitive Head Behavior" come back as fresh (collapsed) markup.
+        // Their open state is remembered per data-ss-details key and
+        // re-applied to the newly inserted element.
+        (function() {
+            if (window._ssDetailsStateReady) return;
+            window._ssDetailsStateReady = true;
+
+            var openState = {};
+
+            function syncArrow(d) {
+                var summary = d.firstElementChild;
+                if (!summary || summary.tagName !== 'SUMMARY') return;
+                var arrow = summary.querySelector('.ss-toggle-arrow');
+                if (arrow) arrow.textContent = d.open ? '▲' : '▼';
+            }
+
+            // 'toggle' does not bubble - listen in the capture phase.
+            document.addEventListener('toggle', function(e) {
+                var d = e.target;
+                if (!d || d.tagName !== 'DETAILS') return;
+                var key = d.getAttribute('data-ss-details');
+                if (!key) return;
+                openState[key] = d.open;
+                syncArrow(d);
+            }, true);
+
+            function restore() {
+                document.querySelectorAll('details[data-ss-details]').forEach(function(d) {
+                    // Only touch each element once, so a panel the user
+                    // closes afterwards stays closed.
+                    if (d.getAttribute('data-ss-restored')) return;
+                    d.setAttribute('data-ss-restored', '1');
+                    if (openState[d.getAttribute('data-ss-details')] && !d.open) {
+                        d.open = true;
+                    }
+                    syncArrow(d);
+                });
+            }
+
+            new MutationObserver(function(mutations) {
+                for (var i = 0; i < mutations.length; i++) {
+                    if (mutations[i].addedNodes.length) { restore(); return; }
+                }
+            }).observe(document.body, { childList: true, subtree: true });
+
+            restore();
+        })();
+
         // ── Deferred Plotly rendering ──
         // Plots with class "plotly-deferred" store their figure JSON as
         // base64 in a data-plotly-fig attribute. Plotly.newPlot() is only

@@ -3737,7 +3737,8 @@ def create_sensitive_head_panel_html(
         content_html = html_A
 
     return (
-        "<details ontoggle=\"this.querySelector('.ss-toggle-arrow').textContent=this.open?'▲':'▼'\" "
+        "<details data-ss-details=\"senshead\" "
+        "ontoggle=\"this.querySelector('.ss-toggle-arrow').textContent=this.open?'▲':'▼'\" "
         'style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">'
         '<summary style="cursor:pointer;font-size:12px;font-weight:700;color:#ff5ca9;'
         'list-style:none;display:flex;align-items:center;gap:6px;user-select:none;">'
@@ -3973,7 +3974,8 @@ def create_stereoset_example_html(
         f"Analyze in Pipeline -></button>"
         f"</div>"
         + (
-            f"<details ontoggle=\"this.querySelector('.ss-toggle-arrow').textContent=this.open?'▲':'▼'\" "
+            f"<details data-ss-details=\"tokenattn\" "
+            f"ontoggle=\"this.querySelector('.ss-toggle-arrow').textContent=this.open?'▲':'▼'\" "
             f'style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,92,169,0.2);">'
             f'<summary style="cursor:pointer;font-size:12px;font-weight:700;color:#ff5ca9;'
             f'list-style:none;display:flex;align-items:center;gap:6px;user-select:none;">'
