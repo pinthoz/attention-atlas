@@ -6,7 +6,8 @@ one JSON file per session:
 1. ``panel_open``    - opening of each bias panel, flagged when it is the
                        faithfulness panel (accordion value ``ablation``)
 2. ``control_use``   - use of the calibration controls (BAR threshold,
-                       top-K, detection threshold, alpha, correction)
+                       top-K, detection threshold, alpha, correction) and of
+                       the comparison switches, separated by ``kind``
 3. ``view_change``   - navigation between the main sections
 4. ``notebook_entry``- creation of an Auditor Notebook entry
 
@@ -99,6 +100,18 @@ _CONTROL_INPUTS = {
     "bias_alpha": "Significance level (alpha)",
     "bias_correction": "Multiple-comparison correction",
     "bias_use_optimized": "Optimised-thresholds toggle",
+}
+
+# Comparison controls: input id -> human label. Kept apart from the
+# calibration controls above because the two answer different questions and
+# must not be pooled. The calibration set feeds the "calibration-sensitive
+# reasoning" construct; this set feeds the comparison-frame outcome, which
+# asks whether the frame was fixed before the analyst descended into
+# internal signals. Both are written as ``control_use`` and separated by the
+# ``kind`` field, so a reader of the log never has to infer which is which.
+_COMPARE_INPUTS = {
+    "compare_mode": "Compare by models",
+    "compare_prompts_mode": "Compare by prompts",
 }
 
 # Query-string keys accepted for the participant code, in order.
@@ -424,10 +437,29 @@ def register_interaction_logging(input, session) -> Optional[_SessionLog]:
     for _cid, _label in _CONTROL_INPUTS.items():
         def _on_control(value, first, control=_cid, label=_label):
             log.record("control_use", {
+                "kind": "calibration",
                 "control": control, "label": label, "value": value,
                 "first_observation": first,
             })
         _watch(_cid, _on_control)
+
+    # ── 2b. Comparison controls ─────────────────────────────────────
+    # Unlike the calibration controls, these are ordinary Shiny switches
+    # that render with the session already holding a value, so their first
+    # observation is the default rather than an action and is dropped. Every
+    # later transition is kept, switching a comparison back off included:
+    # the comparison-frame outcome needs the moment the frame was set, and
+    # an analyst who sets one and abandons it is data, not noise.
+    for _cid, _label in _COMPARE_INPUTS.items():
+        def _on_compare(value, first, control=_cid, label=_label):
+            if first and not value:
+                return
+            log.record("control_use", {
+                "kind": "comparison",
+                "control": control, "label": label, "value": value,
+                "first_observation": first,
+            })
+        _watch(_cid, _on_compare)
 
     # ── 3. View changes ─────────────────────────────────────────────
     def _on_view(value, first):
