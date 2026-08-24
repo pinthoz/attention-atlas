@@ -1,8 +1,11 @@
-name: HF Space health monitor
+name: HF Space keep-alive and health monitor
 
 on:
   schedule:
-    # Every 30 minutes. GitHub may delay scheduled runs by a few minutes.
+    # Every 30 minutes. The Space sleeps after 48h without traffic
+    # (gcTimeout=172800, fixed on free cpu-basic hardware), so each run
+    # pings it to reset that timer, and wakes it if it slept anyway.
+    # GitHub may delay scheduled runs by a few minutes.
     # NOTE: GitHub disables scheduled workflows in repositories with no
     # activity for 60 days, silently. If the repo goes quiet after the
     # thesis is handed in, re-enable this from the Actions tab.
@@ -25,7 +28,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Checkout monitor script
+      - name: Checkout keep-alive script
         uses: actions/checkout@v4
         with:
           sparse-checkout: huggingface
@@ -38,7 +41,7 @@ jobs:
       - name: Install huggingface_hub
         run: pip install --quiet "huggingface_hub>=0.23"
 
-      - name: Check Space and restart if needed
+      - name: Ping the Space, waking or restarting it if needed
         id: check
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -51,12 +54,29 @@ jobs:
           code=${PIPESTATUS[0]}
           set -e
           echo "code=$code" >> "$GITHUB_OUTPUT"
-          # 3 means a restart was issued: not a failure, but it must not pass
-          # silently either. The next step records it. Anything else non-zero
-          # is a real problem and should fail the run.
-          if [ "$code" -ne 0 ] && [ "$code" -ne 3 ]; then
+          # 0 = healthy and pinged. 4 = it had gone to sleep and was woken;
+          # routine, so it is summarised but raises nothing. 3 = restarted out
+          # of an error state: not a failure, but it must not pass silently
+          # either, so the step below records it. Anything else is a real
+          # problem and should fail the run.
+          if [ "$code" -ne 0 ] && [ "$code" -ne 3 ] && [ "$code" -ne 4 ]; then
             exit "$code"
           fi
+
+      - name: Note the wake-up on the run summary
+        if: steps.check.outputs.code == '4'
+        run: |
+          {
+            echo "The Space had gone to sleep and was woken."
+            echo
+            echo '```'
+            cat monitor.log
+            echo '```'
+            echo
+            echo "It takes a few minutes to serve again. If this shows up on"
+            echo "most runs, the keep-alive ping is not reaching the app -"
+            echo "check the ping line on a healthy run."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record the restart in a tracking issue
         if: steps.check.outputs.code == '3'
