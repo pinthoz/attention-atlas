@@ -23,12 +23,13 @@ Design notes:
   anything registered after it would be unreachable.
 """
 
+import hmac
 import logging
 import os
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -709,6 +710,30 @@ def faithfulness(payload: FaithfulnessRequest) -> Dict[str, Any]:
         raise HTTPException(
             status_code=500, detail=f"Faithfulness analysis failed: {exc}",
         ) from exc
+
+
+@api.post("/api/session-recorded")
+async def session_recorded(request: Request) -> Dict[str, Any]:
+    """Hugging Face webhook: the study's log dataset changed.
+
+    Fans the event out to Discord and email so the team knows the session was
+    saved. The notification carries no participant code - see
+    ``service.session_notify``.
+    """
+    from .session_notify import handle_event, notify_enabled
+
+    if not notify_enabled():
+        raise HTTPException(status_code=404, detail="Not found")
+
+    secret = (os.environ.get("ATLAS_NOTIFY_SECRET") or "").strip()
+    if not hmac.compare_digest(request.headers.get("x-webhook-secret", ""), secret):
+        raise HTTPException(status_code=401, detail="Bad webhook secret")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    return handle_event(payload)
 
 
 # --------------------------------------------------------------------------
