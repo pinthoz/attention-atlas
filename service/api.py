@@ -720,7 +720,9 @@ def notify_status(request: Request) -> Dict[str, Any]:
     connection to them at all. Values are never returned, only booleans and
     connection outcomes.
     """
-    from .session_notify import channel_status, connectivity, notify_enabled
+    from attention_app.server.session_notify import (
+        channel_status, connectivity, notify_enabled,
+    )
 
     if not notify_enabled():
         raise HTTPException(status_code=404, detail="Not found")
@@ -730,30 +732,6 @@ def notify_status(request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=401, detail="Bad webhook secret")
 
     return {"channels": channel_status(), "connectivity": connectivity()}
-
-
-@api.post("/api/session-recorded")
-async def session_recorded(request: Request) -> Dict[str, Any]:
-    """Hugging Face webhook: the study's log dataset changed.
-
-    Fans the event out to Discord and email so the team knows the session was
-    saved. The notification carries no participant code - see
-    ``service.session_notify``.
-    """
-    from .session_notify import handle_event, notify_enabled
-
-    if not notify_enabled():
-        raise HTTPException(status_code=404, detail="Not found")
-
-    secret = (os.environ.get("ATLAS_NOTIFY_SECRET") or "").strip()
-    if not hmac.compare_digest(request.headers.get("x-webhook-secret", ""), secret):
-        raise HTTPException(status_code=401, detail="Bad webhook secret")
-
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    return handle_event(payload)
 
 
 # --------------------------------------------------------------------------

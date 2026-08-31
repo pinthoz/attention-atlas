@@ -1,12 +1,13 @@
 """Avisa que uma sessão do estudo ficou gravada.
 
-O Space carrega o log de cada sessão para um dataset privado da Hugging Face.
-Um webhook do Hub aponta para ``/api/session-recorded`` e, quando o dataset
-muda, este módulo envia por email o aviso de que ficou gravada.
+Chamado por :mod:`attention_app.server.interaction_log` no fim de uma sessão,
+depois de o log subir para o dataset privado.
 
-Vive dentro do serviço principal de propósito. Um Space só para isto
-adormeceria ao fim de 48 horas sem visitas e perderia o aviso; aqui o processo
-acabou de servir a sessão que produziu o log, portanto está acordado.
+**Só avisa sessões com participante.** O Space é público, portanto qualquer
+visita gera um log, e antes isto vinha de um webhook do Hub que disparava a
+cada alteração do dataset, sem forma de distinguir uma sessão real de alguém
+a espreitar: o payload do webhook nem traz o caminho do ficheiro. Aqui o
+código do participante é conhecido, e a distinção é exata.
 
 O aviso **não leva o código do participante**. O caminho do ficheiro no
 dataset é ``interaction_logs/966F/...`` e mandar isso para uma caixa de
@@ -39,7 +40,7 @@ import ssl
 import threading
 from datetime import datetime, timezone
 from email.message import EmailMessage
-from typing import Any, Dict
+from typing import Dict, Optional
 
 _logger = logging.getLogger(__name__)
 
@@ -199,21 +200,22 @@ def _dispatch(text: str) -> None:
     _send_email("Attention Atlas: sessão gravada", text)
 
 
-def handle_event(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Trata um evento do webhook. As entregas correm fora do pedido."""
-    scope = ((payload.get("event") or {}).get("scope") or "repo.content")
-    if scope != "repo.content":
-        return {"ignored": scope}
+def notify_session_saved(participant: Optional[str], n_events: int) -> None:
+    """Avisa que a sessão de um participante ficou gravada.
 
-    when = datetime.now(timezone.utc).strftime("%H:%M UTC de %d/%m/%Y")
-    total = _count_logs()
-    text = (f"Sessão gravada. Chegou um log novo ao dataset às {when}. "
-            f"Total de logs: {total}.")
-
-    # Uma entrega lenta não deve fazer o Hub considerar o webhook falhado.
-    threading.Thread(target=_dispatch, args=(text,), daemon=True).start()
-    _logger.info(text)
-    # The channel flags travel back in the response so a test event says
-    # straight away whether email is configured at all, instead of leaving a
-    # silent no-op to be guessed at.
-    return {"ok": True, "total": total, **channel_status()}
+    Uma sessão sem participante é uma visita ao Space, não um dado do estudo,
+    e não gera aviso. Nunca levanta: um aviso perdido não pode estragar o
+    fecho de uma sessão.
+    """
+    if not participant:
+        _logger.info("No notification: session has no participant code.")
+        return
+    try:
+        when = datetime.now(timezone.utc).strftime("%H:%M UTC de %d/%m/%Y")
+        text = (f"Sessão gravada às {when}, com {n_events} eventos "
+                f"registados. Total de logs no dataset: {_count_logs()}.")
+        # Fora do fecho da sessão: uma entrega lenta não deve prender o
+        # participante numa janela que não fecha.
+        threading.Thread(target=_dispatch, args=(text,), daemon=True).start()
+    except Exception:
+        _logger.exception("Could not send the session notification")

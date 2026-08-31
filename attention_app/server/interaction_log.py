@@ -325,6 +325,13 @@ class _SessionLog:
         # Final synchronous upload: runs in the session-end hook, where a
         # daemon thread might not outlive the process.
         _upload_log_to_hub(self.path, self.participant)
+        # Only sessions with a participant are study data worth announcing.
+        try:
+            from .session_notify import notify_session_saved
+
+            notify_session_saved(self.participant, len(self._events))
+        except Exception:
+            _logger.exception("Interaction log: notification failed")
 
 
 def register_interaction_logging(input, session) -> Optional[_SessionLog]:
