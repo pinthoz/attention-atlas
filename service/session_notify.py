@@ -122,24 +122,42 @@ def channel_status() -> Dict[str, bool]:
 
 
 def connectivity() -> Dict[str, str]:
-    """Can the Space actually reach Discord and Gmail?
+    """What the Space can actually reach.
 
-    A Space restricts outbound traffic, and a blocked destination shows up as
-    an SSL handshake that never completes. Testing the TCP connection tells
-    the two failures apart: a wrong secret from a destination the platform
-    will not let us reach at all.
+    A Space sits behind an egress filter that accepts the TCP connection but
+    drops the TLS handshake for destinations it does not allow, and refuses
+    non-web ports outright. A plain socket test is therefore not enough: each
+    host is probed with a real HTTPS request, and huggingface.co acts as the
+    control that proves the probe itself works.
     """
     import socket
+    import urllib.request
 
-    out = {}
-    for label, host, port in (("discord", "discord.com", 443),
-                              ("gmail_smtp", "smtp.gmail.com", 465)):
+    results: Dict[str, str] = {}
+
+    for label, host, port in (("smtp_gmail_465", "smtp.gmail.com", 465),
+                              ("smtp_gmail_587", "smtp.gmail.com", 587)):
         try:
             with socket.create_connection((host, port), timeout=8):
-                out[label] = "ok"
+                results[label] = "ok"
         except Exception as exc:
-            out[label] = f"{type(exc).__name__}: {exc}"
-    return out
+            results[label] = type(exc).__name__
+
+    for label, url in (("control_huggingface", "https://huggingface.co/api/whoami-v2"),
+                       ("discord", "https://discord.com/api/v10/gateway"),
+                       ("resend", "https://api.resend.com/"),
+                       ("telegram", "https://api.telegram.org/")):
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": "atlas-probe"})
+            with urllib.request.urlopen(request, timeout=8) as response:
+                results[label] = f"ok HTTP {response.status}"
+        except urllib.error.HTTPError as exc:
+            # An HTTP error still means the TLS handshake completed.
+            results[label] = f"reachable HTTP {exc.code}"
+        except Exception as exc:
+            results[label] = type(exc).__name__
+
+    return results
 
 
 def _dispatch(text: str) -> None:
