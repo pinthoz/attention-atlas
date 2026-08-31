@@ -123,6 +123,16 @@ def _send_email_resend(subject: str, text: str) -> bool:
         with urllib.request.urlopen(request, timeout=15) as response:
             _logger.info("Email sent through Resend, HTTP %s", response.status)
         return True
+    except urllib.error.HTTPError as exc:
+        # Resend explains the refusal in the body, and without it a 403 is
+        # indistinguishable from a bad key. The usual cause is the free plan:
+        # with no verified domain it only accepts the account's own address.
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:400]
+        except Exception:
+            detail = "(no body)"
+        _logger.error("Resend refused the email: HTTP %s - %s", exc.code, detail)
+        return False
     except Exception:
         _logger.exception("Resend email failed")
         return False
@@ -130,6 +140,10 @@ def _send_email_resend(subject: str, text: str) -> bool:
 
 def _send_email(subject: str, text: str) -> None:
     if _send_email_resend(subject, text):
+        return
+    if _env("RESEND_API_KEY"):
+        # Resend was configured and refused: the reason is already logged, and
+        # falling through to SMTP would only add a misleading second message.
         return
 
     # Fallback for a local run, where SMTP is not blocked.
