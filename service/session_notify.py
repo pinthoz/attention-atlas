@@ -73,6 +73,7 @@ def _send_discord(text: str) -> None:
     """
     url = _env("DISCORD_WEBHOOK_URL")
     if not url:
+        _logger.warning("Discord skipped: DISCORD_WEBHOOK_URL is not set")
         return
     try:
         import json
@@ -84,8 +85,8 @@ def _send_discord(text: str) -> None:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=10):
-            pass
+        with urllib.request.urlopen(request, timeout=10) as response:
+            _logger.info("Discord notified, HTTP %s", response.status)
     except Exception:
         _logger.exception("Discord notification failed")
 
@@ -93,6 +94,9 @@ def _send_discord(text: str) -> None:
 def _send_email(subject: str, text: str) -> None:
     user, password, to = _env("SMTP_USER"), _env("SMTP_PASS"), _env("MAIL_TO")
     if not (user and password and to):
+        missing = [n for n, v in (("SMTP_USER", user), ("SMTP_PASS", password),
+                                  ("MAIL_TO", to)) if not v]
+        _logger.warning("Email skipped: %s not set", ", ".join(missing))
         return
     try:
         msg = EmailMessage()
@@ -104,11 +108,42 @@ def _send_email(subject: str, text: str) -> None:
                               context=ssl.create_default_context()) as server:
             server.login(user, password)
             server.send_message(msg)
+        _logger.info("Email sent to %s", to)
     except Exception:
         _logger.exception("Email notification failed")
 
 
+def channel_status() -> Dict[str, bool]:
+    """Which channels are configured. Booleans only, never the values."""
+    return {
+        "discord": bool(_env("DISCORD_WEBHOOK_URL")),
+        "email": bool(_env("SMTP_USER") and _env("SMTP_PASS") and _env("MAIL_TO")),
+    }
+
+
+def connectivity() -> Dict[str, str]:
+    """Can the Space actually reach Discord and Gmail?
+
+    A Space restricts outbound traffic, and a blocked destination shows up as
+    an SSL handshake that never completes. Testing the TCP connection tells
+    the two failures apart: a wrong secret from a destination the platform
+    will not let us reach at all.
+    """
+    import socket
+
+    out = {}
+    for label, host, port in (("discord", "discord.com", 443),
+                              ("gmail_smtp", "smtp.gmail.com", 465)):
+        try:
+            with socket.create_connection((host, port), timeout=8):
+                out[label] = "ok"
+        except Exception as exc:
+            out[label] = f"{type(exc).__name__}: {exc}"
+    return out
+
+
 def _dispatch(text: str) -> None:
+    _logger.info("Dispatching notification. Channels: %s", channel_status())
     _send_discord(text)
     _send_email("Attention Atlas: sessão gravada", text)
 
@@ -127,4 +162,7 @@ def handle_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     # Uma entrega lenta não deve fazer o Hub considerar o webhook falhado.
     threading.Thread(target=_dispatch, args=(text,), daemon=True).start()
     _logger.info(text)
-    return {"ok": True, "total": total}
+    # The channel flags travel back in the response so a test event says
+    # straight away whether Discord and email are configured at all, instead
+    # of leaving a silent no-op to be guessed at.
+    return {"ok": True, "total": total, **channel_status()}

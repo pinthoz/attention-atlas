@@ -712,6 +712,26 @@ def faithfulness(payload: FaithfulnessRequest) -> Dict[str, Any]:
         ) from exc
 
 
+@api.get("/api/notify-status")
+def notify_status(request: Request) -> Dict[str, Any]:
+    """Diagnostics for the session notifications, behind the webhook secret.
+
+    Reports which channels are configured and whether the Space can open a
+    connection to them at all. Values are never returned, only booleans and
+    connection outcomes.
+    """
+    from .session_notify import channel_status, connectivity, notify_enabled
+
+    if not notify_enabled():
+        raise HTTPException(status_code=404, detail="Not found")
+
+    secret = (os.environ.get("ATLAS_NOTIFY_SECRET") or "").strip()
+    if not hmac.compare_digest(request.headers.get("x-webhook-secret", ""), secret):
+        raise HTTPException(status_code=401, detail="Bad webhook secret")
+
+    return {"channels": channel_status(), "connectivity": connectivity()}
+
+
 @api.post("/api/session-recorded")
 async def session_recorded(request: Request) -> Dict[str, Any]:
     """Hugging Face webhook: the study's log dataset changed.
