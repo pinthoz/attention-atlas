@@ -698,14 +698,52 @@ NOTEBOOK_CSS = """
 NOTEBOOK_JS = """
 <script>
 (function() {
-    // The export-warning icon appears only once BOTH are true: the user
-    // has typed something in the notebook this session, and there are
-    // entries that have not been exported yet.
+    // The five judgment fields. Text sitting in these is a draft that has
+    // not been turned into an entry yet, and closing the tab loses it.
+    var NB_DRAFT_FIELDS = [
+        'nb_case_id', 'nb_title', 'nb_hypothesis',
+        'nb_uncertainty', 'nb_next_steps'
+    ];
+
+    // Is there text typed but not yet turned into an entry?
+    function nbHasDraft() {
+        return NB_DRAFT_FIELDS.some(function(id) {
+            var el = document.getElementById(id);
+            return el && String(el.value || '').trim() !== '';
+        });
+    }
+
+    // The icon warns about anything that would be lost by closing the tab:
+    // entries that were never exported, and text still sitting in the form.
+    //
+    // It used to require the user to have typed in the notebook during this
+    // browser session, which hid the warning after a refresh, where entries
+    // are restored from the browser backup and nobody has typed yet. Entries
+    // existing already means the notebook was used.
     function updateWarnBadge() {
         var badge = document.getElementById('nb-export-warn');
         var pop = document.getElementById('nb-export-warn-pop');
         if (!badge) return;
-        var show = (window._nbUnexported || 0) > 0 && window._nbNotebookTouched;
+        var unexported = window._nbUnexported || 0;
+        var draft = nbHasDraft();
+        var show = unexported > 0 || draft;
+
+        var msgEl = document.getElementById('nb-export-warn-msg');
+        if (msgEl && show) {
+            var parts = [];
+            if (unexported > 0) {
+                parts.push(
+                    unexported + (unexported === 1 ? ' entry exists' : ' entries exist') +
+                    ' only in this browser and ' +
+                    (unexported === 1 ? 'is' : 'are') + ' not exported');
+            }
+            if (draft) {
+                parts.push('there is text in the form that is not an entry yet');
+            }
+            msgEl.textContent =
+                parts.join(', and ').replace(/^./, function(c) { return c.toUpperCase(); }) +
+                '. Closing or refreshing this tab loses it.';
+        }
         if (show) {
             badge.classList.add('nb-warn-visible');
         } else {
@@ -731,14 +769,10 @@ NOTEBOOK_JS = """
             backdrop.classList.add('nb-open');
             document.body.style.overflow = 'hidden';
         }
-        // Any typing inside the drawer (the five entry fields, the
-        // participant code, ...) counts as "the notebook is being used";
-        // only then may the export warning appear.
-        drawer.addEventListener('input', function() {
-            if (window._nbNotebookTouched) return;
-            window._nbNotebookTouched = true;
-            updateWarnBadge();
-        });
+        // Typing in the form creates or clears a draft, so the icon has to
+        // be re-evaluated on every keystroke.
+        drawer.addEventListener('input', updateWarnBadge);
+
         function closeDrawer() {
             drawer.classList.remove('nb-open');
             backdrop.classList.remove('nb-open');
@@ -840,6 +874,10 @@ NOTEBOOK_JS = """
                 Shiny.setInputValue(elId, ta.value, {priority: 'event'});
             });
 
+            // A restore can refill the judgment fields, which recreates a
+            // draft without anyone typing.
+            updateWarnBadge();
+
             // Sync the bespoke toolbar widgets whose visual state lives in
             // the DOM rather than in a native Shiny widget.
             if (Object.prototype.hasOwnProperty.call(values, 'bias_attn_source') &&
@@ -909,15 +947,6 @@ NOTEBOOK_JS = """
 
         Shiny.addCustomMessageHandler('nb_unexported', function(payload) {
             window._nbUnexported = (payload && payload.n) || 0;
-            var n = window._nbUnexported;
-            var msgEl = document.getElementById('nb-export-warn-msg');
-            if (msgEl && n > 0) {
-                msgEl.textContent =
-                    n + (n === 1 ? ' entry exists' : ' entries exist') +
-                    ' only in this browser. If you close or refresh this ' +
-                    'tab without exporting, ' +
-                    (n === 1 ? 'it is' : 'they are') + ' lost.';
-            }
             updateWarnBadge();
         });
 
@@ -933,10 +962,11 @@ NOTEBOOK_JS = """
     }
     registerFabToggle();
 
-    // Closing with unexported entries loses them: the export is the only
-    // copy that leaves this machine. Browsers show their own wording here.
+    // Closing loses unexported entries, and also any text still sitting in
+    // the form. The export is the only copy that leaves this machine.
+    // Browsers show their own wording here.
     window.addEventListener('beforeunload', function(e) {
-        if (!window._nbUnexported) return;
+        if (!window._nbUnexported && !nbHasDraft()) return;
         e.preventDefault();
         e.returnValue = '';
         return '';
