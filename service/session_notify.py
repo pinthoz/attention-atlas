@@ -19,10 +19,16 @@ Ambiente (Settings do Space):
   ATLAS_NOTIFY_SECRET   segredo do webhook; sem ele o endpoint fica desligado
   ATLAS_LOG_HF_REPO     dataset dos logs, já usado pelo registo de interação
   HF_TOKEN              token com leitura nesse dataset
-  DISCORD_WEBHOOK_URL   opcional
-  SMTP_USER             opcional, endereço Gmail que envia
-  SMTP_PASS             opcional, palavra-passe de aplicação desse Gmail
-  MAIL_TO               opcional, destinatário do aviso
+  RESEND_API_KEY        chave da API do Resend, o caminho que funciona no Space
+  MAIL_TO               destinatário do aviso
+  MAIL_FROM             opcional, remetente. Por omissão onboarding@resend.dev
+  DISCORD_WEBHOOK_URL   opcional, mas o Space não alcança o Discord
+  SMTP_USER             opcional, só serve numa execução local
+  SMTP_PASS             opcional, só serve numa execução local
+
+Nota sobre a rede do Space: o egress é filtrado. As portas de SMTP são
+recusadas e o TLS para o Discord nunca completa, portanto o email tem de sair
+por uma API HTTP.
 """
 
 from __future__ import annotations
@@ -91,12 +97,49 @@ def _send_discord(text: str) -> None:
         _logger.exception("Discord notification failed")
 
 
+def _send_email_resend(subject: str, text: str) -> bool:
+    """Send through Resend's HTTP API. Returns True if it went out.
+
+    The Space cannot open SMTP at all (ports 465 and 587 are refused) and its
+    egress filter drops TLS to most hosts, but api.resend.com is reachable, so
+    this is the only email path that works from inside the Space.
+    """
+    key, to = _env("RESEND_API_KEY"), _env("MAIL_TO")
+    if not (key and to):
+        return False
+    sender = _env("MAIL_FROM") or "Attention Atlas <onboarding@resend.dev>"
+    try:
+        import json
+        import urllib.request
+
+        request = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=json.dumps({"from": sender, "to": [to],
+                             "subject": subject, "text": text}).encode("utf-8"),
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=15) as response:
+            _logger.info("Email sent through Resend, HTTP %s", response.status)
+        return True
+    except Exception:
+        _logger.exception("Resend email failed")
+        return False
+
+
 def _send_email(subject: str, text: str) -> None:
+    if _send_email_resend(subject, text):
+        return
+
+    # Fallback for a local run, where SMTP is not blocked.
     user, password, to = _env("SMTP_USER"), _env("SMTP_PASS"), _env("MAIL_TO")
     if not (user and password and to):
         missing = [n for n, v in (("SMTP_USER", user), ("SMTP_PASS", password),
                                   ("MAIL_TO", to)) if not v]
-        _logger.warning("Email skipped: %s not set", ", ".join(missing))
+        _logger.warning(
+            "Email skipped: no RESEND_API_KEY, and SMTP is missing %s",
+            ", ".join(missing))
         return
     try:
         msg = EmailMessage()
@@ -117,7 +160,8 @@ def channel_status() -> Dict[str, bool]:
     """Which channels are configured. Booleans only, never the values."""
     return {
         "discord": bool(_env("DISCORD_WEBHOOK_URL")),
-        "email": bool(_env("SMTP_USER") and _env("SMTP_PASS") and _env("MAIL_TO")),
+        "email_resend": bool(_env("RESEND_API_KEY") and _env("MAIL_TO")),
+        "email_smtp": bool(_env("SMTP_USER") and _env("SMTP_PASS") and _env("MAIL_TO")),
     }
 
 
