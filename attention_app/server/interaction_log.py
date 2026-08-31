@@ -55,6 +55,8 @@ Environment
 -----------
 ``ATLAS_INTERACTION_LOG=0``   disable logging entirely
 ``ATLAS_PARTICIPANT_ID``      participant code (localhost)
+``ATLAS_PARTICIPANT_CODES``   accepted codes, comma separated; anything else
+                              is logged as unassigned. Unset = accept any
 ``ATLAS_LOG_HF_REPO``         private HF dataset repo id for the log upload
 ``HF_TOKEN``                  write token used for that upload
 """
@@ -91,8 +93,8 @@ _PANEL_LABELS = {
 }
 
 # Calibration controls: input id -> human label. These are the inputs the
-# study's "calibration-sensitive reasoning" construct is coded from, so the
-# significance controls matter as much as the sliders.
+# study's "calibration-sensitive reasoning" construct is coded from. Most
+# calibrate inferential criteria; Top-K calibrates the visual scope.
 _CONTROL_INPUTS = {
     "bias_bar_threshold": "BAR specialisation threshold",
     "bias_top_k": "Top-K heads",
@@ -135,13 +137,37 @@ def _safe_slug(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "-", str(value))[:60]
 
 
+def _allowed_codes() -> Dict[str, str]:
+    """Accepted participant codes, keyed by their lowercased form.
+
+    Read from ``ATLAS_PARTICIPANT_CODES`` (comma or whitespace separated).
+    The Space is public and the code travels in the URL, so without this any
+    visitor who learns a code can file a session under that participant. With
+    it, an unknown code is demoted to an unassigned session instead.
+
+    An empty variable means no restriction, which is the right default for a
+    localhost run where the operator sets the code themselves.
+    """
+    raw = (os.environ.get("ATLAS_PARTICIPANT_CODES") or "").strip()
+    if not raw:
+        return {}
+    codes = {}
+    for token in re.split(r"[,\s]+", raw):
+        code = _safe_slug(token.strip())
+        if code:
+            codes[code.lower()] = code
+    return codes
+
+
 def read_participant(session) -> Optional[str]:
     """Resolve the participant code for this session.
 
     Must be called from inside a reactive context, because the URL is read
     reactively. Order: ``?pid=`` in the session URL (hosted deployments),
     then ``ATLAS_PARTICIPANT_ID`` (localhost). Returns ``None`` when neither
-    is present.
+    is present, and also when ``ATLAS_PARTICIPANT_CODES`` is set and the code
+    is not one of them, so that a stray or guessed code lands in the
+    unassigned pile rather than inside a real participant's data.
     """
     pid = ""
     try:
@@ -160,7 +186,18 @@ def read_participant(session) -> Optional[str]:
     if not pid:
         pid = os.environ.get("ATLAS_PARTICIPANT_ID", "")
     pid = _safe_slug(pid.strip())
-    return pid or None
+    if not pid:
+        return None
+    allowed = _allowed_codes()
+    if allowed:
+        canonical = allowed.get(pid.lower())
+        if canonical is None:
+            _logger.warning("Rejected unknown participant code; logging as unassigned")
+            return None
+        # Return the spelling from the allowlist, so that a code typed with
+        # different casing still writes to the same participant folder.
+        return canonical
+    return pid
 
 
 def hub_upload_configured() -> bool:
