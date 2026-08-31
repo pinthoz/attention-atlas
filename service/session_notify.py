@@ -2,15 +2,15 @@
 
 O Space carrega o log de cada sessão para um dataset privado da Hugging Face.
 Um webhook do Hub aponta para ``/api/session-recorded`` e, quando o dataset
-muda, este módulo reenvia um aviso para o Discord e por email.
+muda, este módulo envia por email o aviso de que ficou gravada.
 
 Vive dentro do serviço principal de propósito. Um Space só para isto
 adormeceria ao fim de 48 horas sem visitas e perderia o aviso; aqui o processo
 acabou de servir a sessão que produziu o log, portanto está acordado.
 
 O aviso **não leva o código do participante**. O caminho do ficheiro no
-dataset é ``interaction_logs/966F/...`` e mandar isso para o Discord ou para
-uma caixa de correio seria enviar pseudónimos do estudo para fora. Dizer que
+dataset é ``interaction_logs/966F/...`` e mandar isso para uma caixa de
+correio seria enviar pseudónimos do estudo para fora. Dizer que
 chegou um log, e quantos existem, chega para confirmar que a sessão ficou
 gravada.
 
@@ -22,13 +22,12 @@ Ambiente (Settings do Space):
   RESEND_API_KEY        chave da API do Resend, o caminho que funciona no Space
   MAIL_TO               destinatário do aviso
   MAIL_FROM             opcional, remetente. Por omissão onboarding@resend.dev
-  DISCORD_WEBHOOK_URL   opcional, mas o Space não alcança o Discord
   SMTP_USER             opcional, só serve numa execução local
   SMTP_PASS             opcional, só serve numa execução local
 
 Nota sobre a rede do Space: o egress é filtrado. As portas de SMTP são
-recusadas e o TLS para o Discord nunca completa, portanto o email tem de sair
-por uma API HTTP.
+recusadas, portanto o email tem de sair por uma API HTTP. O Discord também
+não é alcançável, e foi por isso abandonado.
 """
 
 from __future__ import annotations
@@ -71,32 +70,6 @@ def _count_logs() -> str:
         return "?"
 
 
-def _send_discord(text: str) -> None:
-    """POST to the Discord webhook using the standard library.
-
-    Deliberately not httpx or requests: neither is a declared dependency, and
-    a notification must never be the reason the Space fails to build.
-    """
-    url = _env("DISCORD_WEBHOOK_URL")
-    if not url:
-        _logger.warning("Discord skipped: DISCORD_WEBHOOK_URL is not set")
-        return
-    try:
-        import json
-        import urllib.request
-
-        request = urllib.request.Request(
-            url,
-            data=json.dumps({"content": text}).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=10) as response:
-            _logger.info("Discord notified, HTTP %s", response.status)
-    except Exception:
-        _logger.exception("Discord notification failed")
-
-
 def _send_email_resend(subject: str, text: str) -> bool:
     """Send through Resend's HTTP API. Returns True if it went out.
 
@@ -117,7 +90,12 @@ def _send_email_resend(subject: str, text: str) -> bool:
             data=json.dumps({"from": sender, "to": [to],
                              "subject": subject, "text": text}).encode("utf-8"),
             headers={"Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json"},
+                     "Content-Type": "application/json",
+                     # Cloudflare sits in front of the Resend API and answers
+                     # 403 "error code: 1010" to urllib's default agent, which
+                     # it reads as a bot signature.
+                     "User-Agent": "attention-atlas/1.0",
+                     "Accept": "application/json"},
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=15) as response:
@@ -173,7 +151,6 @@ def _send_email(subject: str, text: str) -> None:
 def channel_status() -> Dict[str, bool]:
     """Which channels are configured. Booleans only, never the values."""
     return {
-        "discord": bool(_env("DISCORD_WEBHOOK_URL")),
         "email_resend": bool(_env("RESEND_API_KEY") and _env("MAIL_TO")),
         "email_smtp": bool(_env("SMTP_USER") and _env("SMTP_PASS") and _env("MAIL_TO")),
     }
@@ -202,7 +179,6 @@ def connectivity() -> Dict[str, str]:
             results[label] = type(exc).__name__
 
     for label, url in (("control_huggingface", "https://huggingface.co/api/whoami-v2"),
-                       ("discord", "https://discord.com/api/v10/gateway"),
                        ("resend", "https://api.resend.com/"),
                        ("telegram", "https://api.telegram.org/")):
         try:
@@ -220,7 +196,6 @@ def connectivity() -> Dict[str, str]:
 
 def _dispatch(text: str) -> None:
     _logger.info("Dispatching notification. Channels: %s", channel_status())
-    _send_discord(text)
     _send_email("Attention Atlas: sessão gravada", text)
 
 
@@ -239,6 +214,6 @@ def handle_event(payload: Dict[str, Any]) -> Dict[str, Any]:
     threading.Thread(target=_dispatch, args=(text,), daemon=True).start()
     _logger.info(text)
     # The channel flags travel back in the response so a test event says
-    # straight away whether Discord and email are configured at all, instead
-    # of leaving a silent no-op to be guessed at.
+    # straight away whether email is configured at all, instead of leaving a
+    # silent no-op to be guessed at.
     return {"ok": True, "total": total, **channel_status()}
