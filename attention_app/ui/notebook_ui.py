@@ -698,11 +698,12 @@ NOTEBOOK_CSS = """
 NOTEBOOK_JS = """
 <script>
 (function() {
-    // The five judgment fields. Text sitting in these is a draft that has
-    // not been turned into an entry yet, and closing the tab loses it.
+    // Fields whose text is a draft that would be lost by closing the tab.
+    // ``nb_case_id`` is deliberately absent: adding an entry keeps it on
+    // purpose, so consecutive entries share one investigation id, and
+    // counting it as a draft would leave the warning permanently on.
     var NB_DRAFT_FIELDS = [
-        'nb_case_id', 'nb_title', 'nb_hypothesis',
-        'nb_uncertainty', 'nb_next_steps'
+        'nb_title', 'nb_hypothesis', 'nb_uncertainty', 'nb_next_steps'
     ];
 
     // Is there text typed but not yet turned into an entry?
@@ -948,6 +949,10 @@ NOTEBOOK_JS = """
         Shiny.addCustomMessageHandler('nb_unexported', function(payload) {
             window._nbUnexported = (payload && payload.n) || 0;
             updateWarnBadge();
+            // Adding an entry clears the form from the server side, and those
+            // updates land just after this message. Re-check once they have,
+            // or the icon would keep showing a draft that no longer exists.
+            setTimeout(updateWarnBadge, 400);
         });
 
         // Offer whatever this browser kept; the server ignores it unless the
