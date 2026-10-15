@@ -99,6 +99,18 @@ def tokenize_with_segments(text: str, tokenizer):
     """
     has_pair_semantics = getattr(tokenizer, "sep_token", None) is not None
     if has_pair_semantics:
+        # An explicit [SEP] is the analyst declaring the split themselves,
+        # which is how the reranker's query and passage arrive. Encode those
+        # as the two segments; otherwise a query with no final stop would be
+        # tokenised as one segment and every token would carry type id 0.
+        sep_token = tokenizer.sep_token
+        if sep_token in text:
+            left, _, right = text.partition(sep_token)
+            sentence_a, sentence_b = left.strip(), right.strip()
+            if sentence_a and sentence_b:
+                return tokenizer(sentence_a, sentence_b, return_tensors="pt",
+                                 truncation=True, max_length=512)
+
         boundaries = [m.end(1) for m in re.finditer(r"([.!?])\s+([A-Za-z])", text)]
         if boundaries:
             # Sentence boundary closest to the midpoint -> balanced segments.

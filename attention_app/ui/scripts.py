@@ -1183,7 +1183,24 @@ JS_TRANSITION_MODAL = """
 
             // Dynamic handling for Input -> Token Embeddings based on Model Type
             if (from === 'Input' && to === 'Token Embeddings') {
-                if (modelType === 'gpt2') {
+                if (modelType === 'reranker') {
+                    return `
+                    <h4 style="color:#ff5ca9; margin-top:0;">Tokenization & Embedding Lookup (Query + Passage)</h4>
+                    <p>A cross-encoder reads the <strong>query and the passage together</strong>, as one sequence with two segments: <code>[CLS] query [SEP] passage [SEP]</code>. WordPiece tokenization is the same as BERT's.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #8b5cf6;">
+                        <strong style="color:#8b5cf6;">Segment Embeddings:</strong><br>
+                        <span style="font-size:12px; color:#94a3b8;">Query tokens carry type id <code>0</code>, passage tokens carry type id <code>1</code>.</span><br>
+                        <span style="font-size:11px; color:#64748b;">This is what lets attention tell the question from the candidate answer.</span>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>[CLS]:</strong> its final vector is the one scored into the relevance logit</li>
+                        <li><strong>[SEP]:</strong> marks the query/passage boundary, and closes the sequence</li>
+                        <li><strong>Output:</strong> <code>(batch, seq_len, ${D.hidden})</code> - context-independent vectors</li>
+                    </ul>
+                    `;
+                } else if (modelType === 'gpt2') {
                     return `
                     <h4 style="color:#ff5ca9; margin-top:0;">Tokenization & Embedding Lookup</h4>
                     <p>GPT-2 uses <strong>Byte-Pair Encoding (BPE)</strong>, a compression-based subword algorithm operating on UTF-8 byte sequences. This ensures complete coverage of any input without unknown tokens.</p>
@@ -1224,9 +1241,28 @@ JS_TRANSITION_MODAL = """
                 }
             }
 
-            // Dynamic handling for Add & Norm (post-FFN) -> Exit
-            if (from === 'Add & Norm (post-FFN)' && to === 'Exit') {
-                if (modelType === 'gpt2') {
+            // Dynamic handling for the final Transformer output. Rerankers
+            // expose their scoring head as a real Deep Dive card; the other
+            // families still end at the generic Exit transition.
+            if (from === 'Add & Norm (post-FFN)' &&
+                (to === 'Exit' || to === 'Reranker Head')) {
+                if (modelType === 'reranker') {
+                    return `
+                    <h4 style="color:#ff5ca9; margin-top:0;">Hidden States &rarr; Relevance Score</h4>
+                    <p>There is <strong>no vocabulary head here</strong>. The final layer's <code>[CLS]</code> vector is pooled and scored into a single number, and that number is what orders search results.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #8b5cf6;">
+                        <strong style="color:#8b5cf6;">Scoring Head:</strong><br>
+                        <span style="font-size:11px; color:#94a3b8;">[CLS] hidden state &rarr; Linear + tanh (pooler) &rarr; Linear &rarr; relevance logit</span>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li><strong>One output:</strong> <code>(batch, 1)</code>, not a distribution over ${vocabStr} tokens</li>
+                        <li><strong>Higher is more relevant</strong>; the value is a raw logit, not a probability</li>
+                        <li><strong>What to audit:</strong> how far the score moves when only a gendered word in the passage changes</li>
+                    </ul>
+                    `;
+                } else if (modelType === 'gpt2') {
                     return `
                     <h4 style="color:#ff5ca9; margin-top:0;">Hidden States → Token Predictions (Causal LM)</h4>
                     <p>The final layer outputs <strong>contextualized hidden states</strong> - dense vectors encoding both the token's meaning and information gathered from all preceding tokens.</p>
@@ -1264,7 +1300,22 @@ JS_TRANSITION_MODAL = """
 
             // Dynamic handling for Token Embeddings -> Positional Embeddings
             if (from === 'Token Embeddings' && to === 'Positional Embeddings') {
-                if (modelType === 'gpt2') {
+                if (modelType === 'reranker') {
+                    return `
+                    <h4 style="color:#ff5ca9; margin-top:0;">Adding Position and Segment</h4>
+                    <p>Self-attention has no inherent order, so position is added to every token. A cross-encoder adds a third term, the segment, which says whether the token belongs to the query or to the passage.</p>
+
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:6px; margin:12px 0; border-left:3px solid #8b5cf6;">
+                        <strong style="color:#8b5cf6;">Embedding Sum:</strong><br>
+                        <code style="font-size:12px;">Input[i] = Token_Embed[i] + Position_Embed[i] + Segment_Embed[i]</code>
+                    </div>
+
+                    <ul style="font-size:13px;">
+                        <li>Positions are <strong>learned</strong>, up to ${D.maxpos} tokens</li>
+                        <li>Swapping a word in the passage changes only that token's embedding, which is what makes the counterfactual comparison readable</li>
+                    </ul>
+                    `;
+                } else if (modelType === 'gpt2') {
                     return `
                     <h4 style="color:#ff5ca9; margin-top:0;">Adding Positional Information</h4>
                     <p>Self-attention is <strong>permutation-equivariant</strong> - it has no inherent sense of token order. Positional embeddings inject sequence position information.</p>

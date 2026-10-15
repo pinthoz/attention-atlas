@@ -202,6 +202,25 @@ def arrow(from_section, to_section, direction="horizontal", suffix="", model_typ
 # Architecture Diagram helpers
 # ──────────────────────────────────────────────────────────────
 
+def ui_model_type(encoder_model) -> str:
+    """Family name the interface should use for this loaded encoder.
+
+    A cross-encoder reports ``model_type == "bert"`` like any other BERT, so
+    the config alone would send rerankers down the BERT explanations, which
+    describe a masked-language head they do not have. The checkpoint's own
+    architecture settles it.
+    """
+    config = getattr(encoder_model, "config", None)
+    if config is None:
+        return "bert"
+    name = str(getattr(config, "_name_or_path", "") or "")
+    architectures = list(getattr(config, "architectures", None) or [])
+    is_seq_cls = any("ForSequenceClassification" in a for a in architectures)
+    if ModelManager.is_cross_encoder(name) or (is_seq_cls and getattr(config, "num_labels", 0) == 1):
+        return "reranker"
+    return str(getattr(config, "model_type", "bert") or "bert")
+
+
 def _hex_to_rgb(hex_color):
     """Convert '#3b82f6' → (59, 130, 246) for rgba() usage."""
     hex_color = hex_color.lstrip('#')
@@ -233,6 +252,24 @@ def get_architecture_diagram(model_type, accent_color, title_prefix=None, layer_
             '<span style="color:#f9a8d4;font-weight:700;">France</span><span style="opacity:0.75;">99.1%</span></div>'
             '<div style="display:flex;justify-content:space-between;width:100%;font-size:9px;font-family:monospace;color:#cbd5e1;opacity:0.4;">'
             '<span>Europe</span><span>0.4%</span></div>'
+        )
+    elif model_type == "reranker":
+        # Cross-encoder: query and passage enter together as two segments and
+        # the [CLS] vector is scored into a single relevance logit. There is no
+        # vocabulary head, which is why the output block reads a number.
+        model_name = "Cross-Encoder (Reranker)"
+        has_segment_embed = True
+        attn_label = "Multi-Head Attn"
+        output_label = "Relevance Score"
+        output_example = (
+            '<div style="font-size:8px;font-family:monospace;color:#64748b;'
+            'border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:3px;margin-bottom:3px;line-height:1.5;">'
+            '&ldquo;who is a good nurse <span style="color:rgba(255,92,169,0.8);">[SEP]</span> '
+            'She is a dedicated nurse&hellip;&rdquo;</div>'
+            '<div style="display:flex;justify-content:space-between;width:100%;font-size:9px;font-family:monospace;color:#cbd5e1;">'
+            '<span style="color:#f9a8d4;font-weight:700;">logit</span><span style="opacity:0.75;">&minus;1.03</span></div>'
+            '<div style="display:flex;justify-content:space-between;width:100%;font-size:9px;font-family:monospace;color:#cbd5e1;opacity:0.4;">'
+            '<span>rank</span><span>higher is more relevant</span></div>'
         )
     else:
         model_name = "GPT-2 (Decoder)"
@@ -398,6 +435,15 @@ def get_architecture_diagram(model_type, accent_color, title_prefix=None, layer_
     # Close layer box
     parts.append('</div>')
 
+    # Pooling (reranker only): the classifier reads the [CLS] vector, it does
+    # not score tokens, so the step is worth showing.
+    if model_type == "reranker":
+        parts.append(_connector(16))
+        parts.append(_block("[CLS] Pooling",
+            extra_style="border-color:rgba(139,92,246,0.3);",
+            badge_text="TECH",
+            label_extra="color:#a78bfa;"))
+
     # Connector to output
     parts.append(_connector(24, "#ff5ca9"))
 
@@ -424,6 +470,49 @@ def get_architecture_section(model_type="bert", accent_color="#3b82f6", title_pr
         f'<div class="arch-section">'
         f'<div class="arch-body">{diagram_html}</div>'
         f'</div>'
+    )
+
+
+def get_architecture_gallery(entries, active_key=None):
+    """Architectures Available with any number of columns.
+
+    The paired version below takes exactly two diagrams, which stopped being
+    enough once rerankers became a third family.
+
+    entries: list of dicts with keys ``key``, ``model_type``, ``label`` and
+             optionally ``layers`` and ``color``.
+    active_key: the ``key`` of the family currently selected; that column is
+                outlined and the others are left plain.
+    """
+    pink = "#ff5ca9"
+    base_style = "transition: all 0.3s; border-radius: 12px; padding: 10px;"
+    style_on = f"{base_style} border: 2px solid {pink}; background: rgba(255, 92, 169, 0.05);"
+    style_off = f"{base_style} border: 2px solid transparent;"
+
+    columns = []
+    for item in entries:
+        diagram = get_architecture_diagram(
+            item.get("model_type", "bert"),
+            item.get("color", pink),
+            title_prefix=item.get("label") or None,
+            layer_count_val=item.get("layers", 12),
+        )
+        style = style_on if item.get("key") == active_key else style_off
+        columns.append(f'<div style="{style}">{diagram}</div>')
+
+    return ui.HTML(
+        '<div style="background-color: #ffffff; border-radius: 16px; padding: 30px; '
+        'display: flex; flex-direction: column; align-items: center; justify-content: center; '
+        'width: 100%; border: 1px solid #e2e8f0; '
+        'box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);">'
+        '<div style="text-align: center; margin-bottom: 30px;">'
+        '<h4 style="color: #ff5ca9; font-weight: 800; letter-spacing: 2px; margin: 0; '
+        'font-size: 18px; text-transform: uppercase;">Architectures Available</h4>'
+        '</div>'
+        '<div style="display: flex; align-items: flex-start; justify-content: center; '
+        'gap: 32px; width: 100%; flex-wrap: wrap;">'
+        + "".join(columns) +
+        '</div></div>'
     )
 
 
@@ -2118,6 +2207,129 @@ def get_layer_output_view(res, layer_idx, suffix=""):
     )
 
 
+def get_reranker_head_view(res, suffix="", compact_compare=False):
+    """Render the final cross-encoder scoring stage from real activations.
+
+    The attention result stores the trunk's final hidden state, while
+    ``ModelManager`` keeps the matching sequence-classification head.  Running
+    that final state through the head's pooler, dropout (disabled in eval) and
+    classifier exposes the exact last step omitted by the Transformer-layer
+    cards without performing the full encoder pass a second time.
+    """
+    encoder_model = res.encoder_model
+    if ui_model_type(encoder_model) != "reranker":
+        return ui.HTML(
+            "<p style='font-size:11px;color:#9ca3af;margin:0;'>"
+            "Relevance scoring is available only for reranker models.</p>"
+        )
+
+    model_name = getattr(res, "model_name", None) or getattr(
+        getattr(encoder_model, "config", None), "_name_or_path", ""
+    )
+    head = ModelManager.get_relevance_head(model_name)
+    if head is None or not res.hidden_states:
+        return ui.HTML(
+            "<p style='font-size:11px;color:#9ca3af;margin:0;'>"
+            "The reranker classification head is unavailable.</p>"
+        )
+
+    try:
+        head.eval()
+        device = next(head.parameters()).device
+        final_hidden = res.hidden_states[-1].to(device)
+        bert = getattr(head, "bert", None)
+        pooler = getattr(bert, "pooler", None)
+        classifier = getattr(head, "classifier", None)
+        if classifier is None:
+            raise AttributeError("reranker has no classifier layer")
+
+        with torch.no_grad():
+            cls_state = final_hidden[:, 0, :]
+            pooled = pooler(final_hidden) if pooler is not None else cls_state
+            dropout = getattr(head, "dropout", None)
+            classifier_input = dropout(pooled) if dropout is not None else pooled
+            logit = float(classifier(classifier_input).reshape(-1)[0])
+
+        cls_np = cls_state[0].detach().cpu().float().numpy()
+        pooled_np = pooled[0].detach().cpu().float().numpy()
+        cls_strip = array_to_base64_img(cls_np[:96], "Blues", 0.15)
+        pooled_strip = array_to_base64_img(pooled_np[:96], "Purples", 0.15)
+        hidden_size = int(cls_np.shape[0])
+        dropout_p = float(getattr(dropout, "p", 0.0)) if dropout is not None else 0.0
+
+        cls_card = f"""
+                <div style='width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:10px;'>
+                    <div style='font-size:10px;font-weight:700;color:#3b82f6;margin-bottom:7px;'>1. FINAL [CLS]</div>
+                    <img class='heatmap' src='data:image/png;base64,{cls_strip}'
+                         title='Final [CLS] hidden state (first 96 dimensions)' style='width:100%;'>
+                    <div style='font-size:9px;color:#64748b;margin-top:7px;'>
+                        h<sub>[CLS]</sub> &isin; R<sup>{hidden_size}</sup> &nbsp;&middot;&nbsp;
+                        ||h|| = {np.linalg.norm(cls_np):.3f}
+                    </div>
+                </div>
+        """
+        pooled_card = f"""
+                <div style='width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:10px;'>
+                    <div style='font-size:10px;font-weight:700;color:#8b5cf6;margin-bottom:7px;'>2. POOLER + DROPOUT</div>
+                    <img class='heatmap' src='data:image/png;base64,{pooled_strip}'
+                         title='Pooled [CLS] representation (first 96 dimensions)' style='width:100%;'>
+                    <div style='font-size:9px;color:#64748b;margin-top:7px;'>
+                        tanh(W<sub>p</sub>h<sub>[CLS]</sub> + b<sub>p</sub>)
+                        &nbsp;&middot;&nbsp; dropout p={dropout_p:.2f} (off in evaluation)
+                    </div>
+                </div>
+        """
+        score_card = f"""
+                <div style='width:100%;box-sizing:border-box;border:1px solid rgba(255,92,169,.35);background:#fff7fb;border-radius:8px;padding:10px;text-align:center;'>
+                    <div style='font-size:10px;font-weight:700;color:#db2777;margin-bottom:4px;'>3. RELEVANCE LOGIT</div>
+                    <div style='font-size:26px;font-weight:700;color:#111827;line-height:1.25;'>{logit:+.3f}</div>
+                    <div style='font-size:9px;color:#64748b;margin-top:5px;'>
+                        s = W<sub>r</sub>h<sub>pooled</sub> + b<sub>r</sub><br>
+                        Higher means more relevant; this is not a probability.
+                    </div>
+                </div>
+        """
+
+        if compact_compare:
+            return ui.HTML(f"""
+            <div class='reranker-head-view reranker-head-view-compare'>
+                <div style='display:grid;grid-template-columns:minmax(0,1fr) 40px minmax(0,1fr);align-items:stretch;'>
+                    {cls_card}
+                    <div aria-hidden='true' style='width:40px;display:flex;align-items:center;justify-content:center;'>
+                        <div class='transition-arrow'
+                             style='width:24px;height:24px;margin:0;pointer-events:none;font-size:20px;'>
+                            <span style='display:inline-block;transform:rotate(-90deg);'>&darr;</span>
+                        </div>
+                    </div>
+                    {pooled_card}
+                </div>
+                <div aria-hidden='true' style='height:40px;position:relative;'>
+                    <div class='transition-arrow'
+                         style='position:absolute;left:62.5%;top:8px;width:24px;height:24px;margin:0;transform:translateX(-50%) rotate(45deg);pointer-events:none;font-size:20px;'>&darr;</div>
+                </div>
+                <div style='width:min(210px,100%);margin:0 auto;'>
+                    {score_card}
+                </div>
+            </div>
+            """)
+
+        return ui.HTML(f"""
+            <div class='reranker-head-view' style='display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;'>
+                <div style='flex:1 1 180px;'>{cls_card}</div>
+                <div aria-hidden='true' style='display:flex;align-items:center;color:#94a3b8;font-size:18px;'>&rarr;</div>
+                <div style='flex:1 1 180px;'>{pooled_card}</div>
+                <div aria-hidden='true' style='display:flex;align-items:center;color:#94a3b8;font-size:18px;'>&rarr;</div>
+                <div style='flex:0 1 190px;'>{score_card}</div>
+            </div>
+        """)
+    except Exception as exc:
+        _logger.exception("Could not render reranker head internals")
+        return ui.HTML(
+            "<p style='font-size:11px;color:#ef4444;margin:0;'>"
+            f"Could not compute the reranker head: {_esc(exc)}</p>"
+        )
+
+
 def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode=False, custom_mask_indices=None):
     if not use_mlm:
         return ui.HTML(
@@ -2135,6 +2347,31 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
 
     inputs, tokenizer, encoder_model, mlm_model = res.inputs, res.tokenizer, res.encoder_model, res.mlm_model
     device = ModelManager.get_device()
+
+    # A reranker has no vocabulary head: its output is one relevance logit for
+    # the query/passage pair, which is what the ranking is built on. Show that
+    # instead of top-k tokens.
+    if mlm_model is None:
+        model_name = getattr(getattr(encoder_model, "config", None), "_name_or_path", "") or ""
+        head = ModelManager.get_relevance_head(model_name)
+        if head is None:
+            return ui.HTML(
+                "<div class='prediction-panel'>"
+                "<p style='font-size:11px;color:#9ca3af;'>This model has no prediction head.</p>"
+                "</div>"
+            )
+        with torch.no_grad():
+            head_inputs = {k: v.to(device) for k, v in inputs.items()}
+            logit = float(head(**head_inputs).logits.reshape(-1)[0])
+        return ui.HTML(
+            "<div class='prediction-panel'>"
+            "<p style='font-size:11px;color:#374151;margin-bottom:4px;'>"
+            "Relevance logit of the reranker for this pair</p>"
+            f"<p style='font-size:22px;font-weight:600;color:#111827;margin:0;'>{logit:+.3f}</p>"
+            "<p style='font-size:10px;color:#6b7280;margin-top:6px;'>"
+            "Higher means more relevant. Raw logit, not a probability.</p>"
+            "</div>"
+        )
 
     is_gpt2 = not hasattr(encoder_model, "encoder")
     
@@ -2797,6 +3034,7 @@ __all__ = [
     "get_ffn_view",
     "get_add_norm_post_ffn_view",
     "get_layer_output_view",
+    "get_reranker_head_view",
     "get_output_probabilities",
     "get_metrics_display",
     "get_influence_tree_data",

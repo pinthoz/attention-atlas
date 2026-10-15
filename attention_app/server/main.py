@@ -67,6 +67,7 @@ from .renderers import (
     get_ffn_view,
     get_add_norm_post_ffn_view,
     get_layer_output_view,
+    get_reranker_head_view,
     get_output_probabilities,
     get_metrics_display,
     get_influence_tree_data,
@@ -75,6 +76,8 @@ from .renderers import (
     get_influence_tree_ui,
     get_isa_scatter_view,
     get_paired_architecture_section,
+    get_architecture_gallery,
+    ui_model_type,
 )
 from .bias_handlers import bias_server_handlers
 from .notebook_handlers import notebook_server_handlers
@@ -84,7 +87,7 @@ from .isa_handlers import register_isa_handlers
 from ..ui.components import viz_header
 
 # Additional imports needed for server function
-from ..models import ModelManager
+from ..models import ModelManager, RERANKER_CHOICES, RERANKER_DEFAULT
 from ..utils import positional_encoding, array_to_base64_img, compute_influence_tree, get_reproducibility_info
 from ..metrics import compute_all_attention_metrics
 from ..head_specialization import compute_all_heads_specialization
@@ -948,6 +951,9 @@ def server(input, output, session):
                 "bert-base-multilingual-uncased": "BERT Multilingual",
             }
             selected = "bert-base-uncased"
+        elif family == "reranker":
+            choices = RERANKER_CHOICES
+            selected = RERANKER_DEFAULT
         else: # gpt2
             choices = {
                 "gpt2": "GPT-2 Small",
@@ -1054,6 +1060,9 @@ def server(input, output, session):
                 "bert-base-multilingual-uncased": "BERT Multilingual",
             }
             selected = "bert-base-uncased"
+        elif family == "reranker":
+            choices = RERANKER_CHOICES
+            selected = RERANKER_DEFAULT
         else: # gpt2
             choices = {
                 "gpt2": "GPT-2 Small",
@@ -3128,8 +3137,7 @@ def server(input, output, session):
 
         # Determine if we should show predictions based on the ACTUAL loaded model
         encoder_model_local = res.encoder_model
-        is_gpt2_local = not hasattr(encoder_model_local, "encoder")
-        model_family = "gpt2" if is_gpt2_local else "bert"
+        model_family = ui_model_type(encoder_model_local)
 
         # Reconstruct text from tokenizer
         tokens = res.tokens
@@ -3154,6 +3162,16 @@ def server(input, output, session):
                 <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> Displays the model's probabilistic forecast for the *next* token in the sequence, based on all preceding tokens.</p>
                 <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> Standard causal language modeling: P(token_t | token_1...token_{t-1}). The model outputs a probability distribution over the vocabulary; top-k candidates shown.</p>
                 <p style='margin:0'><strong style='color:#3b82f6'>Limitation:</strong> Purely statistical prediction based on training data; "plausible" continuations may not be factually correct or logically consistent.</p>
+            """
+        elif model_family == "reranker":
+            use_mlm = True
+            title = "Query-Passage Relevance Score"
+            desc = "Shows the reranker's raw relevance logit for the complete query-passage pair. Higher scores indicate that the passage is considered more relevant to the query."
+            tooltip = """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Query-Passage Relevance Score (Reranker)</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> A single score measuring how relevant the passage is to the query after both are processed jointly by the cross-encoder.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> The final [CLS] representation is pooled and passed through the trained classification head to produce one relevance logit.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Interpretation:</strong> Higher means more relevant. The value is a raw logit, not a probability, and is most useful for comparing candidate passages scored by the same model.</p>
             """
         else:
             use_mlm = True # Always show
@@ -3454,7 +3472,7 @@ def server(input, output, session):
             except Exception: layer_idx_val = 0
             norm_mode_val = global_norm_mode.get()
             encoder_model_local = res.encoder_model
-            model_type_val = getattr(encoder_model_local.config, 'model_type', 'bert')
+            model_type_val = ui_model_type(encoder_model_local)
 
             return ui.div(
                 # Embeddings Row
@@ -3502,7 +3520,10 @@ def server(input, output, session):
                 ),
                 # Residual Connections Row
                 ui.div(
-                    {"class": "flex-row-container", "style": "margin-bottom: 22px;"},
+                    {
+                        "class": "flex-row-container",
+                        "style": "margin-bottom: 40px;" if model_type_val == "reranker" else "margin-bottom: 22px;",
+                    },
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
                         ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm"), ui.p("Applies residual connection (x + Sublayer(x)) followed by Layer Normalization. Residual connections enable gradient flow through deep networks; normalization stabilizes activations across layers. Applied after both attention and FFN sublayers.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_add_norm_view(res, layer_idx_val))
@@ -3517,8 +3538,42 @@ def server(input, output, session):
                     ui.div(
                         {"class": "flex-card", "style": "position: relative;"},
                         ui.div({"class": "card", "style": "height: 100%;"}, ui.h4("Add & Norm (Post-FFN)"), ui.p("Second residual connection and Layer Normalization within the Transformer block, applied after the Feed-Forward Network. Completes the standard Transformer block architecture: Attention → Add&Norm → FFN → Add&Norm.", style="font-size:10px; color:#6b7280; margin-bottom:8px;"), get_add_norm_post_ffn_view(res, layer_idx_val)),
-                        arrow("Add & Norm (post-FFN)", "Exit", "vertical", suffix=suffix, model_type=model_type_val, style="position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;")
+                        arrow(
+                            "Add & Norm (post-FFN)",
+                            "Reranker Head" if model_type_val == "reranker" else "Exit",
+                            "vertical",
+                            suffix=suffix,
+                            model_type=model_type_val,
+                            style=(
+                                "position: absolute; bottom: -32px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"
+                                if model_type_val == "reranker" else
+                                "position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%); width: auto; margin: 0;"
+                            ),
+                        ),
                     ),
+                ),
+                *(
+                    [
+                        ui.div(
+                            {
+                                "class": "reranker-head-section-single",
+                                "style": "display:flex;justify-content:center;margin:0 0 22px;",
+                            },
+                            ui.div(
+                                {"class": "flex-card", "style": "width:min(920px,100%);flex:none;"},
+                                ui.div(
+                                    {"class": "card"},
+                                    ui.h4("Reranker Head & Relevance Score"),
+                                    ui.p(
+                                        "Takes the final [CLS] representation, applies the trained pooling and classification head, and produces the single relevance logit used to rank this query-passage pair.",
+                                        style="font-size:10px; color:#6b7280; margin-bottom:8px;"
+                                    ),
+                                    get_reranker_head_view(res, suffix=suffix),
+                                ),
+                            ),
+                        ),
+                    ]
+                    if model_type_val == "reranker" else []
                 ),
             )
 
@@ -3938,6 +3993,8 @@ def server(input, output, session):
             def get_layer_count(model_name):
                 # Map model names to layer counts
                 model_name = str(model_name).lower() if model_name else ""
+                if "minilm-l-6" in model_name: return 6
+                if "minilm-l-12" in model_name: return 12
                 if "xl" in model_name: return 48
                 if "large" in model_name:
                     if "bert" in model_name: return 24
@@ -3953,16 +4010,21 @@ def server(input, output, session):
             if not live_compare:
                 # Single mode live preview - NOW DUAL ARCHITECTURE WITH HIGHLIGHTING
                 # We always show BOTH BERT and GPT-2, but highlight the one selected.
-                current_family = input.model_family() # "bert" or "gpt2"
-                active_model_code = "A" if current_family == "bert" else "B" # A=BERT, B=GPT2
-                
+                current_family = input.model_family() # "bert", "gpt2" or "reranker"
+
                 # Use dynamic layer count for the SELECTED model
-                # For the unselected one, default to 12 (since we don't know which specific model variant they'd want)
+                # For the unselected ones, default to 12 (since we don't know which specific model variant they'd want)
                 selected_model_name = input.model_name()
                 selected_layers = get_layer_count(selected_model_name)
-                
-                layers_a = selected_layers if current_family == "bert" else 12
-                layers_b = selected_layers if current_family == "gpt2" else 12
+
+                gallery_entries = [
+                    {"key": "bert", "model_type": "bert", "label": "",
+                     "layers": selected_layers if current_family == "bert" else 12},
+                    {"key": "gpt2", "model_type": "gpt2", "label": "",
+                     "layers": selected_layers if current_family == "gpt2" else 12},
+                    {"key": "reranker", "model_type": "reranker", "label": "",
+                     "layers": selected_layers if current_family == "reranker" else 6},
+                ]
 
                 return ui.div(
                     ui.div(
@@ -3971,16 +4033,8 @@ def server(input, output, session):
                         ui.HTML(preview_html)
                     ),
                     ui.div(
-                        {"style": "margin-top: 30px; zoom: 0.75; width: 100%; transform-origin: top center; margin-bottom: -40px;"}, # Zoom prevents extra space
-                        get_paired_architecture_section(
-                            model_type_a="bert", 
-                            model_type_b="gpt2",
-                            label_a="",
-                            label_b="",
-                            active_model=active_model_code,
-                            layers_a=layers_a,
-                            layers_b=layers_b
-                        )
+                        {"style": "margin-top: 30px; zoom: 0.65; width: 100%; transform-origin: top center; margin-bottom: -40px;"}, # Zoom prevents extra space
+                        get_architecture_gallery(gallery_entries, active_key=current_family)
                     ),
                     ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1'); document.body.style.overflow = 'auto';</script>")
                 )
@@ -4163,7 +4217,9 @@ def server(input, output, session):
                 )
 
             # Paired arrows - vertical arrows for both models
-            def paired_arrows(from_section, to_section, model_type_A=None, model_type_B=None):
+            def paired_arrows(from_section, to_section, model_type_A=None, model_type_B=None,
+                              to_section_B=None):
+                target_b = to_section if to_section_B is None else to_section_B
                 return ui.layout_columns(
                     ui.div(
                         {"style": "display: flex; justify-content: center; padding: 0; margin: 0;"},
@@ -4171,7 +4227,7 @@ def server(input, output, session):
                     ),
                     ui.div(
                         {"style": "display: flex; justify-content: center; padding: 0; margin: 0;"},
-                        arrow(from_section, to_section, "vertical", suffix="_B", extra_class="arrow-pink", model_type=model_type_B)
+                        arrow(from_section, target_b, "vertical", suffix="_B", extra_class="arrow-pink", model_type=model_type_B)
                     ),
                     col_widths=[6, 6]
                 )
@@ -4222,8 +4278,8 @@ def server(input, output, session):
                  encoder_model_B = res_B.encoder_model
                  is_gpt2_A = not hasattr(encoder_model_A, "encoder")
                  is_gpt2_B = not hasattr(encoder_model_B, "encoder")
-                 model_type_A = "gpt2" if is_gpt2_A else "bert"
-                 model_type_B = "gpt2" if is_gpt2_B else "bert"
+                 model_type_A = ui_model_type(encoder_model_A)
+                 model_type_B = ui_model_type(encoder_model_B)
 
                  # Get shared parameters
                  try: layer_idx = int(input.global_layer())
@@ -4318,15 +4374,45 @@ def server(input, output, session):
 
                  # Post FFN
                  rows.append(ui.div(paired_arrows("Feed-Forward Network", "Add & Norm (post-FFN)"), class_="arrow-row"))
+                 is_reranker_A = model_type_A == "reranker"
+                 is_reranker_B = model_type_B == "reranker"
+                 target_A = "Reranker Head" if is_reranker_A else "Exit"
+                 target_B = "Reranker Head" if is_reranker_B else "Exit"
                  addnorm_post_desc = "Second residual connection and Layer Normalization within the Transformer block, applied after the Feed-Forward Network. Completes the standard Transformer block architecture: Attention → Add&Norm → FFN → Add&Norm."
                  rows.append(ui.layout_columns(
                      make_card("Add & Norm (Post-FFN)", addnorm_post_desc, get_add_norm_post_ffn_view(res_A, layer_idx), "a"),
                      make_card("Add & Norm (Post-FFN)", addnorm_post_desc, get_add_norm_post_ffn_view(res_B, layer_idx, suffix="_B"), "b"),
-                     col_widths=[6, 6]
+                     col_widths=[6, 6],
+                 ))
+                 rows.append(ui.div(
+                     paired_arrows(
+                         "Add & Norm (post-FFN)", target_A,
+                         model_type_A=model_type_A, model_type_B=model_type_B,
+                         to_section_B=target_B,
+                     ),
+                     class_="arrow-row reranker-output-arrow-row",
                  ))
 
-                 # Exit Arrow
-                 rows.append(ui.div(paired_arrows("Add & Norm (post-FFN)", "Exit", model_type_A=model_type_A, model_type_B=model_type_B), class_="arrow-row"))
+                 if is_reranker_A or is_reranker_B:
+                     reranker_desc = (
+                         "Takes the final [CLS] representation, applies the trained pooling and "
+                         "classification head, and produces the single relevance logit used for ranking."
+                     )
+                     rows.append(ui.layout_columns(
+                         make_card(
+                             "Reranker Head & Relevance Score",
+                             reranker_desc,
+                             get_reranker_head_view(res_A, compact_compare=True),
+                             "a",
+                         ) if is_reranker_A else ui.div(),
+                         make_card(
+                             "Reranker Head & Relevance Score",
+                             reranker_desc,
+                             get_reranker_head_view(res_B, suffix="_B", compact_compare=True),
+                             "b",
+                         ) if is_reranker_B else ui.div(),
+                         col_widths=[6, 6],
+                     ))
 
                  return ui.div(*rows)
 
@@ -5431,15 +5517,14 @@ def server(input, output, session):
         # Determine if we should show predictions based on the ACTUAL loaded model for B
         # Use res_B directly if it exists, otherwise use Model Manager? No, res is source of truth.
         encoder_model_B_local = res.encoder_model
-        is_gpt2_B_local = not hasattr(encoder_model_B_local, "encoder")
-        model_family = "gpt2" if is_gpt2_B_local else "bert"
+        model_family = ui_model_type(encoder_model_B_local)
 
         # Reconstruct text from tokenizer to avoid reactivity from input.text_input()
         tokens = res.tokens
         tokenizer = res.tokenizer
         text = tokenizer.convert_tokens_to_string(tokens)
 
-        is_bert = model_family != "gpt2"
+        is_bert = model_family == "bert"
         use_mlm = True  # Always show predictions
 
         try: top_k = int(input.global_topk())
@@ -5485,7 +5570,17 @@ def server(input, output, session):
         """)
 
         # Prepare viz_header arguments
-        if is_bert:
+        if model_family == "reranker":
+            title = "Query-Passage Relevance Score"
+            desc = "Shows the reranker's raw relevance logit for the complete query-passage pair. Higher scores indicate that the passage is considered more relevant to the query."
+            tooltip = """
+                <strong style='color:#ff5ca9;font-size:13px;display:block;margin-bottom:8px'>Query-Passage Relevance Score (Reranker)</strong>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Definition:</strong> A single score measuring how relevant the passage is to the query after both are processed jointly by the cross-encoder.</p>
+                <p style='margin:0 0 10px 0'><strong style='color:#3b82f6'>Calculation:</strong> The final [CLS] representation is pooled and passed through the trained classification head to produce one relevance logit.</p>
+                <p style='margin:0'><strong style='color:#3b82f6'>Interpretation:</strong> Higher means more relevant. The value is a raw logit, not a probability, and is most useful for comparing candidate passages scored by the same model.</p>
+            """
+            extra_controls = None
+        elif is_bert:
             title = "Masked Token Predictions (MLM)"
             desc = "Demonstrates BERT's bidirectional language understanding by iteratively masking each token and predicting the most likely original based on full surrounding context from both directions."
             tooltip = """
@@ -6333,7 +6428,7 @@ def server(input, output, session):
         norm_mode = global_norm_mode.get()
         use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
         encoder_model = res.encoder_model
-        model_type = getattr(encoder_model.config, 'model_type', 'bert')
+        model_type = ui_model_type(encoder_model)
 
         return ui.div(
             # Embeddings Row
@@ -6420,7 +6515,7 @@ def server(input, output, session):
         norm_mode = global_norm_mode.get()
         use_global = global_metrics_mode.get() == "all"  # Ensure reactive dependency
         encoder_model = res.encoder_model
-        model_type = getattr(encoder_model.config, 'model_type', 'bert')
+        model_type = ui_model_type(encoder_model)
 
         return ui.div(
             # Embeddings Row

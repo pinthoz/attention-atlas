@@ -906,6 +906,14 @@ CSS = """
             top: 12px;
         }
 
+        /* The reranker output is a real next stage, not an Exit marker. Keep
+           its connector at the same vertical position as every other
+           between-card transition instead of applying the special last-arrow
+           offset above. */
+        #dashboard-container-compare .reranker-output-arrow-row {
+            top: 5px !important;
+        }
+
         /* Space for Input arrow at top and reduced bottom margin in deep dive compare */
         #dashboard-container-compare .accordion-item:last-child .accordion-body {
             padding-top: 40px !important;

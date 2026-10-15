@@ -183,15 +183,15 @@ Attention Atlas advances the state-of-the-art through four innovations:
 
 ### Research Questions Addressed
 
-1. **Faithfulness**: Are attention weights faithful explanations? (Validated via Integrated Gradients comparison)
-2. **Specialization**: What linguistic patterns do heads encode? (7 behavioral metrics: Syntax, Semantics, etc.)
-3. **Information Flow**: How does attention propagate through layers? (Token Influence Tree, ISA Matrix)
-4. **Bias Amplification**: Which heads amplify social biases? (Attention-to-bias correlation with StereoSet scores)
+1. **RQ1, auditing protocol**: How can an auditing protocol be constructed that isolates bias signal from source signal in multi-source bias-detection benchmarks?
+2. **RQ2, design requirements**: What design requirements should guide interactive human-AI auditing tools for transformer models?
+3. **RQ3, instantiation**: How can those requirements be instantiated in a working visual analytics system that supports head-granular inspection, pair-aware comparison, and audit-trail capture?
+4. **RQ4, analyst reasoning**: When analysts use the system on auditing tasks, how does its epistemic scaffolding shape the strength of their conclusions and their cross-checking of evidence?
 
 ### Validation Strategy
 
-- **Quantitative**: Spearman correlation between attention and gradient attributions (target: > 0.5)
-- **Qualitative**: User study (N=10-15) with NLP researchers and domain experts measuring task accuracy and SUS score
+- **Quantitative**: Per-head faithfulness cross-checks (integrated gradients, causal head ablation, perturbation and minimality, AttnLRP), each read against a permutation-calibrated threshold rather than a fixed cut-off
+- **Qualitative**: A reasoning study with ten to twelve analysts who inspect or evaluate language models, coding the epistemic strength of their conclusions, their cross-checking of evidence, and cognitive load (NASA-TLX, SUS). The sessions take place after the dissertation is submitted, so no results are reported here.
 
 ---
 
@@ -200,12 +200,13 @@ Attention Atlas advances the state-of-the-art through four innovations:
 If you use Attention Atlas in your research, please cite:
 
 ```bibtex
-@mastersthesis{attentionatlas2025,
-  title={Interpretable Large Language Models through Attention Mechanism Visualization},
-  author={Pinto, Ana},
-  year={2026},
-  school={[Your University]},
-  type={Master's Thesis}
+@mastersthesis{pinto2026attentionatlas,
+  title  = {Human-AI Auditing of Transformer Models: An Integrated Protocol,
+            Design Requirements, and Interactive System for Bias-Sensitive Workflows},
+  author = {Pinto, Ana},
+  year   = {2026},
+  school = {Faculty of Sciences, University of Porto},
+  type   = {MSc Thesis in Data Science}
 }
 ```
 

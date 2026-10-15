@@ -3,7 +3,12 @@ import os
 import threading
 import warnings
 import torch
-from transformers import BertTokenizerFast, BertModel, BertForMaskedLM
+from transformers import (
+    BertTokenizerFast,
+    BertModel,
+    BertForMaskedLM,
+    BertForSequenceClassification,
+)
 from transformers.utils import logging as transformers_logging
 from transformers import GPT2TokenizerFast, GPT2Model, GPT2LMHeadModel
 import gc
@@ -68,6 +73,15 @@ transformers_logging.set_verbosity_error()
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
 
+# Rerankers offered in the "Rerankers" model family. Single source of truth:
+# the allowlist, the cross-encoder test and the sidebar all read from here.
+RERANKER_CHOICES = {
+    "cross-encoder/ms-marco-MiniLM-L-6-v2": "MS MARCO MiniLM L-6",
+    "cross-encoder/ms-marco-MiniLM-L-12-v2": "MS MARCO MiniLM L-12",
+}
+RERANKER_DEFAULT = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+
 class ModelManager:
     """Manages loading and caching of BERT / GPT-2 models.
 
@@ -91,7 +105,19 @@ class ModelManager:
         "pinthoz/gus-net-bert-custom",
         "pinthoz/gus-net-gpt2",
         "pinthoz/gus-net-gpt2-medium",
+        # Cross-encoder rerankers (BERT trunk, single relevance logit)
+        *RERANKER_CHOICES,
     }
+
+    # Rerankers scored as a query/passage pair. These carry a sequence
+    # classification head with one output (the relevance logit) and no
+    # masked-language head, so the prediction surfaces have to read the
+    # logit instead of a vocabulary distribution.
+    _CROSS_ENCODERS = set(RERANKER_CHOICES)
+
+    # Relevance heads, kept beside the cache so ``get_model`` keeps returning
+    # the (tokenizer, encoder, mlm) triple every caller unpacks.
+    _heads: dict = {}
 
     # LRU cache - keep up to _MAX_CACHED models loaded simultaneously.
     # Compare-mode + bias-mode routinely needs {target_model, base_encoder,
@@ -127,7 +153,9 @@ class ModelManager:
                 old_name, old_entry = cls._instances.popitem(last=False)
                 _logger.info("Unloading previous model (%s) to free memory...", old_name)
                 _release_to_cpu(old_entry)
-                del old_entry
+                old_head = cls._heads.pop(old_name, None)
+                _release_to_cpu((old_head,) if old_head is not None else ())
+                del old_entry, old_head
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -166,6 +194,33 @@ class ModelManager:
                 except Exception:
                     _logger.warning("Could not load LM head for %s", model_name, exc_info=True)
                     mlm = None
+            elif cls.is_cross_encoder(model_name):
+                # Reranker: the trunk is a plain BERT encoder, so every
+                # attention view works unchanged. The head is a one-output
+                # classifier, and there is no MLM head to load: asking for one
+                # would silently hand back randomly initialised weights and
+                # the Overview would show invented predictions.
+                tokenizer = BertTokenizerFast.from_pretrained(model_name)
+
+                encoder = BertModel.from_pretrained(
+                    model_name,
+                    output_attentions=True,
+                    output_hidden_states=True,
+                    **_eager_kwargs(),
+                )
+                encoder.eval()
+
+                mlm = None
+
+                head = BertForSequenceClassification.from_pretrained(
+                    model_name,
+                    output_attentions=False,
+                    output_hidden_states=False,
+                )
+                head.eval()
+                head.to("cuda" if torch.cuda.is_available() else "cpu")
+                with cls._lock:
+                    cls._heads[model_name] = head
             else:
                 tokenizer = BertTokenizerFast.from_pretrained(model_name)
 
@@ -220,6 +275,8 @@ class ModelManager:
         with cls._lock:
             entries = list(cls._instances.values())
             cls._instances.clear()
+            entries.extend((head,) for head in cls._heads.values())
+            cls._heads.clear()
         for entry in entries:
             _release_to_cpu(entry)
         del entries
@@ -231,4 +288,61 @@ class ModelManager:
     def get_device():
         return "cuda" if torch.cuda.is_available() else "cpu"
 
-__all__ = ["ModelManager"]
+    @classmethod
+    def is_cross_encoder(cls, model_name: str) -> bool:
+        """True for rerankers scored as a query/passage pair."""
+        return model_name in cls._CROSS_ENCODERS
+
+    @classmethod
+    def get_relevance_head(cls, model_name: str):
+        """Return the one-output classification head of a reranker.
+
+        Loads the model first if it is not cached. Returns ``None`` for every
+        model that is not a reranker, so callers can branch on the result.
+        """
+        if not cls.is_cross_encoder(model_name):
+            return None
+        with cls._lock:
+            head = cls._heads.get(model_name)
+        if head is not None:
+            return head
+        cls.get_model(model_name)          # populates _heads
+        with cls._lock:
+            return cls._heads.get(model_name)
+
+    @staticmethod
+    def encode_pair(tokenizer, query: str, passage: str, max_length: int = 512):
+        """Tokenise a query and a passage as the two segments of one input.
+
+        The reranker is trained on pairs, so the passage tokens must carry
+        token type id 1. Encoding ``"query [SEP] passage"`` as a single string
+        leaves every token in segment 0 and changes what the model sees.
+        """
+        return tokenizer(
+            query,
+            passage,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_length,
+        )
+
+    @classmethod
+    def score_pair(cls, model_name: str, query: str, passage: str) -> float:
+        """Relevance logit the reranker gives this query/passage pair.
+
+        Higher means more relevant. The value is the raw logit, which is what
+        the ranking is built on; it is not a probability.
+        """
+        head = cls.get_relevance_head(model_name)
+        if head is None:
+            raise ValueError(f"Model '{model_name}' is not a reranker.")
+        tokenizer, _encoder, _mlm = cls.get_model(model_name)
+        inputs = cls.encode_pair(tokenizer, query, passage)
+        device = cls.get_device()
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        with torch.no_grad():
+            logits = head(**inputs).logits
+        return float(logits.reshape(-1)[0])
+
+
+__all__ = ["ModelManager", "RERANKER_CHOICES", "RERANKER_DEFAULT"]

@@ -53,8 +53,17 @@ def get_sentence_boundaries(text: str, tokens: List[str], tokenizer, inputs) -> 
         sentence_texts: List of sentence strings
         sentence_boundaries_ids: List of start token indices for each sentence
     """
-    # 1. Split text into sentences
-    sentences = nltk.sent_tokenize(text)
+    # 1. Split text into sentences.
+    #    An explicit [SEP] in the text means the analyst declared the boundary
+    #    themselves (a reranker's query and passage), so it wins over the
+    #    sentence splitter, which would read the pair as a single sentence
+    #    when the first half has no final stop.
+    sep_token = getattr(tokenizer, "sep_token", None)
+    if sep_token and sep_token in text:
+        halves = [h.strip() for h in text.split(sep_token)]
+        sentences = [h for h in halves if h]
+    else:
+        sentences = nltk.sent_tokenize(text)
     
     # 2. Construct a map of char_index -> sentence_index
     char_to_sent = {}

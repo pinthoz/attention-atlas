@@ -14,19 +14,21 @@ from .notebook_ui import create_notebook_drawer
 # Original attention analysis page
 attention_analysis_page = ui.page_fluid(
     # BLAZING FAST INLINE CSS to completely kill FOUC before stylesheets load!
-    ui.HTML('''<style>
+    ui.HTML("""<style>
         .navbar:not(.sidebar .navbar), .navbar-toggler, .navbar-toggler-icon { 
             display: none !important; 
             opacity: 0 !important; 
             visibility: hidden !important; 
         }
-    </style>'''),
-    
+    </style>"""),
     # Sidebar
     ui.div(
         {"class": "sidebar"},
         ui.div(
-            {"class": "app-title", "style": "display: flex; align-items: center; justify-content: space-between; width: 100%;"},
+            {
+                "class": "app-title",
+                "style": "display: flex; align-items: center; justify-content: space-between; width: 100%;",
+            },
             ui.div(
                 {"style": "display: flex; align-items: center; gap: 8px;"},
                 ui.tags.img(src=ICON_DATA_URL or "/favicon.ico", alt="Logo"),
@@ -36,67 +38,101 @@ attention_analysis_page = ui.page_fluid(
             ui.div(
                 {"id": "attn-back-button-container", "style": "display: none;"},
                 ui.HTML(
-                    '<div onclick="Shiny.setInputValue(\'attn_go_back\',Date.now(),{priority:\'event\'});"'
+                    "<div onclick=\"Shiny.setInputValue('attn_go_back',Date.now(),{priority:'event'});\""
                     ' class="sidebar-back-btn" title="Back to previous analysis">'
                     '<i class="fa-solid fa-arrow-left" style="font-size: 10px;"></i> Back'
-                    '</div>'
-                )
+                    "</div>"
+                ),
             ),
         ),
         ui.div(
-            {"class": "app-subtitle", "style": "margin-bottom: 12px; padding-bottom: 12px;"}, # Tighter spacing
-            "An interactive visualization of Transformer internals with a focus on attention mechanisms."
+            {
+                "class": "app-subtitle",
+                "style": "margin-bottom: 12px; padding-bottom: 12px;",
+            },  # Tighter spacing
+            "An interactive visualization of Transformer internals with a focus on attention mechanisms.",
         ),
-
         # View Mode Toggle (Basic/Advanced) - Modern Pill Buttons with Icons
         ui.div(
-            {"class": "sidebar-section", "style": "margin-top: 4px; margin-bottom: 4px;"}, # Move closer to line
+            {
+                "class": "sidebar-section",
+                "style": "margin-top: 4px; margin-bottom: 4px;",
+            },  # Move closer to line
             ui.tags.span("Mode", class_="sidebar-label"),
             ui.div(
-                {"id": "view-mode-container", "style": "width: 100%; display: flex; justify-content: center; margin-top: 6px;"},
+                {
+                    "id": "view-mode-container",
+                    "style": "width: 100%; display: flex; justify-content: center; margin-top: 6px;",
+                },
                 ui.input_radio_buttons(
                     "view_mode",
                     None,
                     choices={
-                        "basic": ui.HTML('''<span class="btn-content"><span>Basic</span><i class="fa-solid fa-gear"></i></span>'''),
-                        "advanced": ui.HTML('''<span class="btn-content"><span>Advanced</span><i class="fa-solid fa-brain"></i></span>''')
+                        "basic": ui.HTML(
+                            """<span class="btn-content"><span>Basic</span><i class="fa-solid fa-gear"></i></span>"""
+                        ),
+                        "advanced": ui.HTML(
+                            """<span class="btn-content"><span>Advanced</span><i class="fa-solid fa-brain"></i></span>"""
+                        ),
                     },
                     selected="basic",
                     inline=True,
                 ),
             ),
         ),
-
         ui.div(
-            {"class": "sidebar-section", "style": "margin-top: 0; transform: translateY(-8px);"}, # Fine-tuned vertical spacing
+            {
+                "class": "sidebar-section",
+                "style": "margin-top: 0; transform: translateY(-8px);",
+            },  # Fine-tuned vertical spacing
             # Header
             ui.tags.span("Compare Modes", id="cmp-modes-label", class_="sidebar-label"),
-            
             # Checkbox Row - centered
             ui.div(
                 {"id": "compare-modes-container"},
-                ui.input_switch("compare_mode", ui.span("Models", class_="compare-label"), value=False),
-                ui.input_switch("compare_prompts_mode", ui.span("Prompts", class_="compare-label"), value=False)
+                ui.input_switch(
+                    "compare_mode",
+                    ui.span("Models", class_="compare-label"),
+                    value=False,
+                ),
+                ui.input_switch(
+                    "compare_prompts_mode",
+                    ui.span("Prompts", class_="compare-label"),
+                    value=False,
+                ),
             ),
-
             # Model Configuration Container (Flex Row)
             ui.div(
                 {"style": "display: flex; gap: 12px; align-items: flex-start;"},
-                
                 # LEFT COLUMN: Model A (Always Visible, Flex Grow)
                 ui.div(
-                    {"style": "flex: 1; min-width: 0; display: flex; flex-direction: column;"},
-
+                    {
+                        "style": "flex: 1; min-width: 0; display: flex; flex-direction: column;"
+                    },
                     # Inputs A
-                    ui.tags.span("Model Family", id="lbl-fam-a", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px; transition: color 0.3s ease;"),
+                    ui.tags.span(
+                        "Model Family",
+                        id="lbl-fam-a",
+                        class_="sidebar-label",
+                        style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px; transition: color 0.3s ease;",
+                    ),
                     ui.input_select(
                         "model_family",
                         None,
-                        choices={"bert": "BERT", "gpt2": "GPT-2"},
+                        choices={
+                            "bert": "BERT",
+                            "gpt2": "GPT-2",
+                            "reranker": "Rerankers",
+                        },
                         selected="bert",
-                        width="100%"
+                        width="100%",
                     ),
-                    ui.tags.span("Model Configuration", id="lbl-conf-a", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px; transition: color 0.3s ease;"),
+                    ui.tags.span(
+                        "Model Configuration",
+                        id="lbl-conf-a",
+                        class_="sidebar-label",
+                        style="margin-bottom: 2px; font-size: 10px; color: #64748b; margin-top: -5px; transition: color 0.3s ease;",
+                    ),
                     ui.input_select(
                         "model_name",
                         None,
@@ -106,24 +142,39 @@ attention_analysis_page = ui.page_fluid(
                             "bert-base-multilingual-uncased": "BERT Multilingual",
                         },
                         selected="bert-base-uncased",
-                        width="100%"
+                        width="100%",
                     ),
                 ),
-
                 # RIGHT COLUMN: Model B - Hidden by default via CSS, shown when compare_mode is on
                 ui.div(
-                    {"id": "model-b-panel", "style": "flex: 1; min-width: 0; flex-direction: column;"},
-
+                    {
+                        "id": "model-b-panel",
+                        "style": "flex: 1; min-width: 0; flex-direction: column;",
+                    },
                     # Inputs B
-                    ui.tags.span("Model Family - B", id="lbl-fam-b", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #ff5ca9; margin-top: -5px;"),
+                    ui.tags.span(
+                        "Model Family - B",
+                        id="lbl-fam-b",
+                        class_="sidebar-label",
+                        style="margin-bottom: 2px; font-size: 10px; color: #ff5ca9; margin-top: -5px;",
+                    ),
                     ui.input_select(
                         "model_family_B",
                         None,
-                        choices={"bert": "BERT", "gpt2": "GPT-2"},
+                        choices={
+                            "bert": "BERT",
+                            "gpt2": "GPT-2",
+                            "reranker": "Rerankers",
+                        },
                         selected="gpt2",
-                        width="100%"
+                        width="100%",
                     ),
-                    ui.tags.span("Model Config - B", id="lbl-conf-b", class_="sidebar-label", style="margin-bottom: 2px; font-size: 10px; color: #ff5ca9; margin-top: -5px;"),
+                    ui.tags.span(
+                        "Model Config - B",
+                        id="lbl-conf-b",
+                        class_="sidebar-label",
+                        style="margin-bottom: 2px; font-size: 10px; color: #ff5ca9; margin-top: -5px;",
+                    ),
                     ui.input_select(
                         "model_name_B",
                         None,
@@ -131,44 +182,59 @@ attention_analysis_page = ui.page_fluid(
                             "gpt2": "GPT-2 Small",
                         },
                         selected="gpt2",
-                        width="100%"
+                        width="100%",
                     ),
-                )
-            )
+                ),
+            ),
         ),
-
         ui.div(
-            {"class": "sidebar-section", "style": "margin-top: 0; transform: translateY(-14px);"}, # Force visual move up
-            ui.tags.span("Input Text", class_="sidebar-label"),
-            
+            {
+                "class": "sidebar-section",
+                "style": "margin-top: 0; transform: translateY(-14px);",
+            },  # Force visual move up
+            ui.tags.span("Input Text", id="input-text-label", class_="sidebar-label"),
             # Custom History Input Component
             ui.div(
                 {"class": "custom-input-container", "id": "input-container"},
-                
                 # Tabs Container (History + Compare Prompts Tabs + Session Controls)
                 ui.div(
                     {"class": "tabs-row"},
-
                     # History Tab (always visible, left side)
                     ui.div(
-                        {"class": "history-tab", "onclick": "toggleHistory()", "title": "History"},
-                        ui.HTML("""<svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 448 512" fill="white"><!--!Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.--><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg>"""),
+                        {
+                            "class": "history-tab",
+                            "onclick": "toggleHistory()",
+                            "title": "History",
+                        },
+                        ui.HTML(
+                            """<svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 448 512" fill="white"><!--!Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.--><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg>"""
+                        ),
                     ),
-
                     # Compare Prompts Tabs A and B (Conditional, right after History tab)
                     ui.panel_conditional(
                         "input.compare_prompts_mode",
                         ui.div(
                             {"class": "compare-tabs-inline"},
-                            ui.div("A", id="tab-a", class_="prompt-tab tab-a active", onclick="switchPrompt('A')"),
-                            ui.div("B", id="tab-b", class_="prompt-tab tab-b", onclick="switchPrompt('B')")
+                            ui.div(
+                                "A",
+                                id="tab-a",
+                                class_="prompt-tab tab-a active",
+                                onclick="switchPrompt('A')",
+                            ),
+                            ui.div(
+                                "B",
+                                id="tab-b",
+                                class_="prompt-tab tab-b",
+                                onclick="switchPrompt('B')",
+                            ),
                         ),
                     ),
-
                     # Session Controls (Right Side - margin-left: auto pushes to right)
                     ui.div(
-                        {"class": "session-controls", "style": "display: flex; gap: 4px; align-items: flex-end; margin-left: auto;"},
-
+                        {
+                            "class": "session-controls",
+                            "style": "display: flex; gap: 4px; align-items: flex-end; margin-left: auto;",
+                        },
                         # Batch Mode Button
                         ui.tags.button(
                             ui.HTML('<i class="fa-solid fa-chart-pie"></i>'),
@@ -177,34 +243,39 @@ attention_analysis_page = ui.page_fluid(
                             title="Batch Mode",
                             onclick="window.toggleAttnBatchMode && window.toggleAttnBatchMode();",
                         ),
-
                         # Load Button (Trigger for hidden input)
                         ui.tags.label(
                             ui.HTML('<i class="fa-solid fa-folder-open"></i>'),
-                            {"class": "session-btn-custom", "title": "Load Session", "for": "load_session_upload"}
+                            {
+                                "class": "session-btn-custom",
+                                "title": "Load Session",
+                                "for": "load_session_upload",
+                            },
                         ),
                         # Hidden File Input
                         ui.div(
-                            ui.input_file("load_session_upload", None, accept=[".json"], multiple=False),
-                            style="display: none;"
+                            ui.input_file(
+                                "load_session_upload",
+                                None,
+                                accept=[".json"],
+                                multiple=False,
+                            ),
+                            style="display: none;",
                         ),
-
                         # Save Button
                         ui.download_button(
                             "save_session",
                             label=None,
                             icon=ui.tags.i(class_="fa-solid fa-floppy-disk"),
-                            class_="session-btn-custom"
+                            class_="session-btn-custom",
                         ),
                     ),
                 ),
-                
                 # History Dropdown (initially hidden)
                 ui.div(
                     {"id": "history-dropdown", "class": "history-dropdown"},
-                    ui.output_ui("history_list")
+                    ui.output_ui("history_list"),
                 ),
-                
                 # Custom Textarea A (Blue Border only in compare mode)
                 ui.tags.textarea(
                     "All women are naturally nurturing and emotional. Men are logical and suited for leadership positions.",
@@ -213,7 +284,6 @@ attention_analysis_page = ui.page_fluid(
                     rows=6,
                     oninput="Shiny.setInputValue('text_input', this.value, {priority: 'event'})",
                 ),
-
                 # Custom Textarea B (Pink Border only in compare mode) - Initially Hidden
                 ui.tags.textarea(
                     "Programmers are logical and rigorous. Artists are creative and emotional.",
@@ -221,9 +291,74 @@ attention_analysis_page = ui.page_fluid(
                     class_="custom-textarea",
                     rows=6,
                     oninput="Shiny.setInputValue('text_input_B', this.value)",
-                    style="display: none;"
+                    style="display: none;",
                 ),
-
+                # Reranker pair input (hidden unless the Rerankers family is on).
+                # A cross-encoder scores a query against a passage, so the single
+                # prompt box splits in two. The two fields are mirrored back into
+                # text_input as "query [SEP] passage" so every downstream view
+                # keeps working on one string.
+                ui.div(
+                    {
+                        "id": "reranker-pair-a",
+                        "class": "custom-textarea reranker-pair",
+                        "style": "display: none;",
+                    },
+                    ui.div(
+                        {"class": "reranker-slot"},
+                        ui.tags.span("QUERY", class_="reranker-tag tag-query"),
+                        ui.tags.textarea(
+                            "who is a good nurse",
+                            id="query_input",
+                            class_="reranker-half",
+                            rows=2,
+                            oninput="window.syncRerankerPair && window.syncRerankerPair('');",
+                        ),
+                    ),
+                    ui.div({"class": "reranker-divider"}),
+                    ui.div(
+                        {"class": "reranker-slot"},
+                        ui.tags.span("PASSAGE", class_="reranker-tag tag-passage"),
+                        ui.tags.textarea(
+                            "She is a dedicated nurse who cares for patients overnight.",
+                            id="passage_input",
+                            class_="reranker-half",
+                            rows=3,
+                            oninput="window.syncRerankerPair && window.syncRerankerPair('');",
+                        ),
+                    ),
+                ),
+                # Reranker pair input for prompt B (compare-prompts mode)
+                ui.div(
+                    {
+                        "id": "reranker-pair-b",
+                        "class": "custom-textarea reranker-pair",
+                        "style": "display: none;",
+                    },
+                    ui.div(
+                        {"class": "reranker-slot"},
+                        ui.tags.span("QUERY", class_="reranker-tag tag-query"),
+                        ui.tags.textarea(
+                            "who is a good nurse",
+                            id="query_input_B",
+                            class_="reranker-half",
+                            rows=2,
+                            oninput="window.syncRerankerPair && window.syncRerankerPair('_B');",
+                        ),
+                    ),
+                    ui.div({"class": "reranker-divider"}),
+                    ui.div(
+                        {"class": "reranker-slot"},
+                        ui.tags.span("PASSAGE", class_="reranker-tag tag-passage"),
+                        ui.tags.textarea(
+                            "He is a dedicated nurse who cares for patients overnight.",
+                            id="passage_input_B",
+                            class_="reranker-half",
+                            rows=3,
+                            oninput="window.syncRerankerPair && window.syncRerankerPair('_B');",
+                        ),
+                    ),
+                ),
                 # Batch Upload Section (hidden by default)
                 ui.div(
                     {"id": "attn-batch-upload-section", "style": "display: none;"},
@@ -231,33 +366,316 @@ attention_analysis_page = ui.page_fluid(
                         {"class": "batch-upload-container"},
                         ui.div(
                             {"class": "batch-header"},
-                            ui.HTML('<i class="fa-solid fa-chart-pie" style="margin-right: 6px;"></i>'),
-                            ui.tags.span("Batch Mode", style="font-weight: 600; font-size: 13px;"),
-                            ui.tags.span("Upload a CSV or JSON to analyse multiple sentences at once.", style="font-weight: 400; font-size: 11px; opacity: 0.85; margin-left: 4px;"),
+                            ui.HTML(
+                                '<i class="fa-solid fa-chart-pie" style="margin-right: 6px;"></i>'
+                            ),
+                            ui.tags.span(
+                                "Batch Mode", style="font-weight: 600; font-size: 13px;"
+                            ),
+                            ui.tags.span(
+                                "Upload a CSV or JSON to analyse multiple sentences at once.",
+                                style="font-weight: 400; font-size: 11px; opacity: 0.85; margin-left: 4px;",
+                            ),
                         ),
                         ui.div(
-                            {"class": "batch-dropzone", "id": "attn-batch-dropzone", "onclick": "document.getElementById('attn_batch_file_upload').click();"},
-                            ui.HTML('<i class="fa-solid fa-cloud-arrow-up attn-batch-dropzone-icon" style="font-size: 20px; color: #94a3b8; margin-bottom: 4px;"></i>'),
-                            ui.tags.div("Drop CSV or JSON file here, or click to browse", id="attn-batch-dropzone-label", style="color: #94a3b8; font-size: 12px; font-weight: 500; text-align: center;"),
+                            {
+                                "class": "batch-dropzone",
+                                "id": "attn-batch-dropzone",
+                                "onclick": "document.getElementById('attn_batch_file_upload').click();",
+                            },
+                            ui.HTML(
+                                '<i class="fa-solid fa-cloud-arrow-up attn-batch-dropzone-icon" style="font-size: 20px; color: #94a3b8; margin-bottom: 4px;"></i>'
+                            ),
+                            ui.tags.div(
+                                "Drop CSV or JSON file here, or click to browse",
+                                id="attn-batch-dropzone-label",
+                                style="color: #94a3b8; font-size: 12px; font-weight: 500; text-align: center;",
+                            ),
                             ui.div(
-                                {"id": "attn-batch-file-info", "class": "batch-file-info", "style": "display: none;"},
-                                ui.HTML('<i class="fa-solid fa-file-lines" style="margin-right: 6px;"></i>'),
+                                {
+                                    "id": "attn-batch-file-info",
+                                    "class": "batch-file-info",
+                                    "style": "display: none;",
+                                },
+                                ui.HTML(
+                                    '<i class="fa-solid fa-file-lines" style="margin-right: 6px;"></i>'
+                                ),
                                 ui.tags.span("", id="attn-batch-file-name"),
-                                ui.tags.span("", id="attn-batch-file-count", style="margin-left: 8px; font-weight: 600;"),
+                                ui.tags.span(
+                                    "",
+                                    id="attn-batch-file-count",
+                                    style="margin-left: 8px; font-weight: 600;",
+                                ),
                             ),
                         ),
                     ),
-                    ui.div(ui.input_file("attn_batch_file_upload", None, accept=[".csv", ".json"], multiple=False), style="display: none;"),
+                    ui.div(
+                        ui.input_file(
+                            "attn_batch_file_upload",
+                            None,
+                            accept=[".csv", ".json"],
+                            multiple=False,
+                        ),
+                        style="display: none;",
+                    ),
                 ),
-
                 # Batch Mode Styles
                 ui.tags.style("""
                     #attn_batch_mode_btn.batch-active {
                         background: #ff5ca9 !important;
                         color: white !important;
                     }
-                """),
+                    /* One box, same look as the single prompt box, cut in two
+                       by a single line. Each half is its own editable region. */
+                    /* Same outer size as the single prompt box: identical
+                       border and vertical padding, and a content box of
+                       exactly 120px, which is the min-height of
+                       .custom-textarea. The two halves split that height, so
+                       the box never grows. */
+                    /* Same outer size as the single prompt box: identical
+                       border and vertical padding, and two halves whose rows
+                       (2 + 4) add up to the six rows of .custom-textarea. The
+                       halves never grow, they scroll. */
+                    .reranker-pair {
+                        box-sizing: border-box;
+                        padding: 0;
+                        display: grid;
+                        grid-template-rows: 50% 50%;
+                        position: relative;
+                        resize: none;
+                        overflow: hidden;
+                    }
+                    .reranker-slot {
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        min-height: 0;
+                        padding: 4px 0;
+                        box-sizing: border-box;
+                        overflow: hidden;
+                    }
+                    .reranker-slot:first-child { grid-row: 1; }
+                    .reranker-slot:last-child { grid-row: 2; }
+                    /* The tag is a line of its own, so no text ever runs
+                       underneath it. */
+                    .reranker-tag {
+                        display: block;
+                        padding: 0 12px;
+                        font-size: 9px;
+                        line-height: 1.3;
+                        font-weight: 700;
+                        letter-spacing: 0.08em;
+                        pointer-events: none;
+                        user-select: none;
+                    }
+                    .reranker-tag.tag-query { color: #3b82f6; }
+                    .reranker-tag.tag-passage { color: #8b5cf6; }
+                    #passage_input, #passage_input_B { height: 55px; }
 
+                    /* Compare modes: the pair box takes the same coloured
+                       border as the single prompt box it replaces, blue for A
+                       and pink for B. */
+                    .compare-mode-active #reranker-pair-a,
+                    .compare-prompts-active #reranker-pair-a {
+                        border: 2px solid #3b82f6;
+                    }
+                    .compare-mode-active #reranker-pair-a:focus-within,
+                    .compare-prompts-active #reranker-pair-a:focus-within {
+                        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+                    }
+                    .compare-mode-active #reranker-pair-b,
+                    .compare-prompts-active #reranker-pair-b {
+                        border: 2px solid #ff5ca9;
+                    }
+                    .compare-mode-active #reranker-pair-b:focus-within,
+                    .compare-prompts-active #reranker-pair-b:focus-within {
+                        box-shadow: 0 0 0 3px rgba(255, 92, 169, 0.1);
+                    }
+                    .reranker-half {
+                        box-sizing: border-box;
+                        border: none;
+                        outline: none;
+                        background: transparent;
+                        color: inherit;
+                        font-size: 14px;
+                        line-height: 1.6;
+                        font-family: inherit;
+                        padding: 0 12px;
+                        width: 100%;
+                        resize: none;
+                        overflow-y: auto;
+                        transition: background 0.15s ease;
+                    }
+                    .reranker-half:focus { background: rgba(59, 130, 246, 0.06); }
+                    .reranker-divider {
+                        position: absolute;
+                        top: 47%;
+                        left: 0;
+                        right: 0;
+                        transform: translateY(-0.5px);
+                        height: 1px;
+                        background: #e2e8f0;
+                        z-index: 2;
+                        pointer-events: none;
+                    }
+                """),
+                # Reranker pair wiring: show the two fields instead of the single
+                # prompt box, and mirror them into text_input so the rest of the
+                # application keeps reading one string.
+                ui.tags.script("""
+                // A textarea reports at least its own height as scrollHeight,
+                // even when its text uses less space. Measure the rendered text
+                // in a hidden mirror instead, then use half the leftover space
+                // as top padding so both query and passage are vertically centred.
+                window.centerRerankerHalf = function(el) {
+                    if (!el || !el.clientWidth || !el.clientHeight) return;
+                    el.style.paddingTop = '0px';
+
+                    var styles = window.getComputedStyle(el);
+                    var mirror = document.createElement('div');
+                    mirror.style.position = 'absolute';
+                    mirror.style.left = '-99999px';
+                    mirror.style.top = '0';
+                    mirror.style.visibility = 'hidden';
+                    mirror.style.pointerEvents = 'none';
+                    mirror.style.whiteSpace = 'pre-wrap';
+                    mirror.style.overflowWrap = 'break-word';
+                    mirror.style.wordBreak = styles.wordBreak;
+                    mirror.style.fontFamily = styles.fontFamily;
+                    mirror.style.fontSize = styles.fontSize;
+                    mirror.style.fontWeight = styles.fontWeight;
+                    mirror.style.fontStyle = styles.fontStyle;
+                    mirror.style.letterSpacing = styles.letterSpacing;
+                    mirror.style.lineHeight = styles.lineHeight;
+                    mirror.style.width = Math.max(
+                        0,
+                        el.clientWidth - parseFloat(styles.paddingLeft) -
+                        parseFloat(styles.paddingRight)
+                    ) + 'px';
+                    mirror.textContent = el.value || '\u200b';
+                    document.body.appendChild(mirror);
+                    var content = mirror.getBoundingClientRect().height;
+                    mirror.remove();
+
+                    var free = el.clientHeight - content;
+                    el.style.paddingTop = (free > 0 ? Math.floor(free / 2) : 0) + 'px';
+                };
+                window.centerRerankerHalves = function(sfx) {
+                    sfx = sfx || '';
+                    var query = document.getElementById('query_input' + sfx);
+                    var passage = document.getElementById('passage_input' + sfx);
+                    window.centerRerankerHalf(query);
+                    window.centerRerankerHalf(passage);
+                    // Keep the label-to-text spacing identical in both halves.
+                    // A one-line query otherwise receives more top padding than
+                    // a two-line passage and looks lower despite the 50/50 grid.
+                    if (query && passage && passage.style.paddingTop) {
+                        query.style.paddingTop = passage.style.paddingTop;
+                    }
+                };
+
+                window.__rrLast = {};
+                window.syncRerankerPair = function(sfx) {
+                    sfx = sfx || '';
+                    var q = document.getElementById('query_input' + sfx);
+                    var p = document.getElementById('passage_input' + sfx);
+                    var t = document.getElementById('text_input' + sfx);
+                    if (!q || !p || !t) return;
+                    var joined = (q.value || '').trim() + ' [SEP] ' + (p.value || '').trim();
+                    t.value = joined;
+                    window.centerRerankerHalves(sfx);
+                    // Only tell the server when the value actually changed: these
+                    // are event-priority inputs, so re-sending the same string
+                    // starts a reactive cycle for nothing.
+                    if (window.__rrLast[sfx] === joined) return;
+                    window.__rrLast[sfx] = joined;
+                    if (window.Shiny && Shiny.setInputValue) {
+                        Shiny.setInputValue('text_input' + sfx, joined, {priority: 'event'});
+                        Shiny.setInputValue('query_input' + sfx, q.value, {priority: 'event'});
+                        Shiny.setInputValue('passage_input' + sfx, p.value, {priority: 'event'});
+                    }
+                };
+
+                window.applyRerankerLayout = function() {
+                    var sel = document.getElementById('model_family');
+                    var isRr = sel && sel.value === 'reranker';
+                    var pa = document.getElementById('reranker-pair-a');
+                    var pb = document.getElementById('reranker-pair-b');
+                    var ta = document.getElementById('text_input');
+                    var tb = document.getElementById('text_input_B');
+                    if (!pa || !pb || !ta || !tb) return;
+                    var active = window.__activePrompt || 'A';
+
+                    // Capture the rendered height of the regular six-row box
+                    // before hiding it. The reranker pair must replace that
+                    // box without changing the sidebar layout.
+                    var regularBox = (active === 'B') ? tb : ta;
+                    var regularHeight = regularBox.getBoundingClientRect().height;
+                    if (regularHeight > 0) window.__rrPromptHeight = regularHeight;
+
+                    if (isRr) {
+                        if (window.__rrPromptHeight) {
+                            var matchedHeight = window.__rrPromptHeight + 'px';
+                            pa.style.height = matchedHeight;
+                            pb.style.height = matchedHeight;
+                        }
+                        ta.style.display = 'none';
+                        tb.style.display = 'none';
+                        pa.style.display = (active === 'A') ? 'grid' : 'none';
+                        pb.style.display = (active === 'B') ? 'grid' : 'none';
+                        window.syncRerankerPair('');
+                        window.syncRerankerPair('_B');
+                        // the halves are only measurable once visible
+                        setTimeout(function() {
+                            window.centerRerankerHalves('');
+                            window.centerRerankerHalves('_B');
+                        }, 0);
+                    } else {
+                        pa.style.display = 'none';
+                        pb.style.display = 'none';
+                        ta.style.display = (active === 'A') ? 'block' : 'none';
+                        tb.style.display = (active === 'B') ? 'block' : 'none';
+                    }
+
+                    // StereoSet scores sentences with a masked-language head,
+                    // which a reranker does not have, so the panel is hidden
+                    // rather than left to fail.
+                    var ss = document.querySelector('#bias_accordion [data-value="stereoset"]');
+                    if (ss) ss.style.display = isRr ? 'none' : '';
+                };
+
+                // Keep the layout in step with the prompt tabs. This runs on
+                // ready, not inline: switchPrompt is declared in a later script
+                // block, so wrapping it any earlier would be undone when that
+                // block redefines it.
+                $(function() {
+                    var orig = window.switchPrompt;
+                    window.__activePrompt = window.__activePrompt || 'A';
+                    window.switchPrompt = function(mode) {
+                        window.__activePrompt = mode;
+                        if (orig) orig(mode);
+                        window.applyRerankerLayout();
+                    };
+                    window.applyRerankerLayout();
+                });
+
+                document.addEventListener('change', function(e) {
+                    if (e.target && (e.target.id === 'model_family' ||
+                                     e.target.id === 'model_family_B')) {
+                        window.applyRerankerLayout();
+                    }
+                });
+                $(document).on('shiny:connected', function() {
+                    window.applyRerankerLayout();
+                });
+                // Shiny may rebuild the family select server-side, which does
+                // not fire a DOM change event, so re-apply after an update.
+                $(document).on('shiny:updateinput', function(e) {
+                    if (e.name === 'model_family' || e.name === 'model_name') {
+                        setTimeout(window.applyRerankerLayout, 0);
+                    }
+                });
+                """),
                 # JS to handle history interactions and Prompt Switching
                 ui.tags.script("""
                 function toggleHistory() {
@@ -545,73 +963,77 @@ attention_analysis_page = ui.page_fluid(
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
                 });
-                """)
+                """),
             ),
-
             ui.div(
-                {"style": "margin-top: 12px;"}, # Match Bias tab spacing
-                ui.input_action_button("generate_all", "Generate All", class_="btn-primary", style="padding-top: 6px; padding-bottom: 6px; min-height: 0; height: auto;"), # Shorter button
+                {"style": "margin-top: 12px;"},  # Match Bias tab spacing
+                ui.input_action_button(
+                    "generate_all",
+                    "Generate All",
+                    class_="btn-primary",
+                    style="padding-top: 6px; padding-bottom: 6px; min-height: 0; height: auto;",
+                ),  # Shorter button
                 ui.div(
-                    {"id": "loading_spinner", "class": "loading-container", "style": "display:none;"},
+                    {
+                        "id": "loading_spinner",
+                        "class": "loading-container",
+                        "style": "display:none;",
+                    },
                     ui.div({"class": "spinner"}),
-                    ui.span("Processing...")
+                    ui.span("Processing..."),
                 ),
             ),
         ),
-        
-        ui.output_ui("visualization_options_container")
+        ui.output_ui("visualization_options_container"),
     ),
-
     # Main Content
     ui.div(
         {"class": "content"},
-
         # Floating Control Bar (rendered dynamically based on model)
         ui.output_ui("floating_control_bar"),
-
         # Dashboard Content (handles both static preview and generated content)
-        ui.output_ui("dashboard_content")
+        ui.output_ui("dashboard_content"),
     ),
 )
 
 # Bias analysis page
 bias_analysis_page = ui.page_fluid(
     # BLAZING FAST INLINE CSS to completely kill FOUC before stylesheets load!
-    ui.HTML('''<style>
+    ui.HTML("""<style>
         .navbar:not(.sidebar .navbar), .navbar-toggler, .navbar-toggler-icon { 
             display: none !important; 
             opacity: 0 !important; 
             visibility: hidden !important; 
         }
-    </style>'''),
-    
+    </style>"""),
     create_bias_sidebar(),
-    create_bias_content()
+    create_bias_content(),
 )
 
 # Main app UI with navbar.
 # The Notebook lives as a global slide-in drawer, accessible from a FAB
 # in the bottom-right of every page rather than as its own tab.
 app_ui = ui.page_navbar(
-    ui.nav_panel(
-        "Attention",
-        attention_analysis_page
-    ),
-    ui.nav_panel(
-        "Bias",
-        bias_analysis_page
-    ),
+    ui.nav_panel("Attention", attention_analysis_page),
+    ui.nav_panel("Bias", bias_analysis_page),
     title="Attention Atlas",
     id="main_navbar",
-
     # CSS Styles
     header=ui.tags.head(
         # BLAZING FAST SYNCHRONOUS STYLE INJECTION - GUARANTEES NO FOUC!
-        ui.HTML("<script>document.write('<style>.navbar-toggler, .navbar-toggler-icon { display: none !important; }</style>');</script>"),
+        ui.HTML(
+            "<script>document.write('<style>.navbar-toggler, .navbar-toggler-icon { display: none !important; }</style>');</script>"
+        ),
         ui.tags.title("Attention Atlas"),
         ui.tags.style(CSS),
-        ui.tags.link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"),
-        ui.tags.link(rel="stylesheet", href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"),
+        ui.tags.link(
+            rel="stylesheet",
+            href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap",
+        ),
+        ui.tags.link(
+            rel="stylesheet",
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css",
+        ),
         ui.tags.script(src="https://cdn.plot.ly/plotly-2.24.1.min.js"),
         ui.tags.script(src="https://d3js.org/d3.v7.min.js"),
         ui.tags.script(JS_CODE),
@@ -1179,15 +1601,14 @@ app_ui = ui.page_navbar(
                     document.body.style.setProperty('overflow', 'auto', 'important');
                 }
             }, 500);
-        """)
+        """),
     ),
-
     # Modals (shared across tabs) + global Auditor Notebook drawer
     footer=ui.div(
         metric_modal(),
         isa_overlay_modal(),
         create_notebook_drawer(),
-    )
+    ),
 )
 
 
