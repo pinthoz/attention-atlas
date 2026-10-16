@@ -217,6 +217,7 @@ _METRIC_LABELS = {
     # ── Head-specialisation survival (BAR permutation null) ──────────
     "bias_metric_heads_survive":          "Heads specialised after correction (GUS-Net)",
     "bias_metric_heads_survive_base":     "Heads specialised after correction (base encoder)",
+    "bias_metric_heads_survive_audited":  "Heads specialised after correction (audited reranker)",
     # ── Attention-source toggle: base-encoder side (GUS-Net vs base) ─
     "bias_metric_matrix_peak_head_base":  "Peak head in bias-attention matrix (base encoder)",
     "bias_metric_peak_layer_base":        "Peak propagation layer (base encoder)",
@@ -1576,6 +1577,8 @@ def _extract_bias_metrics(bias_state, bias_compare_active: bool) -> Dict[str, An
             out["bias_metric_heads_survive"] = surv["gusnet"]
         if surv.get("base"):
             out["bias_metric_heads_survive_base"] = surv["base"]
+        if surv.get("audited"):
+            out["bias_metric_heads_survive_audited"] = surv["audited"]
 
     src_mode = None
     src_fn = bias_state.get("attn_source_mode")

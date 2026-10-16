@@ -853,7 +853,23 @@ def bias_server_handlers(input, output, session):
         compare_prompts = active_bias_compare_prompts.get()
         if compare_models or compare_prompts:
             res_B = bias_results_B.get()
-            return res_A, res_B, bool(res_B)
+            # Both sides must go through the attention-source resolution,
+            # or a reranker audit run in compare mode silently falls back
+            # to the GUS-Net trunk and attributes the detector decision
+            # instead of the relevance logit. "compare" is not reachable
+            # here (the UI hides it in compare modes), so it maps to the
+            # default source.
+            src = _normalize_attn_source_mode(
+                _get_attn_source_mode("bias_attn_source"))
+            if src == "compare":
+                src = "gusnet"
+            res_A_src, _ = _resolve_source_for_render(
+                res_A, _base_attn_cache, src)
+            res_B_src = None
+            if res_B:
+                res_B_src, _ = _resolve_source_for_render(
+                    res_B, _base_attn_cache_B, src)
+            return res_A_src, res_B_src, bool(res_B_src)
 
         source_mode = _get_attn_source_mode("bias_attn_source")
         if source_mode == "compare":
@@ -3537,6 +3553,33 @@ def bias_server_handlers(input, output, session):
         _base_pvals_cache[key] = data
         return data
 
+    _audited_pvals_cache = {}
+
+    def _bias_head_pvalues_audited(compute: bool = True):
+        """Per-head BAR p-values on the audited model's attentions.
+
+        Mirrors the base-encoder helper. Without it the survival readout
+        falls back to the GUS-Net numbers while the panels show the
+        reranker, so the two disagree about which model was tested.
+        """
+        res = bias_results.get()
+        if not res or not _bias_reranker_enabled():
+            return None
+        key = (res.get("text"), res.get("bias_model_key"),
+               _selected_reranker_model())
+        if key in _audited_pvals_cache:
+            return _audited_pvals_cache[key]
+        if not compute:
+            return None
+        audited = _get_audited_resolved(res, _audited_attn_cache)
+        if not audited:
+            return None
+        data = _compute_head_pvalues(audited)
+        if len(_audited_pvals_cache) > 8:
+            _audited_pvals_cache.clear()
+        _audited_pvals_cache[key] = data
+        return data
+
     def _peek_base_resolved():
         """Return the cached base-encoder result for the current analysis.
 
@@ -3600,6 +3643,12 @@ def bias_server_handlers(input, output, session):
             b = _count(_bias_head_pvalues_base(compute=False))
             if b:
                 out["base"] = b
+        except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
+        try:
+            a = _count(_bias_head_pvalues_audited(compute=False))
+            if a:
+                out["audited"] = a
         except Exception:
             _logger.debug("Suppressed exception", exc_info=True)
         return out
@@ -3672,6 +3721,13 @@ def bias_server_handlers(input, output, session):
                         "Base Encoder",
                         _alpha_survival_html(data_base, alpha, correction),
                         "#3b82f6"))
+            if src_mode == "audited":
+                data_audited = _bias_head_pvalues_audited()
+                if data_audited is not None:
+                    return ui.HTML(_col(
+                        "Reranker + GUS-Net",
+                        _alpha_survival_html(data_audited, alpha, correction),
+                        "#8b5cf6"))
             return ui.HTML(html_A)
 
         # Compare mode: A and B side by side.
@@ -4121,9 +4177,20 @@ def bias_server_handlers(input, output, session):
             log_debug(f"CF consistency check: compare_prompts={compare_prompts}, swaps={bool(swaps_applied)}, attn_A={bool(res.get('attentions'))}, attn_B={bool(res_B.get('attentions') if res_B else False)}")
             if compare_prompts and swaps_applied and res.get("attentions") and res_B and res_B.get("attentions"):
                 try:
+                    # Measure the attention of the source on screen. Taking
+                    # the raw results here would describe the GUS-Net trunk
+                    # while the relevance row below describes the reranker.
+                    _cf_src = _normalize_attn_source_mode(
+                        _get_attn_source_mode("bias_attn_source"))
+                    if _cf_src == "compare":
+                        _cf_src = "gusnet"
+                    _cf_A, _ = _resolve_source_for_render(
+                        res, _base_attn_cache, _cf_src)
+                    _cf_B, _ = _resolve_source_for_render(
+                        res_B, _base_attn_cache_B, _cf_src)
                     consistency = compute_cf_attention_consistency(
-                        res["tokens"], res["attentions"],
-                        res_B["tokens"], res_B["attentions"],
+                        _cf_A["tokens"], _cf_A["attentions"],
+                        _cf_B["tokens"], _cf_B["attentions"],
                     )
                     cf_html = create_cf_consistency_html(
                         consistency,

@@ -655,7 +655,8 @@ def server(input, output, session):
                 return
 
             # Get attention matrix - shape is (batch=1, num_heads, seq_len, seq_len)
-            layer_att = attentions[layer_idx]
+            _li, head_idx = _safe_lh(attentions, layer_idx, head_idx)
+            layer_att = attentions[_li]
             if isinstance(layer_att, torch.Tensor):
                 att_matrix = layer_att[0, head_idx].detach().cpu().numpy()
             else:
@@ -1957,7 +1958,10 @@ def server(input, output, session):
         Returns:
             numpy array of shape (seq_len, seq_len) with accumulated attention
         """
-        # Average across heads for each layer
+        # Average across heads for each layer. The rollout runs over the
+        # layers up to the selected one, which a shared slider can push
+        # past the end of a shallower model.
+        current_layer = max(0, min(int(current_layer), len(attentions) - 1))
         att_per_layer = []
         for layer_idx in range(current_layer + 1):
             # Shape: (num_heads, seq_len, seq_len) -> (seq_len, seq_len)
@@ -2017,6 +2021,20 @@ def server(input, output, session):
         else:
             return raw_attention
 
+    def _safe_lh(attentions, layer_idx, head_idx=0):
+        """Clamp a (layer, head) pair to what this attention actually has.
+
+        The layer and head sliders are shared between the compared models,
+        so a deeper model A can leave the index past the end of a shallower
+        model B. Clamping keeps the panel rendering the nearest existing
+        layer instead of raising IndexError.
+        """
+        n_layers = len(attentions)
+        li = max(0, min(int(layer_idx), n_layers - 1))
+        n_heads = int(attentions[li].shape[1])
+        hi = max(0, min(int(head_idx), n_heads - 1))
+        return li, hi
+
     def get_norm_mode_label(mode, layer_idx=None, use_all_layers=False, total_layers=None):
         """Get dynamic label for the current normalization mode."""
         if mode == "raw":
@@ -2072,6 +2090,24 @@ def server(input, output, session):
             num_layers = len(encoder_model.encoder.layer)
             num_heads = encoder_model.encoder.layer[0].attention.self.num_attention_heads
             
+        # In compare-models mode the two trunks can differ in depth and in
+        # head count (a six-layer reranker beside a twelve-layer BERT).
+        # One shared slider cannot offer more than the shallower model
+        # has, or the B panel is asked for a layer that does not exist.
+        res_B_dims = cached_result_B.get() if active_compare_models.get() else None
+        if res_B_dims is not None:
+            enc_B = res_B_dims.encoder_model
+            if not hasattr(enc_B, "encoder"):
+                num_layers = min(num_layers, len(enc_B.h))
+                num_heads = min(num_heads, enc_B.h[0].attn.num_heads)
+            else:
+                num_layers = min(num_layers, len(enc_B.encoder.layer))
+                num_heads = min(
+                    num_heads,
+                    enc_B.encoder.layer[0].attention.self.num_attention_heads)
+        current_layer = min(current_layer, num_layers - 1)
+        current_head = min(current_head, num_heads - 1)
+
         tokens_A = res.tokens
         clean_tokens_A = [t.replace("##", "").replace("Ġ", "") for t in tokens_A]
         
@@ -4564,7 +4600,8 @@ def server(input, output, session):
             att_layers = [layer[0].cpu().numpy() for layer in attentions]
             raw_att = np.mean(att_layers, axis=(0, 1))
         else:
-            raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+            _li, _hi = _safe_lh(attentions, layer_idx, head_idx)
+        raw_att = attentions[_li][0, _hi].cpu().numpy()
 
         # Apply normalization based on mode
         att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=is_causal, use_all_layers=use_all_layers)
@@ -4957,7 +4994,8 @@ def server(input, output, session):
             att_layers = [layer[0].cpu().numpy() for layer in attentions]
             raw_att = np.mean(att_layers, axis=(0, 1))
         else:
-            raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+            _li, _hi = _safe_lh(attentions, layer_idx, head_idx)
+        raw_att = attentions[_li][0, _hi].cpu().numpy()
 
         # Apply normalization based on mode
         att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=False, use_all_layers=use_all_layers)
@@ -5928,7 +5966,8 @@ def server(input, output, session):
             att_layers = [layer[0].cpu().numpy() for layer in attentions]
             raw_att = np.mean(att_layers, axis=(0, 1))
         else:
-            raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+            _li, _hi = _safe_lh(attentions, layer_idx, head_idx)
+        raw_att = attentions[_li][0, _hi].cpu().numpy()
 
         # Apply normalization
         att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=is_causal, use_all_layers=use_all_layers)
@@ -6279,7 +6318,8 @@ def server(input, output, session):
             att_layers = [layer[0].cpu().numpy() for layer in attentions]
             raw_att = np.mean(att_layers, axis=(0, 1))
         else:
-            raw_att = attentions[layer_idx][0, head_idx].cpu().numpy()
+            _li, _hi = _safe_lh(attentions, layer_idx, head_idx)
+        raw_att = attentions[_li][0, _hi].cpu().numpy()
 
         att = get_normalized_attention(raw_att, attentions, layer_idx, norm_mode, is_causal=False, use_all_layers=use_all_layers)
         n_tokens = len(tokens)
