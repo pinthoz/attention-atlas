@@ -1,4 +1,4 @@
-# BERT & GPT-2 Architecture: Technical Specification
+# BERT, GPT-2 and Cross-Encoder Architecture: Technical Specification
 
 This document provides a comprehensive technical explanation of the BERT and GPT-2 processing pipelines as visualized and analyzed in Attention Atlas. It covers the complete Transformer architecture, attention mechanisms, specialized metrics, and advanced visualization features, with explicit connections to the **Deep Dive** section of the application.
 
@@ -19,6 +19,7 @@ This document provides a comprehensive technical explanation of the BERT and GPT
   - [Advanced Features](#4-advanced-visualization-features)
   - [Output Layer](#5-output-layer)
 - [Technical Specifications](#technical-specifications-by-model)
+- [Cross-Encoder Rerankers](#cross-encoder-rerankers)
 - [References](#references)
 
 ---
@@ -892,6 +893,51 @@ hidden → Linear (hidden_size → vocab_size) → Softmax
 | **Causal Masking** | Yes (autoregressive) |
 
 ---
+
+## Cross-Encoder Rerankers
+
+A reranker is the second stage of a search pipeline: the first stage retrieves
+candidate passages, the reranker reads each *query + passage* pair together and
+returns the score the results are ordered by. The two offered here, the MS
+MARCO MiniLM cross-encoders, are distilled BERT trunks, so every attention view
+in this document applies to them unchanged. Three things differ.
+
+**Input is a pair, not a sentence.** The sequence is
+`[CLS] query [SEP] passage [SEP]`, and the segment embeddings carry the
+distinction: query tokens get type id 0, passage tokens type id 1. Feeding the
+pair as a single string would leave every token in segment 0 and change what
+the model sees, so the app encodes the two halves explicitly.
+
+**The head is a scorer, not a vocabulary projection.** There is no
+masked-language head. The final `[CLS]` vector goes through the pooler (linear
++ tanh) and then a linear layer with a single output:
+
+```
+[CLS] hidden state → Linear + tanh (pooler) → Linear → relevance logit
+```
+
+The output is `(batch, 1)`. Higher means more relevant; the value is a raw
+logit, not a probability.
+
+**Attribution targets that logit.** Integrated Gradients and the ablation
+tests, when run against a reranker, attribute the relevance logit rather than a
+detector's decision, which turns the question into "which tokens push this
+passage up the ranking".
+
+| Component | MiniLM L-6 | MiniLM L-12 |
+|-----------|-----------|-------------|
+| **Layers** | 6 | 12 |
+| **Hidden Size** | 384 | 384 |
+| **Attention Heads** | 12 per layer (head_dim = 32) | 12 per layer |
+| **Total Attention Heads** | 72 | 144 |
+| **Vocabulary** | 30,522 WordPiece (shared with BERT) | 30,522 |
+| **Output** | 1 relevance logit | 1 relevance logit |
+| **Segment Embeddings** | Yes, query vs passage | Yes |
+| **BAR threshold (α=0.05)** | 1.62 | 1.81 |
+
+The shared WordPiece vocabulary matters in practice: a GUS-Net detector run on
+the same text produces exactly the same token sequence, so bias labels and
+reranker attention line up index by index with no alignment step.
 
 ## References
 

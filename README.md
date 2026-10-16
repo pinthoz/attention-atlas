@@ -262,6 +262,29 @@ The bias section is organised as an accordion with **five panels**:
 - **Causal Head Intervention**: Head ablation (Combined / GEN / UNFAIR / STEREO rankings) testing whether bias-focused heads are causally relevant.
 - **Perturbation & Minimality** and **cross-validation** with LRP (AttnLRP / Chefer-LRP).
 
+#### Auditing a reranker
+
+The bias section can point its attention analysis at a cross-encoder reranker
+instead of the detector's own trunk. A toggle in the bias sidebar turns the
+mode on and picks the model; the attention source then reads **Reranker +
+GUS-Net**, meaning the attention comes from the audited reranker while the bias
+labels still come from GUS-Net. The two line up token for token because they
+share the WordPiece vocabulary.
+
+In that mode:
+
+- the counterfactual consistency card adds the **relevance logit** of both
+  prompts and the change between them, which is the quantity a ranking is
+  built on;
+- Integrated Gradients attributes the **relevance logit** rather than the
+  detector's decision, so the question becomes "which tokens push this passage
+  up the ranking";
+- the BAR cut-off follows the audited weights (2.50 BERT, 1.62 MiniLM L-6,
+  1.81 MiniLM L-12), calibrated by the same permutation null;
+- the Notebook entry records the reranker, the two logits and their delta, so
+  the move can be reconstructed;
+- StereoSet is hidden, since it needs a masked-language head.
+
 #### 5. StereoSet Evaluation
 - **Benchmark Overview**: LMS / SS / ICAT scores.
 - **Category Breakdown, Demographic Slices, Sensitive Heads**, and an **Example Explorer**.
@@ -290,6 +313,22 @@ Attention Atlas supports multiple Transformer architectures with automatic UI ad
 | **GPT-2 Medium** | 24 | 16 | 1,024 | 4,096 | 50,257 | ~345M |
 | **GPT-2 Large** | 36 | 20 | 1,280 | 5,120 | 50,257 | ~774M |
 | **GPT-2 XL** | 48 | 25 | 1,600 | 6,400 | 50,257 | ~1.5B |
+
+### Reranker Family (Cross-Encoder)
+
+Rerankers score a *query/passage pair* rather than predicting tokens: the trunk
+is a BERT encoder and the head returns one relevance logit, which is what a
+search engine orders results by. Selecting this family splits the prompt box in
+two, QUERY and PASSAGE, and the pair is encoded as two segments
+(`[CLS] query [SEP] passage [SEP]`).
+
+| Model | Layers | Heads | Hidden Size | Vocab | Output |
+|-------|--------|-------|-------------|-------|--------|
+| **MS MARCO MiniLM L-6** | 6 | 12 | 384 | 30,522 | 1 relevance logit |
+| **MS MARCO MiniLM L-12** | 12 | 12 | 384 | 30,522 | 1 relevance logit |
+
+Because these models have no masked-language head, the prediction panel reports
+the relevance logit instead of top-k tokens, and the StereoSet panel is hidden.
 
 **Model Selection**: Use the sidebar dropdown. All visualizations, metrics, and analyses automatically adapt to the selected architecture.
 

@@ -80,7 +80,8 @@ Ethical AI analysis and bias quantification using specialized GUS-Net models:
 ### Multi-Model Support
 - **BERT Family**: base-uncased, large-uncased, multilingual (104 languages)
 - **GPT-2 Family**: Small, Medium, Large, XL (causal/decoder-only architectures)
-- **Automatic Adaptation**: UI adjusts to model architecture (12 to 48 layers, 12 to 25 heads)
+- **Reranker Family**: MS MARCO MiniLM cross-encoders, scored on a query/passage pair
+- **Automatic Adaptation**: UI adjusts to model architecture (6 to 48 layers, 12 to 25 heads)
 
 ### Educational Value
 - **Mathematical Formulas**: LaTeX-style formatting with detailed explanations
@@ -101,6 +102,14 @@ Ethical AI analysis and bias quantification using specialized GUS-Net models:
 | **GPT-2 Medium** | 24 | 16 | 1,024 | 4,096 | 50,257 | ~345M | 384 |
 | **GPT-2 Large** | 36 | 20 | 1,280 | 5,120 | 50,257 | ~774M | 720 |
 | **GPT-2 XL** | 48 | 25 | 1,600 | 6,400 | 50,257 | ~1.5B | 1,200 |
+| **MS MARCO MiniLM L-6** (reranker) | 6 | 12 | 384 | 1,536 | 30,522 | ~23M | 72 |
+| **MS MARCO MiniLM L-12** (reranker) | 12 | 12 | 384 | 1,536 | 30,522 | ~33M | 144 |
+
+Rerankers read a query and a passage together and return a single relevance
+logit, the number a search engine orders results by. The prompt box splits in
+two for them, and the bias section can audit that score directly: swap a
+gendered word in the passage and the card reports how far the ranking signal
+moved.
 
 ---
 
