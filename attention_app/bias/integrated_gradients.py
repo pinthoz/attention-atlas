@@ -142,11 +142,10 @@ class IGAnalysisBundle:
     # attributions (hence all downstream correlations) are approximate-
     # rerun with more steps. None for bundles computed before this field.
     convergence_delta: Optional[float] = None
-    # Which scalar the attributions explain: "gusnet-bias-logits" (the
-    # detected-bias evidence- the intended target for the faithfulness
-    # panel) or "pooled-norm" (legacy geometric fallback). Renderers must
-    # surface this: pooled-norm correlations do NOT validate the bias
-    # explanations.
+    # Which scalar the attributions explain: "relevance-logit" for a
+    # reranker, "gusnet-bias-logits" for the detector, or "pooled-norm"
+    # (legacy geometric fallback). Renderers must surface this: pooled-norm
+    # correlations do NOT validate the bias explanations.
     target: str = "pooled-norm"
 
 
@@ -239,6 +238,44 @@ def _get_embedding_layer(encoder_model, is_gpt2):
 _BIAS_LABEL_INDICES = (1, 2, 3, 4, 5, 6)
 
 
+def _is_reranker_target(target_model) -> bool:
+    """Whether the attribution target is a one-logit cross-encoder."""
+    return (
+        target_model is not None
+        and getattr(getattr(target_model, "config", None), "num_labels", 0) == 1
+    )
+
+
+def _attribution_target_label(target_model) -> str:
+    if _is_reranker_target(target_model):
+        return "relevance-logit"
+    if target_model is not None:
+        return "gusnet-bias-logits"
+    return "pooled-norm"
+
+
+def _reranker_token_type_ids(input_ids, target_model):
+    """Rebuild query/passage segment ids from the first [SEP] token."""
+    cfg = target_model.config
+    sep_id = getattr(cfg, "sep_token_id", None) or 102
+    is_sep = (input_ids == sep_id).int()
+    before = torch.cumsum(is_sep, dim=1) - is_sep
+    return (before >= 1).long()
+
+
+def _target_scalar_from_outputs(outputs, attention_mask, target_model):
+    """Scalar decision shared by IG, perturbation and both LRP variants."""
+    logits = outputs.logits
+    if _is_reranker_target(target_model):
+        # One relevance logit per query-passage pair.  Do not index this as
+        # the seven-class GUS-Net output: indices 1..6 are out of bounds and
+        # cause a CUDA device-side assertion.
+        return logits.reshape(logits.shape[0], -1)[:, 0].sum()
+    idx = torch.tensor(_BIAS_LABEL_INDICES, device=logits.device)
+    probs = torch.sigmoid(logits.index_select(-1, idx))
+    return (probs * attention_mask.unsqueeze(-1)).sum()
+
+
 def _bias_evidence_scalar(logits: torch.Tensor) -> torch.Tensor:
     """Total detected-bias evidence: Σ_tokens Σ_{bias labels} sigmoid(logit).
 
@@ -258,6 +295,22 @@ def _make_scalar_forward(encoder_model, is_gpt2, target_model=None):
     integrates through the network that produces the target. See the module
     docstring for the semantics of the two targets.
     """
+    if _is_reranker_target(target_model):
+        # Reranker: the single output IS the decision being audited, so the
+        # attribution answers "which tokens push this passage up the ranking".
+        # The segment ids are rebuilt from the [SEP] inside input_ids, which
+        # keeps them correct for every batch the integrator expands.
+        def forward_fn(input_ids, attention_mask):
+            token_type_ids = _reranker_token_type_ids(input_ids, target_model)
+            logits = target_model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+            ).logits
+            return logits.reshape(logits.shape[0], -1)[:, 0]
+
+        return forward_fn, target_model.get_input_embeddings(), "relevance-logit"
+
     if target_model is not None:
 
         def forward_fn(input_ids, attention_mask):
@@ -567,7 +620,7 @@ def batch_compute_ig_correlation(
         tokens=tokens,
         topk_overlaps=topk_overlaps,
         convergence_delta=convergence_delta,
-        target="gusnet-bias-logits" if target_model is not None else "pooled-norm",
+        target=_attribution_target_label(target_model),
     )
 
 
@@ -908,7 +961,7 @@ def batch_compute_perturbation(
         tokens=tokens,
         perturb_vs_ig_spearman=perturb_vs_ig,
         perturb_vs_attn_spearman=perturb_vs_attn,
-        target="gusnet-bias-logits" if target_model is not None else "pooled-norm",
+        target=_attribution_target_label(target_model),
     )
 
 
@@ -965,14 +1018,19 @@ def _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2, target_model=
                 .detach()
                 .requires_grad_(True)
             )
-            outputs = run_model(inputs_embeds=emb, attention_mask=attention_mask)
+            model_kwargs = {
+                "inputs_embeds": emb,
+                "attention_mask": attention_mask,
+            }
+            if _is_reranker_target(target_model):
+                model_kwargs["token_type_ids"] = _reranker_token_type_ids(
+                    input_ids, target_model
+                )
+            outputs = run_model(**model_kwargs)
             if target_model is not None:
-                # Same detected-bias evidence scalar that IG and the
-                # perturbation attribute (see module docstring).
-                logits = outputs.logits
-                idx = torch.tensor(_BIAS_LABEL_INDICES, device=logits.device)
-                probs = torch.sigmoid(logits.index_select(-1, idx))
-                (probs * attention_mask.unsqueeze(-1)).sum().backward()
+                _target_scalar_from_outputs(
+                    outputs, attention_mask, target_model
+                ).backward()
             else:
                 hidden = outputs.last_hidden_state
                 m = attention_mask.unsqueeze(-1).float()
@@ -1056,21 +1114,25 @@ def compute_lrp_attributions(
     try:
         run_model.zero_grad(set_to_none=True)
         with torch.enable_grad():
-            outputs = run_model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                output_attentions=True,
-            )
+            model_kwargs = {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "output_attentions": True,
+            }
+            if _is_reranker_target(target_model):
+                model_kwargs["token_type_ids"] = _reranker_token_type_ids(
+                    input_ids, target_model
+                )
+            outputs = run_model(**model_kwargs)
             attns = outputs.attentions  # tuple of L tensors [1, H, N, N]
             if not attns:
                 raise RuntimeError("model returned no attentions")
             for a in attns:
                 a.retain_grad()
             if target_model is not None:
-                logits = outputs.logits
-                idx = torch.tensor(_BIAS_LABEL_INDICES, device=logits.device)
-                probs = torch.sigmoid(logits.index_select(-1, idx))
-                target = (probs * attention_mask.unsqueeze(-1)).sum()
+                target = _target_scalar_from_outputs(
+                    outputs, attention_mask, target_model
+                )
             else:
                 hidden = outputs.last_hidden_state
                 m = attention_mask.unsqueeze(-1).float()
@@ -1184,7 +1246,7 @@ def batch_compute_lrp(
             lrp_vs_ig_spearman=float(lrp_vs_ig),
             correlations=correlations,
             method=method,
-            target="gusnet-bias-logits" if target_model is not None else "pooled-norm",
+            target=_attribution_target_label(target_model),
         )
 
     # Compute AttnLRP (preferred) and Chefer separately, so the panel can show
@@ -1235,7 +1297,7 @@ def batch_compute_lrp(
             lrp_vs_ig_spearman=0.0,
             correlations=[],
             method="unavailable",
-            target="gusnet-bias-logits" if target_model is not None else "pooled-norm",
+            target=_attribution_target_label(target_model),
         )
 
     primary = bundles[0]

@@ -24,7 +24,9 @@ def _build_model_options(default_key: str):
             # local paths need the directory to exist on disk.
             if model_path.is_absolute() and not model_path.exists():
                 continue
-        attrs = {"selected": "selected"} if key == default_key else {}
+        attrs = {"data-architecture": cfg.get("architecture", "")}
+        if key == default_key:
+            attrs["selected"] = "selected"
         options.append(ui.tags.option(cfg["display_name"], value=key, **attrs))
     return options
 
@@ -32,6 +34,16 @@ def _build_model_options(default_key: str):
 def create_bias_sidebar():
     """Create sidebar for bias analysis - matching Attention Atlas styling."""
     from .components import ICON_DATA_URL
+    from ..models import RERANKER_CHOICES, RERANKER_DEFAULT
+
+    reranker_options = [
+        ui.tags.option(
+            label,
+            value=model_name,
+            **({"selected": "selected"} if model_name == RERANKER_DEFAULT else {}),
+        )
+        for model_name, label in RERANKER_CHOICES.items()
+    ]
 
     return ui.div(
         {"class": "sidebar"},
@@ -242,6 +254,37 @@ def create_bias_sidebar():
             ),
         ),
         # ── Styles for model selects and toggle switches ──
+        # Optional reranker audit. GUS-Net remains the bias detector; the
+        # selected cross-encoder supplies query-passage attention and the
+        # relevance score independently of the Attention page.
+        ui.div(
+            {"id": "bias-reranker-control", "class": "bias-reranker-control"},
+            ui.tags.span("Reranker Audit", class_="sidebar-label bias-reranker-heading"),
+            ui.div(
+                {"class": "bias-reranker-switch-row"},
+                ui.input_switch(
+                    "bias_use_reranker",
+                    ui.span(
+                        "Use Reranker with GUS-Net",
+                        class_="bias-reranker-switch-label",
+                    ),
+                    value=False,
+                ),
+            ),
+            ui.div(
+                {"id": "bias-reranker-picker", "class": "bias-reranker-picker"},
+                ui.tags.span("Reranker Model", class_="sidebar-label"),
+                ui.tags.select(
+                    *reranker_options,
+                    id="bias_reranker_model",
+                    class_="bias-model-select bias-reranker-select",
+                    onchange=(
+                        "Shiny.setInputValue('bias_reranker_model', this.value, "
+                        "{priority:'event'});"
+                    ),
+                ),
+            ),
+        ),
         ui.tags.style("""
             .bias-model-select {
                 width: 100%;
@@ -271,6 +314,77 @@ def create_bias_sidebar():
                 background: #1e293b;
                 color: #e2e8f0;
                 padding: 6px;
+            }
+
+            .bias-reranker-control {
+                margin: 4px 0 8px;
+                padding: 10px 0 0;
+                border-top: 1px solid rgba(148, 163, 184, 0.13);
+            }
+            .bias-reranker-heading {
+                display: block;
+                margin-bottom: 7px;
+                color: #cbd5e1 !important;
+            }
+            .bias-reranker-switch-row {
+                width: 100%;
+            }
+            .bias-reranker-switch-row .shiny-input-container {
+                width: auto !important;
+                margin: 0 !important;
+            }
+            .bias-reranker-switch-row .form-check {
+                display: flex;
+                align-items: center;
+                min-height: 22px;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: transparent !important;
+                border: 0 !important;
+            }
+            .bias-reranker-switch-row .form-check-input {
+                width: 2.2em !important;
+                height: 1.2em !important;
+                margin: 0 8px 0 0 !important;
+                float: none !important;
+                cursor: pointer;
+                background-color: #1e293b !important;
+                border-color: #334155 !important;
+            }
+            .bias-reranker-switch-row .form-check-input:checked {
+                background-color: #ff5ca9 !important;
+                border-color: #ff5ca9 !important;
+            }
+            .bias-reranker-switch-label {
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.55px;
+                color: #cbd5e1;
+                font-weight: 600;
+                cursor: pointer;
+                line-height: 1;
+            }
+            .bias-reranker-picker {
+                display: none;
+                margin-top: 9px;
+            }
+            .bias-reranker-picker.visible {
+                display: block;
+            }
+            .bias-reranker-picker .sidebar-label {
+                display: block;
+                margin-bottom: 6px;
+                color: #64748b !important;
+            }
+            .bias-reranker-select {
+                border-color: #334155 !important;
+            }
+            .bias-reranker-select:hover {
+                border-color: rgba(255, 92, 169, 0.4) !important;
+            }
+            .bias-reranker-select:focus {
+                border-color: #ff5ca9 !important;
+                box-shadow: 0 0 0 2px rgba(255, 92, 169, 0.15) !important;
             }
 
             /* Model A label when in compare mode */
@@ -353,7 +467,7 @@ def create_bias_sidebar():
             }
         """),
         # ── Spacer ──
-        ui.div(style="flex-grow: 1; min-height: 24px;"),
+        ui.div(style="height: 8px; flex: 0 0 8px;"),
         # ── Sensitivity Thresholds (styled like the floating toolbar sliders) ──
         ui.tags.style("""
             .sidebar-thresh-group {
@@ -682,6 +796,67 @@ def create_bias_sidebar():
                     oninput="Shiny.setInputValue('bias_input_text_B', this.value, {priority: 'event'})",
                     placeholder="Enter second text for comparison...",
                 ),
+                # Reranker pair inputs, mirroring the attention tab: the single
+                # box splits into query and passage, and the two halves are
+                # joined back into bias_input_text as "query [SEP] passage" so
+                # every downstream panel keeps reading one string.
+                ui.div(
+                    {"id": "bias-reranker-pair-a", "class": "custom-textarea reranker-pair",
+                     "style": "display: none;"},
+                    ui.div(
+                        {"class": "reranker-slot"},
+                        ui.tags.span("QUERY", class_="reranker-tag tag-query"),
+                        ui.tags.textarea(
+                            "who is a good scientist",
+                            id="bias_query_input",
+                            class_="reranker-half",
+                            rows=2,
+                            oninput="window.syncBiasRerankerPair && window.syncBiasRerankerPair('');",
+                        ),
+                    ),
+                    ui.div({"class": "reranker-divider"}),
+                    ui.div(
+                        {"class": "reranker-slot"},
+                        ui.tags.span("PASSAGE", class_="reranker-tag tag-passage"),
+                        ui.tags.textarea(
+                            "The female scientist contributed valuable insights, "
+                            "which is surprising for her gender.",
+                            id="bias_passage_input",
+                            class_="reranker-half",
+                            rows=3,
+                            oninput="window.syncBiasRerankerPair && window.syncBiasRerankerPair('');",
+                        ),
+                    ),
+                ),
+                ui.div(
+                    {"id": "bias-reranker-pair-b", "class": "custom-textarea reranker-pair",
+                     "style": "display: none;"},
+                    ui.div(
+                        {"class": "reranker-slot"},
+                        ui.tags.span("QUERY", class_="reranker-tag tag-query"),
+                        ui.tags.textarea(
+                            "who is a good scientist",
+                            id="bias_query_input_B",
+                            class_="reranker-half",
+                            rows=2,
+                            oninput="window.syncBiasRerankerPair && window.syncBiasRerankerPair('_B');",
+                        ),
+                    ),
+                    ui.div({"class": "reranker-divider"}),
+                    ui.div(
+                        {"class": "reranker-slot"},
+                        ui.tags.span("PASSAGE", class_="reranker-tag tag-passage"),
+                        ui.tags.textarea(
+                            "The male scientist contributed valuable insights, "
+                            "which is surprising for his gender.",
+                            id="bias_passage_input_B",
+                            class_="reranker-half",
+                            rows=3,
+                            oninput="window.syncBiasRerankerPair && window.syncBiasRerankerPair('_B');",
+                        ),
+                    ),
+                ),
+
                 # Batch Upload Section (hidden by default)
                 ui.div(
                     {"id": "batch-upload-section", "style": "display: none;"},
@@ -807,6 +982,18 @@ def create_bias_sidebar():
                 #bias-input-container.compare-prompts-active #bias_input_text_B {
                     border: 2px solid #ff5ca9;
                 }
+                #bias-input-container.compare-prompts-active #bias-reranker-pair-a {
+                    border: 2px solid #3b82f6;
+                }
+                #bias-input-container.compare-prompts-active #bias-reranker-pair-b {
+                    border: 2px solid #ff5ca9;
+                }
+                #bias-input-container.compare-prompts-active #bias-reranker-pair-a:focus-within {
+                    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+                }
+                #bias-input-container.compare-prompts-active #bias-reranker-pair-b:focus-within {
+                    box-shadow: 0 0 0 3px rgba(255, 92, 169, 0.1);
+                }
 
                 /* ── Batch Mode Styles ─────────────────────────────── */
                 #bias_batch_mode_btn.batch-active {
@@ -927,7 +1114,77 @@ def create_bias_sidebar():
                     localStorage.setItem('attention_atlas_bias_history', JSON.stringify(message));
                 });
 
-                $(document).on('shiny:connected', function() {
+                window.setBiasReranker = function(enabled, notifyServer) {
+                    enabled = !!enabled;
+                    if (notifyServer === undefined) notifyServer = true;
+                    var changed = window.__biasRerankerEnabled !== enabled;
+                    window.__biasRerankerEnabled = enabled;
+
+                    var picker = document.getElementById('bias-reranker-picker');
+                    var toggle = document.getElementById('bias_use_reranker');
+                    var model = document.getElementById('bias_reranker_model');
+
+                    if (toggle && toggle.checked !== enabled) toggle.checked = enabled;
+                    if (picker) picker.classList.toggle('visible', enabled);
+                    document.body.classList.toggle('bias-reranker-enabled', enabled);
+
+                    // MiniLM rerankers and GUS-Net BERT share WordPiece-style
+                    // tokenisation. While the audit is active, keep both bias
+                    // model selectors on the compatible BERT family.
+                    ['bias_model_key', 'bias_model_key_B'].forEach(function(id) {
+                        var select = document.getElementById(id);
+                        if (!select) return;
+                        Array.from(select.options).forEach(function(option) {
+                            var incompatible = option.dataset.architecture !== 'bert';
+                            option.disabled = enabled && incompatible;
+                            option.hidden = enabled && incompatible;
+                        });
+                        var current = select.options[select.selectedIndex];
+                        if (enabled && current && current.dataset.architecture !== 'bert') {
+                            var bertOption = Array.from(select.options).find(function(option) {
+                                return option.dataset.architecture === 'bert' && !option.disabled;
+                            });
+                            if (bertOption) {
+                                select.value = bertOption.value;
+                                if (notifyServer && typeof Shiny !== 'undefined') {
+                                    Shiny.setInputValue(id, select.value, {priority: 'event'});
+                                }
+                            }
+                        }
+                    });
+
+                    if (notifyServer && typeof Shiny !== 'undefined') {
+                        if (changed) {
+                            Shiny.setInputValue(
+                                'bias_use_reranker', enabled, {priority: 'event'}
+                            );
+                        }
+                        Shiny.setInputValue(
+                            'bias_attn_source', enabled ? 'audited' : 'gusnet',
+                            {priority: 'event'}
+                        );
+                        if (model) {
+                            Shiny.setInputValue(
+                                'bias_reranker_model', model.value, {priority: 'event'}
+                            );
+                        }
+                    }
+                    if (!enabled && window._setBiasAttnSource) {
+                        window._setBiasAttnSource('gusnet');
+                    }
+                    if (window.applyRerankerLayout) window.applyRerankerLayout();
+                };
+
+                $(document).on('change', '#bias_use_reranker', function() {
+                    window.setBiasReranker(this.checked);
+                });
+
+                // `shiny:connected` fires as soon as the WebSocket opens,
+                // before the server has necessarily received its `init`
+                // message. Sending input updates there can race that init and
+                // produce "Invalid method for the current session state".
+                // Wait for the session-initialized event instead.
+                $(document).on('shiny:sessioninitialized', function() {
                     const stored = localStorage.getItem('attention_atlas_bias_history');
                     if (stored) {
                         Shiny.setInputValue('restored_bias_history', JSON.parse(stored));
@@ -939,6 +1196,11 @@ def create_bias_sidebar():
                     if (biasInputA) Shiny.setInputValue('bias_input_text', biasInputA.value);
                     const biasInputB = document.getElementById('bias_input_text_B');
                     if (biasInputB) Shiny.setInputValue('bias_input_text_B', biasInputB.value);
+                    const rerankerToggle = document.getElementById('bias_use_reranker');
+                    window.setBiasReranker(
+                        rerankerToggle ? rerankerToggle.checked : false,
+                        false
+                    );
                 });
 
                 // StereoSet: inject the chosen example into input B and
@@ -1136,6 +1398,19 @@ def create_bias_sidebar():
                     if (ta) {
                         ta.value = data.value;
                         Shiny.setInputValue(data.id, ta.value, {priority: 'event'});
+                        if (window.__biasRerankerEnabled && data.value.includes('[SEP]')) {
+                            var sfx = data.id.endsWith('_B') ? '_B' : '';
+                            var parts = data.value.split('[SEP]');
+                            var q = document.getElementById('bias_query_input' + sfx);
+                            var p = document.getElementById('bias_passage_input' + sfx);
+                            if (q && p) {
+                                q.value = parts.shift().trim();
+                                p.value = parts.join('[SEP]').trim();
+                                if (window.syncBiasRerankerPair) {
+                                    window.syncBiasRerankerPair(sfx);
+                                }
+                            }
+                        }
                     } else {
                         console.warn('[BiasUI] textarea not found:', data.id);
                     }
@@ -1354,6 +1629,19 @@ def create_bias_sidebar():
                             selB.value = data.bias_model_key_B;
                             Shiny.setInputValue('bias_model_key_B', data.bias_model_key_B, {priority: 'event'});
                         }
+                    }
+                    if (data.bias_reranker_model) {
+                        var rrSel = document.getElementById('bias_reranker_model');
+                        if (rrSel) {
+                            rrSel.value = data.bias_reranker_model;
+                            Shiny.setInputValue(
+                                'bias_reranker_model', data.bias_reranker_model,
+                                {priority: 'event'}
+                            );
+                        }
+                    }
+                    if (typeof data.bias_use_reranker === 'boolean') {
+                        window.setBiasReranker(data.bias_use_reranker);
                     }
                     // Old custom threshold logic removed. New thresholds handled by setupBiasToolbar and individual inputs.
                 });
@@ -1773,8 +2061,18 @@ def create_bias_accordion(requires_detections: bool = False):
     )
 
 
-def create_floating_bias_toolbar():
-    """Create a floating bottom toolbar matching the attention tab's design exactly."""
+def create_floating_bias_toolbar(num_layers: int = 12, num_heads: int = 12,
+                                bar_default: float = 2.5):
+    """Create a floating bottom toolbar matching the attention tab's design exactly.
+
+    ``num_layers`` and ``num_heads`` bound the two sliders. They used to be
+    fixed at twelve, which silently offered layers a model does not have:
+    six for the MiniLM reranker, twenty-four for BERT large.
+
+    ``bar_default`` is the specialisation cut-off the slider starts at.
+    It is weight-specific: 2.5 was calibrated on the BERT trunk and does
+    not carry over to a six-layer reranker.
+    """
     return ui.div(
         # Main Bar - reuses .floating-control-bar from styles.py
         ui.div(
@@ -1885,7 +2183,7 @@ def create_floating_bias_toolbar():
                                 type="range",
                                 id="bias-layer-slider",
                                 min="0",
-                                max="11",
+                                max=str(max(num_layers - 1, 0)),
                                 value="0",
                                 step="1",
                             ),
@@ -1903,7 +2201,7 @@ def create_floating_bias_toolbar():
                                 type="range",
                                 id="bias-head-slider",
                                 min="0",
-                                max="11",
+                                max=str(max(num_heads - 1, 0)),
                                 value="0",
                                 step="1",
                             ),
@@ -1991,7 +2289,7 @@ def create_floating_bias_toolbar():
 
                     # Attention Source toggle
                     ui.div(
-                        {"class": "control-group"},
+                        {"class": "control-group", "id": "bias-source-control"},
                         ui.span(
                             "Source Attention",
                             class_="control-label",
@@ -2044,7 +2342,7 @@ def create_floating_bias_toolbar():
                         ui.div(
                             {"class": "slider-container"},
                             ui.tags.span(
-                                "2.5",
+                                f"{bar_default:.2f}",
                                 id="bias-bar-threshold-value",
                                 class_="slider-value",
                             ),
@@ -2053,7 +2351,7 @@ def create_floating_bias_toolbar():
                                 id="bias-bar-threshold-slider",
                                 min="1.0",
                                 max="5.0",
-                                value="2.5",
+                                value=f"{bar_default:.2f}",
                                 step="0.1",
                             ),
                         ),
@@ -2488,6 +2786,9 @@ def create_floating_bias_toolbar():
             }
             #bias-src-compare.radio-option.active {
                 background: linear-gradient(90deg, #60a5fa, #ff5ca9);
+            }
+            body.bias-reranker-enabled #bias-source-control {
+                display: none !important;
             }
             /* Hide the Compare source-attention option when the user is in
                any compare mode (models or prompts) - the side-by-side Base

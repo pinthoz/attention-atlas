@@ -33,7 +33,7 @@ from ..bias import (
     create_cross_method_agreement_chart,
 )
 
-from .bias_helpers import _deferred_plotly, _wrap_card, _chart_with_png_btn, _source_badge_html, visible_errors
+from .bias_helpers import _deferred_plotly, _wrap_card, _chart_with_png_btn, _source_badge_html, _attn_source_label, visible_errors
 from .bias_styles import (
     BTN_STYLE_CSV as _BTN_STYLE_CSV, BTN_STYLE_PNG as _BTN_STYLE_PNG,
     TH as _TH, TR as _TR, TD as _TD, TC as _TC, TS as _TS,
@@ -186,6 +186,15 @@ def _resolve_bias_target_model(res: dict):
     """
     bias_key = res.get("bias_model_key")
     model_name = str(res.get("model_name", ""))
+    # Audited reranker: attribute the relevance logit, which is the decision
+    # the ranking is built on, instead of the detector's bias evidence.
+    if ModelManager.is_cross_encoder(model_name):
+        try:
+            return ModelManager.get_relevance_head(model_name)
+        except Exception:
+            _logger.warning("Could not load the reranker head for attribution",
+                            exc_info=True)
+            return None
     if not bias_key or "gus-net" not in model_name:
         return None
     from ..bias.gusnet_detector import GusNetDetector, MODEL_REGISTRY
@@ -812,7 +821,7 @@ def register_xai_handlers(
             )
 
         faith_src = _get_attn_source_mode("bias_attn_source")
-        _faith_label = "GUS-Net" if faith_src == "gusnet" else "Base Encoder"
+        _faith_label = _attn_source_label(faith_src)
         _faith_badge = _source_badge_html(_faith_label) if faith_src != "compare" else ""
 
         header_args = (
@@ -1142,7 +1151,10 @@ def register_xai_handlers(
             # only defined relative to a prediction)
             _target = getattr(bundle, "target", None) if isinstance(bundle, IGAnalysisBundle) else None
             _delta = getattr(bundle, "convergence_delta", None) if isinstance(bundle, IGAnalysisBundle) else None
-            if _target == "gusnet-bias-logits":
+            if _target == "relevance-logit":
+                _t_html = ('<span style="color:#7c3aed;font-weight:600;">reranker relevance logit</span> '
+                           '(attributions explain the query-passage ranking score)')
+            elif _target == "gusnet-bias-logits":
                 _t_html = ('<span style="color:#16a34a;font-weight:600;">GUS-Net bias logits</span> '
                            '(attributions explain the detected-bias evidence)')
             elif _target == "pooled-norm":
@@ -1335,7 +1347,7 @@ def register_xai_handlers(
             return ui.div(*sections)
 
         faith_src = _get_attn_source_mode("bias_attn_source")
-        _faith_label = "GUS-Net" if faith_src == "gusnet" else "Base Encoder"
+        _faith_label = _attn_source_label(faith_src)
         _ig_faith_badge = _source_badge_html(_faith_label) if faith_src != "compare" else ""
 
         header_args = (
@@ -1779,7 +1791,7 @@ def register_xai_handlers(
             return ui.div(*sections)
 
         _f_src = _get_attn_source_mode("bias_attn_source")
-        _f_lbl = "GUS-Net" if _f_src == "gusnet" else "Base Encoder"
+        _f_lbl = _attn_source_label(_f_src)
         _f_bdg = _source_badge_html(_f_lbl) if _f_src != "compare" else ""
 
         header_args = (
@@ -2085,7 +2097,7 @@ def register_xai_handlers(
             return ui.div(*sections)
 
         _lrp_f_src = _get_attn_source_mode("bias_attn_source")
-        _lrp_f_lbl = "GUS-Net" if _lrp_f_src == "gusnet" else "Base Encoder"
+        _lrp_f_lbl = _attn_source_label(_lrp_f_src)
         _lrp_f_bdg = _source_badge_html(_lrp_f_lbl) if _lrp_f_src != "compare" else ""
 
         header_args = (
@@ -2155,5 +2167,4 @@ def register_xai_handlers(
         if not bundle:
             yield "No LRP data"; return
         yield _csv_lrp_fn(bundle)
-
 

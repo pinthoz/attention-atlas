@@ -4830,6 +4830,7 @@ def create_cf_consistency_html(
     applied_swaps,
     bias_summary_A=None,
     bias_summary_B=None,
+    relevance=None,
 ):
     """Build an HTML card showing counterfactual attention consistency metrics.
 
@@ -4839,6 +4840,9 @@ def create_cf_consistency_html(
     tokens_A / tokens_B : token lists
     applied_swaps : list of dicts with ``original``, ``replacement``, ``category``
     bias_summary_A / bias_summary_B : optional GUS-Net bias summaries
+    relevance : optional ``(score_A, score_B)`` relevance logits of the model
+        under audit. For a reranker this is the number the ranking is built
+        on, so a counterfactual that moves it moves search results.
     """
     if consistency is None:
         return '<div style="color:#94a3b8;padding:16px;text-align:center;">Token sequences too different to align.</div>'
@@ -4911,6 +4915,30 @@ def create_cf_consistency_html(
             f"({delta:+.1f}%)</div>"
             f"</div>"
             f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Bias Score %</div>'
+            f"</div>"
+        )
+
+    # -- Relevance change (reranker only) --
+    relevance_html = ""
+    if relevance is not None:
+        rel_A, rel_B = float(relevance[0]), float(relevance[1])
+        rel_d = rel_B - rel_A
+        r_arrow = "&#x2191;" if rel_d > 0 else "&#x2193;" if rel_d < 0 else "&#x2194;"
+        r_col = "#ef4444" if abs(rel_d) > 0.1 else "#64748b"
+        relevance_html = (
+            f'<div style="background:rgba(139,92,246,0.06);border:1px solid rgba(139,92,246,0.2);'
+            f'border-radius:8px;padding:12px;text-align:center;margin-top:10px;">'
+            f'<div style="display:flex;align-items:center;justify-content:center;gap:14px;">'
+            f'<div style="font-size:13px;font-weight:700;color:#334155;font-family:JetBrains Mono,monospace;">'
+            f"A: {rel_A:+.2f}</div>"
+            f'<div style="font-size:16px;color:{r_col};">{r_arrow}</div>'
+            f'<div style="font-size:13px;font-weight:700;color:#334155;font-family:JetBrains Mono,monospace;">'
+            f"B: {rel_B:+.2f}</div>"
+            f'<div style="font-size:12px;font-weight:600;color:{r_col};font-family:JetBrains Mono,monospace;">'
+            f"({rel_d:+.2f})</div>"
+            f"</div>"
+            f'<div style="font-size:10px;color:#64748b;margin-top:4px;">Relevance logit of the audited reranker</div>'
+            f'<div style="font-size:9px;color:#94a3b8;margin-top:2px;">higher ranks the passage above the other</div>'
             f"</div>"
         )
 
@@ -4989,6 +5017,7 @@ def create_cf_consistency_html(
         f'<div style="padding:4px 0;">'
         f'<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:8px;">{swaps_html}</div>'
         f"{metrics_html}"
+        f"{relevance_html}"
         f"{bias_delta_html}"
         f"{heads_html}"
         f"</div>"

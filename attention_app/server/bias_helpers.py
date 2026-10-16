@@ -23,6 +23,20 @@ from ..ui.components import viz_header
 _logger = logging.getLogger(__name__)
 
 
+def _attention_maps_to_cpu(attentions):
+    """Detach attention maps before handing them to UI renderers.
+
+    Attention maps are read-only visualization data.  Keeping them on CUDA
+    makes a stale layer/head selection dangerous: an out-of-range tensor
+    index can trigger a device-side assert and poison the whole CUDA context,
+    so every panel rendered afterwards reports the same unrelated error.
+    CPU tensors fail normally and also release the (large) GPU activations.
+    """
+    if attentions is None:
+        return None
+    return tuple(att.detach().cpu() for att in attentions)
+
+
 def _error_panel_html(panel_name, exc):
     """Visible failure block shown in place of a panel that raised."""
     msg = _html_lib.escape(f"{type(exc).__name__}: {exc}"[:300])
@@ -164,7 +178,7 @@ def _load_gusnet_attention_for_text(text: str, bias_model_key: str):
     return {
         "tokens": tokens,
         "text": text,
-        "attentions": outputs.attentions,
+        "attentions": _attention_maps_to_cpu(outputs.attentions),
         "gus_tokens": tokens,
         "gus_probs": gus_probs,
         "bias_model_key": bias_model_key,
@@ -212,7 +226,7 @@ def _load_base_encoder_attention_for_text(text: str, bias_model_key: str):
     return {
         "tokens": tokens,
         "text": text,
-        "attentions": outputs.attentions,
+        "attentions": _attention_maps_to_cpu(outputs.attentions),
         "gus_tokens": gus_tokens,
         "gus_probs": gus_probs,
         "bias_model_key": bias_model_key,
@@ -223,12 +237,104 @@ def _load_base_encoder_attention_for_text(text: str, bias_model_key: str):
     }
 
 
+def _load_audited_model_attention_for_text(text: str, bias_model_key: str, model_name: str):
+    """Attentions from the model under audit, labels from the GUS-Net detector.
+
+    The other two loaders both read the attention off a model chosen by the
+    detector key: the fine-tuned trunk, or the encoder it was fine-tuned from.
+    This one reads it off the reranker selected in the Bias sidebar: the
+    cross-encoder supplies
+    the attention and the relevance behaviour, GUS-Net supplies the bias
+    labels, and the two line up token for token because they share the
+    WordPiece vocabulary.
+
+    The text is tokenised with ``tokenize_with_segments``, so a
+    ``query [SEP] passage`` pair arrives as two segments rather than one.
+    """
+    from .logic import tokenize_with_segments
+
+    tokenizer, encoder_model, _mlm = ModelManager.get_model(model_name)
+    device = ModelManager.get_device()
+
+    inputs = tokenize_with_segments(text, tokenizer)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        outputs = encoder_model(**inputs)
+
+    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].detach().cpu())
+    attentions = _attention_maps_to_cpu(outputs.attentions)
+
+    bk = "gusnet-bert" if bias_model_key == "gusnet-ensemble" else bias_model_key
+    det = GusNetDetector(model_key=bk, threshold=0.5, use_optimized=False)
+    gus_tokens, gus_probs = det.predict_proba(text)
+
+    effective_thresholds = {}
+    if det.config.get("optimized_thresholds"):
+        opt = det.config["optimized_thresholds"]
+        cat_indices = det.config.get("category_indices", {})
+        for cat in ["GEN", "UNFAIR", "STEREO"]:
+            if cat in cat_indices:
+                vals = [opt[i] for i in cat_indices[cat] if i < len(opt)]
+                if vals:
+                    effective_thresholds[cat] = sum(vals) / len(vals)
+    if not effective_thresholds:
+        effective_thresholds = {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5}
+
+    return {
+        "tokens": tokens,
+        "text": text,
+        "attentions": attentions,
+        "gus_tokens": gus_tokens,
+        "gus_probs": gus_probs,
+        "bias_model_key": bias_model_key,
+        "model_name": model_name,
+        "gus_special": det.config["special_tokens"],
+        "effective_thresholds": effective_thresholds,
+        "attention_source": "audited",
+    }
+
+
+ATTN_SOURCE_LABELS = {
+    "gusnet": "GUS-Net",
+    "base": "Base Encoder",
+    "audited": "Reranker + GUS-Net",
+}
+
+
+def _attn_source_label(mode: str) -> str:
+    """Human label for an attention-source mode.
+
+    Callers used to write ``"GUS-Net" if mode == "gusnet" else "Base
+    Encoder"``, which silently labelled the audited reranker as the base
+    encoder. Keeping the mapping in one place stops that recurring.
+    """
+    return ATTN_SOURCE_LABELS.get(str(mode), "Base Encoder")
+
+
+def _badge_span(label: str, bg: str, fg: str, border: str) -> str:
+    return (
+        f" <span style='font-size:10px;padding:2px 6px;border-radius:4px;"
+        f"background:{bg};color:{fg};border:1px solid {border};vertical-align:middle;"
+        f"margin-left:8px;font-weight:600;'>{label}</span>"
+    )
+
+
+# One colour per attention source, keyed by the labels ATTN_SOURCE_LABELS
+# produces. Keyed by label rather than written inline at each call site, so a
+# panel cannot end up showing the same source in a different colour.
+_BADGE_COLOURS = {
+    "GUS-Net":            ("#fce7f3", "#be185d", "#fbcfe8"),
+    "Base Encoder":       ("#e0f2fe", "#1d4ed8", "#bfdbfe"),
+    "Reranker + GUS-Net": ("#ede9fe", "#6d28d9", "#ddd6fe"),
+    "Audited Model":      ("#ede9fe", "#6d28d9", "#ddd6fe"),
+}
+
+
 def _source_badge_html(label: str) -> str:
-    if label == "GUS-Net":
-        return " <span style='font-size:10px;padding:2px 6px;border-radius:4px;background:#fce7f3;color:#be185d;border:1px solid #fbcfe8;vertical-align:middle;margin-left:8px;font-weight:600;'>GUS-Net</span>"
-    elif label == "Base Encoder":
-        return " <span style='font-size:10px;padding:2px 6px;border-radius:4px;background:#e0f2fe;color:#1d4ed8;border:1px solid #bfdbfe;vertical-align:middle;margin-left:8px;font-weight:600;'>Base Encoder</span>"
-    return f" <span style='font-size:10px;padding:2px 6px;border-radius:4px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;vertical-align:middle;margin-left:8px;font-weight:600;'>{label}</span>"
+    bg, fg, border = _BADGE_COLOURS.get(label, ("#f1f5f9", "#475569", "#e2e8f0"))
+    return _badge_span(label, bg, fg, border)
+
 
 def _deferred_plotly(fig, container_id, height=None, config=None, click_input=None):
     """Render a Plotly figure as deferred HTML - only calls Plotly.newPlot()

@@ -767,7 +767,12 @@ def run_bar_bsr_analysis(n_sentences: int = 300, n_permutations: int = 200,
                     # Already done in a previous run.
                     continue
                 try:
-                    result = heavy_compute(text, model_name)
+                    # Only tokens and attentions are used here. The default
+                    # call also runs spaCy tagging, head clustering and ISA,
+                    # which cost ~37x the time and change neither.
+                    result = heavy_compute(
+                        text, model_name, with_specialization=False,
+                        with_clusters=False, with_isa=False)
                     if result is None:
                         n_skipped += 1
                         processed_keys.add(key)
@@ -2407,7 +2412,7 @@ def main() -> int:
                              "category (GEN, UNFAIR, STEREO) with their own "
                              "permutation nulls. Output goes to "
                              "bar_bsr/per_category.json.")
-    parser.add_argument("--bar-model", choices=["bert", "gpt2", "both"],
+    parser.add_argument("--bar-model", choices=["bert", "gpt2", "both", "reranker"],
                         default="both",
                         help="Which trunk(s) to run BAR/BSR on (default both). "
                              "Use 'gpt2' to recalibrate only the GPT-2 trunk.")
@@ -2539,6 +2544,10 @@ def main() -> int:
         "base":   {"bert": "bert-base-uncased",      "gpt2": "gpt2"},
         "gusnet": {"bert": "pinthoz/gus-net-bert",   "gpt2": "pinthoz/gus-net-gpt2"},
     }[args.encoders]
+    # Rerankers are audited as themselves: the trunk IS the model under
+    # analysis, so they have no "base" or "gusnet" variant. Both offered
+    # in the app are calibrated, since the cut-off is weight-specific.
+    from attention_app.models import RERANKER_CHOICES as _RERANKERS
     if args.encoders == "gusnet":
         print("Encoder family: GUS-Net fine-tuned trunks "
               f"({_ENC['bert']}, {_ENC['gpt2']}) - outputs tagged '_gusnet'.")
@@ -2549,6 +2558,8 @@ def main() -> int:
             _bar_models.append(_ENC["bert"])
         if args.bar_model in ("gpt2", "both"):
             _bar_models.append(_ENC["gpt2"])
+        if args.bar_model == "reranker":
+            _bar_models = list(_RERANKERS)
         try:
             run_bar_bsr_analysis(
                 n_sentences=args.n,

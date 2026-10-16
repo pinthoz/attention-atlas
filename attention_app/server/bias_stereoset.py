@@ -15,7 +15,7 @@ import numpy as np
 from shiny import render, ui
 
 from .bias_helpers import (
-    _deferred_plotly, _wrap_card, _get_bias_model_label, _source_badge_html,
+    _deferred_plotly, _wrap_card, _get_bias_model_label, _source_badge_html, _attn_source_label,
     _chart_with_png_btn, _clean_gusnet_label, _GUSNET_TO_ENCODER,
 )
 from ..models import ModelManager
@@ -772,7 +772,7 @@ def register_stereoset_handlers(
             )
 
         _src = _get_attn_source_mode("bias_attn_source")
-        _src_badge = _source_badge_html("GUS-Net" if _src == "gusnet" else "Base Encoder") if _src != "compare" else ""
+        _src_badge = _source_badge_html(_attn_source_label(_src)) if _src != "compare" else ""
         header_args = (
             f"Head Sensitivity Analysis{_src_badge}",
             "Which attention heads respond differently across bias categories (gender / race / religion / profession)?",
@@ -1152,7 +1152,7 @@ def register_stereoset_handlers(
                 ui.HTML(f'<div>{scatter_html}</div>'),
             )
 
-        _corr_badge = _source_badge_html("GUS-Net" if source_mode == "gusnet" else "Base Encoder") if source_mode != "compare" else ""
+        _corr_badge = _source_badge_html(_attn_source_label(source_mode)) if source_mode != "compare" else ""
         header_args = (
             f"Attention–Bias Correlation{_corr_badge}",
             "Do sensitive heads actually attend differently when processing stereotyped vs anti-stereotyped content?",
@@ -1672,7 +1672,7 @@ def register_stereoset_handlers(
                 ui.HTML(detail_section),
             ),
             manual_header=(
-                f"Example Explorer{_source_badge_html('GUS-Net' if source_mode == 'gusnet' else 'Base Encoder') if source_mode != 'compare' else ''}",
+                f"Example Explorer{_source_badge_html(_attn_source_label(source_mode)) if source_mode != 'compare' else ''}",
                 "Browse StereoSet examples - click to inspect with attention heatmaps",
             ),
         )

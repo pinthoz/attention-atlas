@@ -16,6 +16,7 @@ from .bias_helpers import (
     _GUSNET_TO_ENCODER, _GUSNET_TO_BASE, _GUSNET_DISPLAY_NAMES,
     _clean_gusnet_label,
     _load_gusnet_attention_for_text, _load_base_encoder_attention_for_text,
+    _load_audited_model_attention_for_text,
     _deferred_plotly, _wrap_card, _chart_with_png_btn,
     _align_gusnet_to_attention_tokens,
     _get_bias_model_label, _process_raw_bias_result, _build_batch_report,
@@ -69,7 +70,7 @@ def _detections_present(data) -> bool:
 import torch
 from shiny import ui, render, reactive
 
-from ..models import ModelManager
+from ..models import ModelManager, RERANKER_DEFAULT
 from ..utils import get_reproducibility_info
 from ..bias import (
     GusNetDetector, EnsembleGusNetDetector,
@@ -435,6 +436,12 @@ def bias_server_handlers(input, output, session):
     # ── GUS-Net attention cache (computed on demand, keyed by text+model) ──
     _base_attn_cache = reactive.value(None)       # processed result dict
     _base_attn_cache_B = reactive.value(None)
+    # ── Reranker attention cache (selected independently in the Bias sidebar) ──
+    _audited_attn_cache = reactive.value(None)
+    _audited_attn_cache_B = reactive.value(None)
+    # Relevance evidence of the last counterfactual comparison, kept so the
+    # Notebook can record it without re-running the reranker at capture time.
+    _last_relevance = reactive.value(None)
 
     # ── Batch mode state ──
     batch_sentences = reactive.value([])
@@ -592,28 +599,65 @@ def bias_server_handlers(input, output, session):
         ``_GUSNET_TO_ENCODER`` (the fine-tuned model) as the encoder.
         """
         try:
+            if _bias_reranker_enabled():
+                return "audited"
+        except Exception:
+            _logger.debug("Suppressed exception", exc_info=True)
+        try:
             val = getattr(input, input_id)()
-            if val in ("base", "gusnet", "compare"):
+            if val in ("base", "gusnet", "compare", "audited"):
                 return val
         except Exception:
             _logger.debug("Suppressed exception", exc_info=True)
             pass
         return "gusnet"
 
+    def _selected_reranker_model() -> str:
+        """Reranker selected inside Bias, independent of Attention state."""
+        try:
+            model_name = input.bias_reranker_model()
+        except Exception:
+            model_name = RERANKER_DEFAULT
+        if not model_name or not ModelManager.is_cross_encoder(model_name):
+            return RERANKER_DEFAULT
+        return str(model_name)
+
+    def _bias_reranker_enabled() -> bool:
+        try:
+            value = input.bias_use_reranker()
+            return value is True or str(value).strip().lower() in {
+                "1", "true", "yes", "on"
+            }
+        except Exception:
+            return False
+
+    def _reranker_compatible_bias_key(model_key: str) -> str:
+        """Keep reranker audits on a WordPiece-compatible GUS-Net trunk."""
+        if not _bias_reranker_enabled():
+            return model_key
+        try:
+            from ..bias.gusnet_detector import MODEL_REGISTRY
+            if MODEL_REGISTRY.get(model_key, {}).get("architecture") == "bert":
+                return model_key
+        except Exception:
+            _logger.debug("Could not validate GUS-Net architecture", exc_info=True)
+        return "gusnet-bert"
+
     def _normalize_attn_source_mode(mode: str) -> str:
         """Passthrough - _get_attn_source_mode already returns a valid value."""
-        return mode if mode in ("gusnet", "base", "compare") else "gusnet"
+        return mode if mode in ("gusnet", "base", "compare", "audited") else "gusnet"
 
     def _get_bar_threshold() -> float:
         """Current BAR specialisation cut-off from the UI slider.
 
-        Falls back to the calibrated 2.5 default when the input is not
-        available (e.g. outside a reactive context)."""
+        Falls back to the cut-off calibrated for the model under audit when
+        the input is not available (e.g. outside a reactive context). A flat
+        2.5 there would apply the BERT cut-off to a reranker."""
         try:
             with reactive.isolate():
                 return float(input.bias_bar_threshold())
         except Exception:
-            return 2.5
+            return _bar_default_for_audited()
 
     def _get_base_resolved(res, cache_rv):
         """Return a processed base-encoder-attention result.
@@ -654,6 +698,117 @@ def bias_server_handlers(input, output, session):
             _logger.exception("[attn-source] Base encoder attention load failed")
             return None
 
+    def _relevance_pair(res_A, res_B):
+        """Relevance logits of both texts under the Bias reranker.
+
+        Returns ``None`` for anything that is not a reranker, which is what
+        keeps the row out of the card for BERT and GPT-2. The text carries the
+        pair as ``query [SEP] passage``; a text without the separator is scored
+        against an empty query rather than guessed at.
+        """
+        if not _bias_reranker_enabled():
+            return None
+        model_name = _selected_reranker_model()
+        if not model_name or not ModelManager.is_cross_encoder(model_name):
+            return None
+
+        def _score(res):
+            text = (res or {}).get("text") or ""
+            if not text:
+                return None
+            query, sep, passage = text.partition("[SEP]")
+            if not sep:
+                query, passage = "", text
+            return ModelManager.score_pair(model_name, query.strip(), passage.strip())
+
+        try:
+            a, b = _score(res_A), _score(res_B)
+        except Exception:
+            _logger.exception("[consistency] Could not score the pair with the reranker")
+            return None
+        if a is None or b is None:
+            return None
+        return (a, b)
+
+    # BAR specialisation cut-offs, one per set of weights. The 2.5 default
+    # comes from the v9 permutation null on the BERT trunk; the reranker was
+    # recalibrated the same way (full v9 dataset, 200 permutations,
+    # alpha=0.05). Applying 2.5 there would mark almost nothing.
+    _BAR_DEFAULTS = {
+        "cross-encoder/ms-marco-MiniLM-L-6-v2": 1.62,
+        "cross-encoder/ms-marco-MiniLM-L-12-v2": 1.81,
+    }
+
+    def _bar_default_for_audited():
+        """Calibrated BAR cut-off for the optional Bias reranker."""
+        if not _bias_reranker_enabled():
+            return 2.5
+        model_name = _selected_reranker_model()
+        return _BAR_DEFAULTS.get(str(model_name), 2.5)
+
+    def _remember_relevance(res_A, res_B):
+        """Compute the relevance pair and keep it for the Notebook."""
+        pair = _relevance_pair(res_A, res_B)
+        if pair is None:
+            _last_relevance.set(None)
+            return None
+        _last_relevance.set({
+            "model": _selected_reranker_model(),
+            "relevance_a": pair[0],
+            "relevance_b": pair[1],
+            "relevance_delta": pair[1] - pair[0],
+        })
+        return pair
+
+    def _attn_dims(res):
+        """(layers, heads) of the attention held in a bias result.
+
+        The toolbar sliders are bounded by these, so a six-layer reranker
+        stops offering twelve layers. Falls back to the BERT base shape when
+        the result carries no attention yet.
+        """
+        try:
+            attentions = res.get("attentions") if isinstance(res, dict) else None
+            if attentions:
+                return len(attentions), int(attentions[0].shape[1])
+        except Exception:
+            _logger.debug("Could not read attention dims", exc_info=True)
+        return 12, 12
+
+    def _get_audited_resolved(res, cache_rv):
+        """Processed result whose attention comes from the audited model.
+
+        The reranker is selected in the Bias sidebar, so the cache key carries
+        its name and changing it recomputes even when the text is unchanged.
+        """
+        if not res:
+            return None
+        model_name = _selected_reranker_model()
+        with reactive.isolate():
+            cached = cache_rv.get()
+        cache_key = (res.get("text"), res.get("bias_model_key"), model_name)
+        if cached and (cached.get("text"), cached.get("bias_model_key"),
+                       cached.get("model_name")) == cache_key:
+            return cached
+        try:
+            raw = _load_audited_model_attention_for_text(
+                res["text"], res["bias_model_key"], model_name)
+            thresholds = raw.get("effective_thresholds",
+                                 {"GEN": 0.5, "UNFAIR": 0.5, "STEREO": 0.5})
+            try:
+                _use_opt = bool(input.bias_use_optimized())
+            except Exception:
+                _use_opt = True
+            processed = _process_raw_bias_result(
+                raw, thresholds, use_optimized=_use_opt,
+                bar_threshold=_get_bar_threshold())
+            if processed:
+                cache_rv.set(processed)
+            return processed
+        except Exception:
+            _logger.exception("[attn-source] Audited model attention load failed")
+            return None
+
     def _resolve_source_for_render(res, base_cache, mode):
         """Pick the right result dict for the active attention source mode.
 
@@ -662,6 +817,16 @@ def bias_server_handlers(input, output, session):
 
         Returns ``(data_for_render, source_label)``.
         """
+        if mode == "audited":
+            audited_cache = (
+                _audited_attn_cache_B
+                if base_cache is _base_attn_cache_B
+                else _audited_attn_cache
+            )
+            audited = _get_audited_resolved(res, audited_cache)
+            if audited:
+                return audited, "Reranker + GUS-Net"
+            return res, "GUS-Net"  # fallback if the audited model fails to load
         if mode == "base":
             base = _get_base_resolved(res, base_cache)
             if base:
@@ -669,6 +834,14 @@ def bias_server_handlers(input, output, session):
             return res, "GUS-Net"  # fallback if base load fails
         # mode == "gusnet" or default → use res as-is (already GUS-Net)
         return res, "GUS-Net"
+
+    def _toolbar_dims(res):
+        """Dimensions of the attention source currently shown in Bias."""
+        source_mode = _get_attn_source_mode("bias_attn_source")
+        resolved, _ = _resolve_source_for_render(
+            res, _base_attn_cache, source_mode
+        )
+        return _attn_dims(resolved)
 
     def _resolve_faithfulness_results():
         """Resolve which results faithfulness analyses should run against."""
@@ -693,7 +866,10 @@ def bias_server_handlers(input, output, session):
 
     def _source_badge_html(label: str) -> str:
         """Small inline badge indicating the attention source."""
-        if "gus" in label.lower():
+        if "reranker" in label.lower():
+            color = "#8b5cf6"
+            bg = "rgba(139,92,246,0.12)"
+        elif "gus" in label.lower():
             color = "#ff5ca9"
             bg = "rgba(255,92,169,0.12)"
         else:
@@ -1139,6 +1315,15 @@ def bias_server_handlers(input, output, session):
         except Exception:
             data["bias_model_key"] = "gusnet-bert"
 
+        try:
+            data["bias_use_reranker"] = _bias_reranker_enabled()
+        except Exception:
+            data["bias_use_reranker"] = False
+        try:
+            data["bias_reranker_model"] = input.bias_reranker_model()
+        except Exception:
+            data["bias_reranker_model"] = RERANKER_DEFAULT
+
         # Compare modes
         try:
             data["bias_compare_mode"] = bool(input.bias_compare_mode())
@@ -1255,6 +1440,10 @@ def bias_server_handlers(input, output, session):
                 restore_data["bias_model_key"] = data["bias_model_key"]
             if "bias_model_key_B" in data:
                 restore_data["bias_model_key_B"] = data["bias_model_key_B"]
+            if "bias_use_reranker" in data:
+                restore_data["bias_use_reranker"] = bool(data["bias_use_reranker"])
+            if "bias_reranker_model" in data:
+                restore_data["bias_reranker_model"] = data["bias_reranker_model"]
 
             if restore_data:
                 await session.send_custom_message("restore_bias_session_controls", restore_data)
@@ -1329,7 +1518,7 @@ def bias_server_handlers(input, output, session):
     def _csv_matrix(res):
         """Thin wrapper: 'specialized' column follows the live BAR-threshold slider."""
         try: bar_th = float(input.bias_bar_threshold())
-        except Exception: bar_th = 2.5
+        except Exception: bar_th = _bar_default_for_audited()
         return _csv_matrix_fn(res, bar_threshold=bar_th)
 
     def _csv_top_heads(res):
@@ -1337,7 +1526,7 @@ def bias_server_handlers(input, output, session):
         try: k = int(input.bias_top_k())
         except Exception: k = 5
         try: bar_th = float(input.bias_bar_threshold())
-        except Exception: bar_th = 2.5
+        except Exception: bar_th = _bar_default_for_audited()
         return _csv_top_heads_fn(res, k=k, bar_threshold=bar_th)
 
     # Attention-derived sections must export what the on-screen panel shows,
@@ -1692,6 +1881,7 @@ def bias_server_handlers(input, output, session):
             except Exception as e:
                 log_debug(f"Warning: bias_model_key missing ({e}). Using default gusnet-bert")
                 bias_model_key = "gusnet-bert"
+            bias_model_key = _reranker_compatible_bias_key(bias_model_key)
 
             # Derive encoder model from bias_model_key so tokenization matches
             model_name = _GUSNET_TO_ENCODER.get(bias_model_key, "bert-base-uncased")
@@ -1743,6 +1933,7 @@ def bias_server_handlers(input, output, session):
                                 bias_model_key_B = "gusnet-gpt2"
                         except Exception:
                             bias_model_key_B = "gusnet-gpt2"
+                        bias_model_key_B = _reranker_compatible_bias_key(bias_model_key_B)
 
                         model_name_B = _GUSNET_TO_ENCODER.get(bias_model_key_B, "gpt2")
                         log_debug(f"Starting heavy_bias_compute B ({bias_model_key_B}, encoder={model_name_B}) for Compare Models")
@@ -2551,7 +2742,8 @@ def bias_server_handlers(input, output, session):
                             _detections_present(res) or _detections_present(res_B)
                         )
                     ),
-                    create_floating_bias_toolbar(),
+                    create_floating_bias_toolbar(*_toolbar_dims(res),
+                                                bar_default=_bar_default_for_audited()),
                     ui.div(style="height: 110px;"), # Spacer to clear floating bar
                     ui.tags.script("Shiny.setInputValue('toggle_bias_toolbar_visible', true, {priority: 'event'});"),
                 )
@@ -2615,7 +2807,8 @@ def bias_server_handlers(input, output, session):
                     create_bias_accordion(
                         requires_detections=not _detections_present(res)
                     ),
-                    create_floating_bias_toolbar(),
+                    create_floating_bias_toolbar(*_toolbar_dims(res),
+                                                bar_default=_bar_default_for_audited()),
                     ui.div(style="height: 110px;"), # Spacer to clear floating bar
                     ui.tags.script("Shiny.setInputValue('toggle_bias_toolbar_visible', true, {priority: 'event'});"),
                 )
@@ -3495,17 +3688,39 @@ def bias_server_handlers(input, output, session):
     @reactive.effect
     def update_bias_selectors():
         res = bias_results.get()
-        attentions = res.get("attentions") if res else None
-        if not attentions:
+        if not res:
             return
-        num_layers = len(attentions)
-        num_heads = attentions[0].shape[1]
+        # These hidden selects drive the floating sliders.  They must use the
+        # dimensions of the attention source currently displayed, not always
+        # the underlying GUS-Net result.  Otherwise a 24-layer BERT selector
+        # overwrites the 12-layer reranker's slider max in the browser.
+        num_layers, num_heads = _toolbar_dims(res)
+        if num_layers <= 0 or num_heads <= 0:
+            return
+
+        with reactive.isolate():
+            try:
+                selected_layer = int(input.bias_attn_layer())
+            except Exception:
+                selected_layer = 0
+            try:
+                selected_head = int(input.bias_attn_head())
+            except Exception:
+                selected_head = 0
+        selected_layer = min(max(selected_layer, 0), num_layers - 1)
+        selected_head = min(max(selected_head, 0), num_heads - 1)
 
         layer_choices = {str(i): f"Layer {i}" for i in range(num_layers)}
         head_choices = {str(i): f"Head {i}" for i in range(num_heads)}
 
-        ui.update_select("bias_attn_layer", choices=layer_choices, selected="0")
-        ui.update_select("bias_attn_head", choices=head_choices, selected="0")
+        ui.update_select(
+            "bias_attn_layer", choices=layer_choices,
+            selected=str(selected_layer),
+        )
+        ui.update_select(
+            "bias_attn_head", choices=head_choices,
+            selected=str(selected_head),
+        )
 
 
     # ── Toolkit Handlers ──
@@ -3916,6 +4131,7 @@ def bias_server_handlers(input, output, session):
                         swaps_applied,
                         bias_summary_A=res.get("bias_summary"),
                         bias_summary_B=res_B.get("bias_summary"),
+                        relevance=_remember_relevance(res, res_B),
                     )
                     _cf_help = (
                         f"<span style='{_TH}'>Attention Consistency Metrics</span>"
@@ -4137,20 +4353,37 @@ def bias_server_handlers(input, output, session):
         def get_viz(data, s_idxs, container_id="bias-combined-container",
                     other_data=None, delta_label="A \u2212 B"):
             atts = data["attentions"]
-            if not atts or l_idx >= len(atts): return '<div style="color:#9ca3af;">No attention data.</div>'
+            if not atts:
+                return '<div style="color:#9ca3af;">No attention data.</div>'
             try:
-                if l_idx >= len(atts): return '<div style="color:#9ca3af;">Layer out of bounds.</div>'
-                attn = atts[l_idx][0, h_idx].cpu().numpy()
+                if l_idx < 0 or l_idx >= len(atts):
+                    return '<div style="color:#9ca3af;">Layer out of bounds.</div>'
+                layer_attn = atts[l_idx]
+                num_heads = int(layer_attn.shape[1])
+                if h_idx < 0 or h_idx >= num_heads:
+                    # The toolbar can briefly retain the previous model's
+                    # value while its layer/head ranges are being rebuilt.
+                    # Clamp locally instead of indexing CUDA out of bounds.
+                    safe_h_idx = min(max(h_idx, 0), max(num_heads - 1, 0))
+                else:
+                    safe_h_idx = h_idx
+                if num_heads == 0:
+                    return '<div style="color:#9ca3af;">No attention heads available.</div>'
+                attn = layer_attn[0, safe_h_idx].detach().cpu().numpy()
                 attn_other = None
                 if other_data:
                     try:
                         o_atts = other_data["attentions"]
                         if o_atts and l_idx < len(o_atts):
-                            attn_other = o_atts[l_idx][0, h_idx].cpu().numpy()
+                            other_layer = o_atts[l_idx]
+                            other_heads = int(other_layer.shape[1])
+                            if other_heads:
+                                other_h_idx = min(safe_h_idx, other_heads - 1)
+                                attn_other = other_layer[0, other_h_idx].detach().cpu().numpy()
                     except Exception:
                         attn_other = None
                 fig = create_combined_bias_visualization(
-                    data["tokens"], data["token_labels"], attn, l_idx, h_idx,
+                    data["tokens"], data["token_labels"], attn, l_idx, safe_h_idx,
                     selected_token_idx=s_idxs,
                     attention_matrix_other=attn_other,
                     delta_label=delta_label,
@@ -4279,7 +4512,7 @@ def bias_server_handlers(input, output, session):
                 except Exception: sl = None
 
                 try: _bar_th = float(input.bias_bar_threshold())
-                except Exception: _bar_th = 2.5
+                except Exception: _bar_th = _bar_default_for_audited()
 
                 matrix_other = None
                 if other_data:
@@ -4418,7 +4651,7 @@ def bias_server_handlers(input, output, session):
         try: l_idx = int(input.bias_attn_layer())
         except Exception: l_idx = None
         try: _bar_th = float(input.bias_bar_threshold())
-        except Exception: _bar_th = 2.5
+        except Exception: _bar_th = _bar_default_for_audited()
 
         def _get_head_bars(data, layer):
             """Extract per-head BAR values for a given layer."""
@@ -4586,7 +4819,7 @@ def bias_server_handlers(input, output, session):
         try: k = int(input.bias_top_k())
         except Exception: k = 5
         try: bar_threshold = float(input.bias_bar_threshold())
-        except Exception: bar_threshold = 2.5
+        except Exception: bar_threshold = _bar_default_for_audited()
 
         def get_table(data):
             mets = data["attention_metrics"]
@@ -4883,6 +5116,7 @@ def bias_server_handlers(input, output, session):
         "attn_source_mode": lambda: _get_attn_source_mode("bias_attn_source"),
         "bias_results_base": _peek_base_resolved,
         "head_survival": _survival_counts_for_notebook,
+        "reranker_evidence": lambda: _last_relevance.get(),
     }
 
 __all__ = ["bias_server_handlers"]

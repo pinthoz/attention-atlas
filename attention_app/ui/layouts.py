@@ -574,6 +574,17 @@ attention_analysis_page = ui.page_fluid(
                     }
                 };
 
+                window.centerBiasRerankerHalves = function(sfx) {
+                    sfx = sfx || '';
+                    var query = document.getElementById('bias_query_input' + sfx);
+                    var passage = document.getElementById('bias_passage_input' + sfx);
+                    window.centerRerankerHalf(query);
+                    window.centerRerankerHalf(passage);
+                    if (query && passage && passage.style.paddingTop) {
+                        query.style.paddingTop = passage.style.paddingTop;
+                    }
+                };
+
                 window.__rrLast = {};
                 window.syncRerankerPair = function(sfx) {
                     sfx = sfx || '';
@@ -596,6 +607,41 @@ attention_analysis_page = ui.page_fluid(
                     }
                 };
 
+                // Same join for the bias tab, which has its own input box
+                window.__rrLastBias = {};
+                window.syncBiasRerankerPair = function(sfx) {
+                    sfx = sfx || '';
+                    var q = document.getElementById('bias_query_input' + sfx);
+                    var p = document.getElementById('bias_passage_input' + sfx);
+                    var t = document.getElementById('bias_input_text' + sfx);
+                    if (!q || !p || !t) return;
+                    var joined = (q.value || '').trim() + ' [SEP] ' + (p.value || '').trim();
+                    t.value = joined;
+                    window.centerBiasRerankerHalves(sfx);
+                    if (window.__rrLastBias[sfx] === joined) return;
+                    window.__rrLastBias[sfx] = joined;
+                    if (window.Shiny && Shiny.setInputValue) {
+                        Shiny.setInputValue('bias_input_text' + sfx, joined, {priority: 'event'});
+                        Shiny.setInputValue('bias_query_input' + sfx, q.value, {priority: 'event'});
+                        Shiny.setInputValue('bias_passage_input' + sfx, p.value, {priority: 'event'});
+                    }
+                };
+
+                // Rerankers need a joined query/passage value for the server,
+                // but that value must not replace the user's regular BERT/GPT-2
+                // prompts. Keep both kinds of input independently.
+                window.__regularPromptValues = window.__regularPromptValues || {};
+                window.__regularBiasPromptValues = window.__regularBiasPromptValues || {};
+
+                window.restoreRegularPrompt = function(id, value) {
+                    var input = document.getElementById(id);
+                    if (!input || typeof value !== 'string') return;
+                    input.value = value;
+                    if (window.Shiny && Shiny.setInputValue) {
+                        Shiny.setInputValue(id, value, {priority: 'event'});
+                    }
+                };
+
                 window.applyRerankerLayout = function() {
                     var sel = document.getElementById('model_family');
                     var isRr = sel && sel.value === 'reranker';
@@ -605,6 +651,28 @@ attention_analysis_page = ui.page_fluid(
                     var tb = document.getElementById('text_input_B');
                     if (!pa || !pb || !ta || !tb) return;
                     var active = window.__activePrompt || 'A';
+                    var wasRr = window.__rrLayoutActive === true;
+
+                    if (typeof window.__regularPromptValues.A !== 'string') {
+                        window.__regularPromptValues.A = ta.value;
+                    }
+                    if (typeof window.__regularPromptValues.B !== 'string') {
+                        window.__regularPromptValues.B = tb.value;
+                    }
+
+                    // Capture edits made in the regular input before entering
+                    // reranker mode. When leaving rerankers, put those exact
+                    // values back into both the DOM and Shiny's input state.
+                    if (isRr && !wasRr) {
+                        window.__regularPromptValues.A = ta.value;
+                        window.__regularPromptValues.B = tb.value;
+                    } else if (!isRr && wasRr) {
+                        window.restoreRegularPrompt('text_input', window.__regularPromptValues.A);
+                        window.restoreRegularPrompt('text_input_B', window.__regularPromptValues.B);
+                    } else if (!isRr) {
+                        window.__regularPromptValues.A = ta.value;
+                        window.__regularPromptValues.B = tb.value;
+                    }
 
                     // Capture the rendered height of the regular six-row box
                     // before hiding it. The reranker pair must replace that
@@ -637,11 +705,80 @@ attention_analysis_page = ui.page_fluid(
                         tb.style.display = (active === 'B') ? 'block' : 'none';
                     }
 
+                    // The bias tab carries its own input box and its own A/B
+                    // tabs, so it is switched with the same rule.
+                    var bpa = document.getElementById('bias-reranker-pair-a');
+                    var bpb = document.getElementById('bias-reranker-pair-b');
+                    var bta = document.getElementById('bias_input_text');
+                    var btb = document.getElementById('bias_input_text_B');
+                    if (bpa && bpb && bta && btb) {
+                        var bActive = (document.getElementById('bias-prompt-tab-b') || {}).classList;
+                        var onB = bActive && bActive.contains('active');
+                        var isBiasRr = window.__biasRerankerEnabled === true;
+                        var wasBiasRr = window.__biasRerankerLayoutActive === true;
+
+                        // Use the exact rendered height of the regular Bias
+                        // textarea, just as the Attention reranker input does.
+                        var biasRegularBox = onB ? btb : bta;
+                        var biasRegularHeight = biasRegularBox.getBoundingClientRect().height;
+                        if (biasRegularHeight > 0) {
+                            window.__biasRrPromptHeight = biasRegularHeight;
+                        }
+
+                        if (typeof window.__regularBiasPromptValues.A !== 'string') {
+                            window.__regularBiasPromptValues.A = bta.value;
+                        }
+                        if (typeof window.__regularBiasPromptValues.B !== 'string') {
+                            window.__regularBiasPromptValues.B = btb.value;
+                        }
+                        if (isBiasRr && !wasBiasRr) {
+                            window.__regularBiasPromptValues.A = bta.value;
+                            window.__regularBiasPromptValues.B = btb.value;
+                        } else if (!isBiasRr && wasBiasRr) {
+                            window.restoreRegularPrompt(
+                                'bias_input_text', window.__regularBiasPromptValues.A
+                            );
+                            window.restoreRegularPrompt(
+                                'bias_input_text_B', window.__regularBiasPromptValues.B
+                            );
+                        } else if (!isBiasRr) {
+                            window.__regularBiasPromptValues.A = bta.value;
+                            window.__regularBiasPromptValues.B = btb.value;
+                        }
+
+                        if (isBiasRr) {
+                            if (window.__biasRrPromptHeight) {
+                                var biasMatchedHeight = window.__biasRrPromptHeight + 'px';
+                                bpa.style.height = biasMatchedHeight;
+                                bpb.style.height = biasMatchedHeight;
+                            }
+                            bta.style.display = 'none';
+                            btb.style.display = 'none';
+                            bpa.style.display = onB ? 'none' : 'grid';
+                            bpb.style.display = onB ? 'grid' : 'none';
+                            window.syncBiasRerankerPair('');
+                            window.syncBiasRerankerPair('_B');
+                            setTimeout(function() {
+                                window.centerBiasRerankerHalves('');
+                                window.centerBiasRerankerHalves('_B');
+                            }, 0);
+                        } else {
+                            bpa.style.display = 'none';
+                            bpb.style.display = 'none';
+                            bta.style.display = onB ? 'none' : 'block';
+                            btb.style.display = onB ? 'block' : 'none';
+                        }
+                        window.__biasRerankerLayoutActive = isBiasRr;
+                    }
+
                     // StereoSet scores sentences with a masked-language head,
                     // which a reranker does not have, so the panel is hidden
                     // rather than left to fail.
                     var ss = document.querySelector('#bias_accordion [data-value="stereoset"]');
-                    if (ss) ss.style.display = isRr ? 'none' : '';
+                    if (ss) {
+                        ss.style.display = window.__biasRerankerEnabled ? 'none' : '';
+                    }
+                    window.__rrLayoutActive = isRr;
                 };
 
                 // Keep the layout in step with the prompt tabs. This runs on
@@ -656,6 +793,11 @@ attention_analysis_page = ui.page_fluid(
                         if (orig) orig(mode);
                         window.applyRerankerLayout();
                     };
+                    var origBias = window.switchBiasPromptTab;
+                    window.switchBiasPromptTab = function(tab) {
+                        if (origBias) origBias(tab);
+                        window.applyRerankerLayout();
+                    };
                     window.applyRerankerLayout();
                 });
 
@@ -665,7 +807,7 @@ attention_analysis_page = ui.page_fluid(
                         window.applyRerankerLayout();
                     }
                 });
-                $(document).on('shiny:connected', function() {
+                $(document).on('shiny:sessioninitialized', function() {
                     window.applyRerankerLayout();
                 });
                 // Shiny may rebuild the family select server-side, which does
@@ -839,7 +981,7 @@ attention_analysis_page = ui.page_fluid(
                     }
                 });
 
-                $(document).on('shiny:connected', function() {
+                $(document).on('shiny:sessioninitialized', function() {
                     // Initialize inputs with default values
                     const inputA = document.getElementById('text_input');
                     if (inputA) Shiny.setInputValue('text_input', inputA.value);

@@ -124,7 +124,12 @@ _CONTEXT_INPUTS = [
     # reconstructable, so they belong to the conditions block.
     ("bias_alpha",               "bias_alpha",             "Significance level α (head specialisation)"),
     ("bias_correction",          "bias_correction",        "Multiple-comparison correction (none / FDR / Bonferroni)"),
-    ("bias_attn_source",         "bias_attn_source",       "Attention source (gusnet / base / compare)"),
+    ("bias_attn_source",         "bias_attn_source",       "Attention source (gusnet / base / audited / compare)"),
+    # Reranker audit: without these two an entry made against a reranker
+    # does not say which model produced the attention and the relevance
+    # score, so it cannot be reconstructed.
+    ("bias_use_reranker",        "bias_use_reranker",      "Audit a reranker (on / off)"),
+    ("bias_reranker_model",      "bias_reranker_model",    "Audited reranker"),
     ("bias_attn_layer",          "bias_attn_layer",        "Bias panel: selected layer"),
     ("bias_attn_head",           "bias_attn_head",         "Bias panel: selected head"),
     ("bias_selected_tokens_A",   "bias_selected_tokens_a", "Selected tokens (A)"),
@@ -144,6 +149,7 @@ _SWITCH_INPUTS = {
     "att_compare_prompts",
     "bias_compare_models",
     "bias_compare_prompts",
+    "bias_use_reranker",
 }
 # Inputs that are numeric (sliders/numeric).
 _NUMERIC_INPUTS = {
@@ -222,6 +228,13 @@ _METRIC_LABELS = {
     "bias_metric_ig_median_abs_rho":      "Median |Spearman ρ| IG ↔ attention (A)",
     "bias_metric_ig_heads_fdr":           "Heads significant after BH-FDR, q<0.05 (IG, A)",
     "bias_metric_ig_target":              "IG attribution target",
+    # Reranker audit evidence: the relevance logit is the decision the
+    # ranking is built on, so an entry without it records the diagnosis
+    # and loses the finding.
+    "bias_metric_reranker_model":         "Audited reranker (evidence)",
+    "bias_metric_relevance_a":            "Relevance logit (A)",
+    "bias_metric_relevance_b":            "Relevance logit (B)",
+    "bias_metric_relevance_delta":        "Relevance logit change (B - A)",
     "bias_metric_ig_completeness":        "IG completeness residual",
     # ── Head ablation (A) ─────────────────────────────────────────────
     "bias_metric_ablation_top_heads":     "Top-3 heads by ablation impact (A)",
@@ -1506,6 +1519,21 @@ def _extract_bias_metrics(bias_state, bias_compare_active: bool) -> Dict[str, An
     out: Dict[str, Any] = {}
     if not bias_state:
         return out
+
+    # ── Reranker audit: relevance logits of the compared pair ──
+    try:
+        evidence_fn = bias_state.get("reranker_evidence")
+        evidence = evidence_fn() if callable(evidence_fn) else None
+        if evidence:
+            if evidence.get("model"):
+                out["bias_metric_reranker_model"] = str(evidence["model"])
+            for key, metric in (("relevance_a", "bias_metric_relevance_a"),
+                                ("relevance_b", "bias_metric_relevance_b"),
+                                ("relevance_delta", "bias_metric_relevance_delta")):
+                if evidence.get(key) is not None:
+                    out[metric] = round(float(evidence[key]), 4)
+    except Exception:
+        pass
 
     # ── Side A bias summary ──────────────────────────────────────
     bias_res_a = _safe_get(bias_state.get("bias_results"))
