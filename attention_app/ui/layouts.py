@@ -636,6 +636,14 @@ attention_analysis_page = ui.page_fluid(
                 window.restoreRegularPrompt = function(id, value) {
                     var input = document.getElementById(id);
                     if (!input || typeof value !== 'string') return;
+                    // Leaving reranker mode rewrites the same text input the
+                    // pair was mirrored into, so the memory of what was last
+                    // sent is now stale. Without clearing it, coming back to
+                    // the reranker skips the send and the server keeps
+                    // analysing the regular prompt while the pair is on screen.
+                    var sfx = id.endsWith('_B') ? '_B' : '';
+                    if (window.__rrLast) delete window.__rrLast[sfx];
+                    if (window.__rrLastBias) delete window.__rrLastBias[sfx];
                     input.value = value;
                     if (window.Shiny && Shiny.setInputValue) {
                         Shiny.setInputValue(id, value, {priority: 'event'});

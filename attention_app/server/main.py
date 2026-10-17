@@ -4039,7 +4039,33 @@ def server(input, output, session):
                 # Base models (bert-base, gpt2-small)
                 return 12
 
-            t = input.text_input().strip()
+            def _live_prompt(suffix=""):
+                """Prompt as it will be analysed, before Generate All runs.
+
+                For a reranker the analysed string is the joined pair. The two
+                halves are mirrored into text_input by the browser, but the
+                preview must not wait for that round trip: read the halves
+                directly so switching family updates the preview at once.
+                """
+                try:
+                    raw = (getattr(input, "text_input" + suffix)() or "").strip()
+                except Exception:
+                    raw = ""
+                try:
+                    if input.model_family() != "reranker":
+                        return raw
+                except Exception:
+                    return raw
+                try:
+                    query = (getattr(input, "query_input" + suffix)() or "").strip()
+                    passage = (getattr(input, "passage_input" + suffix)() or "").strip()
+                except Exception:
+                    return raw
+                if not query and not passage:
+                    return raw
+                return f"{query} [SEP] {passage}"
+
+            t = _live_prompt()
             # Placeholder changed to '(input)' per user request
             preview_html = f'<div style="font-family:monospace;color:#6b7280;font-size:14px;">"{_html.escape(t)}"</div>' if t else '<div style="color:#9ca3af;font-size:12px;">(input)</div>'
 
@@ -4077,7 +4103,7 @@ def server(input, output, session):
             else:
                 # Compare mode - live paired previews
                 if live_compare_prompts:
-                    try: t_b = input.text_input_B().strip()
+                    try: t_b = _live_prompt("_B")
                     except Exception: t_b = ""
                 else:
                     t_b = t # Same text if comparing models
