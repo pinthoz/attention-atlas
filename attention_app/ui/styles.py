@@ -1576,6 +1576,18 @@ CSS = """
             margin: -16px auto; /* Negative margin to reduce gap */
         }
 
+        /* Diagonal arrow: same box as the vertical one, used for the step
+           into the reranker head so the flow reads as a branch rather
+           than a straight continuation. */
+        .arrow-diagonal {
+            width: 100%;
+            height: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: -16px auto;
+        }
+
         /* Initial arrow indicator */
         .arrow-initial {
             position: absolute;

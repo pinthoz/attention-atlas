@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import html as _html
+import math
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -169,6 +170,10 @@ def arrow(from_section, to_section, direction="horizontal", suffix="", model_typ
     # Rotate it -90deg for horizontal to point right
     if direction == "horizontal":
         icon = ui.tags.span({"style": "display: inline-block; transform: rotate(-90deg);"}, "↓")
+    elif direction == "diagonal":
+        # Same glyph as every other arrow, turned 45 degrees clockwise so
+        # it points down and to the left, into the card below on the left.
+        icon = ui.tags.span({"style": "display: inline-block; transform: rotate(45deg);"}, "↓")
     else:
         icon = "↓"
 
@@ -2316,9 +2321,9 @@ def get_reranker_head_view(res, suffix="", compact_compare=False):
         return ui.HTML(f"""
             <div class='reranker-head-view' style='display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;'>
                 <div style='flex:1 1 180px;'>{cls_card}</div>
-                <div aria-hidden='true' style='display:flex;align-items:center;color:#94a3b8;font-size:18px;'>&rarr;</div>
+                <div aria-hidden='true' class='transition-arrow arrow-horizontal' style='cursor:default;'><span style='display:inline-block;transform:rotate(-90deg);'>&#8595;</span></div>
                 <div style='flex:1 1 180px;'>{pooled_card}</div>
-                <div aria-hidden='true' style='display:flex;align-items:center;color:#94a3b8;font-size:18px;'>&rarr;</div>
+                <div aria-hidden='true' class='transition-arrow arrow-horizontal' style='cursor:default;'><span style='display:inline-block;transform:rotate(-90deg);'>&#8595;</span></div>
                 <div style='flex:0 1 190px;'>{score_card}</div>
             </div>
         """)
@@ -2363,15 +2368,130 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
         with torch.no_grad():
             head_inputs = {k: v.to(device) for k, v in inputs.items()}
             logit = float(head(**head_inputs).logits.reshape(-1)[0])
-        return ui.HTML(
-            "<div class='prediction-panel'>"
-            "<p style='font-size:11px;color:#374151;margin-bottom:4px;'>"
-            "Relevance logit of the reranker for this pair</p>"
-            f"<p style='font-size:22px;font-weight:600;color:#111827;margin:0;'>{logit:+.3f}</p>"
-            "<p style='font-size:10px;color:#6b7280;margin-top:6px;'>"
-            "Higher means more relevant. Raw logit, not a probability.</p>"
-            "</div>"
+
+        # Where the logit sits on the scale the model actually produces. MS
+        # MARCO cross-encoders output roughly -11 (irrelevant) to +11 (highly
+        # relevant), so the gauge spans that and the marker is clamped to it.
+        lo, hi = -11.0, 11.0
+        gauge_pct = max(0.0, min(100.0, (logit - lo) / (hi - lo) * 100.0))
+        prob = 1.0 / (1.0 + math.exp(-logit))
+
+        if logit >= 2.0:
+            verdict, colour = "Relevant", "#22c55e"
+        elif logit >= -2.0:
+            verdict, colour = "Borderline", "#f59e0b"
+        else:
+            verdict, colour = "Not relevant", "#ef4444"
+
+        # Segment split, read off the token type ids the pair was encoded with.
+        # The tokens are recomputed here: the shared ``mlm_tokens`` below belongs
+        # to the masked-language path, which a reranker never reaches.
+        pair_tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
+        type_ids = head_inputs.get("token_type_ids")
+        if type_ids is not None:
+            ids = type_ids[0].tolist()
+            n_query = sum(1 for v in ids if v == 0)
+            n_passage = sum(1 for v in ids if v == 1)
+        else:
+            n_query, n_passage = len(pair_tokens), 0
+        segment_html = (
+            f'<span style="color:#3b82f6;font-weight:700;">{n_query}</span> query'
+            f' <span style="opacity:0.5;">/</span> '
+            f'<span style="color:#8b5cf6;font-weight:700;">{n_passage}</span> passage'
         )
+
+        # Rebuild each half from the segment ids rather than from ``text``: that
+        # argument is the detokenised sequence, so it carries [CLS] / [SEP] and
+        # the lowercasing of an uncased model. Here we want the two halves the
+        # model was actually given, without the scaffolding.
+        specials = {"[CLS]", "[SEP]", "[PAD]"}
+        if type_ids is not None:
+            halves = {0: [], 1: []}
+            for tok, seg in zip(pair_tokens, ids):
+                if tok in specials:
+                    continue
+                halves.setdefault(seg, []).append(tok)
+            query_txt = tokenizer.convert_tokens_to_string(halves.get(0, [])).strip()
+            passage_txt = tokenizer.convert_tokens_to_string(halves.get(1, [])).strip()
+        else:
+            query_txt, _sep, passage_txt = (text or "").partition("[SEP]")
+            query_txt, passage_txt = query_txt.strip(), passage_txt.strip()
+        query_txt = _esc(query_txt) or "&mdash;"
+        passage_txt = _esc(passage_txt) or "&mdash;"
+
+        return ui.HTML(f"""
+        <div style="width:100%;">
+        <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));
+                    gap:12px;width:100%;">
+            <div class="metric-card">
+                <div class="metric-header-row">
+                    <div class="metric-label">Relevance logit</div>
+                    <div class="metric-badge" style="background: {colour}20; color: {colour};">{verdict}</div>
+                </div>
+                <div class="metric-value-row">
+                    <div class="metric-value" style="font-size:30px;">{logit:+.3f}</div>
+                    <div class="metric-context">
+                        <span>The score the ranking is built on</span>
+                        <span style="color:#9ca3af;">Raw logit, not a probability</span>
+                    </div>
+                </div>
+                <div class="metric-gauge-wrapper">
+                    <span class="gauge-scale-label">{lo:+.0f}</span>
+                    <div class="metric-gauge-fixed">
+                        <div class="gauge-zone" style="width: 41%; background: #ef444430;"></div>
+                        <div class="gauge-zone" style="width: 18%; background: #f59e0b30;"></div>
+                        <div class="gauge-zone" style="width: 41%; background: #22c55e30;"></div>
+                        <div class="gauge-marker" style="left: {gauge_pct:.1f}%; background: {colour}; z-index:2;"></div>
+                    </div>
+                    <span class="gauge-scale-label">{hi:+.0f}</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header-row">
+                    <div class="metric-label">Calibrated score</div>
+                    <div class="metric-badge" style="background: #ff5ca920; color: #ff5ca9;">sigmoid</div>
+                </div>
+                <div class="metric-value-row">
+                    <div class="metric-value" style="font-size:30px;">{prob * 100:.1f}%</div>
+                    <div class="metric-context">
+                        <span>&sigma;(logit), the training objective's scale</span>
+                        <span style="color:#9ca3af;">Use it to compare pairs, not as truth</span>
+                    </div>
+                </div>
+                <div class="metric-gauge-wrapper">
+                    <span class="gauge-scale-label">0</span>
+                    <div class="metric-gauge-fixed">
+                        <div class="gauge-zone" style="width: 100%; background: #ff5ca920;"></div>
+                        <div class="gauge-marker" style="left: {prob * 100:.1f}%; background: #ff5ca9; z-index:2;"></div>
+                    </div>
+                    <span class="gauge-scale-label">1</span>
+                </div>
+            </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
+            <div style="display:flex;align-items:baseline;gap:10px;background:#f8fafc;
+                        border:1px solid #e2e8f0;border-radius:10px;padding:9px 12px;">
+                <span style="flex:0 0 auto;font-size:9px;font-weight:700;letter-spacing:0.6px;
+                             color:#3b82f6;">QUERY</span>
+                <span style="flex:1;min-width:0;font-size:12.5px;color:#1e293b;line-height:1.45;">{query_txt}</span>
+                <span style="flex:0 0 auto;font-size:9px;color:#94a3b8;white-space:nowrap;">{n_query} tok</span>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:10px;background:#f8fafc;
+                        border:1px solid #e2e8f0;border-radius:10px;padding:9px 12px;">
+                <span style="flex:0 0 auto;font-size:9px;font-weight:700;letter-spacing:0.6px;
+                             color:#8b5cf6;">PASSAGE</span>
+                <span style="flex:1;min-width:0;font-size:12.5px;color:#1e293b;line-height:1.45;">{passage_txt}</span>
+                <span style="flex:0 0 auto;font-size:9px;color:#94a3b8;white-space:nowrap;">{n_passage} tok</span>
+            </div>
+        </div>
+
+        <div style="margin-top:10px;font-size:9.5px;color:#94a3b8;text-align:right;">
+            Encoded as [CLS] query [SEP] passage [SEP], scored by the pooled [CLS] vector
+        </div>
+        </div>
+        """)
 
     is_gpt2 = not hasattr(encoder_model, "encoder")
     

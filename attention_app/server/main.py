@@ -3577,7 +3577,7 @@ def server(input, output, session):
                         arrow(
                             "Add & Norm (post-FFN)",
                             "Reranker Head" if model_type_val == "reranker" else "Exit",
-                            "vertical",
+                            "diagonal" if model_type_val == "reranker" else "vertical",
                             suffix=suffix,
                             model_type=model_type_val,
                             style=(
@@ -4282,14 +4282,18 @@ def server(input, output, session):
             def paired_arrows(from_section, to_section, model_type_A=None, model_type_B=None,
                               to_section_B=None):
                 target_b = to_section if to_section_B is None else to_section_B
+                # The step into the reranker head is drawn on the diagonal,
+                # matching single mode.
+                dir_a = "diagonal" if to_section == "Reranker Head" else "vertical"
+                dir_b = "diagonal" if target_b == "Reranker Head" else "vertical"
                 return ui.layout_columns(
                     ui.div(
                         {"style": "display: flex; justify-content: center; padding: 0; margin: 0;"},
-                        arrow(from_section, to_section, "vertical", suffix="_A", extra_class="arrow-blue", model_type=model_type_A)
+                        arrow(from_section, to_section, dir_a, suffix="_A", extra_class="arrow-blue", model_type=model_type_A)
                     ),
                     ui.div(
                         {"style": "display: flex; justify-content: center; padding: 0; margin: 0;"},
-                        arrow(from_section, target_b, "vertical", suffix="_B", extra_class="arrow-pink", model_type=model_type_B)
+                        arrow(from_section, target_b, dir_b, suffix="_B", extra_class="arrow-pink", model_type=model_type_B)
                     ),
                     col_widths=[6, 6]
                 )
