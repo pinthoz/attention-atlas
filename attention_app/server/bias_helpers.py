@@ -660,8 +660,14 @@ def _process_raw_bias_result(raw_res, thresholds, use_optimized=False,
 
 def _build_batch_report(per_sentence_results, all_bar_matrices,
                         bias_model_key, model_name, thresholds, use_optimized,
-                        batch_file, elapsed, n_total):
-    """Build comprehensive batch analysis report JSON."""
+                        batch_file, elapsed, n_total, bar_threshold=2.5):
+    """Build comprehensive batch analysis report JSON.
+
+    ``bar_threshold`` is the calibrated specialisation cut-off for the weights
+    that produced these matrices. It is weight-specific (2.50 BERT, 1.62
+    MiniLM L-6, 1.81 MiniLM L-12), so leaving the BERT literal in place would
+    understate ``specialized_rate`` for a reranker batch.
+    """
     analyzed = [r for r in per_sentence_results if not r.get("error")]
     failed = [r for r in per_sentence_results if r.get("error")]
     biased = [r for r in analyzed if r.get("is_biased")]
@@ -724,7 +730,7 @@ def _build_batch_report(per_sentence_results, all_bar_matrices,
         for l in range(n_layers):
             for h in range(n_heads):
                 bars = [m[l, h] for m in all_bar_matrices if l < m.shape[0] and h < m.shape[1]]
-                specialized = sum(1 for b in bars if b > 2.5)
+                specialized = sum(1 for b in bars if b > bar_threshold)
                 head_entries.append({
                     "layer": int(l), "head": int(h),
                     "avg_bar": round(float(np.mean(bars)), 4),

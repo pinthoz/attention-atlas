@@ -49,7 +49,8 @@ import torch
 from shiny import ui, render, reactive
 from shinywidgets import render_plotly, output_widget, render_widget
 
-from .logic import ComputeResult, tokenize_with_segments, heavy_compute
+from .logic import (ComputeResult, tokenize_with_segments, heavy_compute,
+                    parse_batch_payload)
 from .renderers import (
     get_layer_block,
     extract_qkv,
@@ -1115,9 +1116,12 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.attn_batch_file_upload)
     async def parse_attn_batch_file():
-        """Parse uploaded CSV or JSON file for attention batch mode."""
-        import csv
-        import io
+        """Parse uploaded CSV or JSON file for attention batch mode.
+
+        A file with both a query and a passage column is a reranker batch:
+        each row becomes one "query [SEP] passage" item, so the pair reaches
+        the model as two segments instead of one run-on sequence.
+        """
         file_info = input.attn_batch_file_upload()
         if not file_info:
             return
@@ -1126,55 +1130,11 @@ def server(input, output, session):
             file_path = file_info["datapath"]
             file_name = file_info["name"]
 
-            sentences = []
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            if file_name.lower().endswith(".json"):
-                data = json.loads(content)
-                if isinstance(data, list):
-                    if all(isinstance(x, str) for x in data):
-                        sentences = [s.strip() for s in data if s.strip()]
-                    elif all(isinstance(x, dict) for x in data):
-                        for item in data:
-                            for key in ("text", "sentence", "input", "content"):
-                                if key in item and isinstance(item[key], str) and item[key].strip():
-                                    sentences.append(item[key].strip())
-                                    break
-                elif isinstance(data, dict):
-                    for key in ("sentences", "texts", "data"):
-                        if key in data and isinstance(data[key], list):
-                            for item in data[key]:
-                                if isinstance(item, str) and item.strip():
-                                    sentences.append(item.strip())
-                                elif isinstance(item, dict):
-                                    for k in ("text", "sentence", "input"):
-                                        if k in item and isinstance(item[k], str) and item[k].strip():
-                                            sentences.append(item[k].strip())
-                                            break
-                            break
-            elif file_name.lower().endswith(".csv"):
-                reader = csv.DictReader(io.StringIO(content))
-                cols = reader.fieldnames or []
-                text_col = None
-                for candidate in ("text", "sentence", "input", "content"):
-                    for c in cols:
-                        if c.lower().strip() == candidate:
-                            text_col = c
-                            break
-                    if text_col:
-                        break
-                if not text_col and cols:
-                    text_col = cols[0]
-                if text_col:
-                    for row in reader:
-                        val = row.get(text_col, "").strip()
-                        if val:
-                            sentences.append(val)
-
-            MAX_ATTN_BATCH = 500
-            if len(sentences) > MAX_ATTN_BATCH:
-                sentences = sentences[:MAX_ATTN_BATCH]
+            payload = parse_batch_payload(content, file_name, max_items=500)
+            sentences = payload.sentences
 
             if sentences:
                 attn_batch_sentences.set(sentences)
@@ -1182,11 +1142,14 @@ def server(input, output, session):
                 await session.send_custom_message("attn_batch_file_parsed", {
                     "filename": file_name,
                     "count": len(sentences),
+                    "unit": "pairs" if payload.is_pairs else "sentences",
+                    "skipped": payload.skipped,
                 })
             else:
                 attn_batch_sentences.set([])
                 await session.send_custom_message("attn_batch_file_parsed", {
-                    "error": "No sentences found in file",
+                    "error": ("Every row was missing a query or a passage"
+                              if payload.skipped else "No sentences found in file"),
                 })
         except Exception as e:
             attn_batch_sentences.set([])

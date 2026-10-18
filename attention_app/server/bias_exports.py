@@ -125,10 +125,17 @@ def csv_top_heads(res, k=5, bar_threshold=2.5):
 # ── Ablation export ──────────────────────────────────────────────────────
 
 def csv_ablation(results):
-    lines = ["rank,layer,head,representation_impact,kl_divergence,bar_original"]
+    # relevance_delta is empty for BERT and GPT-2, which have no relevance
+    # logit. The column is always present so the header does not change
+    # shape between models and scripts can read one schema.
+    lines = ["rank,layer,head,representation_impact,kl_divergence,"
+             "relevance_delta,bar_original"]
     for i, r in enumerate(results, 1):
         kl = f"{r.kl_divergence:.6f}" if r.kl_divergence is not None else ""
-        lines.append(f"{i},{r.layer},{r.head},{r.representation_impact:.6f},{kl},{r.bar_original:.4f}")
+        rel = getattr(r, "relevance_delta", None)
+        rel = f"{rel:.6f}" if rel is not None else ""
+        lines.append(f"{i},{r.layer},{r.head},{r.representation_impact:.6f},"
+                     f"{kl},{rel},{r.bar_original:.4f}")
     return "\n".join(lines)
 
 

@@ -45,12 +45,19 @@ class HeadAblationResult:
         None if no LM head is available.
     bar_original : float
         Original BAR value for this head (for cross-referencing).
+    relevance_delta : float | None
+        Change in the reranker's relevance logit when this head is
+        removed, ``ablated - original``. None for models that do not
+        produce one. This is the quantity a ranking is built on, so it
+        answers whether the head matters to the decision, not only to
+        the representation.
     """
     layer: int
     head: int
     representation_impact: float
     kl_divergence: Optional[float]
     bar_original: float
+    relevance_delta: Optional[float] = None
 
 
 def _get_head_dim(model, is_gpt2: bool) -> int:
@@ -163,6 +170,48 @@ def _run_single_ablation(
     return float(rep_impact), kl_div_val
 
 
+def _relevance_delta_for_head(
+    relevance_model,
+    inputs: dict,
+    baseline_logit: float,
+    layer_idx: int,
+    head_idx: int,
+) -> Optional[float]:
+    """Change in the relevance logit when one head is removed.
+
+    The hook goes on the scoring model itself. Ablating a head on a separate
+    encoder instance would leave the score untouched, since the two do not
+    share the modules the forward pass runs through.
+    """
+    try:
+        trunk = relevance_model.bert
+    except AttributeError:
+        return None
+    # The scoring head and the encoder are cached independently, so they can
+    # sit on different devices after an eviction. Follow the head.
+    head_device = next(relevance_model.parameters()).device
+    inputs = {k: v.to(head_device) for k, v in inputs.items()}
+    head_dim = trunk.config.hidden_size // trunk.config.num_attention_heads
+    attn_module = trunk.encoder.layer[layer_idx].attention.self
+    start = head_idx * head_dim
+    end = start + head_dim
+
+    def ablation_hook(module, module_input, output):
+        modified = output[0].clone()
+        modified[:, :, start:end] = 0.0
+        return (modified,) + output[1:]
+
+    handle = attn_module.register_forward_hook(ablation_hook)
+    try:
+        with torch.no_grad():
+            ablated = relevance_model(**inputs).logits.reshape(-1)[0].item()
+    except Exception:
+        return None
+    finally:
+        handle.remove()
+    return float(ablated - baseline_logit)
+
+
 def batch_ablate_top_heads(
     encoder_model,
     lm_head_model,
@@ -171,6 +220,7 @@ def batch_ablate_top_heads(
     top_heads: list,
     is_gpt2: bool,
     mode: str = "zero",
+    relevance_model=None,
 ) -> List[HeadAblationResult]:
     """Ablate each of the top-K heads and return impact results.
 
@@ -191,6 +241,9 @@ def batch_ablate_top_heads(
     mode : str
         "zero" (default; matches the calibrated null thresholds) or
         "mean" (mean-ablation; see _run_single_ablation).
+    relevance_model : PreTrainedModel or None
+        Cross-encoder scoring model. When given, each head also reports
+        how far its removal moves the relevance logit.
 
     Returns
     -------
@@ -198,8 +251,27 @@ def batch_ablate_top_heads(
         Sorted by representation_impact descending.
     """
     device = next(encoder_model.parameters()).device
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+    # A reranker is scored on a pair, so an explicit [SEP] in the text is
+    # encoded as two segments rather than one run-on sequence.
+    sep = getattr(tokenizer, "sep_token", None)
+    if relevance_model is not None and sep and sep in text:
+        left, _, right = text.partition(sep)
+        inputs = tokenizer(left.strip(), right.strip(), return_tensors="pt",
+                           truncation=True, max_length=512)
+    else:
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
     inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    baseline_logit = None
+    if relevance_model is not None:
+        try:
+            head_device = next(relevance_model.parameters()).device
+            rel_inputs = {k: v.to(head_device) for k, v in inputs.items()}
+            with torch.no_grad():
+                baseline_logit = float(
+                    relevance_model(**rel_inputs).logits.reshape(-1)[0])
+        except Exception:
+            baseline_logit = None
 
     # Baseline forward pass
     with torch.no_grad():
@@ -231,12 +303,18 @@ def batch_ablate_top_heads(
             original_logits,
             mode=mode,
         )
+        rel_delta = None
+        if relevance_model is not None and baseline_logit is not None:
+            rel_delta = _relevance_delta_for_head(
+                relevance_model, inputs, baseline_logit,
+                head_metric.layer, head_metric.head)
         results.append(HeadAblationResult(
             layer=head_metric.layer,
             head=head_metric.head,
             representation_impact=rep_impact,
             kl_divergence=kl_val,
             bar_original=head_metric.bias_attention_ratio,
+            relevance_delta=rel_delta,
         ))
 
     results.sort(key=lambda r: r.representation_impact, reverse=True)

@@ -241,4 +241,149 @@ def heavy_compute(text, model_name, *, with_specialization=True,
     )
 
 
-__all__ = ["ComputeResult", "tokenize_with_segments", "heavy_compute"]
+
+
+# ── Batch file parsing ──────────────────────────────────────────────────
+
+# Column and key names accepted for each half of a reranker pair. A pair
+# file is recognised by having one of each, so a plain text corpus with a
+# "query" column but no passage still parses as single sentences.
+_QUERY_KEYS = ("query", "q", "question")
+_PASSAGE_KEYS = ("passage", "document", "doc", "passage_text", "text_b")
+_TEXT_KEYS = ("text", "sentence", "input", "content")
+
+PAIR_SEPARATOR = " [SEP] "
+
+
+@dataclass
+class BatchPayload:
+    """What a batch upload turned into.
+
+    ``sentences`` is always a flat list of strings, because every downstream
+    stage takes one string per item. A reranker pair is carried as
+    ``"query [SEP] passage"``, the same shape the prompt box produces, so
+    ``tokenize_with_segments`` encodes it as two segments.
+    """
+    sentences: list
+    is_pairs: bool = False
+    skipped: int = 0
+
+
+def _match_key(keys, candidates):
+    """First key in ``keys`` whose lowercased name is in ``candidates``."""
+    for candidate in candidates:
+        for k in keys:
+            if isinstance(k, str) and k.lower().strip() == candidate:
+                return k
+    return None
+
+
+def _pair_from_mapping(item, q_key, p_key):
+    """Join one mapping into a pair string, or None when a half is missing."""
+    query = (item.get(q_key) or "")
+    passage = (item.get(p_key) or "")
+    if not isinstance(query, str) or not isinstance(passage, str):
+        return None
+    query, passage = query.strip(), passage.strip()
+    if not query or not passage:
+        return None
+    return f"{query}{PAIR_SEPARATOR}{passage}"
+
+
+def parse_batch_payload(content: str, file_name: str, max_items: int = 500):
+    """Turn an uploaded CSV or JSON batch file into a ``BatchPayload``.
+
+    Accepts three shapes:
+
+    * a list of strings, or a column of them, for plain sentence batches;
+    * records with a text field (``text`` / ``sentence`` / ``input`` /
+      ``content``);
+    * records with both a query and a passage field, which is how a
+      cross-encoder reranker batch is given. Those are joined with an
+      explicit ``[SEP]`` so the pair survives into the segment ids.
+
+    Rows missing one half of a pair are counted in ``skipped`` rather than
+    silently dropped: a reranker cannot score half a pair, and an analyst
+    who uploads 200 rows and gets 180 results should be told why.
+    """
+    import csv
+    import io
+
+    sentences = []
+    is_pairs = False
+    skipped = 0
+
+    lower_name = (file_name or "").lower()
+
+    if lower_name.endswith(".json"):
+        import json as _json
+        data = _json.loads(content)
+        records = None
+        if isinstance(data, list):
+            if all(isinstance(x, str) for x in data):
+                sentences = [s.strip() for s in data if s.strip()]
+            elif all(isinstance(x, dict) for x in data):
+                records = data
+        elif isinstance(data, dict):
+            for key in ("pairs", "sentences", "texts", "data"):
+                if key in data and isinstance(data[key], list):
+                    inner = data[key]
+                    if all(isinstance(x, str) for x in inner):
+                        sentences = [s.strip() for s in inner if s.strip()]
+                    else:
+                        records = [x for x in inner if isinstance(x, dict)]
+                    break
+
+        if records:
+            keys = set()
+            for item in records:
+                keys.update(item.keys())
+            q_key = _match_key(keys, _QUERY_KEYS)
+            p_key = _match_key(keys, _PASSAGE_KEYS)
+            if q_key and p_key:
+                is_pairs = True
+                for item in records:
+                    joined = _pair_from_mapping(item, q_key, p_key)
+                    if joined:
+                        sentences.append(joined)
+                    else:
+                        skipped += 1
+            else:
+                t_key = _match_key(keys, _TEXT_KEYS)
+                for item in records:
+                    val = item.get(t_key) if t_key else None
+                    if isinstance(val, str) and val.strip():
+                        sentences.append(val.strip())
+
+    elif lower_name.endswith(".csv"):
+        reader = csv.DictReader(io.StringIO(content))
+        cols = reader.fieldnames or []
+        q_col = _match_key(cols, _QUERY_KEYS)
+        p_col = _match_key(cols, _PASSAGE_KEYS)
+
+        if q_col and p_col:
+            is_pairs = True
+            for row in reader:
+                joined = _pair_from_mapping(row, q_col, p_col)
+                if joined:
+                    sentences.append(joined)
+                else:
+                    skipped += 1
+        else:
+            text_col = _match_key(cols, _TEXT_KEYS)
+            if not text_col and cols:
+                text_col = cols[0]
+            if text_col:
+                for row in reader:
+                    val = (row.get(text_col) or "").strip()
+                    if val:
+                        sentences.append(val)
+
+    if len(sentences) > max_items:
+        sentences = sentences[:max_items]
+
+    return BatchPayload(sentences=sentences, is_pairs=is_pairs, skipped=skipped)
+
+
+__all__ = ["ComputeResult", "tokenize_with_segments", "heavy_compute",
+           "BatchPayload", "parse_batch_payload", "PAIR_SEPARATOR"]

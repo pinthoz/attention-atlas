@@ -408,8 +408,15 @@ def register_xai_handlers(
     _get_attn_source_mode,
     _get_bias_model_label,
     _resolve_faithfulness_results,
+    _bar_default,
 ):
-    """Wire up ablation / IG / perturbation / LRP renderers and exports."""
+    """Wire up ablation / IG / perturbation / LRP renderers and exports.
+
+    ``_bar_default`` returns the calibrated BAR cut-off for whatever source is
+    active. It must be used for every fallback: the cut-off is weight-specific
+    (2.50 BERT, 1.62 MiniLM L-6, 1.81 MiniLM L-12), so a literal 2.50 here
+    would silently mark reranker heads as unspecialised.
+    """
 
     def _has_detected_tokens(container_suffix: str = "") -> bool:
         """Whether the detector actually flagged a token on this side.
@@ -642,7 +649,7 @@ def register_xai_handlers(
         show_comparison = resolved_show_comparison and results_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
-        except Exception: bar_threshold = 2.5
+        except Exception: bar_threshold = _bar_default()
 
         # Get selected head for highlighting
         selected_head = None
@@ -720,6 +727,15 @@ def register_xai_handlers(
             c_id = f"ablation-chart-container{container_suffix}"
             chart_html = _deferred_plotly(fig, c_id)
 
+            # A reranker's decision is the relevance logit, so the ablation
+            # also reports how far removing the head moves it. The column
+            # only appears when there is such a logit: for BERT and GPT-2
+            # every value would be N/A.
+            has_relevance = any(
+                getattr(r, "relevance_delta", None) is not None
+                for r in results_data
+            )
+
             table_rows = []
             for rank, r in enumerate(results_data, 1):
                 impact_color = _impact_color(r.representation_impact, thresholds)
@@ -730,6 +746,22 @@ def register_xai_handlers(
                 kl_cell = f"{r.kl_divergence:.4f}" if r.kl_divergence is not None else "N/A"
                 specialized = "Yes" if r.bar_original > bar_threshold else "No"
                 row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
+                rel_cell = ""
+                if has_relevance:
+                    rel = getattr(r, "relevance_delta", None)
+                    if rel is None:
+                        rel_txt, rel_color = "N/A", "#94a3b8"
+                    else:
+                        # Signed on purpose: a head whose removal raises the
+                        # score was pushing the passage down, the opposite
+                        # reading from one whose removal lowers it.
+                        rel_txt = f"{rel:+.3f}"
+                        rel_color = "#ff5ca9" if abs(rel) >= 0.1 else "#64748b"
+                    rel_cell = (
+                        f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);'
+                        f'text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;'
+                        f'font-weight:700;color:{rel_color};">{rel_txt}</td>'
+                    )
                 table_rows.append(
                     f'<tr style="{row_bg}">'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
@@ -737,10 +769,16 @@ def register_xai_handlers(
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{impact_color};">{r.representation_impact:.4f}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:{kl_color};">{kl_cell}</td>'
+                    f'{rel_cell}'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
                     f'</tr>'
                 )
+
+            rel_header = (
+                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;'
+                'color:#475569;text-transform:uppercase;letter-spacing:0.5px;">&Delta; Score</th>'
+            ) if has_relevance else ""
 
             table_html = (
                 '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;">'
@@ -751,6 +789,7 @@ def register_xai_handlers(
                 '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
                 '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Impact</th>'
                 '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">KL Div</th>'
+                f'{rel_header}'
                 '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">BAR</th>'
                 '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Specialized</th>'
                 '</tr>'
@@ -782,6 +821,15 @@ def register_xai_handlers(
                 f'very high (&alpha;=0.01).'
                 f'</div>'
             )
+            if has_relevance:
+                legend_html += (
+                    '<div style="margin-top:4px;font-size:11px;color:#64748b;line-height:1.6;text-align:center;">'
+                    '<b>*</b>&nbsp;<b>&Delta; Score</b> is the change in the reranker&rsquo;s relevance '
+                    'logit when the head is zeroed (ablated &minus; original). Impact and KL measure the '
+                    'representation; &Delta; Score measures the decision the ranking is built on, so the '
+                    'two orderings need not agree.'
+                    '</div>'
+                )
             warning_html = ""
             if is_gpt2 and rank_by == "combined":
                 # Numbers from the 2026-06-12 re-calibration with the
@@ -838,6 +886,10 @@ def register_xai_handlers(
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>●</span>"
             f"<span><span style='{_TBP}'>KL Div</span>&nbsp;<span style='{_TC}'>KL(P_orig ‖ P_ablated)</span>"
             f"&nbsp;capturing the shift in output distribution</span></div>"
+            f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
+            f"<span><span style='{_TBR}'>Δ Score</span>&nbsp;<span style='{_TC}'>logit_ablated − logit_orig</span>"
+            f"&nbsp;for rerankers only: the effect on the relevance decision rather than on the "
+            f"representation. Shown as a column when a reranker is the audited model.</span></div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Faithfulness patterns</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
@@ -989,7 +1041,7 @@ def register_xai_handlers(
         show_comparison = resolved_show_comparison and bundle_B
 
         try: bar_threshold = float(input.bias_bar_threshold())
-        except Exception: bar_threshold = 2.5
+        except Exception: bar_threshold = _bar_default()
 
         # Get selected head/layer for highlighting
         selected_head = None
@@ -1937,7 +1989,7 @@ def register_xai_handlers(
         try:
             bar_threshold = float(input.bias_bar_threshold())
         except Exception:
-            bar_threshold = 2.5
+            bar_threshold = _bar_default()
 
         def _render_lrp_single(bundle, ig_bundle, container_suffix=""):
             if not bundle:

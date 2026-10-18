@@ -373,7 +373,8 @@ attention_analysis_page = ui.page_fluid(
                                 "Batch Mode", style="font-weight: 600; font-size: 13px;"
                             ),
                             ui.tags.span(
-                                "Upload a CSV or JSON to analyse multiple sentences at once.",
+                                "Upload a CSV or JSON to analyse many inputs at once: a text column, "
+                                "or query and passage columns for a reranker batch.",
                                 style="font-weight: 400; font-size: 11px; opacity: 0.85; margin-left: 4px;",
                             ),
                         ),
@@ -387,7 +388,8 @@ attention_analysis_page = ui.page_fluid(
                                 '<i class="fa-solid fa-cloud-arrow-up attn-batch-dropzone-icon" style="font-size: 20px; color: #94a3b8; margin-bottom: 4px;"></i>'
                             ),
                             ui.tags.div(
-                                "Drop CSV or JSON file here, or click to browse",
+                                "Drop CSV or JSON file here, or click to browse "
+                                "(text, or query + passage)",
                                 id="attn-batch-dropzone-label",
                                 style="color: #94a3b8; font-size: 12px; font-weight: 500; text-align: center;",
                             ),
@@ -1089,7 +1091,15 @@ attention_analysis_page = ui.page_fluid(
                         infoDiv.style.background = 'rgba(255, 92, 169, 0.1)';
                         infoDiv.style.color = '#ff5ca9';
                         nameSpan.textContent = msg.filename;
-                        countSpan.textContent = msg.count + ' sentences';
+                        // "pairs" when the file carried query/passage columns,
+                        // plus a note for rows dropped for missing one half.
+                        var unit = msg.unit || 'sentences';
+                        var txt = msg.count + ' ' + unit;
+                        if (msg.skipped) {
+                            txt += ' (' + msg.skipped + ' row'
+                                 + (msg.skipped === 1 ? '' : 's') + ' skipped)';
+                        }
+                        countSpan.textContent = txt;
                     }
                     if (icon) icon.style.display = 'none';
                     if (label) label.style.display = 'none';

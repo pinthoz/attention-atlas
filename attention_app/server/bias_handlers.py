@@ -12,6 +12,7 @@ _logger = logging.getLogger(__name__)
 
 
 from .csv_utils import csv_safe as _csv_safe
+from .logic import parse_batch_payload
 from .bias_helpers import (
     _GUSNET_TO_ENCODER, _GUSNET_TO_BASE, _GUSNET_DISPLAY_NAMES,
     _clean_gusnet_label,
@@ -745,6 +746,13 @@ def bias_server_handlers(input, output, session):
             return 2.5
         model_name = _selected_reranker_model()
         return _BAR_DEFAULTS.get(str(model_name), 2.5)
+
+    def _bar_threshold_value():
+        """The BAR cut-off in force: the slider, else the calibrated default."""
+        try:
+            return float(input.bias_bar_threshold())
+        except Exception:
+            return _bar_default_for_audited()
 
     def _remember_relevance(res_A, res_B):
         """Compute the relevance pair and keep it for the Notebook."""
@@ -2169,9 +2177,12 @@ def bias_server_handlers(input, output, session):
     @reactive.effect
     @reactive.event(input.batch_file_upload)
     async def parse_batch_file():
-        """Parse uploaded CSV or JSON file for batch mode."""
-        import csv
-        import io
+        """Parse uploaded CSV or JSON file for batch mode.
+
+        A file with both a query and a passage column is a reranker batch:
+        each row becomes one "query [SEP] passage" item, the same shape the
+        prompt box produces, so the pair reaches the model as two segments.
+        """
         file_info = input.batch_file_upload()
         if not file_info:
             return
@@ -2180,55 +2191,11 @@ def bias_server_handlers(input, output, session):
             file_path = file_info["datapath"]
             file_name = file_info["name"]
 
-            sentences = []
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            if file_name.lower().endswith(".json"):
-                data = json.loads(content)
-                if isinstance(data, list):
-                    if all(isinstance(x, str) for x in data):
-                        sentences = [s.strip() for s in data if s.strip()]
-                    elif all(isinstance(x, dict) for x in data):
-                        for item in data:
-                            for key in ("text", "sentence", "input", "content"):
-                                if key in item and isinstance(item[key], str) and item[key].strip():
-                                    sentences.append(item[key].strip())
-                                    break
-                elif isinstance(data, dict):
-                    for key in ("sentences", "texts", "data"):
-                        if key in data and isinstance(data[key], list):
-                            for item in data[key]:
-                                if isinstance(item, str) and item.strip():
-                                    sentences.append(item.strip())
-                                elif isinstance(item, dict):
-                                    for k in ("text", "sentence", "input"):
-                                        if k in item and isinstance(item[k], str) and item[k].strip():
-                                            sentences.append(item[k].strip())
-                                            break
-                            break
-            elif file_name.lower().endswith(".csv"):
-                reader = csv.DictReader(io.StringIO(content))
-                cols = reader.fieldnames or []
-                text_col = None
-                for candidate in ("text", "sentence", "input", "content"):
-                    for c in cols:
-                        if c.lower().strip() == candidate:
-                            text_col = c
-                            break
-                    if text_col:
-                        break
-                if not text_col and cols:
-                    text_col = cols[0]
-                if text_col:
-                    for row in reader:
-                        val = row.get(text_col, "").strip()
-                        if val:
-                            sentences.append(val)
-
-            MAX_BATCH_SIZE = 500
-            if len(sentences) > MAX_BATCH_SIZE:
-                sentences = sentences[:MAX_BATCH_SIZE]
+            payload = parse_batch_payload(content, file_name, max_items=500)
+            sentences = payload.sentences
 
             if sentences:
                 batch_sentences.set(sentences)
@@ -2236,11 +2203,14 @@ def bias_server_handlers(input, output, session):
                 await session.send_custom_message("batch_file_parsed", {
                     "filename": file_name,
                     "count": len(sentences),
+                    "unit": "pairs" if payload.is_pairs else "sentences",
+                    "skipped": payload.skipped,
                 })
             else:
                 batch_sentences.set([])
                 await session.send_custom_message("batch_file_parsed", {
-                    "error": "No sentences found in file",
+                    "error": ("Every row was missing a query or a passage"
+                              if payload.skipped else "No sentences found in file"),
                 })
         except Exception as e:
             batch_sentences.set([])
@@ -2464,10 +2434,14 @@ def bias_server_handlers(input, output, session):
                     top_k = min(10, len(metrics))
                     top_heads_local = sorted(metrics, key=lambda m: m.bias_attention_ratio, reverse=True)[:top_k]
                     tokenizer, encoder_model, lm_head_model = ModelManager.get_model(model_name)
+                    # None unless the audited model is a reranker, in which
+                    # case each head also reports its effect on the logit.
+                    relevance_model = ModelManager.get_relevance_head(model_name)
                     with ThreadPoolExecutor(max_workers=1) as pool:
                         ablation_list = await asyncio.wait_for(
                             loop.run_in_executor(pool, batch_ablate_top_heads,
-                                encoder_model, lm_head_model, tokenizer, text, top_heads_local, is_gpt2),
+                                encoder_model, lm_head_model, tokenizer, text, top_heads_local,
+                                is_gpt2, "zero", relevance_model),
                             timeout=120.0
                         )
                     if ablation_list:
@@ -2477,6 +2451,7 @@ def bias_server_handlers(input, output, session):
                                 "layer": a.layer, "head": a.head,
                                 "representation_impact": round(float(a.representation_impact), 6),
                                 "kl_divergence": round(float(a.kl_divergence), 6) if a.kl_divergence is not None else None,
+                                "relevance_delta": round(float(a.relevance_delta), 6) if a.relevance_delta is not None else None,
                                 "bar": round(float(a.bar_original), 4) if a.bar_original is not None else None,
                             })
                         sentence_data["ablation_analysis"] = abl_data
@@ -2579,7 +2554,8 @@ def bias_server_handlers(input, output, session):
             report = _build_batch_report(
                 per_sentence_results, all_bar_matrices,
                 bias_model_key, model_name, thresholds, use_optimized,
-                batch_file_name.get(), elapsed, n_total
+                batch_file_name.get(), elapsed, n_total,
+                bar_threshold=_bar_threshold_value(),
             )
         except Exception as e:
             _logger.exception("[batch] report build failed")
@@ -3281,12 +3257,19 @@ def bias_server_handlers(input, output, session):
             )
             _pending = lambda hint: "no detected tokens" if _no_tokens else hint
 
+            # The specialisation cut-off is weight-specific (2.50 BERT,
+            # 1.62 MiniLM L-6, 1.81 MiniLM L-12), so the colour bands follow
+            # the active source rather than the BERT literal. "Elevated" sits
+            # at 80% of the cut-off, which reproduces the old 2.0 for BERT.
+            _bar_cut = _bar_threshold_value()
+            _bar_elevated = _bar_cut * 0.8
+
             attn = res_data.get("attention_metrics", [])
             if attn:
                 bars = [m.bias_attention_ratio for m in attn]
                 mean_bar = sum(bars) / len(bars)
                 n_spec = sum(1 for m in attn if m.specialized_for_bias)
-                bar_color = "#dc2626" if mean_bar > 2.5 else ("#ea580c" if mean_bar > 2.0 else "#22c55e")
+                bar_color = "#dc2626" if mean_bar > _bar_cut else ("#ea580c" if mean_bar > _bar_elevated else "#22c55e")
                 bar_val, bar_sub = f"{mean_bar:.3f}", f"{n_spec}/{len(attn)} heads specialized"
             else:
                 bar_val, bar_color, bar_sub = "-", "#94a3b8", _pending("run Analyze Bias first")
@@ -3330,19 +3313,21 @@ def bias_server_handlers(input, output, session):
                 f"<hr style='{_TS}'>"
                 f"<span style='{_TH_lc}'>Thresholds</span>"
                 f"<div style='{_TR}'><span style='{_TD};color:#dc2626;'>●</span>"
-                f"<span>BAR &gt; 2.5 → <span style='{_TBR}'>bias-specialized</span></span></div>"
+                f"<span>BAR &gt; {_bar_cut:g} → <span style='{_TBR}'>bias-specialized</span></span></div>"
                 f"<div style='{_TR}'><span style='{_TD};color:#ea580c;'>●</span>"
-                f"<span>BAR &gt; 2.0 → <span style='{_TBA}'>elevated</span></span></div>"
+                f"<span>BAR &gt; {_bar_elevated:g} → <span style='{_TBA}'>elevated</span></span></div>"
                 f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-                f"<span>BAR ≤ 2.0 → <span style='{_TBG}'>normal</span></span></div>"
+                f"<span>BAR ≤ {_bar_elevated:g} → <span style='{_TBG}'>normal</span></span></div>"
                 f"<div style='{_TN};margin-top:6px;'>Higher values indicate stronger bias-driven attention patterns.</div>"
                 f"<hr style='{_TS}'>"
-                f"<span style='{_TH_lc}'>Why 2.5?</span>"
+                f"<span style='{_TH_lc}'>Why {_bar_cut:g}?</span>"
                 f"<div style='{_TN};margin-top:2px;'>95th percentile of a permutation-null distribution computed over the full v9 corpus "
-                f"(10 304 sentences × {{BERT, GPT-2}}, 200 permutations per head). At BAR=2.5, a head has &lt;5% "
-                f"probability of looking this bias-focused by chance. Re-validated on the GUS-Net fine-tuned "
-                f"trunks (null p95 = 2.37 BERT / 2.29 GPT-2), so the 2.5 cut-off transfers and is slightly "
-                f"conservative.</div>"
+                f"(10 304 sentences, 200 permutations per head), derived separately for each set of weights. "
+                f"At BAR={_bar_cut:g}, a head has &lt;5% probability of looking this bias-focused by chance. "
+                f"For BERT the cut-off is 2.5, re-validated on the GUS-Net fine-tuned trunks "
+                f"(null p95 = 2.37 BERT / 2.29 GPT-2) so it transfers and is slightly conservative; "
+                f"the MS MARCO rerankers have lower nulls and their own cut-offs "
+                f"(1.62 MiniLM L-6, 1.81 MiniLM L-12).</div>"
             )
             _tt_rho = (
                 f"<span style='{_TH_lc}'>What it measures</span>"
@@ -4608,16 +4593,18 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#ffffff;'>●</span>"
             f"<span><span style='{_TBA};color:#ffffff;'>BAR = 1.0</span>&nbsp;White, uniform attention, no bias focus</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ef4444;'>●</span>"
-            f"<span><span style='{_TBR}'>BAR &gt; 2.5</span>&nbsp;head <b>over-attends</b> to biased tokens</span></div>"
+            f"<span><span style='{_TBR}'>BAR &gt; {_bar_th:g}</span>&nbsp;head <b>over-attends</b> to biased tokens</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span><span style='{_TBB}'>BAR &lt; 1.0</span>&nbsp;head <b>avoids</b> biased tokens</span></div>"
             f"<hr style='{_TS}'>"
             f"<div style='{_TN}'>Red cells (BAR >= threshold) = candidate bias-specialised heads. Cross-reference with ablation to confirm causal impact.</div>"
             f"<hr style='{_TS}'>"
-            f"<span style='{_TH}'>Why 2.5?</span>"
-            f"<div style='{_TN};margin-top:2px;'>Empirical α=0.05 cut-off, the 95th percentile of a permutation null over the full v9 corpus (BERT + GPT-2). "
-            f"A head crossing 2.5 has &lt;5% chance of being this concentrated by accident. Re-validated on the GUS-Net "
-            f"fine-tuned trunks (null p95 = 2.37 BERT / 2.29 GPT-2): the 2.5 cut-off transfers.</div>"
+            f"<span style='{_TH}'>Why {_bar_th:g}?</span>"
+            f"<div style='{_TN};margin-top:2px;'>Empirical α=0.05 cut-off, the 95th percentile of a permutation null "
+            f"over the full v9 corpus, fitted separately for each set of weights. "
+            f"A head crossing {_bar_th:g} has &lt;5% chance of being this concentrated by accident. For BERT the value "
+            f"is 2.5, re-validated on the GUS-Net fine-tuned trunks (null p95 = 2.37 BERT / 2.29 GPT-2); the MS MARCO "
+            f"rerankers have their own cut-offs (1.62 MiniLM L-6, 1.81 MiniLM L-12).</div>"
         )
         header_args = (
             f"Bias Attention Matrix{_source_badge_html(src_label) if src_mode != 'compare' else ''}",
@@ -4790,7 +4777,7 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#ea580c;'>●</span>"
             f"<span><span style='{_TBA}'>Orange bars</span>&nbsp;BAR {0.8 * _bar_th:g}–{_bar_th:g} = moderate bias focus</span></div>"
             f"<hr style='{_TS}'>"
-            f"<div style='{_TN}'>The default cut-off 2.5 is the α=0.05 threshold of a permutation null fitted on the full v9 corpus. Click ← Layers to return to the layer overview.</div>"
+            f"<div style='{_TN}'>The cut-off {_bar_th:g} is the α=0.05 threshold of a permutation null fitted on the full v9 corpus for the active weights. Click ← Layers to return to the layer overview.</div>"
         )
 
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05);"
@@ -5068,9 +5055,15 @@ def bias_server_handlers(input, output, session):
                 is_g = "gpt2" in model_name
 
                 tokenizer, encoder_model, lm_head_model = ModelManager.get_model(model_name)
+                # For a reranker the ablation also reports how far removing the
+                # head moves the relevance logit, which is the decision being
+                # audited. The scoring model is passed so the hooks run on the
+                # modules that produce that logit.
+                relevance_model = ModelManager.get_relevance_head(model_name)
 
                 # We need to run sync code in executor
-                return (encoder_model, lm_head_model, tokenizer, text, top_heads_local, is_g)
+                return (encoder_model, lm_head_model, tokenizer, text, top_heads_local,
+                        is_g, "zero", relevance_model)
 
             # Prepare args for A
             args_A = _compute_single(res_A)
@@ -5135,6 +5128,7 @@ def bias_server_handlers(input, output, session):
         _get_attn_source_mode=_get_attn_source_mode,
         _get_bias_model_label=_get_bias_model_label,
         _resolve_faithfulness_results=_resolve_faithfulness_results,
+        _bar_default=_bar_default_for_audited,
     )
 
     # ── StereoSet handlers (extracted to bias_stereoset.py) ──────────

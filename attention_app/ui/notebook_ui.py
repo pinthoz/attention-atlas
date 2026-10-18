@@ -858,6 +858,14 @@ NOTEBOOK_JS = """
         Shiny.addCustomMessageHandler('nb_restore_client_inputs', function(payload) {
             var values = (payload && payload.values) || {};
             Object.keys(values).forEach(function(inputId) {
+                // Some of these ids belong to a bare <select> (the reranker
+                // picker). Pushing the input alone leaves the dropdown
+                // showing the previous model, so the screen would disagree
+                // with what the server is auditing. Write the DOM value too.
+                var el = document.getElementById(inputId);
+                if (el && el.tagName === 'SELECT') {
+                    el.value = values[inputId];
+                }
                 Shiny.setInputValue(inputId, values[inputId], {priority: 'event'});
             });
 

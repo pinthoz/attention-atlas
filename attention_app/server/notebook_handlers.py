@@ -117,7 +117,9 @@ _CONTEXT_INPUTS = [
     # dataset/thresholds_results/THRESHOLDS_CALIBRATION.md). These drive
     # the head-specialisation colour bands and the ablation Top-K, so an
     # audit entry is not reconstructable without them.
-    ("bias_bar_threshold",       "bias_bar_threshold",     "BAR specialisation threshold (calibrated α=0.05 default 2.5)"),
+    # The calibrated default is weight-specific (2.50 BERT, 1.62 MiniLM L-6,
+    # 1.81 MiniLM L-12), so the label states the rule, not one model's number.
+    ("bias_bar_threshold",       "bias_bar_threshold",     "BAR specialisation threshold (calibrated α=0.05, per model weights)"),
     ("bias_top_k",               "bias_top_k",             "Top-K heads shown (calibrated elbow default 5)"),
     # Active statistical criteria + attention source. Without these three
     # an entry made under the source toggle or a non-default alpha is not
@@ -180,6 +182,11 @@ _CLIENT_EVENT_INPUTS = {
     "bias_bar_threshold", "bias_top_k",
     "bias_attn_layer", "bias_attn_head",
     "bias_alpha", "bias_correction", "bias_attn_source",
+    # The reranker picker is a bare <select> driven by Shiny.setInputValue,
+    # not a Shiny widget, so update_text() has nothing to talk to and the
+    # restored entry would keep auditing whichever reranker was already
+    # selected.
+    "bias_reranker_model",
 }
 
 # Computed-metric keys, grouped by side. These are *outputs* of the
@@ -198,6 +205,11 @@ _METRIC_LABELS = {
     "att_metric_head_top_attending": "Top-5 tokens distributing attention (sel. head)",
     "att_metric_head_special_mass":  "Attention mass on [CLS]/[SEP]/[PAD] (sel. head)",
     "att_metric_head_specialization": "Selected-head specialisation",
+    # A cross-encoder's output is one relevance logit. Without it an entry
+    # records how the reranker attended but not what it decided.
+    "att_metric_relevance_logit":    "Relevance logit (cross-encoder)",
+    "att_metric_query_tokens":       "Query tokens (segment 0)",
+    "att_metric_passage_tokens":     "Passage tokens (segment 1)",
     # ── Attention global (across all layers/heads) ───────────────────
     "att_metric_global_top_attended": "Top-5 tokens receiving attention (global)",
     "att_metric_global_concentrated": "Top-5 most-concentrated heads (lowest normalised entropy)",
@@ -233,6 +245,10 @@ _METRIC_LABELS = {
     # ranking is built on, so an entry without it records the diagnosis
     # and loses the finding.
     "bias_metric_reranker_model":         "Audited reranker (evidence)",
+    "bias_metric_ablation_top_heads_by_relevance":
+        "Top heads by effect on the relevance logit (ablated - original)",
+    "bias_metric_ablation_max_relevance_delta":
+        "Largest absolute relevance-logit change from ablating one head",
     "bias_metric_relevance_a":            "Relevance logit (A)",
     "bias_metric_relevance_b":            "Relevance logit (B)",
     "bias_metric_relevance_delta":        "Relevance logit change (B - A)",
@@ -951,6 +967,47 @@ def _is_causal_matrix(mat) -> bool:
     return mat.shape[0] > 1 and float(_np.triu(mat, k=1).sum()) < 1e-6
 
 
+def _relevance_metrics(cached_result) -> Dict[str, Any]:
+    """Relevance logit and segment sizes for a cross-encoder result.
+
+    Empty for every other model: BERT and GPT-2 have no relevance head, so
+    there is nothing to record. Failures are swallowed because a Notebook
+    entry must still be creatable when the scoring head cannot be loaded.
+    """
+    out: Dict[str, Any] = {}
+    model_name = getattr(cached_result, "model_name", None)
+    if not model_name:
+        return out
+    try:
+        from ..models import ModelManager
+
+        if not ModelManager.is_cross_encoder(str(model_name)):
+            return out
+        head = ModelManager.get_relevance_head(str(model_name))
+        inputs = getattr(cached_result, "inputs", None)
+        if head is None or not inputs:
+            return out
+
+        import torch
+
+        device = next(head.parameters()).device
+        scored = {k: v.to(device) for k, v in inputs.items()
+                  if hasattr(v, "to")}
+        with torch.no_grad():
+            logit = float(head(**scored).logits.reshape(-1)[0])
+        out["att_metric_relevance_logit"] = round(logit, 4)
+
+        type_ids = inputs.get("token_type_ids")
+        if type_ids is not None:
+            ids = type_ids.reshape(-1).tolist()
+            n_passage = int(sum(1 for t in ids if t == 1))
+            out["att_metric_query_tokens"] = len(ids) - n_passage
+            out["att_metric_passage_tokens"] = n_passage
+    except Exception:
+        _logger.debug("Relevance metrics unavailable", exc_info=True)
+    return out
+
+
 def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, Any]:
     """Pull a comprehensive set of attention numbers from a ``ComputeResult``.
 
@@ -976,6 +1033,12 @@ def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, 
         import numpy as _np
     except Exception:
         return out
+    # A cross-encoder emits one relevance logit, and that logit is the
+    # decision the entry is about. It is scored from the cached inputs
+    # rather than re-tokenised, so the number belongs to exactly the
+    # forward pass whose attention the entry records.
+    out.update(_relevance_metrics(cached_result))
+
     try:
         tokens = list(getattr(cached_result, "tokens", []) or [])
         n_tok = len(tokens)
@@ -1347,6 +1410,25 @@ def _extract_ablation_metrics(ablation_list) -> Dict[str, Any]:
             out["bias_metric_ablation_mean_impact"] = round(
                 float(sum(impacts) / len(impacts)), 4
             )
+        # For a reranker, ablation also reports the effect on the relevance
+        # logit. That is a different quantity from the representation
+        # impact above and the two rankings do not have to agree, so the
+        # entry carries its own ordering rather than reusing the one above.
+        rel = [
+            r for r in ablation_list
+            if getattr(r, "relevance_delta", None) is not None
+        ]
+        if rel:
+            by_relevance = sorted(
+                rel, key=lambda r: abs(r.relevance_delta), reverse=True
+            )
+            out["bias_metric_ablation_top_heads_by_relevance"] = [
+                f"L{r.layer}H{r.head} Δlogit={r.relevance_delta:+.3f}"
+                for r in by_relevance[:3]
+            ]
+            out["bias_metric_ablation_max_relevance_delta"] = round(
+                float(by_relevance[0].relevance_delta), 4
+            )
     except Exception:
         pass
     return out
@@ -1699,11 +1781,57 @@ def _context_to_markdown(context: Optional[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+# Prompt fields that hold a joined "query [SEP] passage" pair when the
+# audited model is a cross-encoder.
+_PROMPT_KEYS = ("att_prompt_a", "att_prompt_b", "bias_prompt_a", "bias_prompt_b")
+
+
+def _context_is_reranker(context: Dict[str, Any]) -> bool:
+    """Whether this context was captured against a cross-encoder.
+
+    Decided from the recorded model ids, not from the presence of a [SEP]:
+    an analyst may type [SEP] into a BERT prompt to declare a sentence pair,
+    and that is not a query and a passage.
+    """
+    try:
+        from ..models import ModelManager
+    except Exception:
+        return False
+    for key in ("att_model_name_a", "att_model_name_b", "bias_reranker_model",
+                "att_metric_model_id", "att_metric_model_id_b"):
+        value = context.get(key)
+        if isinstance(value, str) and ModelManager.is_cross_encoder(value):
+            return True
+    return bool(context.get("bias_use_reranker"))
+
+
+def _split_pair_rows(json_key: str, label: str, value: Any,
+                     is_reranker: bool):
+    """Expand one prompt field into its query and passage halves.
+
+    Returns a list of (label, value) pairs: the two halves for a reranker
+    pair, otherwise the single original row. The joined form stays in the
+    stored JSON, which is what the restore handler reads back; only the
+    rendering is split, so the reader sees the pair as a pair.
+    """
+    if (is_reranker and json_key in _PROMPT_KEYS
+            and isinstance(value, str) and "[SEP]" in value):
+        left, _, right = value.partition("[SEP]")
+        left, right = left.strip(), right.strip()
+        if left and right:
+            return [(f"{label} - query", left), (f"{label} - passage", right)]
+    return [(label, value)]
+
+
 def _context_lines(context: Dict[str, Any], labels: Dict[str, str]) -> List[str]:
     lines = []
+    is_rr = _context_is_reranker(context)
     for json_key, label in labels.items():
-        if json_key in context:
-            lines.append(f"- **{label}:** {_format_context_value(context[json_key])}")
+        if json_key not in context:
+            continue
+        for row_label, row_value in _split_pair_rows(
+                json_key, label, context[json_key], is_rr):
+            lines.append(f"- **{row_label}:** {_format_context_value(row_value)}")
     return lines
 
 
@@ -1763,6 +1891,7 @@ def _entry_signals(entry: Dict[str, Any]) -> Dict[str, Any]:
 def _context_rows_html(ctx: Dict[str, Any], labels: Dict[str, str],
                        flagged: set) -> str:
     labels = _adjust_labels_for_context(labels, ctx)
+    is_rr = _context_is_reranker(ctx)
     rows = []
     for json_key, label in labels.items():
         if json_key not in ctx:
@@ -1771,12 +1900,14 @@ def _context_rows_html(ctx: Dict[str, Any], labels: Dict[str, str],
         if json_key in flagged:
             row_cls += " nb-ctx-row-warning"
         reg_link = _reg_link_html(json_key)
-        rows.append(
-            f'<div class="{row_cls}">'
-            f'<span class="nb-ctx-key">{_html.escape(label)}{reg_link}</span>'
-            f'<span class="nb-ctx-val">{_html.escape(_format_context_value(ctx[json_key]))}</span>'
-            f"</div>"
-        )
+        for row_label, row_value in _split_pair_rows(
+                json_key, label, ctx[json_key], is_rr):
+            rows.append(
+                f'<div class="{row_cls}">'
+                f'<span class="nb-ctx-key">{_html.escape(row_label)}{reg_link}</span>'
+                f'<span class="nb-ctx-val">{_html.escape(_format_context_value(row_value))}</span>'
+                f"</div>"
+            )
     return "".join(rows)
 
 
