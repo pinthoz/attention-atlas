@@ -1198,11 +1198,19 @@ def create_bias_sidebar():
                     if (biasInputA) Shiny.setInputValue('bias_input_text', biasInputA.value);
                     const biasInputB = document.getElementById('bias_input_text_B');
                     if (biasInputB) Shiny.setInputValue('bias_input_text_B', biasInputB.value);
+                    // A session always starts with the reranker audit off.
+                    // The toggle is never checked in the markup, but anything
+                    // that left it on (a stale DOM after a soft reload, a
+                    // restored control message that arrives early) would make
+                    // the Bias tab open on a query/passage pair instead of the
+                    // ordinary prompt. Force the known state rather than read
+                    // whatever the DOM happens to hold.
                     const rerankerToggle = document.getElementById('bias_use_reranker');
-                    window.setBiasReranker(
-                        rerankerToggle ? rerankerToggle.checked : false,
-                        false
-                    );
+                    if (rerankerToggle) rerankerToggle.checked = false;
+                    window.setBiasReranker(false, false);
+                    if (window.Shiny && Shiny.setInputValue) {
+                        Shiny.setInputValue('bias_use_reranker', false);
+                    }
                 });
 
                 // StereoSet: inject the chosen example into input B and

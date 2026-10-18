@@ -224,7 +224,7 @@ def create_attention_bias_matrix(
             "<span style='font-size:9px'>observed / expected attention</span><br><br>"
             "<span style='color:#3b82f6'>★</span> <b>&lt; 1.0</b> Under-attends<br>"
             "<span style='color:#93c5fd'>★</span> <b>= 1.0</b> Uniform<br>"
-            f"<span style='color:#dc2626'>★</span> <b>≥ {bar_threshold:.1f}</b> Specialised (α=0.05)<br>"
+            f"<span style='color:#dc2626'>★</span> <b>≥ {bar_threshold:g}</b> Specialised (α=0.05)<br>"
             "<span style='color:#7f1d1d'>★</span> <b>≥ 5.3</b> Strong (α=0.01)"
         ),
         showarrow=False,

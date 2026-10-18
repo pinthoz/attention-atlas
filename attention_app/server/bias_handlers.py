@@ -4890,7 +4890,7 @@ def bias_server_handlers(input, output, session):
                 note_html = (
                     f'<div style="padding:8px 12px;margin-bottom:8px;background:rgba(245,158,11,0.08);'
                     f'border:1px solid rgba(245,158,11,0.2);border-radius:6px;font-size:11px;color:#92400e;line-height:1.5;">'
-                    f'No heads exceed the specialization threshold ({bar_threshold:.1f}). '
+                    f'No heads exceed the specialization threshold ({bar_threshold:g}). '
                     f'Showing top-{len(top)} by BAR value. Bias may be lexical rather than concentrated in specific attention heads.'
                     f'</div>'
                 )
@@ -4961,7 +4961,7 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
             f"<span>Run <b>Integrated Gradients</b> to check faithfulness</span></div>"
         )
-        _heads_subtitle = f"Ranked by Bias Attention Ratio (BAR). Green dot = above specialisation threshold ({bar_threshold:.1f})."
+        _heads_subtitle = f"Ranked by Bias Attention Ratio (BAR). Green dot = above specialisation threshold ({bar_threshold:g})."
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05); margin-top: 16px;"
 
         # ── Compare attention sources (Base Encoder vs GUS-Net) ──

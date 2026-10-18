@@ -4888,7 +4888,7 @@ def server(input, output, session):
                 ("Displays how much each token attends to every other token (rows sum to 1)." if norm_mode == "raw" else
                  "Normalized by columns: shows which tokens receive the most attention overall (columns sum to 1)." if norm_mode == "col" else
                  f"Accumulated attention flow from input through layers 0→{layer_idx}, accounting for residual connections.") +
-                f" Brighter cells indicate stronger weights. ⚠️ Note that high attention ≠ importance or influence.{causal_desc}"
+                f" Darker cells indicate stronger weights. ⚠️ Note that high attention ≠ importance or influence.{causal_desc}"
             )),
             ui.div(
                 {"id": "multi-head-plot", "style": "flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%;"},
@@ -5969,6 +5969,14 @@ def server(input, output, session):
         if is_causal and norm_mode != "rollout":
             att = att.copy()
             att[np.triu_indices_from(att, k=1)] = np.nan
+        # The mask leaves the upper triangle blank, which has to be declared:
+        # without the note the panel looks like a model that simply pays no
+        # attention forwards. Side A says this already; side B did not, so a
+        # GPT-2 in slot B showed a half-empty map with no explanation.
+        causal_desc = (
+            " <span style='color:#ef4444;font-weight:bold;'>(Causal Mask Applied)</span>"
+            if is_causal else ""
+        )
 
         # ── Compare-mode delta: fetch Model A attention for same layer/head ──
         att_A_matrix = None
@@ -6218,7 +6226,7 @@ def server(input, output, session):
                 ("Displays how much each token attends to every other token (rows sum to 1)." if norm_mode == "raw" else
                  "Normalized by columns: shows which tokens receive the most attention overall (columns sum to 1)." if norm_mode == "col" else
                  f"Accumulated attention flow from input through layers 0→{layer_idx}, accounting for residual connections.") +
-                " Darker cells indicate stronger weights. ⚠️ Note that high attention ≠ importance or influence."
+                f" Darker cells indicate stronger weights. ⚠️ Note that high attention ≠ importance or influence.{causal_desc}"
             )),
             ui.div(
                 {"style": "flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%; height: 500px;"},

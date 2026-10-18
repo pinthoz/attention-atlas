@@ -1363,7 +1363,7 @@ def register_xai_handlers(
                     f"<hr style='{_TS}'/>"
                     f"<span style='{_TH}'>Heatmap reading</span>"
                     f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
-                    f"<span>Each cell = one (layer, head). Colour = Jaccard score. Darker = less overlap with IG.</span></div>"
+                    f"<span>Each cell = one (layer, head). Colour = Jaccard score. Darker = more overlap with IG.</span></div>"
                     f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
                     f"<span>Scatter on the right: Jaccard vs BAR (attention specialisation). Heads above the trend line are more faithful than their specialisation alone would predict.</span></div>"
                     f"<hr style='{_TS}'/>"

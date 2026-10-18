@@ -635,6 +635,29 @@ attention_analysis_page = ui.page_fluid(
                 window.__regularPromptValues = window.__regularPromptValues || {};
                 window.__regularBiasPromptValues = window.__regularBiasPromptValues || {};
 
+                // The pair is mirrored into the same text input the regular
+                // prompt lives in. If that mirrored value is ever remembered
+                // as "the regular prompt", leaving reranker mode restores the
+                // pair into BERT/GPT-2 and it looks like the default changed.
+                // A [SEP] the analyst typed by hand is NOT this: only the
+                // exact join of the two visible halves is refused.
+                window.__isMirroredPair = function(value, qId, pId) {
+                    if (typeof value !== 'string' || value.indexOf('[SEP]') === -1) {
+                        return false;
+                    }
+                    var q = document.getElementById(qId);
+                    var p = document.getElementById(pId);
+                    if (!q || !p) return false;
+                    var joined = (q.value || '').trim() + ' [SEP] ' + (p.value || '').trim();
+                    return value.trim() === joined;
+                };
+
+                // Remember a regular prompt unless it is the mirrored pair.
+                window.__rememberRegular = function(store, slot, value, qId, pId) {
+                    if (window.__isMirroredPair(value, qId, pId)) return;
+                    store[slot] = value;
+                };
+
                 window.restoreRegularPrompt = function(id, value) {
                     var input = document.getElementById(id);
                     if (!input || typeof value !== 'string') return;
@@ -664,24 +687,30 @@ attention_analysis_page = ui.page_fluid(
                     var wasRr = window.__rrLayoutActive === true;
 
                     if (typeof window.__regularPromptValues.A !== 'string') {
-                        window.__regularPromptValues.A = ta.value;
+                        window.__rememberRegular(window.__regularPromptValues, 'A',
+                            ta.value, 'query_input', 'passage_input');
                     }
                     if (typeof window.__regularPromptValues.B !== 'string') {
-                        window.__regularPromptValues.B = tb.value;
+                        window.__rememberRegular(window.__regularPromptValues, 'B',
+                            tb.value, 'query_input_B', 'passage_input_B');
                     }
 
                     // Capture edits made in the regular input before entering
                     // reranker mode. When leaving rerankers, put those exact
                     // values back into both the DOM and Shiny's input state.
                     if (isRr && !wasRr) {
-                        window.__regularPromptValues.A = ta.value;
-                        window.__regularPromptValues.B = tb.value;
+                        window.__rememberRegular(window.__regularPromptValues, 'A',
+                            ta.value, 'query_input', 'passage_input');
+                        window.__rememberRegular(window.__regularPromptValues, 'B',
+                            tb.value, 'query_input_B', 'passage_input_B');
                     } else if (!isRr && wasRr) {
                         window.restoreRegularPrompt('text_input', window.__regularPromptValues.A);
                         window.restoreRegularPrompt('text_input_B', window.__regularPromptValues.B);
                     } else if (!isRr) {
-                        window.__regularPromptValues.A = ta.value;
-                        window.__regularPromptValues.B = tb.value;
+                        window.__rememberRegular(window.__regularPromptValues, 'A',
+                            ta.value, 'query_input', 'passage_input');
+                        window.__rememberRegular(window.__regularPromptValues, 'B',
+                            tb.value, 'query_input_B', 'passage_input_B');
                     }
 
                     // Capture the rendered height of the regular six-row box
@@ -736,14 +765,18 @@ attention_analysis_page = ui.page_fluid(
                         }
 
                         if (typeof window.__regularBiasPromptValues.A !== 'string') {
-                            window.__regularBiasPromptValues.A = bta.value;
+                            window.__rememberRegular(window.__regularBiasPromptValues, 'A',
+                                bta.value, 'bias_query_input', 'bias_passage_input');
                         }
                         if (typeof window.__regularBiasPromptValues.B !== 'string') {
-                            window.__regularBiasPromptValues.B = btb.value;
+                            window.__rememberRegular(window.__regularBiasPromptValues, 'B',
+                                btb.value, 'bias_query_input_B', 'bias_passage_input_B');
                         }
                         if (isBiasRr && !wasBiasRr) {
-                            window.__regularBiasPromptValues.A = bta.value;
-                            window.__regularBiasPromptValues.B = btb.value;
+                            window.__rememberRegular(window.__regularBiasPromptValues, 'A',
+                                bta.value, 'bias_query_input', 'bias_passage_input');
+                            window.__rememberRegular(window.__regularBiasPromptValues, 'B',
+                                btb.value, 'bias_query_input_B', 'bias_passage_input_B');
                         } else if (!isBiasRr && wasBiasRr) {
                             window.restoreRegularPrompt(
                                 'bias_input_text', window.__regularBiasPromptValues.A
@@ -752,8 +785,10 @@ attention_analysis_page = ui.page_fluid(
                                 'bias_input_text_B', window.__regularBiasPromptValues.B
                             );
                         } else if (!isBiasRr) {
-                            window.__regularBiasPromptValues.A = bta.value;
-                            window.__regularBiasPromptValues.B = btb.value;
+                            window.__rememberRegular(window.__regularBiasPromptValues, 'A',
+                                bta.value, 'bias_query_input', 'bias_passage_input');
+                            window.__rememberRegular(window.__regularBiasPromptValues, 'B',
+                                btb.value, 'bias_query_input_B', 'bias_passage_input_B');
                         }
 
                         if (isBiasRr) {
