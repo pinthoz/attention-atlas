@@ -2732,7 +2732,8 @@ def bias_server_handlers(input, output, session):
                     create_bias_accordion(
                         requires_detections=not (
                             _detections_present(res) or _detections_present(res_B)
-                        )
+                        ),
+                        include_stereoset=not _bias_reranker_enabled(),
                     ),
                     create_floating_bias_toolbar(*_toolbar_dims(res),
                                                 bar_default=_bar_default_for_audited()),
@@ -2797,7 +2798,8 @@ def bias_server_handlers(input, output, session):
                         ui.HTML(preview_html),
                     ),
                     create_bias_accordion(
-                        requires_detections=not _detections_present(res)
+                        requires_detections=not _detections_present(res),
+                        include_stereoset=not _bias_reranker_enabled(),
                     ),
                     create_floating_bias_toolbar(*_toolbar_dims(res),
                                                 bar_default=_bar_default_for_audited()),
@@ -4582,6 +4584,10 @@ def bias_server_handlers(input, output, session):
                 )
                 return _deferred_plotly(fig, container_id, height="600px")
             except Exception as e: return f'<div style="color:red">Error: {_html.escape(str(e))}</div>'
+
+        # The tooltip quotes the cut-off in force, so it needs its own read:
+        # the one above lives inside the chart builder and is not in scope here.
+        _bar_th = _bar_threshold_value()
 
         _bar_help = (
             f"<span style='{_TH}'>Formula</span>"

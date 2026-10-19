@@ -1891,7 +1891,8 @@ def create_bias_content():
     )
 
 
-def create_bias_accordion(requires_detections: bool = False):
+def create_bias_accordion(requires_detections: bool = False,
+                          include_stereoset: bool = True):
     """Build the accordion panels for bias analysis (rendered after analysis).
 
     ``requires_detections`` marks the two dependent panels on their headers.
@@ -1931,6 +1932,33 @@ def create_bias_accordion(requires_detections: bool = False):
                 )
             )
         return ui.div({"style": "margin: 12px 0 8px;"}, *nodes)
+
+    # StereoSet scores sentences with a masked-language head, which a
+    # cross-encoder does not have. The panel is left out of the accordion
+    # rather than hidden on the client: this function re-renders on every
+    # analysis, so anything hidden from the client comes back next time.
+    stereoset_panel = ui.accordion_panel(
+        ui.span(
+            "StereoSet Evaluation",
+            ui.span({"class": "accordion-panel-badge benchmark"}, "Benchmark"),
+        ),
+        # Intro note + subsection headers are rendered server-side
+        # (see bias_stereoset.py) so each block of explanatory text only
+        # appears once its underlying StereoSet data is available, instead
+        # of showing all the copy up front above empty plot areas.
+        ui.output_ui("stereoset_intro_note"),
+        ui.output_ui("stereoset_overview_header"),
+        ui.output_ui("stereoset_overview"),
+        ui.output_ui("stereoset_category_header"),
+        ui.output_ui("stereoset_category_breakdown"),
+        ui.output_ui("stereoset_demographic_slices"),
+        ui.output_ui("stereoset_sensitivity_header"),
+        ui.output_ui("stereoset_head_sensitivity"),
+        ui.output_ui("stereoset_attention_bias_link"),
+        ui.output_ui("stereoset_explorer_header"),
+        ui.output_ui("stereoset_example_explorer"),
+        value="stereoset",
+    )
 
     return ui.accordion(
         # Panel 1: Overview & Detection
@@ -2051,28 +2079,7 @@ def create_bias_accordion(requires_detections: bool = False):
             value="ablation",
         ),
         # Panel 5: StereoSet Evaluation
-        ui.accordion_panel(
-            ui.span(
-                "StereoSet Evaluation",
-                ui.span({"class": "accordion-panel-badge benchmark"}, "Benchmark"),
-            ),
-            # Intro note + subsection headers are rendered server-side
-            # (see bias_stereoset.py) so each block of explanatory text only
-            # appears once its underlying StereoSet data is available, instead
-            # of showing all the copy up front above empty plot areas.
-            ui.output_ui("stereoset_intro_note"),
-            ui.output_ui("stereoset_overview_header"),
-            ui.output_ui("stereoset_overview"),
-            ui.output_ui("stereoset_category_header"),
-            ui.output_ui("stereoset_category_breakdown"),
-            ui.output_ui("stereoset_demographic_slices"),
-            ui.output_ui("stereoset_sensitivity_header"),
-            ui.output_ui("stereoset_head_sensitivity"),
-            ui.output_ui("stereoset_attention_bias_link"),
-            ui.output_ui("stereoset_explorer_header"),
-            ui.output_ui("stereoset_example_explorer"),
-            value="stereoset",
-        ),
+        *([stereoset_panel] if include_stereoset else []),
         id="bias_accordion",
         open="overview",
         multiple=True,

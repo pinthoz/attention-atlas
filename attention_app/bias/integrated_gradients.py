@@ -444,6 +444,29 @@ def compute_token_attributions(
     # Baseline: PAD (BERT) / <|endoftext|> (GPT-2)- see _baseline_token_id
     baseline_ids = torch.full_like(input_ids, _baseline_token_id(tokenizer))
 
+    if _is_reranker_target(target_model):
+        # A cross-encoder scores a PAIR, so blanking the whole sequence also
+        # blanks the query and the segment structure. The path from there to
+        # the real input runs through inputs the model never sees, the
+        # integral does not converge (87.7% completeness residual at 800
+        # steps on the demo pair), and the top attribution lands on a query
+        # token, which cannot explain the passage.
+        #
+        # Keep [CLS], the query and both [SEP] tokens and blank only the
+        # passage body. The baseline is then "this query with an empty
+        # passage", which is the contrast the question is actually about.
+        # Same pair, same model: 0.0% residual at 50 steps.
+        pad_id = _baseline_token_id(tokenizer)
+        keep_ids = {getattr(tokenizer, "cls_token_id", None),
+                    getattr(tokenizer, "sep_token_id", None)}
+        segment = _reranker_token_type_ids(input_ids, target_model)
+        passage_body = (segment == 1)
+        for special in keep_ids:
+            if special is not None:
+                passage_body &= input_ids != special
+        baseline_ids = torch.where(
+            passage_body, torch.full_like(input_ids, pad_id), input_ids)
+
     # Completeness span |F(x) − F(baseline)| is step-count independent.
     with torch.no_grad():
         f_x = forward_fn(input_ids, attention_mask)

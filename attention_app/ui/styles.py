@@ -4387,6 +4387,17 @@ __all__ = ["CSS"]
                 max-width: 100% !important;
             }
 
+            /* StereoSet scores sentences with a masked-language head, which a
+               cross-encoder does not have, so the panel is hidden while the
+               reranker audit is on. The rule lives here, in the always-present
+               stylesheet, rather than as an inline style set from JavaScript:
+               the bias accordion is rendered by the server and re-created when
+               results arrive, which wipes any inline style put on it. */
+            body.bias-reranker-enabled #bias_accordion
+                .accordion-item[data-value="stereoset"] {
+                display: none !important;
+            }
+
             /* Scrollable tables in bias panels (and any wide table) */
             #bias-content table,
             .bias-content table,

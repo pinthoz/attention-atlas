@@ -2335,7 +2335,70 @@ def get_reranker_head_view(res, suffix="", compact_compare=False):
         )
 
 
-def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode=False, custom_mask_indices=None):
+def _relevance_peers(head, tokenizer, query, current_logit, candidates):
+    """Score the other passages offered for the same query.
+
+    A raw relevance logit has no absolute meaning: the scale is whatever the
+    checkpoint was trained to produce, and no cut-off on it is calibrated.
+    What does mean something is where this passage sits among the candidates
+    competing for the same query, which is the quantity a ranking is built
+    on. ``candidates`` is a list of ``"query [SEP] passage"`` strings, as the
+    batch upload produces.
+
+    Returns ``(rank, total, logits)`` where ``logits`` holds every competing
+    passage's logit sorted descending, or ``None`` when fewer than two
+    passages compete. The rank is settled on the logits rather than by
+    matching the passage text: the current passage is rebuilt from token ids,
+    so its spacing and casing need not match the uploaded string.
+    """
+    if head is None or not candidates:
+        return None
+    sep = getattr(tokenizer, "sep_token", "[SEP]") or "[SEP]"
+    wanted = (query or "").strip().lower()
+    passages = []
+    for item in candidates:
+        if not isinstance(item, str) or sep not in item:
+            continue
+        left, _, right = item.partition(sep)
+        if left.strip().lower() != wanted:
+            continue
+        right = right.strip()
+        if right:
+            passages.append(right)
+    # Deduplicate while keeping the order they were uploaded in.
+    seen, unique = set(), []
+    for p in passages:
+        if p not in seen:
+            seen.add(p)
+            unique.append(p)
+    if not unique:
+        return None
+
+    device = next(head.parameters()).device
+    logits = []
+    with torch.no_grad():
+        for p in unique:
+            enc = tokenizer(query, p, return_tensors="pt", truncation=True,
+                            max_length=512)
+            enc = {k: v.to(device) for k, v in enc.items()}
+            logits.append(float(head(**enc).logits.reshape(-1)[0]))
+
+    # The current pair may or may not be one of the uploaded candidates. Its
+    # logit decides the rank either way: if it is in the list, one entry ties
+    # with it and the rank is the same.
+    tolerance = 1e-4
+    if not any(abs(v - current_logit) <= tolerance for v in logits):
+        logits.append(current_logit)
+    if len(logits) < 2:
+        return None
+    logits.sort(reverse=True)
+    rank = next(i + 1 for i, v in enumerate(logits)
+                if abs(v - current_logit) <= tolerance)
+    return rank, len(logits), logits
+
+
+def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode=False,
+                             custom_mask_indices=None, candidates=None):
     if not use_mlm:
         return ui.HTML(
             "<div class='prediction-panel'>"
@@ -2375,13 +2438,7 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
         lo, hi = -11.0, 11.0
         gauge_pct = max(0.0, min(100.0, (logit - lo) / (hi - lo) * 100.0))
         prob = 1.0 / (1.0 + math.exp(-logit))
-
-        if logit >= 2.0:
-            verdict, colour = "Relevant", "#22c55e"
-        elif logit >= -2.0:
-            verdict, colour = "Borderline", "#f59e0b"
-        else:
-            verdict, colour = "Not relevant", "#ef4444"
+        colour = "#3b82f6"
 
         # Segment split, read off the token type ids the pair was encoded with.
         # The tokens are recomputed here: the shared ``mlm_tokens`` below belongs
@@ -2416,6 +2473,29 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
         else:
             query_txt, _sep, passage_txt = (text or "").partition("[SEP]")
             query_txt, passage_txt = query_txt.strip(), passage_txt.strip()
+        # Relative reading: where this passage sits among the candidates for
+        # the same query. The badge used to assert a verdict from a cut-off on
+        # the raw logit, which is not calibrated and invites the question of
+        # where the cut-off came from. Rank among competing passages is the
+        # quantity the ranking is actually built on, so it is reported instead.
+        peers = _relevance_peers(head, tokenizer, query_txt, logit, candidates)
+        peer_ticks = ""
+        if peers:
+            rank, total, peer_logits = peers
+            verdict = f"#{rank} of {total} for this query"
+            rank_note = (
+                "top-ranked passage for this query" if rank == 1
+                else f"{peer_logits[0] - logit:+.2f} logit behind the top passage")
+            for _l in peer_logits:
+                tick = max(0.0, min(100.0, (_l - lo) / (hi - lo) * 100.0))
+                peer_ticks += (
+                    f'<div class="gauge-marker" style="left: {tick:.1f}%;'
+                    f'background:#94a3b8;width:2px;opacity:0.65;z-index:1;"></div>')
+        else:
+            verdict = "single passage"
+            rank_note = ("load more passages for this query in batch mode "
+                         "to rank it")
+
         query_txt = _esc(query_txt) or "&mdash;"
         passage_txt = _esc(passage_txt) or "&mdash;"
 
@@ -2431,16 +2511,15 @@ def get_output_probabilities(res, use_mlm, text, suffix="", top_k=5, manual_mode
                 <div class="metric-value-row">
                     <div class="metric-value" style="font-size:30px;">{logit:+.3f}</div>
                     <div class="metric-context">
-                        <span>The score the ranking is built on</span>
-                        <span style="color:#9ca3af;">Raw logit, not a probability</span>
+                        <span>{rank_note}</span>
+                        <span style="color:#9ca3af;">Raw logit, not a probability; only comparable within one query</span>
                     </div>
                 </div>
                 <div class="metric-gauge-wrapper">
                     <span class="gauge-scale-label">{lo:+.0f}</span>
                     <div class="metric-gauge-fixed">
-                        <div class="gauge-zone" style="width: 41%; background: #ef444430;"></div>
-                        <div class="gauge-zone" style="width: 18%; background: #f59e0b30;"></div>
-                        <div class="gauge-zone" style="width: 41%; background: #22c55e30;"></div>
+                        <div class="gauge-zone" style="width: 100%; background: #3b82f615;"></div>
+                        {peer_ticks}
                         <div class="gauge-marker" style="left: {gauge_pct:.1f}%; background: {colour}; z-index:2;"></div>
                     </div>
                     <span class="gauge-scale-label">{hi:+.0f}</span>

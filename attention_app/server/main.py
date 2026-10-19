@@ -1103,6 +1103,29 @@ def server(input, output, session):
     def trigger_mlm_B():
         show_mlm_B.set(True)
 
+    def _peer_candidates(suffix=""):
+        """Passages competing with this one for the same query.
+
+        Feeds the relative reading in the relevance panel: a raw logit has no
+        calibrated cut-off, so the panel reports where the passage sits among
+        the candidates for its query instead of asserting a verdict. The batch
+        upload is the main source. In a compare mode the other side is a
+        competing passage too, which is the counterfactual case, so it counts;
+        outside compare mode it does not, since the two boxes are then
+        unrelated prompts rather than candidates for one query.
+        """
+        items = [s for s in (attn_batch_sentences.get() or [])
+                 if isinstance(s, str)]
+        if active_compare_models.get() or active_compare_prompts.get():
+            other = "_B" if suffix == "" else ""
+            try:
+                value = getattr(input, "text_input" + other)()
+            except Exception:
+                value = None
+            if isinstance(value, str) and value.strip():
+                items.append(value.strip())
+        return items
+
     # ── Attention Batch Mode ──────────────────────────────────────────────
     attn_batch_sentences = reactive.value([])
     attn_batch_file_name = reactive.value("")
@@ -3249,7 +3272,8 @@ def server(input, output, session):
             {"class": "card card-compact-height", "style": "height: 100%;"},
             js_script,
             viz_header(title, desc, tooltip, controls=controls),
-            get_output_probabilities(res, use_mlm, text, top_k=top_k, manual_mode=manual_mode, custom_mask_indices=custom_mask_indices)
+            get_output_probabilities(res, use_mlm, text, top_k=top_k, manual_mode=manual_mode, custom_mask_indices=custom_mask_indices,
+                                     candidates=_peer_candidates(""))
         )
 
     @output
@@ -5699,7 +5723,8 @@ def server(input, output, session):
                 tooltip, 
                 controls=extra_controls
             ),
-            get_output_probabilities(res, use_mlm, text, suffix="_B", top_k=top_k, manual_mode=manual_mode, custom_mask_indices=custom_mask_indices)
+            get_output_probabilities(res, use_mlm, text, suffix="_B", top_k=top_k, manual_mode=manual_mode, custom_mask_indices=custom_mask_indices,
+                                     candidates=_peer_candidates("_B"))
         )
 
     @output

@@ -530,17 +530,48 @@ def register_xai_handlers(
             ):
                 return ui.HTML(_requires_detections("Faithfulness validation"))
             return None
+        if _auditing_reranker():
+            return _faithfulness_section_note(
+                "This section organizes the internal validation evidence for the reranker audit. "
+                "Every method here attributes over the relevance logit, the score the ranking is "
+                "built on. It asks whether attention to the tokens GUS-Net flagged is only "
+                "visually plausible or whether it aligns with gradient-based attributions, "
+                "perturbation tests, and causal interventions on that score."
+            )
         return _faithfulness_section_note(
             "This section organizes the internal validation evidence for the bias analysis. "
             "It asks whether attention is only visually plausible or whether it aligns with "
             "gradient-based attributions, perturbation tests, and causal interventions."
         )
 
+    def _auditing_reranker() -> bool:
+        """Whether the audited model is the cross-encoder reranker.
+
+        The attribution targets change with it: IG, perturbation and LRP
+        attribute over the relevance logit instead of the detector's evidence,
+        and ablation reports its effect on that logit. The copy has to follow,
+        or the panel describes a decision the model is not making.
+        """
+        try:
+            return _get_attn_source_mode("bias_attn_source") == "audited"
+        except Exception:
+            return False
+
     @output
     @render.ui
     def ig_section_header():
         if ig_running.get() or not ig_results.get():
             return None
+        if _auditing_reranker():
+            return _faithfulness_subsection_header(
+                "Gradient Agreement",
+                "Integrated Gradients is used as the primary attribution baseline, targeting the "
+                "reranker's relevance logit (which input tokens push this passage up or down the "
+                "ranking). The baseline keeps the query and blanks the passage body, so the "
+                "contrast is this query with an empty passage. These outputs show whether heads "
+                "that focus on the tokens GUS-Net flagged also align with gradient-based token "
+                "importance for the ranking decision.",
+            )
         return _faithfulness_subsection_header(
             "Gradient Agreement",
             "Integrated Gradients is used as the primary attribution baseline, targeting the "
@@ -605,6 +636,15 @@ def register_xai_handlers(
     def ablation_section_header():
         if ablation_running.get() or not ablation_results.get():
             return None
+        if _auditing_reranker():
+            return _faithfulness_subsection_header(
+                "Causal Head Intervention",
+                "Head ablation tests whether heads that appear bias-focused actually matter when "
+                "removed. Two quantities are reported and they need not agree: Impact and KL "
+                "measure how far the internal representation moves, while Δ Score measures how "
+                "far the relevance logit moves, which is the decision the ranking is built on. "
+                "This is the most directly causal part of the validation panel.",
+            )
         return _faithfulness_subsection_header(
             "Causal Head Intervention",
             "Head ablation tests whether heads that appear bias-focused actually change the model "
@@ -1402,16 +1442,37 @@ def register_xai_handlers(
         _faith_label = _attn_source_label(faith_src)
         _ig_faith_badge = _source_badge_html(_faith_label) if faith_src != "compare" else ""
 
+        # The target and the baseline both change with the audited model,
+        # so the method tooltip has to follow or it describes a decision
+        # the model is not making.
+        if _auditing_reranker():
+            _ig_setup_html = (
+                "Steps=64 &middot; Baseline = the query with the passage body "
+                "blanked, so the contrast is this query with an empty passage "
+                "&middot; via Captum LayerIntegratedGradients")
+            _ig_target_html = (
+                "Target F = the reranker's relevance logit - attributions answer "
+                "<i>which input tokens push this passage up or down the ranking</i>.")
+        else:
+            _ig_setup_html = (
+                "Steps=64 (bias target; 30 for the pooled-norm fallback) &middot; "
+                "Baseline=[PAD] (BERT) / &lt;|endoftext|&gt; (GPT-2) &middot; "
+                "via Captum LayerIntegratedGradients")
+            _ig_target_html = (
+                "Target F = GUS-Net detected-bias evidence (&Sigma; sigmoid of the "
+                "bias-label logits) - attributions answer <i>which input tokens "
+                "drive the bias detections</i>. Falls back to the pooled hidden-state "
+                "norm (labelled under the summary cards) only when the GUS-Net head "
+                "is unavailable or the attention source is the base encoder.")
+
         header_args = (
             f"Attention vs Integrated Gradients{_ig_faith_badge}",
             "Faithfulness test: do attention weights agree with gradient-based token importance?",
             f"<span style='{_TH}'>Method: Integrated Gradients (Sundararajan et al., 2017)</span>"
             f"<div style='{_TR};font-family:JetBrains Mono,monospace;font-size:10px;color:#e2e8f0;'>"
             f"IG(x) = (x−x′) × ∫₀¹ ∂F/∂x dα</div>"
-            f"<div style='{_TN}; margin-bottom:4px;'>Steps=64 (bias target; 30 for the pooled-norm fallback) · Baseline=[PAD] (BERT) / &lt;|endoftext|&gt; (GPT-2) · via Captum LayerIntegratedGradients</div>"
-            f"<div style='{_TN}; margin-bottom:4px;'>Target F = GUS-Net detected-bias evidence (Σ sigmoid of the bias-label logits) - "
-            f"attributions answer <i>which input tokens drive the bias detections</i>. Falls back to the pooled hidden-state norm "
-            f"(labelled under the summary cards) only when the GUS-Net head is unavailable or the attention source is the base encoder.</div>"
+            f"<div style='{_TN}; margin-bottom:4px;'>{_ig_setup_html}</div>"
+            f"<div style='{_TN}; margin-bottom:4px;'>{_ig_target_html}</div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Faithfulness metric: Spearman ρ(IG, Attention)</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
