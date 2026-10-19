@@ -1109,14 +1109,19 @@ def server(input, output, session):
         Feeds the relative reading in the relevance panel: a raw logit has no
         calibrated cut-off, so the panel reports where the passage sits among
         the candidates for its query instead of asserting a verdict. The batch
-        upload is the main source. In a compare mode the other side is a
-        competing passage too, which is the counterfactual case, so it counts;
-        outside compare mode it does not, since the two boxes are then
-        unrelated prompts rather than candidates for one query.
+        upload is the main source.
+
+        The other side counts only in compare-PROMPTS mode, where it really is
+        a second passage put up against the same query, which is the
+        counterfactual case. It must not count in compare-MODELS mode: there
+        the two sides are the same passage scored by two models, so the other
+        box is not a competitor. Counting it there ranked a passage against
+        itself, or against whatever the unused second box happened to hold.
+        Outside compare mode the two boxes are unrelated prompts.
         """
         items = [s for s in (attn_batch_sentences.get() or [])
                  if isinstance(s, str)]
-        if active_compare_models.get() or active_compare_prompts.get():
+        if active_compare_prompts.get():
             other = "_B" if suffix == "" else ""
             try:
                 value = getattr(input, "text_input" + other)()
@@ -4269,10 +4274,12 @@ def server(input, output, session):
             def paired_arrows(from_section, to_section, model_type_A=None, model_type_B=None,
                               to_section_B=None):
                 target_b = to_section if to_section_B is None else to_section_B
-                # The step into the reranker head is drawn on the diagonal,
-                # matching single mode.
-                dir_a = "diagonal" if to_section == "Reranker Head" else "vertical"
-                dir_b = "diagonal" if target_b == "Reranker Head" else "vertical"
+                # Always vertical here, including the step into the reranker
+                # head. In single mode that step is drawn on the diagonal
+                # because the card below sits to the left; in compare mode each
+                # side owns its own column, so the card below is directly
+                # underneath and a diagonal would point outside the column.
+                dir_a = dir_b = "vertical"
                 return ui.layout_columns(
                     ui.div(
                         {"style": "display: flex; justify-content: center; padding: 0; margin: 0;"},
