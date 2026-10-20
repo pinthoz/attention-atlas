@@ -4148,6 +4148,26 @@ def server(input, output, session):
                     arch_active_model = "A" if model_a_is_bert else "B"
                     arch_dual_color = False
 
+                # Three-column gallery, as in single mode, so the reranker
+                # column stays available in both compare modes. The layer
+                # count follows whichever family each side actually selected.
+                family_a = input.model_family()
+                family_b = input.model_family_B() if live_compare_models else family_a
+                _defaults = {"bert": 12, "gpt2": 12, "reranker": 6}
+                _layers = dict(_defaults)
+                _layers[family_a] = count_a
+                if live_compare_models:
+                    _layers[family_b] = count_b
+                gallery_entries_compare = [
+                    {"key": k, "model_type": k, "label": "", "layers": _layers[k]}
+                    for k in ("bert", "gpt2", "reranker")
+                ]
+                # Model A blue, model B pink. When both sides are the same
+                # family that column carries A's blue, since one outline
+                # cannot say "both" without claiming a contrast that is not
+                # there.
+                active_colors_compare = {family_b: "#ff5ca9", family_a: "#3b82f6"}
+
                 return ui.div(
                     {"id": "dashboard-container-compare", "class": "dashboard-stack"},
                     # Header: MODEL A | MODEL B
@@ -4168,18 +4188,15 @@ def server(input, output, session):
                     # - Same family in Compare Models: Only one architecture highlighted
                     ui.div(
                         {"style": "margin-top: 0px; zoom: 0.75; width: 100%; transform-origin: top center; margin-bottom: -40px;"}, # Zoom prevents extra space
-                        get_paired_architecture_section(
-                            model_type_a="bert", 
-                            model_type_b="gpt2",
-                            label_a="",
-                            label_b="",
-                            active_model=arch_active_model,
-                            dual_color=arch_dual_color,
-                            layers_a=layers_for_bert, # Passes to Diagram A (BERT default)
-                            layers_b=layers_for_gpt2, # Passes to Diagram B (GPT2 default)
-                            # Diagram A is BERT, diagram B is GPT-2, so blue
-                            # belongs to whichever of the two model A is.
-                            blue_side="a" if model_a_is_bert else "b"
+                        # Same three-column gallery as single mode. The old
+                        # paired section took exactly two diagrams and hard-coded
+                        # them to BERT and GPT-2, so the cross-encoder column
+                        # vanished the moment a compare mode was switched on,
+                        # even though a reranker can be compared like any other
+                        # family. Model A keeps blue and model B pink.
+                        get_architecture_gallery(
+                            gallery_entries_compare,
+                            active_colors=active_colors_compare,
                         )
                     ),
                     ui.HTML("<script>$('#generate_all').html('Generate All').prop('disabled', false).css('opacity', '1'); document.body.style.overflow = 'auto';</script>")

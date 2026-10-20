@@ -478,7 +478,7 @@ def get_architecture_section(model_type="bert", accent_color="#3b82f6", title_pr
     )
 
 
-def get_architecture_gallery(entries, active_key=None):
+def get_architecture_gallery(entries, active_key=None, active_colors=None):
     """Architectures Available with any number of columns.
 
     The paired version below takes exactly two diagrams, which stopped being
@@ -486,13 +486,25 @@ def get_architecture_gallery(entries, active_key=None):
 
     entries: list of dicts with keys ``key``, ``model_type``, ``label`` and
              optionally ``layers`` and ``color``.
-    active_key: the ``key`` of the family currently selected; that column is
-                outlined and the others are left plain.
+    active_key: the family currently selected. A single key, or several when
+                a compare mode puts two families in play at once; the matching
+                columns are outlined and the rest are left plain.
+    active_colors: optional ``{key: colour}`` so a compare mode can keep its
+                   own convention, model A in blue and model B in pink,
+                   instead of lighting both columns the same.
     """
     pink = "#ff5ca9"
     base_style = "transition: all 0.3s; border-radius: 12px; padding: 10px;"
-    style_on = f"{base_style} border: 2px solid {pink}; background: rgba(255, 92, 169, 0.05);"
     style_off = f"{base_style} border: 2px solid transparent;"
+
+    if active_key is None:
+        active = {}
+    elif isinstance(active_key, str):
+        active = {active_key: pink}
+    else:
+        active = {k: pink for k in active_key if k}
+    if active_colors:
+        active.update({k: v for k, v in active_colors.items() if k})
 
     columns = []
     for item in entries:
@@ -502,7 +514,12 @@ def get_architecture_gallery(entries, active_key=None):
             title_prefix=item.get("label") or None,
             layer_count_val=item.get("layers", 12),
         )
-        style = style_on if item.get("key") == active_key else style_off
+        colour = active.get(item.get("key"))
+        if colour:
+            style = (f"{base_style} border: 2px solid {colour}; "
+                     f"background: {colour}0D;")
+        else:
+            style = style_off
         columns.append(f'<div style="{style}">{diagram}</div>')
 
     return ui.HTML(

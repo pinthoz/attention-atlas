@@ -699,13 +699,36 @@ def bias_server_handlers(input, output, session):
             _logger.exception("[attn-source] Base encoder attention load failed")
             return None
 
+    def _relevance_one(res):
+        """Relevance logit of a single analysed text under the Bias reranker.
+
+        Returns ``None`` for anything that is not a reranker, which keeps the
+        reading out of the summary for BERT and GPT-2. The text carries the
+        pair as ``query [SEP] passage``; a text without the separator is
+        scored against an empty query rather than guessed at.
+        """
+        if not _bias_reranker_enabled():
+            return None
+        model_name = _selected_reranker_model()
+        if not model_name or not ModelManager.is_cross_encoder(model_name):
+            return None
+        text = (res or {}).get("text") or ""
+        if not text:
+            return None
+        query, sep, passage = text.partition("[SEP]")
+        if not sep:
+            query, passage = "", text
+        try:
+            return ModelManager.score_pair(model_name, query.strip(), passage.strip())
+        except Exception:
+            _logger.exception("[relevance] Could not score the pair with the reranker")
+            return None
+
     def _relevance_pair(res_A, res_B):
         """Relevance logits of both texts under the Bias reranker.
 
         Returns ``None`` for anything that is not a reranker, which is what
-        keeps the row out of the card for BERT and GPT-2. The text carries the
-        pair as ``query [SEP] passage``; a text without the separator is scored
-        against an empty query rather than guessed at.
+        keeps the row out of the card for BERT and GPT-2.
         """
         if not _bias_reranker_enabled():
             return None
@@ -714,13 +737,7 @@ def bias_server_handlers(input, output, session):
             return None
 
         def _score(res):
-            text = (res or {}).get("text") or ""
-            if not text:
-                return None
-            query, sep, passage = text.partition("[SEP]")
-            if not sep:
-                query, passage = "", text
-            return ModelManager.score_pair(model_name, query.strip(), passage.strip())
+            return _relevance_one(res)
 
         try:
             a, b = _score(res_A), _score(res_B)
@@ -3358,9 +3375,34 @@ def bias_server_handlers(input, output, session):
                 f"different noise floors, so the cut-off follows the active attention source.</div>"
                 f"<div style='{_TN};margin-top:6px;'>Identifies the head whose removal most disrupts the model's internal representation.</div>"
             )
+            # The relevance logit is the decision being audited, so it belongs
+            # in the summary of every run, not only inside the counterfactual
+            # card. That card needs a pair and a generated swap, which leaves
+            # single mode and both compare modes without the one number the
+            # ranking is built on.
+            _rel_card = ""
+            _rel = _relevance_one(res_data)
+            if _rel is not None:
+                _tt_rel = (
+                    f"<span style='{_TH_lc}'>What it measures</span>"
+                    f"<div style='{_TR}'><span style='{_TD};color:#8b5cf6;'>●</span>"
+                    f"<span>The audited reranker's relevance logit for this "
+                    f"query-passage pair, which is the score the ranking is "
+                    f"built on</span></div>"
+                    f"<hr style='{_TS}'>"
+                    f"<div style='{_TN};margin-top:2px;'>A raw logit, not a probability, "
+                    f"and it has no calibrated cut-off: only differences within one "
+                    f"query carry meaning. Compare it against the same query's other "
+                    f"passages, or against the counterfactual in compare-prompts mode.</div>"
+                )
+                _rel_card = _bcard(
+                    "Relevance logit", f"{_rel:+.3f}", "#8b5cf6",
+                    _selected_reranker_model().split("/")[-1], _tt_rel)
+
             bench_cards = (
                 '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(226,232,240,0.4);">'
                 '<div class="metrics-grid">'
+                + _rel_card
                 + _bcard("Mean BAR", bar_val, bar_color, bar_sub, _tt_bar)
                 + _bcard("Median |IG ρ|", rho_val, rho_color, rho_sub, _tt_rho)
                 + _bcard("Max Ablation Δ", abl_val, abl_color, abl_sub, _tt_abl)
