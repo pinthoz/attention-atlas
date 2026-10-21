@@ -575,7 +575,13 @@ NOTEBOOK_CSS = """
     border-radius: 6px;
     padding: 10px 12px;
     display: grid;
-    grid-template-columns: minmax(140px, max-content) 1fr;
+    /* The label column is capped. With max-content it grew to the longest
+       label in the block, and since the labels never wrapped, one long one
+       such as "TOP BIASED TOKENS WITH SCORES" took the row and left the value
+       a sliver, breaking "muscles, women, one" at two characters a line. The
+       second track uses minmax(0, 1fr) so it may shrink below its content's
+       natural width instead of pushing the grid wider. */
+    grid-template-columns: minmax(110px, 38%) minmax(0, 1fr);
     gap: 4px 14px;
     font-size: 11.5px;
     line-height: 1.45;
@@ -613,13 +619,19 @@ NOTEBOOK_CSS = """
     font-size: 10px;
     letter-spacing: 0.4px;
     padding-top: 2px;
-    white-space: nowrap;
+    /* Long labels wrap onto a second line rather than widening the column,
+       which is what starved the value column. */
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 .nb-ctx-val {
     color: #1e293b;
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    word-break: break-word;
+    /* break-word only splits a token that cannot fit on a line of its own,
+       so "muscles, women, one" wraps between words while a long model id
+       still breaks instead of overflowing. */
+    overflow-wrap: break-word;
 }
 .nb-ctx-preview-wrapper {
     margin: 8px 0 14px 0;
