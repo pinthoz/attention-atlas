@@ -954,8 +954,25 @@ def create_method_info_html(model_key: str = "gusnet-bert") -> str:
     )
 
 
-def create_ratio_formula_html() -> str:
-    """Render the Bias Attention Ratio formula as an academic-style panel."""
+def create_ratio_formula_html(bar_threshold: float = 2.5,
+                              bar_threshold_strong: float = 5.3,
+                              bar_moderate: float = None,
+                              weights_label: str = None,
+                              per_category: bool = True) -> str:
+    """Render the Bias Attention Ratio formula as an academic-style panel.
+
+    Every cut-off quoted here is a property of one set of weights, so the
+    caller passes the ones in force rather than the panel naming the BERT
+    numbers. ``bar_threshold`` / ``bar_threshold_strong`` are the alpha=0.05
+    and alpha=0.01 percentiles of that model's permutation null,
+    ``bar_moderate`` the boundary of the "elevated" colour band (80% of the
+    cut-off, as in the per-head colouring), ``weights_label`` names the
+    audited model when it is not the BERT/GPT-2 pair, and ``per_category``
+    is set False for weights whose GEN / UNFAIR / STEREO cut-offs were
+    never calibrated.
+    """
+    if bar_moderate is None:
+        bar_moderate = bar_threshold * 0.8
 
     # ── CSS helper: inline fraction ──
     def frac(num: str, den: str, color: str = "#e2e8f0") -> str:
@@ -1034,15 +1051,20 @@ def create_ratio_formula_html() -> str:
         # ── Recommended cut-offs with badges ──
         f'<span style="{_TH2}">Recommended cut-offs</span>'
         f'<div style="{_TR}"><span style="{_TD};color:#ef4444;">●</span>'
-        f'<span><span style="{_badge_05}">&alpha;=0.05 &middot; BAR 2.5</span>'
+        f'<span><span style="{_badge_05}">&alpha;=0.05 &middot; BAR {bar_threshold:g}</span>'
         f'&nbsp;<b style="color:#f1f5f9;">Default.</b> Only 5% of random head configurations '
         f"look this concentrated; the rest is genuine signal.</span></div>"
         f'<div style="{_TR}"><span style="{_TD};color:#fca5a5;">●</span>'
-        f'<span><span style="{_badge_01}">&alpha;=0.01 &middot; BAR 5.3</span>'
+        f'<span><span style="{_badge_01}">&alpha;=0.01 &middot; BAR {bar_threshold_strong:g}</span>'
         f"&nbsp;Stricter: only 1% by chance. Use for thesis-grade claims about "
         f"specific heads.</span></div>"
         f'<hr style="{_TS}">'
         # ── Per-category cut-offs (finer granularity) ──
+        + (f'<div style="{_TR}"><span style="{_TD};color:#94a3b8;">●</span>'
+           f"<span>The per-category cut-offs (GEN / UNFAIR / STEREO) were only "
+           f"calibrated on the BERT and GPT-2 trunks, so they are not shown for "
+           f'these weights.</span></div><hr style="{_TS}">'
+           if not per_category else
         f'<span style="{_TH2}">Per-category (finer granularity)</span>'
         f'<div style="{_TR}"><span style="{_TD};color:#f59e0b;">●</span>'
         f'<span><span style="{_badge_05}">GEN &middot; BAR 4.0</span>'
@@ -1055,9 +1077,9 @@ def create_ratio_formula_html() -> str:
         f'<span><span style="{_badge_05}">STEREO &middot; BAR 2.2</span>'
         f"&nbsp;Lowest cut-off, but observed signal is weak "
         f"(stereotype patterns are diffuse rather than concentrated).</span></div>"
-        f'<hr style="{_TS}">'
+        f'<hr style="{_TS}">')
         # ── Related: Top-K calibration ──
-        f'<span style="{_TH2}">Related: Top-K slider</span>'
+        + f'<span style="{_TH2}">Related: Top-K slider</span>'
         f'<div style="{_TR}"><span style="{_TD};color:#a78bfa;">●</span>'
         f'<span><b style="color:#f1f5f9;">K = 5</b> default. Comes from a separate ablation '
         f"analysis on the same v9 corpus: we ablated the top-1, top-2, ..., top-20 heads "
@@ -1092,10 +1114,19 @@ def create_ratio_formula_html() -> str:
         f"architectural difference; other confounds may contribute.</span></div>"
         f'<hr style="{_TS}">'
         # ── Footer note ──
-        f'<div style="{_TN}">BERT and GPT-2 converged on near-identical BAR thresholds '
-        f"(&Delta;&lt;5%), so one combined default works for both. The slider lets you "
-        f"tighten to &alpha;=0.01 without restart; values below 2.0 fall inside the null "
-        f"and are not distinguishable from chance.</div>"
+        + (
+            f'<div style="{_TN}">BERT and GPT-2 converged on near-identical BAR thresholds '
+            f"(&Delta;&lt;5%), so one combined default works for both. The slider lets you "
+            f"tighten to &alpha;=0.01 without restart; values below {bar_moderate:.1f} fall "
+            f"inside the null and are not distinguishable from chance.</div>"
+            if weights_label is None else
+            f'<div style="{_TN}">These cut-offs were derived on the weights now '
+            f"audited ({weights_label}), from the same permutation null: BAR "
+            f"{bar_threshold:g} at &alpha;=0.05 and {bar_threshold_strong:g} at "
+            f"&alpha;=0.01. The BERT numbers do not transfer. The slider lets you "
+            f"tighten without restart; values below {bar_moderate:.1f} fall inside "
+            f"the null and are not distinguishable from chance.</div>"
+        )
     )
 
     # NOTE: no outer card here - the caller (bias_ratio_formula) wraps this
@@ -1184,13 +1215,14 @@ def create_ratio_formula_html() -> str:
         "Uniform baseline (head treats biased and non-biased tokens equally)"
         "<br>"
         '<code style="background:#fee2e2;padding:1px 6px;border-radius:3px;'
-        'font-size:10px;color:#991b1b;">&gt; 2.5</code> '
+        f'font-size:10px;color:#991b1b;">&gt; {bar_threshold:g}</code> '
         "<b>Specialised</b> at &alpha;=0.05 - head disproportionately attends to biased tokens "
-        "<br>"
-        '<code style="background:#fecaca;padding:1px 6px;border-radius:3px;'
-        'font-size:10px;color:#7f1d1d;">&gt; 5.3</code> '
-        "<b>Strongly specialised</b> at &alpha;=0.01 - extreme concentration on biased tokens"
-        "</div>"
+        + ("" if bar_threshold_strong is None else (
+            "<br>"
+            '<code style="background:#fecaca;padding:1px 6px;border-radius:3px;'
+            f'font-size:10px;color:#7f1d1d;">&gt; {bar_threshold_strong:g}</code> '
+            "<b>Strongly specialised</b> at &alpha;=0.01 - extreme concentration on biased tokens"))
+        + "</div>"
         "</div>"
     )
 

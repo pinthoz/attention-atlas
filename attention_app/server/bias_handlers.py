@@ -757,12 +757,36 @@ def bias_server_handlers(input, output, session):
         "cross-encoder/ms-marco-MiniLM-L-12-v2": 1.81,
     }
 
+    # The 99th percentile of the same permutation null, from
+    # dataset/thresholds_results/bar_bsr/thresholds_reranker_full.json.
+    _BAR_STRONG_DEFAULTS = {
+        "cross-encoder/ms-marco-MiniLM-L-6-v2": 2.71,
+        "cross-encoder/ms-marco-MiniLM-L-12-v2": 3.38,
+    }
+
+    _BAR_LABELS = {
+        "cross-encoder/ms-marco-MiniLM-L-6-v2": "MS MARCO MiniLM L-6",
+        "cross-encoder/ms-marco-MiniLM-L-12-v2": "MS MARCO MiniLM L-12",
+    }
+
     def _bar_default_for_audited():
         """Calibrated BAR cut-off for the optional Bias reranker."""
         if not _bias_reranker_enabled():
             return 2.5
         model_name = _selected_reranker_model()
         return _BAR_DEFAULTS.get(str(model_name), 2.5)
+
+    def _bar_strong_for_audited():
+        """The alpha=0.01 cut-off for the weights in force."""
+        if not _bias_reranker_enabled():
+            return 5.3
+        return _BAR_STRONG_DEFAULTS.get(str(_selected_reranker_model()), 5.3)
+
+    def _bar_weights_label():
+        """Name the audited reranker, or None for the BERT/GPT-2 pair."""
+        if not _bias_reranker_enabled():
+            return None
+        return _BAR_LABELS.get(str(_selected_reranker_model()), "the audited reranker")
 
     def _bar_threshold_value():
         """The BAR cut-off in force: the slider, else the calibrated default."""
@@ -3526,7 +3550,15 @@ def bias_server_handlers(input, output, session):
             {"style": "background:linear-gradient(135deg,#f8fafc,#f0f4f8);"
                       "border:1px solid #e2e8f0;border-radius:12px;"
                       "padding:16px 20px;margin-bottom:16px;"},
-            ui.HTML(create_ratio_formula_html()),
+            # Weight-specific cut-offs: the reranker nulls give their own
+            # alpha=0.05 and alpha=0.01 percentiles, and their per-category
+            # levels were never calibrated, so that block is withheld.
+            ui.HTML(create_ratio_formula_html(
+                bar_threshold=_bar_threshold_value(),
+                bar_threshold_strong=_bar_strong_for_audited(),
+                weights_label=_bar_weights_label(),
+                per_category=not _bias_reranker_enabled(),
+            )),
             # Head-survival readout (alpha + multiplicity correction live in the
             # floating toolbar). No top divider line above it, by request.
             ui.div(
@@ -3607,6 +3639,34 @@ def bias_server_handlers(input, output, session):
         if len(_audited_pvals_cache) > 8:
             _audited_pvals_cache.clear()
         _audited_pvals_cache[key] = data
+        return data
+
+    _audited_pvals_cache_B = {}
+
+    def _bias_head_pvalues_audited_B(compute: bool = True):
+        """The B side of the audited readout, for the compare modes.
+
+        Without it a compare run fell back to the GUS-Net numbers on both
+        sides: the readout counted 144 heads, the BERT trunk's, while the BAR
+        panel above it showed the reranker's 72. The counterfactual flow
+        always lands in compare-prompts, so that was the state the demo ran in.
+        """
+        res = bias_results_B.get()
+        if not res or not _bias_reranker_enabled():
+            return None
+        key = (res.get("text"), res.get("bias_model_key"),
+               _selected_reranker_model())
+        if key in _audited_pvals_cache_B:
+            return _audited_pvals_cache_B[key]
+        if not compute:
+            return None
+        audited = _get_audited_resolved(res, _audited_attn_cache_B)
+        if not audited:
+            return None
+        data = _compute_head_pvalues(audited)
+        if len(_audited_pvals_cache_B) > 8:
+            _audited_pvals_cache_B.clear()
+        _audited_pvals_cache_B[key] = data
         return data
 
     def _peek_base_resolved():
@@ -3759,8 +3819,20 @@ def bias_server_handlers(input, output, session):
                         "#8b5cf6"))
             return ui.HTML(html_A)
 
-        # Compare mode: A and B side by side.
-        html_B = _alpha_survival_html(_bias_head_pvalues_B(), alpha, correction)
+        # Compare mode: A and B side by side. With the reranker audit on, both
+        # sides must be counted on the reranker's heads, which is the model the
+        # BAR panel above is showing. Falling through to the GUS-Net numbers
+        # here reported 144 heads against a panel of 72.
+        if _bias_reranker_enabled():
+            data_aud_A = _bias_head_pvalues_audited()
+            data_aud_B = _bias_head_pvalues_audited_B()
+            if data_aud_A is not None and data_aud_B is not None:
+                html_A = _alpha_survival_html(data_aud_A, alpha, correction)
+                html_B = _alpha_survival_html(data_aud_B, alpha, correction)
+            else:
+                html_B = _alpha_survival_html(_bias_head_pvalues_B(), alpha, correction)
+        else:
+            html_B = _alpha_survival_html(_bias_head_pvalues_B(), alpha, correction)
         res_A = bias_results.get()
         res_B = bias_results_B.get()
         label_A = _get_label(res_A, True, compare_m) if res_A else "A"
