@@ -775,6 +775,14 @@ def register_xai_handlers(
                 getattr(r, "relevance_delta", None) is not None
                 for r in results_data
             )
+            # KL is taken over the language-model distribution, and a
+            # cross-encoder has no such head, so every cell would read N/A.
+            # The column and its thresholds are dropped rather than shown
+            # empty, the same way Delta Score is dropped for BERT and GPT-2.
+            has_kl = any(
+                getattr(r, "kl_divergence", None) is not None
+                for r in results_data
+            )
 
             table_rows = []
             for rank, r in enumerate(results_data, 1):
@@ -784,6 +792,11 @@ def register_xai_handlers(
                     if r.kl_divergence is not None else "#64748b"
                 )
                 kl_cell = f"{r.kl_divergence:.4f}" if r.kl_divergence is not None else "N/A"
+                kl_td = (
+                    f'<td style="padding:8px 12px;border-bottom:1px solid '
+                    f'rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,'
+                    f'monospace;font-size:12px;font-weight:700;color:{kl_color};">{kl_cell}</td>'
+                ) if has_kl else ""
                 specialized = "Yes" if r.bar_original > bar_threshold else "No"
                 row_bg = "background:rgba(255,92,169,0.12);" if selected_head and (r.layer, r.head) == selected_head else ""
                 rel_cell = ""
@@ -808,12 +821,17 @@ def register_xai_handlers(
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{impact_color};">{r.representation_impact:.4f}</td>'
-                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:{kl_color};">{kl_cell}</td>'
+                    f'{kl_td}'
                     f'{rel_cell}'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
                     f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
                     f'</tr>'
                 )
+
+            kl_header = (
+                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;'
+                'color:#475569;text-transform:uppercase;letter-spacing:0.5px;">KL Div</th>'
+            ) if has_kl else ""
 
             rel_header = (
                 '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;'
@@ -828,7 +846,7 @@ def register_xai_handlers(
                 '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Layer</th>'
                 '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
                 '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Impact</th>'
-                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">KL Div</th>'
+                f'{kl_header}'
                 f'{rel_header}'
                 '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">BAR</th>'
                 '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Specialized</th>'
@@ -851,22 +869,25 @@ def register_xai_handlers(
                 f'font-family:JetBrains Mono,monospace;">&ge; {thresholds["very_high"]:.4f}</span> '
                 f'very high impact (&alpha;=0.01).'
                 f'</div>'
-                f'<div style="margin-top:4px;font-size:11px;color:#64748b;line-height:1.6;text-align:center;">'
-                f'<b>*</b>&nbsp;KL divergence thresholds (scale-invariant alternative): '
-                f'<span style="color:{_kl_color(thresholds["kl_high"], thresholds)};font-weight:700;'
-                f'font-family:JetBrains Mono,monospace;">&ge; {thresholds["kl_high"]:.4f}</span> '
-                f'high (&alpha;=0.05) &middot; '
-                f'<span style="color:{_kl_color(thresholds["kl_very_high"], thresholds)};font-weight:700;'
-                f'font-family:JetBrains Mono,monospace;">&ge; {thresholds["kl_very_high"]:.4f}</span> '
-                f'very high (&alpha;=0.01).'
-                f'</div>'
+                + ("" if not has_kl else
+                   f'<div style="margin-top:4px;font-size:11px;color:#64748b;line-height:1.6;text-align:center;">'
+                   f'<b>*</b>&nbsp;KL divergence thresholds (scale-invariant alternative): '
+                   f'<span style="color:{_kl_color(thresholds["kl_high"], thresholds)};font-weight:700;'
+                   f'font-family:JetBrains Mono,monospace;">&ge; {thresholds["kl_high"]:.4f}</span> '
+                   f'high (&alpha;=0.05) &middot; '
+                   f'<span style="color:{_kl_color(thresholds["kl_very_high"], thresholds)};font-weight:700;'
+                   f'font-family:JetBrains Mono,monospace;">&ge; {thresholds["kl_very_high"]:.4f}</span> '
+                   f'very high (&alpha;=0.01).'
+                   f'</div>')
             )
             if has_relevance:
                 legend_html += (
                     '<div style="margin-top:4px;font-size:11px;color:#64748b;line-height:1.6;text-align:center;">'
                     '<b>*</b>&nbsp;<b>&Delta; Score</b> is the change in the reranker&rsquo;s relevance '
-                    'logit when the head is zeroed (ablated &minus; original). Impact and KL measure the '
-                    'representation; &Delta; Score measures the decision the ranking is built on, so the '
+                    'logit when the head is zeroed (ablated &minus; original). '
+                    + ('Impact and KL measure the representation' if has_kl
+                       else 'Impact measures the representation') +
+                    '; &Delta; Score measures the decision the ranking is built on, so the '
                     'two orderings need not agree.'
                     '</div>'
                 )
