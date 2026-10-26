@@ -3307,7 +3307,19 @@ def bias_server_handlers(input, output, session):
             _bar_cut = _bar_threshold_value()
             _bar_elevated = _bar_cut * 0.8
 
-            attn = res_data.get("attention_metrics", [])
+            # BAR is an attention quantity, so it has to come from the source
+            # under audit. res_data is always the GUS-Net result, and reading
+            # it directly made this card report the trunk's 144 heads while
+            # the Relevance logit card beside it named the reranker's 72.
+            _bar_src = res_data
+            if _bias_reranker_enabled():
+                _cache = (_audited_attn_cache_B if res_data is res_B
+                          else _audited_attn_cache)
+                _aud = _get_audited_resolved(res_data, _cache)
+                if _aud:
+                    _bar_src = _aud
+
+            attn = _bar_src.get("attention_metrics", [])
             if attn:
                 bars = [m.bias_attention_ratio for m in attn]
                 mean_bar = sum(bars) / len(bars)
