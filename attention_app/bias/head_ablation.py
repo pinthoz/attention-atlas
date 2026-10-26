@@ -176,12 +176,18 @@ def _relevance_delta_for_head(
     baseline_logit: float,
     layer_idx: int,
     head_idx: int,
+    mode: str = "zero",
 ) -> Optional[float]:
     """Change in the relevance logit when one head is removed.
 
     The hook goes on the scoring model itself. Ablating a head on a separate
     encoder instance would leave the score untouched, since the two do not
     share the modules the forward pass runs through.
+
+    ``mode`` matches ``_run_single_ablation``. It has to, because the two
+    numbers end up in the same table row: with the representation measured
+    under mean-ablation and the logit under zero-ablation, the row would
+    describe two different interventions.
     """
     try:
         trunk = relevance_model.bert
@@ -198,7 +204,11 @@ def _relevance_delta_for_head(
 
     def ablation_hook(module, module_input, output):
         modified = output[0].clone()
-        modified[:, :, start:end] = 0.0
+        if mode == "mean":
+            modified[:, :, start:end] = modified[:, :, start:end].mean(
+                dim=1, keepdim=True)
+        else:
+            modified[:, :, start:end] = 0.0
         return (modified,) + output[1:]
 
     handle = attn_module.register_forward_hook(ablation_hook)
@@ -307,7 +317,7 @@ def batch_ablate_top_heads(
         if relevance_model is not None and baseline_logit is not None:
             rel_delta = _relevance_delta_for_head(
                 relevance_model, inputs, baseline_logit,
-                head_metric.layer, head_metric.head)
+                head_metric.layer, head_metric.head, mode=mode)
         results.append(HeadAblationResult(
             layer=head_metric.layer,
             head=head_metric.head,

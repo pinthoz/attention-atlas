@@ -3735,7 +3735,12 @@ def bias_server_handlers(input, output, session):
         except Exception:
             _logger.debug("Suppressed exception", exc_info=True)
         try:
-            a = _count(_bias_head_pvalues_audited(compute=False))
+            # Computed rather than read from cache: this row carries the head
+            # count of the model actually under audit, and without it the
+            # entry records only the GUS-Net trunk's 144 heads while the
+            # audited reranker has 72. The helper returns None when no
+            # reranker is enabled, so nothing is computed in the other cases.
+            a = _count(_bias_head_pvalues_audited())
             if a:
                 out["audited"] = a
         except Exception:
