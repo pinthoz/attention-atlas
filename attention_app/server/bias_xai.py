@@ -793,7 +793,7 @@ def register_xai_handlers(
                 )
                 kl_cell = f"{r.kl_divergence:.4f}" if r.kl_divergence is not None else "N/A"
                 kl_td = (
-                    f'<td style="padding:8px 12px;border-bottom:1px solid '
+                    f'<td style="padding:8px 7px;border-bottom:1px solid '
                     f'rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,'
                     f'monospace;font-size:12px;font-weight:700;color:{kl_color};">{kl_cell}</td>'
                 ) if has_kl else ""
@@ -811,49 +811,51 @@ def register_xai_handlers(
                         rel_txt = f"{rel:+.3f}"
                         rel_color = "#ff5ca9" if abs(rel) >= 0.1 else "#64748b"
                     rel_cell = (
-                        f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);'
+                        f'<td style="padding:8px 7px;border-bottom:1px solid rgba(226,232,240,0.5);'
                         f'text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;'
                         f'font-weight:700;color:{rel_color};">{rel_txt}</td>'
                     )
                 table_rows.append(
                     f'<tr style="{row_bg}">'
-                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
-                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
-                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
-                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{impact_color};">{r.representation_impact:.4f}</td>'
+                    f'<td style="padding:8px 7px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;color:#64748b;">#{rank}</td>'
+                    f'<td style="padding:8px 7px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">L{r.layer}</td>'
+                    f'<td style="padding:8px 7px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:#334155;">H{r.head}</td>'
+                    f'<td style="padding:8px 7px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:{impact_color};">{r.representation_impact:.4f}</td>'
                     f'{kl_td}'
                     f'{rel_cell}'
-                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
-                    f'<td style="padding:8px 12px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
+                    f'<td style="padding:8px 7px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:#475569;">{r.bar_original:.3f}</td>'
+                    f'<td style="padding:8px 7px;border-bottom:1px solid rgba(226,232,240,0.5);text-align:center;font-size:11px;">{specialized}</td>'
                     f'</tr>'
                 )
 
             kl_header = (
-                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;'
-                'color:#475569;text-transform:uppercase;letter-spacing:0.5px;">KL Div</th>'
+                '<th style="padding:8px 7px;text-align:right;font-size:10px;font-weight:700;'
+                'color:#475569;text-transform:uppercase;letter-spacing:0.2px;">KL Div</th>'
             ) if has_kl else ""
 
             rel_header = (
-                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;'
-                'color:#475569;text-transform:uppercase;letter-spacing:0.5px;">&Delta; Score</th>'
+                '<th style="padding:8px 7px;text-align:right;font-size:10px;font-weight:700;'
+                'color:#475569;text-transform:uppercase;letter-spacing:0.2px;">&Delta; Score</th>'
             ) if has_relevance else ""
 
             table_html = (
+                '<div style="overflow-x:auto;">'
                 '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;">'
                 '<thead>'
                 '<tr style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-bottom:2px solid #e2e8f0;">'
-                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Rank</th>'
-                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Layer</th>'
-                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Head</th>'
-                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Impact</th>'
+                '<th style="padding:8px 7px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.2px;">Rank</th>'
+                '<th style="padding:8px 7px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.2px;">Layer</th>'
+                '<th style="padding:8px 7px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.2px;">Head</th>'
+                '<th style="padding:8px 7px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.2px;">Impact</th>'
                 f'{kl_header}'
                 f'{rel_header}'
-                '<th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">BAR</th>'
-                '<th style="padding:8px 12px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Specialized</th>'
+                '<th style="padding:8px 7px;text-align:right;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.2px;">BAR</th>'
+                '<th style="padding:8px 7px;text-align:center;font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.2px;">Specialized</th>'
                 '</tr>'
                 '</thead>'
                 f'<tbody>{"".join(table_rows)}</tbody>'
                 '</table>'
+                '</div>'
             )
 
             # Plain-text threshold note (no card) with an asterisk prefix.
@@ -914,11 +916,13 @@ def register_xai_handlers(
                 warning_html = (
                     '<div style="margin-top:8px;font-size:11px;color:#166534;line-height:1.6;text-align:center;">'
                     f'<b>*</b>&nbsp;You are using the <b>BAR_{rank_by}</b> per-category ranking, the '
-                    'recommended setup for GPT-2 single-head causal claims. Prefer the '
-                    '<b>KL Div</b> column: both metrics show the per-category signal, '
-                    'but KL shows it more strongly (UNFAIR 11.4 % / STEREO 12.8 % vs '
-                    '8.6 % / 10.1 % under representation_impact).'
-                    '</div>'
+                    'recommended setup for GPT-2 single-head causal claims. '
+                    + ('Prefer the <b>KL Div</b> column: both metrics show the per-category '
+                       'signal, but KL shows it more strongly (UNFAIR 11.4 % / STEREO 12.8 % '
+                       'vs 8.6 % / 10.1 % under representation_impact).' if has_kl else
+                       'The KL comparison behind this advice needs a language head, which '
+                       'the audited model does not have, so read the Impact column.')
+                    + '</div>'
                 )
 
             return ui.div(
