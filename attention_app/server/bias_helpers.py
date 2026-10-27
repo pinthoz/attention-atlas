@@ -663,7 +663,7 @@ def _build_batch_report(per_sentence_results, all_bar_matrices,
                         batch_file, elapsed, n_total, bar_threshold=2.5):
     """Build comprehensive batch analysis report JSON.
 
-    ``bar_threshold`` is the calibrated specialisation cut-off for the weights
+    ``bar_threshold`` is the calibrated specialization cut-off for the weights
     that produced these matrices. It is weight-specific (2.50 BERT, 1.62
     MiniLM L-6, 1.81 MiniLM L-12), so leaving the BERT literal in place would
     understate ``specialized_rate`` for a reranker batch.

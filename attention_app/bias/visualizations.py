@@ -93,7 +93,7 @@ def create_attention_bias_matrix(
                         f"BAR (mu_hat/mu_0): {m.bias_attention_ratio:.3f}<br>"
                         f"BSR (self-reinforcement): {m.amplification_score:.3f}<br>"
                         f"Max \u03b1->biased: {m.max_bias_attention:.3f}<br>"
-                        f"Specialised: {'Yes' if m.specialized_for_bias else 'No'}"
+                        f"Specialized: {'Yes' if m.specialized_for_bias else 'No'}"
                     )
                 else:
                     text = f"<b>Layer {layer}, Head {head}</b><br>BAR: {bias_matrix[layer, head]:.3f}"
@@ -121,7 +121,7 @@ def create_attention_bias_matrix(
             hover_text.append(row)
 
     # Dynamic range anchored at the alpha=0.01 threshold (5.3) so the colorscale
-    # spans uniform (1.0) -> specialised (bar_threshold) -> alpha=0.01 (5.3).
+    # spans uniform (1.0) -> specialized (bar_threshold) -> alpha=0.01 (5.3).
     # In compare mode the range is shared with the OTHER matrix so the A/B
     # heatmaps use one colour scale (different scales side by side read as
     # "this model attends more" when only the normalisation differs).
@@ -134,11 +134,11 @@ def create_attention_bias_matrix(
     # Custom colorscale calibrated to the empirical thresholds:
     #   0.0            -> blue      (head avoids biased tokens)
     #   1.0            -> white     (uniform baseline)
-    #   bar_threshold  -> light red (specialised; slider, default 2.5 = alpha 0.05)
-    #   5.3            -> dark red  (alpha=0.01 - strongly specialised)
+    #   bar_threshold  -> light red (specialized; slider, default 2.5 = alpha 0.05)
+    #   5.3            -> dark red  (alpha=0.01 - strongly specialized)
     # See dataset/thresholds_results/THRESHOLDS_CALIBRATION.md
     # Plotly requires strictly increasing colorscale stops; clamp so the
-    # ordering mid < specialised < alpha01 survives any slider value.
+    # ordering mid < specialized < alpha01 survives any slider value.
     mid_point = 1.0 / z_max if z_max > 0 else 0.5
     alpha_01_point = min(1.0, 5.3 / z_max)
     alpha_05_point = min(
@@ -224,7 +224,7 @@ def create_attention_bias_matrix(
             "<span style='font-size:9px'>observed / expected attention</span><br><br>"
             "<span style='color:#3b82f6'>★</span> <b>&lt; 1.0</b> Under-attends<br>"
             "<span style='color:#93c5fd'>★</span> <b>= 1.0</b> Uniform<br>"
-            f"<span style='color:#dc2626'>★</span> <b>≥ {bar_threshold:g}</b> Specialised (α=0.05)<br>"
+            f"<span style='color:#dc2626'>★</span> <b>≥ {bar_threshold:g}</b> Specialized (α=0.05)<br>"
             "<span style='color:#7f1d1d'>★</span> <b>≥ 5.3</b> Strong (α=0.01)"
         ),
         showarrow=False,
@@ -337,7 +337,7 @@ def create_bias_propagation_heads_plot(
         head_bars: List of BAR values, one per head in the layer.
         layer_idx: Which layer this is (for the title).
         selected_head: Optional head index to highlight.
-        bar_threshold: Specialisation threshold (UI slider; default 2.5,
+        bar_threshold: Specialization threshold (UI slider; default 2.5,
             the calibrated α=0.05 cut-off). The moderate band starts at
             0.8 × threshold, preserving the calibrated 2.0/2.5 banding.
     """
@@ -378,9 +378,9 @@ def create_bias_propagation_heads_plot(
         line_dash="dot",
         line_color="#dc2626",
         annotation_text=(
-            "Specialised α=0.05 (2.5)"
+            "Specialized α=0.05 (2.5)"
             if abs(bar_threshold - 2.5) < 1e-9
-            else f"Specialised (BAR {bar_threshold:g})"
+            else f"Specialized (BAR {bar_threshold:g})"
         ),
         annotation_position="right",
         annotation_font=dict(size=10, color="#dc2626"),
@@ -389,7 +389,7 @@ def create_bias_propagation_heads_plot(
         y=5.3,
         line_dash="dot",
         line_color="#7f1d1d",
-        annotation_text="Specialised α=0.01 (5.3)",
+        annotation_text="Specialized α=0.01 (5.3)",
         annotation_position="right",
         annotation_font=dict(size=10, color="#7f1d1d"),
     )
@@ -1216,12 +1216,12 @@ def create_ratio_formula_html(bar_threshold: float = 2.5,
         "<br>"
         '<code style="background:#fee2e2;padding:1px 6px;border-radius:3px;'
         f'font-size:10px;color:#991b1b;">&gt; {bar_threshold:g}</code> '
-        "<b>Specialised</b> at &alpha;=0.05 - head disproportionately attends to biased tokens "
+        "<b>Specialized</b> at &alpha;=0.05 - head disproportionately attends to biased tokens "
         + ("" if bar_threshold_strong is None else (
             "<br>"
             '<code style="background:#fecaca;padding:1px 6px;border-radius:3px;'
             f'font-size:10px;color:#7f1d1d;">&gt; {bar_threshold_strong:g}</code> '
-            "<b>Strongly specialised</b> at &alpha;=0.01 - extreme concentration on biased tokens"))
+            "<b>Strongly specialized</b> at &alpha;=0.01 - extreme concentration on biased tokens"))
         + "</div>"
         "</div>"
     )

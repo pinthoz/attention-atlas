@@ -234,7 +234,7 @@ def _alpha_survival_html(data, alpha, correction):
     if data is None:
         return _m('Run "Analyze Bias" to use the significance control.')
     if data.get("status") == "no_biased":
-        return _m('No biased tokens in this prompt, so head specialisation is undefined.')
+        return _m('No biased tokens in this prompt, so head specialization is undefined.')
     if data.get("status") == "no_room":
         return _m('Not enough room to permute the bias mask for this prompt.')
 
@@ -307,7 +307,7 @@ def _alpha_survival_html(data, alpha, correction):
     return (
         f'<div style="padding:0;margin:0;">'
         f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;">'
-        f'<div><span style="font-size:13px;color:#64748b;">Heads specialised in bias at </span>'
+        f'<div><span style="font-size:13px;color:#64748b;">Heads specialized in bias at </span>'
         f'<span style="font-weight:700;color:#0f172a;">&alpha; = {alpha_disp}</span>'
         f'<span style="font-size:11px;color:#94a3b8;"> &middot; {corr_label}</span></div>'
         f'<div style="font-size:28px;font-weight:800;color:#ff5ca9;line-height:1;">{n_surv}'
@@ -649,7 +649,7 @@ def bias_server_handlers(input, output, session):
         return mode if mode in ("gusnet", "base", "compare", "audited") else "gusnet"
 
     def _get_bar_threshold() -> float:
-        """Current BAR specialisation cut-off from the UI slider.
+        """Current BAR specialization cut-off from the UI slider.
 
         Falls back to the cut-off calibrated for the model under audit when
         the input is not available (e.g. outside a reactive context). A flat
@@ -748,7 +748,7 @@ def bias_server_handlers(input, output, session):
             return None
         return (a, b)
 
-    # BAR specialisation cut-offs, one per set of weights. The 2.5 default
+    # BAR specialization cut-offs, one per set of weights. The 2.5 default
     # comes from the v9 permutation null on the BERT trunk; the reranker was
     # recalibrated the same way (full v9 dataset, 200 permutations,
     # alpha=0.05). Applying 2.5 there would mark almost nothing.
@@ -1442,7 +1442,7 @@ def bias_server_handlers(input, output, session):
         except Exception:
             _logger.debug("Suppressed exception", exc_info=True)
             pass
-        # BAR specialisation threshold (calibrated; user may have moved it)
+        # BAR specialization threshold (calibrated; user may have moved it)
         try:
             data["bias_bar_threshold"] = float(input.bias_bar_threshold())
         except Exception:
@@ -3127,7 +3127,7 @@ def bias_server_handlers(input, output, session):
         if 0 < n_total < 8:
             notes.append(
                 f"Very short input ({n_total} tokens). BAR / BSR estimates and "
-                f"the per-sentence elbow may be unstable; treat head-specialisation "
+                f"the per-sentence elbow may be unstable; treat head-specialization "
                 f"claims as suggestive only."
             )
         if n_total >= 510:
@@ -3300,7 +3300,7 @@ def bias_server_handlers(input, output, session):
             )
             _pending = lambda hint: "no detected tokens" if _no_tokens else hint
 
-            # The specialisation cut-off is weight-specific (2.50 BERT,
+            # The specialization cut-off is weight-specific (2.50 BERT,
             # 1.62 MiniLM L-6, 1.81 MiniLM L-12), so the colour bands follow
             # the active source rather than the BERT literal. "Elevated" sits
             # at 80% of the cut-off, which reproduces the old 2.0 for BERT.
@@ -4597,7 +4597,7 @@ def bias_server_handlers(input, output, session):
             f"<hr style='{_TS}'/>"
             f"<span style='{_TH}'>Toolbar controls</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>▪</span>"
-            f"<span>Change <b>layer</b> and <b>head</b> to explore different specialisation profiles</span></div>"
+            f"<span>Change <b>layer</b> and <b>head</b> to explore different specialization profiles</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>▪</span>"
             f"<span>Click a token in <i>Detected Bias Tokens</i> to set it as the query focus</span></div>"
             f"<hr style='{_TS}'/>"
@@ -4734,7 +4734,7 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
             f"<span><span style='{_TBB}'>BAR &lt; 1.0</span>&nbsp;head <b>avoids</b> biased tokens</span></div>"
             f"<hr style='{_TS}'>"
-            f"<div style='{_TN}'>Red cells (BAR >= threshold) = candidate bias-specialised heads. Cross-reference with ablation to confirm causal impact.</div>"
+            f"<div style='{_TN}'>Red cells (BAR >= threshold) = candidate bias-specialized heads. Cross-reference with ablation to confirm causal impact.</div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Why {_bar_th:g}?</span>"
             f"<div style='{_TN};margin-top:2px;'>Empirical α=0.05 cut-off, the 95th percentile of a permutation null "
@@ -4910,7 +4910,7 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#ff5ca9;'>●</span>"
             f"<span>Each bar is one attention head's BAR value</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#dc2626;'>●</span>"
-            f"<span><span style='{_TBR}'>Red bars</span>&nbsp;BAR &gt; {_bar_th:g} = bias-specialised head (follows the BAR Threshold slider)</span></div>"
+            f"<span><span style='{_TBR}'>Red bars</span>&nbsp;BAR &gt; {_bar_th:g} = bias-specialized head (follows the BAR Threshold slider)</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#ea580c;'>●</span>"
             f"<span><span style='{_TBA}'>Orange bars</span>&nbsp;BAR {0.8 * _bar_th:g}–{_bar_th:g} = moderate bias focus</span></div>"
             f"<hr style='{_TS}'>"
@@ -5088,7 +5088,7 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
             f"<span><span style='{_TBA}'>BAR</span>&nbsp;observed / expected attention - 1.0 = uniform</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-            f"<span><span style='{_TBG}'>green</span>&nbsp;BAR exceeds specialisation threshold</span></div>"
+            f"<span><span style='{_TBG}'>green</span>&nbsp;BAR exceeds specialization threshold</span></div>"
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>How to use</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
@@ -5098,7 +5098,7 @@ def bias_server_handlers(input, output, session):
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
             f"<span>Run <b>Integrated Gradients</b> to check faithfulness</span></div>"
         )
-        _heads_subtitle = f"Ranked by Bias Attention Ratio (BAR). Green dot = above specialisation threshold ({bar_threshold:g})."
+        _heads_subtitle = f"Ranked by Bias Attention Ratio (BAR). Green dot = above specialization threshold ({bar_threshold:g})."
         card_style = "box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.05); margin-top: 16px;"
 
         # ── Compare attention sources (Base Encoder vs GUS-Net) ──

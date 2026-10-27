@@ -415,7 +415,7 @@ def register_xai_handlers(
     ``_bar_default`` returns the calibrated BAR cut-off for whatever source is
     active. It must be used for every fallback: the cut-off is weight-specific
     (2.50 BERT, 1.62 MiniLM L-6, 1.81 MiniLM L-12), so a literal 2.50 here
-    would silently mark reranker heads as unspecialised.
+    would silently mark reranker heads as unspecialized.
     """
 
     def _has_detected_tokens(container_suffix: str = "") -> bool:
@@ -958,7 +958,7 @@ def register_xai_handlers(
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Faithfulness patterns</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
-            f"<span><span style='{_TBG}'>High BAR + High Impact</span>&nbsp;True mechanism: specialised <b>and</b> causal</span></div>"
+            f"<span><span style='{_TBG}'>High BAR + High Impact</span>&nbsp;True mechanism: specialized <b>and</b> causal</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>●</span>"
             f"<span><span style='{_TBA}'>High BAR + Low Impact</span>&nbsp;Epiphenomenon: attends to bias but does not drive the output</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#60a5fa;'>●</span>"
@@ -1430,7 +1430,7 @@ def register_xai_handlers(
                     f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
                     f"<span>Each cell = one (layer, head). Colour = Jaccard score. Darker = more overlap with IG.</span></div>"
                     f"<div style='{_TR}'><span style='{_TD};color:#94a3b8;'>▪</span>"
-                    f"<span>Scatter on the right: Jaccard vs BAR (attention specialisation). Heads above the trend line are more faithful than their specialisation alone would predict.</span></div>"
+                    f"<span>Scatter on the right: Jaccard vs BAR (attention specialization). Heads above the trend line are more faithful than their specialization alone would predict.</span></div>"
                     f"<hr style='{_TS}'/>"
                     f"<div style='{_TN}'>K is set to 5 by default. A mean Jaccard &gt; 0.4 across heads suggests attention is a reasonable proxy for token importance (display heuristic, not a calibrated threshold).</div>"
                 )
@@ -1510,7 +1510,7 @@ def register_xai_handlers(
             f"<hr style='{_TS}'>"
             f"<span style='{_TH}'>Sub-charts</span>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
-            f"<span><b>Faithfulness by Specialisation</b>: is high BAR correlated with high ρ?</span></div>"
+            f"<span><b>Faithfulness by Specialization</b>: is high BAR correlated with high ρ?</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"
             f"<span><b>Layer-wise Faithfulness</b>: does faithfulness vary with depth?</span></div>"
             f"<div style='{_TR}'><span style='{_TD};color:#a78bfa;'>▶</span>"

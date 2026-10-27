@@ -96,7 +96,7 @@ _PANEL_LABELS = {
 # study's "calibration-sensitive reasoning" construct is coded from. Most
 # calibrate inferential criteria; Top-K calibrates the visual scope.
 _CONTROL_INPUTS = {
-    "bias_bar_threshold": "BAR specialisation threshold",
+    "bias_bar_threshold": "BAR specialization threshold",
     "bias_top_k": "Top-K heads",
     "bias_threshold": "Detection threshold",
     "bias_alpha": "Significance level (alpha)",

@@ -2094,7 +2094,7 @@ def create_floating_bias_toolbar(num_layers: int = 12, num_heads: int = 12,
     fixed at twelve, which silently offered layers a model does not have:
     six for the MiniLM reranker, twenty-four for BERT large.
 
-    ``bar_default`` is the specialisation cut-off the slider starts at.
+    ``bar_default`` is the specialization cut-off the slider starts at.
     It is weight-specific: 2.5 was calibrated on the BERT trunk and does
     not carry over to a six-layer reranker.
     """

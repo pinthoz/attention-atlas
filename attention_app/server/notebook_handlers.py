@@ -115,16 +115,16 @@ _CONTEXT_INPUTS = [
     ("bias_thresh_stereo_b",     "bias_thresh_stereo_b",   "Threshold (stereotype, B)"),
     # Calibrated operating thresholds (permutation-null derived; see
     # dataset/thresholds_results/THRESHOLDS_CALIBRATION.md). These drive
-    # the head-specialisation colour bands and the ablation Top-K, so an
+    # the head-specialization colour bands and the ablation Top-K, so an
     # audit entry is not reconstructable without them.
     # The calibrated default is weight-specific (2.50 BERT, 1.62 MiniLM L-6,
     # 1.81 MiniLM L-12), so the label states the rule, not one model's number.
-    ("bias_bar_threshold",       "bias_bar_threshold",     "BAR specialisation threshold (calibrated α=0.05, per model weights)"),
+    ("bias_bar_threshold",       "bias_bar_threshold",     "BAR specialization threshold (calibrated α=0.05, per model weights)"),
     ("bias_top_k",               "bias_top_k",             "Top-K heads shown (calibrated elbow default 5)"),
     # Active statistical criteria + attention source. Without these three
     # an entry made under the source toggle or a non-default alpha is not
     # reconstructable, so they belong to the conditions block.
-    ("bias_alpha",               "bias_alpha",             "Significance level α (head specialisation)"),
+    ("bias_alpha",               "bias_alpha",             "Significance level α (head specialization)"),
     ("bias_correction",          "bias_correction",        "Multiple-comparison correction (none / FDR / Bonferroni)"),
     ("bias_attn_source",         "bias_attn_source",       "Attention source (gusnet / base / audited / compare)"),
     # Reranker audit: without these two an entry made against a reranker
@@ -204,7 +204,7 @@ _METRIC_LABELS = {
     "att_metric_head_top_received":  "Top-5 tokens receiving attention (sel. head)",
     "att_metric_head_top_attending": "Top-5 tokens distributing attention (sel. head)",
     "att_metric_head_special_mass":  "Attention mass on [CLS]/[SEP]/[PAD] (sel. head)",
-    "att_metric_head_specialization": "Selected-head specialisation",
+    "att_metric_head_specialization": "Selected-head specialization",
     # A cross-encoder's output is one relevance logit. Without it an entry
     # records how the reranker attended but not what it decided.
     "att_metric_relevance_logit":    "Relevance logit (cross-encoder)",
@@ -226,10 +226,10 @@ _METRIC_LABELS = {
     "bias_metric_peak_layer":        "Peak propagation layer (A)",
     "bias_metric_propagation":       "Propagation pattern (A)",
     "bias_metric_matrix_peak_head":  "Peak head in bias-attention matrix (A)",
-    # ── Head-specialisation survival (BAR permutation null) ──────────
-    "bias_metric_heads_survive":          "Heads specialised after correction (GUS-Net)",
-    "bias_metric_heads_survive_base":     "Heads specialised after correction (base encoder)",
-    "bias_metric_heads_survive_audited":  "Heads specialised after correction (audited reranker)",
+    # ── Head-specialization survival (BAR permutation null) ──────────
+    "bias_metric_heads_survive":          "Heads specialized after correction (GUS-Net)",
+    "bias_metric_heads_survive_base":     "Heads specialized after correction (base encoder)",
+    "bias_metric_heads_survive_audited":  "Heads specialized after correction (audited reranker)",
     # ── Attention-source toggle: base-encoder side (GUS-Net vs base) ─
     "bias_metric_matrix_peak_head_base":  "Peak head in bias-attention matrix (base encoder)",
     "bias_metric_peak_layer_base":        "Peak propagation layer (base encoder)",
@@ -1015,7 +1015,7 @@ def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, 
     (entropy, max, top src→tgt, top-K received/distributed, special-token
     mass), global facts (top-K attended across all heads, top-K most
     concentrated heads, per-layer mean entropy), and the linguistic
-    specialisation of the selected head when available.
+    specialization of the selected head when available.
     """
     out: Dict[str, Any] = {}
     if cached_result is None:
@@ -1186,7 +1186,7 @@ def _extract_attention_metrics(cached_result, layer_idx, head_idx) -> Dict[str, 
         except Exception:
             pass
 
-        # Head specialisation (if cached_result has it).
+        # Head specialization (if cached_result has it).
         try:
             spec = getattr(cached_result, "head_specialization", None)
             if isinstance(spec, dict):
@@ -1645,7 +1645,7 @@ def _extract_bias_metrics(bias_state, bias_compare_active: bool) -> Dict[str, An
         out["bias_metric_matrix_peak_head"] = summary_a["matrix_peak_head"]
 
     # ── Head-survival readout + attention-source toggle ──────────
-    # Mirrors the "Heads specialised at α · correction" card so the
+    # Mirrors the "Heads specialized at α · correction" card so the
     # entry records the same evidence the analyst saw. When the source
     # toggle is on "base" or "compare", the base-encoder side of the
     # contrast is captured as well (from caches only; never recomputed).

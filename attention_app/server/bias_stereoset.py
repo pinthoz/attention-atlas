@@ -743,7 +743,7 @@ def register_stereoset_handlers(
                     f"<hr style='{_TS}'/>"
                     f"<span style='{_TH}'>Feature name guide</span>"
                     f"<div style='{_TR}'><span style='{_TD};color:#f59e0b;'>▪</span>"
-                    f"<span><span style='{_TC}'>GAM</span> gradient × attention (importance), <span style='{_TC}'>AttMap</span> raw attention map, <span style='{_TC}'>Spec</span> specialisation score</span></div>"
+                    f"<span><span style='{_TC}'>GAM</span> gradient × attention (importance), <span style='{_TC}'>AttMap</span> raw attention map, <span style='{_TC}'>Spec</span> specialization score</span></div>"
                     f"<hr style='{_TS}'/>"
                     f"<div style='{_TN}'>Low p-value = this head feature's distribution shifts significantly across gender / race / religion / profession - it encodes demographic-specific attention patterns.</div>"
                 )
@@ -791,7 +791,7 @@ def register_stereoset_handlers(
             f"<div style='{_TR}'><span style='{_TD};color:#22c55e;'>●</span>"
             f"<span><span style='{_TBG}'>Low p-value</span>&nbsp;feature distribution differs significantly across categories</span></div>"
             f"<hr style='{_TS}'>"
-            f"<div style='{_TN}'>Combine with BAR: a head that is both BAR-specialised and category-sensitive is the most diagnostically informative.</div>"
+            f"<div style='{_TN}'>Combine with BAR: a head that is both BAR-specialized and category-sensitive is the most diagnostically informative.</div>"
         )
 
         # ── GUS-NET source (driven by floating bar Source Attention toggle) ──

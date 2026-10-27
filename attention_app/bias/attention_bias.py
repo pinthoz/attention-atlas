@@ -30,7 +30,7 @@ class HeadBiasMetrics:
         BAR(l,h) = μ̂_B / μ₀   where
             μ̂_B = (1/N) Σ_i Σ_{j∈B} α_ij   (observed)
             μ₀   = |B| / N                   (expected under uniform)
-        Centred at 1.0; values > 2.5 indicate specialisation
+        Centred at 1.0; values > 2.5 indicate specialization
         (empirical α=0.05 threshold from the v9 permutation-null
         analysis; see dataset/thresholds_results/THRESHOLDS_CALIBRATION.md).
 
@@ -170,7 +170,7 @@ class AttentionBiasAnalyzer:
         else:
             max_bias_attention = float(attention_matrix[:, biased_mask].max())
 
-        # Specialisation flag: BAR > threshold
+        # Specialization flag: BAR > threshold
         specialized_for_bias = bias_attention_ratio > bar_threshold
 
         return HeadBiasMetrics(
