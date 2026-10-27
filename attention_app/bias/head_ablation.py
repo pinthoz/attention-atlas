@@ -19,8 +19,6 @@ This tells us whether a head that *attends* to biased tokens actually
 analysis and causal faithfulness.
 """
 
-import threading
-
 import torch
 import numpy as np
 from dataclasses import dataclass
@@ -28,18 +26,13 @@ from typing import List, Optional, Tuple
 from torch.nn.functional import cosine_similarity
 
 # Ablation mutates shared module state: it registers a forward hook on the
-# encoder, runs a pass, and only then removes it. The dashboard runs the
-# Prompt A and Prompt B ablations concurrently (see compute_ablation in
-# server/bias_handlers.py), and both get the SAME model object, because
-# ModelManager.get_model is a cache. Without this lock one pass can run with
-# the other side's hook still attached, which ablates two heads at once and
-# inflates the impact; heads also come back at exactly 0.0 when the hook is
-# removed before the pass. Measured at 8 corrupted runs in 30 on the q64
-# pair, with impacts up to 0.0114 where the true maximum is 0.0052.
-#
-# The lock covers the whole batch, not each ablation, because the baseline
-# forward pass reads the same shared model and is just as corruptible.
-_MODEL_LOCK = threading.Lock()
+# encoder, runs a pass, and only then removes it. Every other faithfulness
+# panel touches the same cached model, so they all take one lock; see
+# model_lock.py for the measurements that made it necessary.
+try:
+    from .model_lock import MODEL_LOCK as _MODEL_LOCK
+except ImportError:  # carregado em plano pelos scripts de analise
+    from model_lock import MODEL_LOCK as _MODEL_LOCK
 
 
 @dataclass

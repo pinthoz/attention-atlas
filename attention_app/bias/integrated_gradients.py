@@ -58,6 +58,10 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from scipy.stats import spearmanr
 from captum.attr import LayerIntegratedGradients
+try:
+    from .model_lock import serialized
+except ImportError:  # carregado em plano pelos scripts de analise
+    from model_lock import serialized
 
 
 @dataclass
@@ -383,6 +387,7 @@ def _attention_token_importance(attn_matrix: np.ndarray) -> np.ndarray:
     return attn_matrix.mean(axis=0)
 
 
+@serialized
 def compute_token_attributions(
     encoder_model,
     tokenizer,
@@ -584,6 +589,7 @@ def compute_ig_attention_correlation(
     return results
 
 
+@serialized
 def batch_compute_ig_correlation(
     encoder_model,
     tokenizer,
@@ -765,6 +771,7 @@ def compute_topk_overlap(
 # ── Perturbation Analysis ─────────────────────────────────────────────────
 
 
+@serialized
 def compute_token_perturbation(
     encoder_model,
     tokenizer,
@@ -941,6 +948,7 @@ def compute_perturbation_correlations(
     return float(perturb_vs_ig), perturb_vs_attn
 
 
+@serialized
 def batch_compute_perturbation(
     encoder_model,
     tokenizer,
@@ -1083,6 +1091,7 @@ def _attnlrp_attributions(encoder_model, tokenizer, text, is_gpt2, target_model=
         run_model.zero_grad(set_to_none=True)
 
 
+@serialized
 def compute_lrp_attributions(
     encoder_model,
     tokenizer,
@@ -1205,6 +1214,7 @@ def compute_lrp_attributions(
         return token_attrs, tokens, "IG-fallback"
 
 
+@serialized
 def batch_compute_lrp(
     encoder_model,
     tokenizer,
