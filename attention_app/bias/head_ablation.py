@@ -19,11 +19,27 @@ This tells us whether a head that *attends* to biased tokens actually
 analysis and causal faithfulness.
 """
 
+import threading
+
 import torch
 import numpy as np
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from torch.nn.functional import cosine_similarity
+
+# Ablation mutates shared module state: it registers a forward hook on the
+# encoder, runs a pass, and only then removes it. The dashboard runs the
+# Prompt A and Prompt B ablations concurrently (see compute_ablation in
+# server/bias_handlers.py), and both get the SAME model object, because
+# ModelManager.get_model is a cache. Without this lock one pass can run with
+# the other side's hook still attached, which ablates two heads at once and
+# inflates the impact; heads also come back at exactly 0.0 when the hook is
+# removed before the pass. Measured at 8 corrupted runs in 30 on the q64
+# pair, with impacts up to 0.0114 where the true maximum is 0.0052.
+#
+# The lock covers the whole batch, not each ablation, because the baseline
+# forward pass reads the same shared model and is just as corruptible.
+_MODEL_LOCK = threading.Lock()
 
 
 @dataclass
@@ -260,75 +276,76 @@ def batch_ablate_top_heads(
     list[HeadAblationResult]
         Sorted by representation_impact descending.
     """
-    device = next(encoder_model.parameters()).device
-    # A reranker is scored on a pair, so an explicit [SEP] in the text is
-    # encoded as two segments rather than one run-on sequence.
-    sep = getattr(tokenizer, "sep_token", None)
-    if relevance_model is not None and sep and sep in text:
-        left, _, right = text.partition(sep)
-        inputs = tokenizer(left.strip(), right.strip(), return_tensors="pt",
-                           truncation=True, max_length=512)
-    else:
-        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-    inputs = {k: v.to(device) for k, v in inputs.items()}
+    with _MODEL_LOCK:
+        device = next(encoder_model.parameters()).device
+        # A reranker is scored on a pair, so an explicit [SEP] in the text is
+        # encoded as two segments rather than one run-on sequence.
+        sep = getattr(tokenizer, "sep_token", None)
+        if relevance_model is not None and sep and sep in text:
+            left, _, right = text.partition(sep)
+            inputs = tokenizer(left.strip(), right.strip(), return_tensors="pt",
+                               truncation=True, max_length=512)
+        else:
+            inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        inputs = {k: v.to(device) for k, v in inputs.items()}
 
-    baseline_logit = None
-    if relevance_model is not None:
-        try:
-            head_device = next(relevance_model.parameters()).device
-            rel_inputs = {k: v.to(head_device) for k, v in inputs.items()}
-            with torch.no_grad():
-                baseline_logit = float(
-                    relevance_model(**rel_inputs).logits.reshape(-1)[0])
-        except Exception:
-            baseline_logit = None
+        baseline_logit = None
+        if relevance_model is not None:
+            try:
+                head_device = next(relevance_model.parameters()).device
+                rel_inputs = {k: v.to(head_device) for k, v in inputs.items()}
+                with torch.no_grad():
+                    baseline_logit = float(
+                        relevance_model(**rel_inputs).logits.reshape(-1)[0])
+            except Exception:
+                baseline_logit = None
 
-    # Baseline forward pass
-    with torch.no_grad():
-        baseline_outputs = encoder_model(**inputs)
-    original_hidden = baseline_outputs.last_hidden_state  # [1, seq, hidden]
+        # Baseline forward pass
+        with torch.no_grad():
+            baseline_outputs = encoder_model(**inputs)
+        original_hidden = baseline_outputs.last_hidden_state  # [1, seq, hidden]
 
-    # Baseline LM logits (if available)
-    original_logits = None
-    if lm_head_model is not None:
-        try:
-            with torch.no_grad():
-                if is_gpt2:
-                    original_logits = lm_head_model.lm_head(original_hidden)
-                else:
-                    original_logits = lm_head_model.cls(original_hidden)
-        except Exception:
-            original_logits = None
+        # Baseline LM logits (if available)
+        original_logits = None
+        if lm_head_model is not None:
+            try:
+                with torch.no_grad():
+                    if is_gpt2:
+                        original_logits = lm_head_model.lm_head(original_hidden)
+                    else:
+                        original_logits = lm_head_model.cls(original_hidden)
+            except Exception:
+                original_logits = None
 
-    results = []
-    for head_metric in top_heads:
-        rep_impact, kl_val = _run_single_ablation(
-            encoder_model,
-            inputs,
-            original_hidden,
-            head_metric.layer,
-            head_metric.head,
-            is_gpt2,
-            lm_head_model,
-            original_logits,
-            mode=mode,
-        )
-        rel_delta = None
-        if relevance_model is not None and baseline_logit is not None:
-            rel_delta = _relevance_delta_for_head(
-                relevance_model, inputs, baseline_logit,
-                head_metric.layer, head_metric.head, mode=mode)
-        results.append(HeadAblationResult(
-            layer=head_metric.layer,
-            head=head_metric.head,
-            representation_impact=rep_impact,
-            kl_divergence=kl_val,
-            bar_original=head_metric.bias_attention_ratio,
-            relevance_delta=rel_delta,
-        ))
+        results = []
+        for head_metric in top_heads:
+            rep_impact, kl_val = _run_single_ablation(
+                encoder_model,
+                inputs,
+                original_hidden,
+                head_metric.layer,
+                head_metric.head,
+                is_gpt2,
+                lm_head_model,
+                original_logits,
+                mode=mode,
+            )
+            rel_delta = None
+            if relevance_model is not None and baseline_logit is not None:
+                rel_delta = _relevance_delta_for_head(
+                    relevance_model, inputs, baseline_logit,
+                    head_metric.layer, head_metric.head, mode=mode)
+            results.append(HeadAblationResult(
+                layer=head_metric.layer,
+                head=head_metric.head,
+                representation_impact=rep_impact,
+                kl_divergence=kl_val,
+                bar_original=head_metric.bias_attention_ratio,
+                relevance_delta=rel_delta,
+            ))
 
-    results.sort(key=lambda r: r.representation_impact, reverse=True)
-    return results
+        results.sort(key=lambda r: r.representation_impact, reverse=True)
+        return results
 
 
 __all__ = ["HeadAblationResult", "batch_ablate_top_heads"]
